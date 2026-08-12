@@ -1,22 +1,13 @@
 import * as THREE from "three";
 import { ParamFieldDef } from "../shared/graph/types";
+import { DragNumberInput } from "./DragNumberInput";
+import "./param-panel.css";
 
 interface ParamPanelProps {
   label: string;
   fields: ParamFieldDef[];
   params: Record<string, unknown>;
   onChange: (paramId: string, value: unknown) => void;
-}
-
-function numberField(field: ParamFieldDef & { kind: "number" }, value: unknown, onChange: (v: unknown) => void) {
-  return (
-    <input
-      type="number"
-      step={field.step ?? "any"}
-      value={Number(value) || 0}
-      onChange={(e) => onChange(e.target.valueAsNumber || 0)}
-    />
-  );
 }
 
 function booleanField(value: unknown, onChange: (v: unknown) => void) {
@@ -46,18 +37,17 @@ function colorField(value: unknown, onChange: (v: unknown) => void) {
   );
 }
 
-function vectorField(value: unknown, onChange: (v: unknown) => void) {
+function vectorField(field: ParamFieldDef & { kind: "vector" }, value: unknown, onChange: (v: unknown) => void) {
   const v = value instanceof THREE.Vector3 ? value : new THREE.Vector3();
   const axis = (key: "x" | "y" | "z") => (
-    <input
+    <DragNumberInput
       key={key}
-      type="number"
-      step="any"
       value={v[key]}
-      onChange={(e) => {
-        const next = v.clone();
-        next[key] = e.target.valueAsNumber || 0;
-        onChange(next);
+      step={field.step}
+      onChange={(next) => {
+        const updated = v.clone();
+        updated[key] = next;
+        onChange(updated);
       }}
     />
   );
@@ -79,11 +69,17 @@ export function ParamPanel({ label, fields, params, onChange }: ParamPanelProps)
       {fields.map((field) => (
         <div className="param-row" key={field.id}>
           <label>{field.label}</label>
-          {field.kind === "number" && numberField(field, params[field.id], (v) => onChange(field.id, v))}
+          {field.kind === "number" && (
+            <DragNumberInput
+              value={Number(params[field.id]) || 0}
+              step={field.step}
+              onChange={(v) => onChange(field.id, v)}
+            />
+          )}
+          {field.kind === "vector" && vectorField(field, params[field.id], (v) => onChange(field.id, v))}
           {field.kind === "boolean" && booleanField(params[field.id], (v) => onChange(field.id, v))}
           {field.kind === "select" && selectField(field, params[field.id], (v) => onChange(field.id, v))}
           {field.kind === "color" && colorField(params[field.id], (v) => onChange(field.id, v))}
-          {field.kind === "vector" && vectorField(params[field.id], (v) => onChange(field.id, v))}
         </div>
       ))}
     </div>

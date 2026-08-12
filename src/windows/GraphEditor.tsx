@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import {
   Background,
   Connection as FlowConnection,
@@ -17,7 +17,6 @@ import "@xyflow/react/dist/style.css";
 import { SOCKET_COLOR } from "../shared/graph/sockets";
 import { Connection, Graph, NodeInstance, NodeRegistry } from "../shared/graph/types";
 import { GraphNode, GraphNodeData } from "./GraphNode";
-import { ParamPanel } from "./ParamPanel";
 import "./graph-editor.css";
 
 const NODE_TYPES = { graphNode: GraphNode };
@@ -77,17 +76,19 @@ interface GraphEditorProps {
   registry: NodeRegistry;
   /** Called after any drag or rewire with the updated graph — the parent (App) owns the actual Graph state, this component just edits it. */
   onGraphChange?: (graph: Graph) => void;
+  /** Selection lives in the parent (App) — the param panel it drives is rendered over the Viewport, not here. */
+  onSelectNode: (nodeId: string | null) => void;
 }
 
 /**
  * Writable: dragging a node persists its position, dragging a wire from one
  * socket to another creates a connection (type-checked — a Value output
  * cannot plug into a Vector input), right-click on a wire deletes it,
- * clicking a node opens its param panel (driven by NodeDefinition.paramFields).
+ * clicking a node selects it (see App.tsx for what renders from that).
  * Node add/remove is still the next slice — this one edits the fixed set of
  * nodes it's given, it doesn't create or destroy them.
  */
-export function GraphEditor({ graph, registry, onGraphChange }: GraphEditorProps) {
+export function GraphEditor({ graph, registry, onGraphChange, onSelectNode }: GraphEditorProps) {
   const initialNodes = useMemo(() => toFlowNodes(graph, registry), [graph, registry]);
   const [nodes, setNodes] = useNodesState(initialNodes);
   const [edges, setEdges] = useEdgesState(useMemo(() => toFlowEdges(graph, initialNodes), [graph, initialNodes]));
@@ -160,26 +161,8 @@ export function GraphEditor({ graph, registry, onGraphChange }: GraphEditorProps
     [commit, edges, nodes, setEdges],
   );
 
-  // Selection drives the param panel; params live only on `graph` (the parent's
-  // source of truth), never on the local xyflow node data — a param edit is a
-  // pure graph.nodes[i].params update, unrelated to position/wire sync above.
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const onNodeClick = useCallback((_: unknown, node: Node<GraphNodeData>) => setSelectedNodeId(node.id), []);
-  const onPaneClick = useCallback(() => setSelectedNodeId(null), []);
-
-  const selectedInstance = graph.nodes.find((n) => n.id === selectedNodeId) ?? null;
-  const selectedDef = selectedInstance ? registry.get(selectedInstance.type) : undefined;
-
-  const onParamChange = useCallback(
-    (paramId: string, value: unknown) => {
-      if (!selectedInstance) return;
-      const nextNodes = graph.nodes.map((n) =>
-        n.id === selectedInstance.id ? { ...n, params: { ...n.params, [paramId]: value } } : n,
-      );
-      onGraphChange?.({ ...graph, nodes: nextNodes });
-    },
-    [graph, onGraphChange, selectedInstance],
-  );
+  const onNodeClick = useCallback((_: unknown, node: Node<GraphNodeData>) => onSelectNode(node.id), [onSelectNode]);
+  const onPaneClick = useCallback(() => onSelectNode(null), [onSelectNode]);
 
   return (
     <div className="graph-editor">
@@ -198,14 +181,6 @@ export function GraphEditor({ graph, registry, onGraphChange }: GraphEditorProps
       >
         <Background color="#2c333f" gap={20} />
       </ReactFlow>
-      {selectedInstance && selectedDef && (
-        <ParamPanel
-          label={selectedDef.label}
-          fields={selectedDef.paramFields ?? []}
-          params={{ ...selectedDef.defaultParams, ...selectedInstance.params }}
-          onChange={onParamChange}
-        />
-      )}
     </div>
   );
 }

@@ -30,7 +30,7 @@ export type ParamFieldDef =
   | { id: string; label: string; kind: "boolean" }
   | { id: string; label: string; kind: "select"; options: string[] }
   | { id: string; label: string; kind: "color" }
-  | { id: string; label: string; kind: "vector" };
+  | { id: string; label: string; kind: "vector"; step?: number };
 
 /**
  * The static description of a node *type* — shared by every instance of it.
