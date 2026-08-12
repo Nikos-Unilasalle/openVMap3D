@@ -1,5 +1,6 @@
+import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { readTextFile } from "@tauri-apps/plugin-fs";
+import { readFile, readTextFile } from "@tauri-apps/plugin-fs";
 import * as THREE from "three";
 import { CATEGORY_COLOR, NodeCategory, UNKNOWN_CATEGORY_COLOR } from "../shared/graph/categories";
 import { ParamFieldDef } from "../shared/graph/types";
@@ -31,14 +32,74 @@ function selectField(field: ParamFieldDef & { kind: "select" }, value: unknown, 
   );
 }
 
-function colorField(value: unknown, onChange: (v: unknown) => void) {
-  const color = value instanceof THREE.Color ? value : new THREE.Color(0xffffff);
+function ColorPickerInput({ value, onChange }: { value: unknown; onChange: (v: THREE.Color) => void }) {
+  let colorHex = "#ffffff";
+  try {
+    if (value instanceof THREE.Color) {
+      colorHex = `#${value.getHexString()}`;
+    } else if (typeof value === "string" || typeof value === "number") {
+      colorHex = `#${new THREE.Color(value).getHexString()}`;
+    }
+  } catch {
+    colorHex = "#ffffff";
+  }
+
+  const [textValue, setTextValue] = useState(colorHex);
+
+  useEffect(() => {
+    setTextValue(colorHex);
+  }, [colorHex]);
+
+  const handleHexChange = (newHex: string) => {
+    setTextValue(newHex);
+    try {
+      const cleanHex = newHex.startsWith("#") ? newHex : `#${newHex}`;
+      const c = new THREE.Color(cleanHex);
+      onChange(c);
+    } catch {
+      // Invalid hex typing in progress
+    }
+  };
+
+  const presets = ["#ffffff", "#ef4444", "#f97316", "#eab308", "#22c55e", "#06b6d4", "#3b82f6", "#a855f7", "#000000"];
+
   return (
-    <input
-      type="color"
-      value={`#${color.getHexString()}`}
-      onChange={(e) => onChange(new THREE.Color(e.target.value))}
-    />
+    <div className="param-color-picker-container" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="param-color-main">
+        <input
+          type="color"
+          className="param-color-swatch"
+          value={colorHex}
+          onInput={(e) => {
+            const hex = (e.target as HTMLInputElement).value;
+            handleHexChange(hex);
+          }}
+          onChange={(e) => {
+            const hex = (e.target as HTMLInputElement).value;
+            handleHexChange(hex);
+          }}
+        />
+        <input
+          type="text"
+          className="param-color-hex-input"
+          value={textValue}
+          onChange={(e) => handleHexChange(e.target.value)}
+          onBlur={() => setTextValue(colorHex)}
+        />
+      </div>
+      <div className="param-color-presets">
+        {presets.map((preset) => (
+          <button
+            key={preset}
+            type="button"
+            className="param-color-preset-btn"
+            style={{ backgroundColor: preset }}
+            onClick={() => handleHexChange(preset)}
+            title={preset}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -55,8 +116,16 @@ function fileField(nodeId: string, field: ParamFieldDef & { kind: "file" }, valu
           filters: extensions.length ? [{ name: "File", extensions }] : undefined,
         });
         if (!path || Array.isArray(path)) return;
-        const content = await readTextFile(path);
-        field.onLoaded?.(nodeId, path, content);
+        const ext = path.split(".").pop()?.toLowerCase() ?? "";
+        const isBinaryImage = ["png", "jpg", "jpeg", "webp", "bmp"].includes(ext);
+
+        if (isBinaryImage) {
+          const bytes = await readFile(path);
+          field.onLoaded?.(nodeId, path, bytes);
+        } else {
+          const content = await readTextFile(path);
+          field.onLoaded?.(nodeId, path, content);
+        }
         onChange(path);
       }}
     >
@@ -110,7 +179,9 @@ export function ParamPanel({ nodeId, label, category, fields, params, onChange }
           {field.kind === "vector" && vectorField(field, params[field.id], (v) => onChange(field.id, v))}
           {field.kind === "boolean" && booleanField(params[field.id], (v) => onChange(field.id, v))}
           {field.kind === "select" && selectField(field, params[field.id], (v) => onChange(field.id, v))}
-          {field.kind === "color" && colorField(params[field.id], (v) => onChange(field.id, v))}
+          {field.kind === "color" && (
+            <ColorPickerInput value={params[field.id]} onChange={(v) => onChange(field.id, v)} />
+          )}
           {field.kind === "text" && (
             <input
               type="text"

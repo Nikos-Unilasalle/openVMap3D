@@ -2,7 +2,17 @@ import { MATRIX_TRANSFORM_NODE, TRANSFORM_NODE } from "./nodes/transform";
 import { Graph } from "./types";
 
 /** Node types whose mesh tags itself with a nodeId (see object.ts) and so can be click-selected and gizmo-edited in the viewport. */
-export const GIZMO_SELECTABLE_TYPES = ["object/box", "object/plane", "object/sphere"];
+export const GIZMO_SELECTABLE_TYPES = [
+  "object/box",
+  "object/plane",
+  "object/sphere",
+  "object/obj",
+  "object/text",
+  "texture/plane",
+  "light/directional",
+  "light/point",
+  "light/spot",
+];
 
 /**
  * What the viewport's gizmo found one hop upstream of a selected object's

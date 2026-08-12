@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
 import { toBoolean } from "../sockets";
+import { defaultFont } from "../../three/fonts/helvetikerFont";
 
 
 
@@ -24,9 +25,8 @@ function boxMesh(nodeId: string): THREE.Mesh {
     new THREE.BoxGeometry(1, 1, 1),
     new THREE.MeshStandardMaterial({ color: 0xffffff }),
   );
-  // Lets the viewport's click-to-select raycast identify which graph node a
-  // hit mesh belongs to (see Viewport.tsx) — only set on the interactively
-  // selectable primitives (box/plane/sphere), not on every geometry node.
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
   mesh.userData.nodeId = nodeId;
   meshCache.set(nodeId, mesh);
   return mesh;
@@ -75,6 +75,8 @@ function planeMesh(nodeId: string): THREE.Mesh {
     new THREE.PlaneGeometry(1, 1),
     new THREE.MeshStandardMaterial({ color: 0xffffff, side: THREE.DoubleSide }),
   );
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
   mesh.userData.nodeId = nodeId;
   meshCache.set(nodeId, mesh);
   return mesh;
@@ -115,6 +117,8 @@ function sphereMesh(nodeId: string): THREE.Mesh {
     new THREE.SphereGeometry(0.5, 32, 16),
     new THREE.MeshStandardMaterial({ color: 0xffffff }),
   );
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
   mesh.userData.nodeId = nodeId;
   meshCache.set(nodeId, mesh);
   return mesh;
@@ -177,13 +181,9 @@ function asColor(v: unknown, fallback: THREE.Color): THREE.Color {
 
 interface TextMeshState {
   mesh: THREE.Mesh;
-  canvas?: HTMLCanvasElement;
-  texture?: THREE.CanvasTexture;
   lastText?: string;
-  lastFont?: string;
   lastFontSize?: number;
-  lastWidth?: number;
-  lastHeight?: number;
+  lastDepth?: number;
 }
 
 const textMeshCache = new Map<string, TextMeshState>();
@@ -192,17 +192,24 @@ function textMesh(nodeId: string): TextMeshState {
   const existing = textMeshCache.get(nodeId);
   if (existing) return existing;
 
-  const mesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(1, 1),
-    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, side: THREE.DoubleSide }),
-  );
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.3,
+    metalness: 0.1,
+    side: THREE.FrontSide,
+  });
+
+  const mesh = new THREE.Mesh(new THREE.BufferGeometry(), mat);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  mesh.userData.nodeId = nodeId;
 
   const state: TextMeshState = { mesh };
   textMeshCache.set(nodeId, state);
   return state;
 }
 
-/** 2D Text Object rendered as a textured plane in 3D space with font family, size and color control. */
+/** 3D Extruded Text Object rendered with vector font glyph outlines, depth extrusion and color control. */
 export const OBJECT_TEXT_NODE: NodeDefinition = {
   type: "object/text",
   label: "Text",
@@ -211,15 +218,17 @@ export const OBJECT_TEXT_NODE: NodeDefinition = {
     { id: "text", label: "Text", type: "text" },
     { id: "font", label: "Font", type: "text" },
     { id: "fontSize", label: "Font Size", type: "value" },
+    { id: "depth", label: "Depth", type: "value" },
     { id: "color", label: "Color", type: "color" },
     { id: "matrix", label: "Matrix", type: "matrix" },
   ],
   outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
-  defaultParams: { text: "OpenVMap3D", font: "sans-serif", fontSize: 64, color: new THREE.Color(0xffffff) },
+  defaultParams: { text: "OpenVMap3D", font: "sans-serif", fontSize: 64, depth: 0.1, color: new THREE.Color(0xffffff) },
   paramFields: [
     { id: "text", label: "Text (fallback)", kind: "text" },
     { id: "font", label: "Font Family", kind: "select", options: FONT_FAMILIES },
     { id: "fontSize", label: "Font Size (px)", kind: "number" },
+    { id: "depth", label: "Depth / Relief", kind: "number", step: 0.05 },
     { id: "color", label: "Color (fallback)", kind: "color" },
   ],
   evaluate: (inputs, params, ctx) => {
@@ -227,80 +236,52 @@ export const OBJECT_TEXT_NODE: NodeDefinition = {
     const mesh = textState.mesh;
 
     const textStr = inputs.text !== undefined ? String(inputs.text) : String(params.text ?? "OpenVMap3D");
-    const font = inputs.font !== undefined ? String(inputs.font) : String(params.font ?? "sans-serif");
     const fontSize = Math.max(8, inputs.fontSize !== undefined ? Number(inputs.fontSize) || 64 : Number(params.fontSize) || 64);
+    const depth = Math.max(0.001, inputs.depth !== undefined ? Number(inputs.depth) : Number(params.depth) ?? 0.1);
     const color = asColor(inputs.color, asColor(params.color, new THREE.Color(0xffffff)));
 
-    // Material color tinting works instantaneously on GPU!
-    (mesh.material as THREE.MeshBasicMaterial).color.copy(color);
+    (mesh.material as THREE.MeshStandardMaterial).color.copy(color);
 
     const baseMatrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
 
     const stateChanged =
       textState.lastText !== textStr ||
-      textState.lastFont !== font ||
-      textState.lastFontSize !== fontSize;
+      textState.lastFontSize !== fontSize ||
+      textState.lastDepth !== depth;
 
-    let width = textState.lastWidth ?? 128;
-    let height = textState.lastHeight ?? 64;
-
-    if (stateChanged && typeof document !== "undefined" && document.createElement) {
-      if (!textState.canvas) {
-        textState.canvas = document.createElement("canvas");
+    if (stateChanged) {
+      if (mesh.geometry) {
+        mesh.geometry.dispose();
       }
 
-      const canvas = textState.canvas;
-      const context = canvas.getContext ? canvas.getContext("2d") : null;
+      // Generate 2D vector shapes from typeface font glyph outlines for each character
+      const scale = fontSize * 0.015;
+      const shapes = defaultFont.generateShapes(textStr || " ", scale);
 
-      if (context) {
-        // High base font size for crisp supersampled texture rendering (256px font resolution)
-        const canvasFontSize = 256;
-        context.font = `bold ${canvasFontSize}px ${font}`;
-        const metrics = context.measureText(textStr || " ");
-        width = Math.max(128, Math.ceil((metrics.width || 128) + canvasFontSize * 0.4));
-        height = Math.max(64, Math.ceil(canvasFontSize * 1.4));
+      // Create ExtrudeGeometry for TRUE 3D VECTOR EXTRUDED LETTER GLYPHS!
+      const geometry = new THREE.ExtrudeGeometry(shapes, {
+        depth: depth,
+        bevelEnabled: true,
+        bevelThickness: Math.min(0.02, depth * 0.2),
+        bevelSize: Math.min(0.01, depth * 0.1),
+        bevelSegments: 3,
+        curveSegments: 12,
+      });
 
-        canvas.width = width;
-        canvas.height = height;
+      // Center geometry around its local bounding box origin
+      geometry.center();
 
-        // Render crisp white text onto high-res canvas
-        context.font = `bold ${canvasFontSize}px ${font}`;
-        context.fillStyle = "#ffffff";
-        context.textAlign = "center";
-        context.textBaseline = "middle";
-        context.clearRect(0, 0, width, height);
-        context.fillText(textStr, width / 2, height / 2);
-
-        if (textState.texture) {
-          textState.texture.dispose();
-        }
-        const tex = new THREE.CanvasTexture(canvas);
-        tex.minFilter = THREE.LinearMipmapLinearFilter;
-        tex.magFilter = THREE.LinearFilter;
-        tex.generateMipmaps = true;
-        tex.anisotropy = 16;
-        textState.texture = tex;
-
-        const mat = mesh.material as THREE.MeshBasicMaterial;
-        mat.map = textState.texture;
-        mat.needsUpdate = true;
-      }
-
+      mesh.geometry = geometry;
 
       textState.lastText = textStr;
-      textState.lastFont = font;
       textState.lastFontSize = fontSize;
-      textState.lastWidth = width;
-      textState.lastHeight = height;
+      textState.lastDepth = depth;
     }
 
-    // Apply scale matrix to plane based on fontSize and text aspect ratio
-    const worldHeight = fontSize / 64;
-    const aspect = width / height;
-    const scaleMatrix = new THREE.Matrix4().makeScale(worldHeight * aspect, worldHeight, 1);
-
-    mesh.matrixAutoUpdate = false;
-    mesh.matrix.multiplyMatrices(baseMatrix, scaleMatrix);
+    if (ctx.nodeId !== ctx.liveEditNodeId) {
+      mesh.matrixAutoUpdate = false;
+      mesh.matrix.copy(baseMatrix);
+    }
 
     return { geometry: mesh };
   },

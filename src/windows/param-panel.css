@@ -55,14 +55,81 @@
   padding: 3px 4px;
 }
 
-.param-row input[type="color"] {
-  width: 30px;
-  height: 18px;
+.param-color-picker-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.param-color-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.param-color-swatch {
+  width: 28px;
+  height: 24px;
   padding: 0;
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.25);
   outline: none;
   border-radius: 4px;
   background: none;
+  cursor: pointer;
+  user-select: auto !important;
+  -webkit-user-select: auto !important;
+  flex-shrink: 0;
+}
+
+.param-color-swatch::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.param-color-swatch::-webkit-color-swatch {
+  border: none;
+  border-radius: 3px;
+}
+
+.param-color-hex-input {
+  flex: 1;
+  width: 100%;
+  background: #161b22;
+  border: 1px solid #2c333f;
+  border-radius: 4px;
+  color: #f0f6fc;
+  font-family: monospace;
+  font-size: 11px;
+  padding: 4px 6px;
+  outline: none;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+
+.param-color-hex-input:focus {
+  border-color: #38bdf8;
+}
+
+.param-color-presets {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.param-color-preset-btn {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s ease, border-color 0.1s ease;
+}
+
+.param-color-preset-btn:hover {
+  transform: scale(1.15);
+  border-color: #ffffff;
 }
 
 .param-vector {
@@ -82,7 +149,7 @@
   font-size: 11px;
   font-family: inherit;
   padding: 3px 0;
-  cursor: ew-resize;
+  cursor: ns-resize;
   user-select: none;
   touch-action: none;
 }

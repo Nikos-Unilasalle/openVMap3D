@@ -58,7 +58,7 @@ export type ParamFieldDef =
        * actually needs (CSV Reader's csvStore, say) without the generic
        * param panel needing to know anything CSV-specific.
        */
-      onLoaded?: (nodeId: string, path: string, content: string) => void;
+      onLoaded?: (nodeId: string, path: string, content: any) => void;
     };
 
 /**

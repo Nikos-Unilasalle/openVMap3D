@@ -260,6 +260,7 @@ function MainEditor() {
           registry={DEFAULT_REGISTRY}
           onGraphChange={setGraph}
           onSelectNode={setSelectedNodeId}
+          selectedNodeId={selectedNodeId}
         />
       </div>
     </div>

@@ -2,6 +2,8 @@
 export type NodeCategory =
   | "structure"
   | "transform"
+  | "lighting"
+  | "texture"
   | "math"
   | "converter"
   | "text"
@@ -19,6 +21,8 @@ export type NodeCategory =
 export const CATEGORY_ORDER: NodeCategory[] = [
   "structure",
   "transform",
+  "lighting",
+  "texture",
   "math",
   "converter",
   "text",
@@ -36,6 +40,8 @@ export const CATEGORY_ORDER: NodeCategory[] = [
 export const CATEGORY_LABEL: Record<NodeCategory, string> = {
   structure: "Structure",
   transform: "Transform",
+  lighting: "Lighting & Shadows",
+  texture: "Texture",
   math: "Math",
   converter: "Converter",
   text: "Text",
@@ -59,6 +65,8 @@ export const CATEGORY_LABEL: Record<NodeCategory, string> = {
 export const CATEGORY_COLOR: Record<NodeCategory, string> = {
   structure: "#38bdf8",
   transform: "#a855f7",
+  lighting: "#f59e0b",
+  texture: "#2dd4bf",
   math: "#f2c14e",
   converter: "#10b981",
   text: "#f97316",

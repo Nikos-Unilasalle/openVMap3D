@@ -314,8 +314,9 @@ describe("OBJECT PRIMITIVES", () => {
     const color = new THREE.Color(1, 0, 0);
     const res = OBJECT_TEXT_NODE.evaluate({ text: "Test Text", font: "monospace", fontSize: 96, color }, OBJECT_TEXT_NODE.defaultParams, CTX).geometry as THREE.Mesh;
     expect(res).toBeInstanceOf(THREE.Mesh);
-    expect((res.material as THREE.MeshBasicMaterial).color.r).toBe(1);
-    expect((res.material as THREE.MeshBasicMaterial).color.g).toBe(0);
+    const mat = Array.isArray(res.material) ? (res.material[0] as THREE.MeshStandardMaterial) : (res.material as THREE.MeshStandardMaterial);
+    expect(mat.color.r).toBe(1);
+    expect(mat.color.g).toBe(0);
   });
 
   test("bar graph object evaluation with labels and positions", () => {

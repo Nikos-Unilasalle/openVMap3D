@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   Connection as FlowConnection,
@@ -19,6 +19,7 @@ import { SOCKET_COLOR } from "../shared/graph/sockets";
 import { Connection, Graph, NodeInstance, NodeRegistry } from "../shared/graph/types";
 import { GraphNode, GraphNodeData } from "./GraphNode";
 import { NodePalette } from "./NodePalette";
+import { NodeSearchModal } from "./NodeSearchModal";
 import "./graph-editor.css";
 
 const NODE_TYPES = { graphNode: GraphNode };
@@ -141,6 +142,7 @@ interface GraphEditorProps {
   onGraphChange?: (graph: Graph) => void;
   /** Selection lives in the parent (App) — the param panel it drives is rendered over the Viewport, not here. */
   onSelectNode: (nodeId: string | null) => void;
+  selectedNodeId?: string | null;
 }
 
 /**
@@ -157,7 +159,7 @@ interface GraphEditorProps {
  * drag-select exists, since a plain click already pans nowhere useful but
  * a stray left-drag was the only way to box-select nodes.
  */
-export function GraphEditor({ graph, registry, onGraphChange, onSelectNode }: GraphEditorProps) {
+export function GraphEditor({ graph, registry, onGraphChange, onSelectNode, selectedNodeId }: GraphEditorProps) {
   const initialNodes = useMemo(() => {
     const raw = toFlowNodes(graph, registry);
     return refreshDynamicSockets(raw, toFlowEdges(graph, raw), graph.nodes, registry);
@@ -319,6 +321,156 @@ export function GraphEditor({ graph, registry, onGraphChange, onSelectNode }: Gr
     [graph, nodes, onGraphChange, registry, setNodes],
   );
 
+  const clipboardRef = useRef<{ nodes: NodeInstance[]; connections: Connection[] } | null>(null);
+
+  const getSelectedNodeInstances = useCallback(() => {
+    const selectedFlowNodes = nodes.filter((n) => n.selected);
+    if (selectedFlowNodes.length > 0) {
+      const selectedIds = new Set(selectedFlowNodes.map((n) => n.id));
+      return graph.nodes.filter((n) => selectedIds.has(n.id));
+    }
+    if (selectedNodeId) {
+      return graph.nodes.filter((n) => n.id === selectedNodeId);
+    }
+    return [];
+  }, [graph.nodes, nodes, selectedNodeId]);
+
+  const copySelected = useCallback(() => {
+    const selected = getSelectedNodeInstances();
+    if (selected.length === 0) return;
+
+    const selectedIds = new Set(selected.map((n) => n.id));
+    const internalConnections = graph.connections.filter(
+      (c) => selectedIds.has(c.fromNode) && selectedIds.has(c.toNode),
+    );
+
+    clipboardRef.current = {
+      nodes: JSON.parse(JSON.stringify(selected)),
+      connections: JSON.parse(JSON.stringify(internalConnections)),
+    };
+  }, [getSelectedNodeInstances, graph.connections]);
+
+  const pasteClipboard = useCallback(() => {
+    if (!clipboardRef.current || clipboardRef.current.nodes.length === 0) return;
+
+    const { nodes: clipNodes, connections: clipConns } = clipboardRef.current;
+    const idMap = new Map<string, string>();
+
+    const newInstances: NodeInstance[] = clipNodes.map((n: NodeInstance) => {
+      const newId = crypto.randomUUID();
+      idMap.set(n.id, newId);
+      return {
+        ...JSON.parse(JSON.stringify(n)),
+        id: newId,
+        position: { x: n.position.x + 30, y: n.position.y + 30 },
+      };
+    });
+
+    const newConnections: Connection[] = clipConns.map((c: Connection) => ({
+      id: `${idMap.get(c.fromNode)}.${c.fromSocket}->${idMap.get(c.toNode)}.${c.toSocket}`,
+      fromNode: idMap.get(c.fromNode)!,
+      fromSocket: c.fromSocket,
+      toNode: idMap.get(c.toNode)!,
+      toSocket: c.toSocket,
+    }));
+
+    const newFlowNodes: Node<GraphNodeData>[] = newInstances.map((instance) => {
+      const def = registry.get(instance.type);
+      return {
+        id: instance.id,
+        type: "graphNode",
+        position: instance.position,
+        selected: true,
+        data: {
+          nodeId: instance.id,
+          nodeType: instance.type,
+          label: def?.label ?? instance.type,
+          category: def?.category,
+          inputs: def?.dynamicInputs ? def.dynamicInputs([]) : def?.inputs ?? [],
+          outputs: def?.outputs ?? [],
+          params: instance.params,
+        },
+      };
+    });
+
+    const unselectedPrevNodes = nodes.map((n) => ({ ...n, selected: false }));
+    const nextFlowNodes = [...unselectedPrevNodes, ...newFlowNodes];
+
+    const nextGraph: Graph = {
+      nodes: [...graph.nodes, ...newInstances],
+      connections: [...graph.connections, ...newConnections],
+    };
+
+    setNodes(nextFlowNodes);
+    onGraphChange?.(nextGraph);
+
+    if (newInstances.length === 1) {
+      onSelectNode(newInstances[0].id);
+    }
+
+    clipboardRef.current = {
+      nodes: newInstances,
+      connections: newConnections,
+    };
+  }, [graph, nodes, onGraphChange, onSelectNode, registry, setNodes]);
+
+  const duplicateSelected = useCallback(() => {
+    copySelected();
+    pasteClipboard();
+  }, [copySelected, pasteClipboard]);
+
+  const [searchModalOpen, setSearchModalOpen] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      const isInput =
+        activeEl &&
+        (activeEl.tagName === "INPUT" ||
+          activeEl.tagName === "TEXTAREA" ||
+          (activeEl as HTMLElement).isContentEditable);
+
+      if (isInput) return;
+
+      const isCmdOrCtrl = e.metaKey || e.ctrlKey;
+      const isShift = e.shiftKey;
+      const code = e.code;
+
+      if (code === "Space" || e.key === " ") {
+        e.preventDefault();
+        setSearchModalOpen(true);
+      } else if (isCmdOrCtrl && isShift && code === "KeyM") {
+        e.preventDefault();
+        addNode("merge");
+      } else if (isCmdOrCtrl && isShift && code === "KeyT") {
+        e.preventDefault();
+        addNode("transform/matrix-transform");
+      } else if (isCmdOrCtrl && isShift && code === "KeyV") {
+        e.preventDefault();
+        addNode("value/constant");
+      } else if (isCmdOrCtrl && !isShift && code === "KeyT") {
+        e.preventDefault();
+        addNode("transform");
+      } else if (isCmdOrCtrl && !isShift && code === "KeyP") {
+        e.preventDefault();
+        addNode("transform/parent");
+      } else if (isCmdOrCtrl && !isShift && code === "KeyM") {
+        e.preventDefault();
+        addNode("value/math");
+      } else if (isCmdOrCtrl && !isShift && code === "KeyD") {
+        e.preventDefault();
+        duplicateSelected();
+      } else if (isCmdOrCtrl && !isShift && code === "KeyC") {
+        e.preventDefault();
+        copySelected();
+      } else if (isCmdOrCtrl && !isShift && code === "KeyV") {
+        e.preventDefault();
+        pasteClipboard();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [addNode, copySelected, duplicateSelected, pasteClipboard]);
 
   const paletteNodes = useMemo(() => [...registry.values()], [registry]);
 
@@ -345,6 +497,14 @@ export function GraphEditor({ graph, registry, onGraphChange, onSelectNode }: Gr
           <Background color="#2c333f" gap={20} />
         </ReactFlow>
       </div>
+
+      {searchModalOpen && (
+        <NodeSearchModal
+          registry={registry}
+          onSelectNodeType={(type) => addNode(type)}
+          onClose={() => setSearchModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

@@ -193,6 +193,8 @@ export function Viewport({
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.autoClear = false;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     host.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
@@ -355,8 +357,8 @@ export function Viewport({
         -((e.clientY - rect.top) / rect.height) * 2 + 1,
       );
       raycaster.setFromCamera(ndc, camera);
-      const hit = currentObject
-        ? raycaster.intersectObject(currentObject, true).find((i) => i.object.userData.nodeId)
+      const hit = raycaster
+        ? raycaster.intersectObjects(scene.children, true).find((i) => i.object.userData.nodeId)
         : undefined;
       onSelectNodeRef.current((hit?.object.userData.nodeId as string) ?? null);
     }
@@ -379,6 +381,8 @@ export function Viewport({
     resize();
 
     let currentObject: THREE.Object3D | null = null;
+    const activeLights = new Map<string, THREE.Light>();
+    const activeLightHelpers = new Map<string, THREE.Object3D>();
     let clock: ClockState = createClock(epochMs ?? Date.now());
     let frameId = 0;
 
@@ -416,6 +420,77 @@ export function Viewport({
         return;
       }
       latestResults = results;
+
+      // Evaluate and sync ALL 3D Lights & Light Helpers in the scene (standalone or array instances)
+      const detectedLights = new Map<string, { light: THREE.Light; nodeId: string }>();
+      for (const [nodeId, res] of results.entries()) {
+        const obj = (res.light || res.geometry) as THREE.Object3D;
+        if (obj instanceof THREE.Object3D) {
+          obj.traverse((child) => {
+            if (child instanceof THREE.Light) {
+              const ownerId = child.userData.nodeId || nodeId;
+              detectedLights.set(child.uuid, { light: child, nodeId: ownerId });
+            }
+          });
+        }
+      }
+
+      const activeLightUUIDs = new Set<string>();
+      for (const [uuid, { light, nodeId }] of detectedLights.entries()) {
+        activeLightUUIDs.add(uuid);
+
+        if (!activeLights.has(uuid)) {
+          if (!light.parent) {
+            scene.add(light);
+          }
+          activeLights.set(uuid, light);
+
+          if (!outputMode) {
+            let helper: THREE.Object3D | null = null;
+            if (light instanceof THREE.DirectionalLight) {
+              helper = new THREE.DirectionalLightHelper(light, 1, light.color);
+            } else if (light instanceof THREE.PointLight) {
+              helper = new THREE.PointLightHelper(light, 0.5, light.color);
+            } else if (light instanceof THREE.SpotLight) {
+              helper = new THREE.SpotLightHelper(light, light.color);
+            }
+
+            if (helper) {
+              helper.userData.nodeId = nodeId;
+              helper.traverse((c) => {
+                c.userData.nodeId = nodeId;
+              });
+              scene.add(helper);
+              activeLightHelpers.set(uuid, helper);
+            }
+          }
+        }
+
+        const helper = activeLightHelpers.get(uuid);
+        if (helper) {
+          if (typeof (helper as any).update === "function") {
+            (helper as any).update();
+          }
+          if ((helper as any).color) {
+            (helper as any).color.copy(light.color);
+          }
+        }
+      }
+
+      // Cleanup stale lights removed from graph
+      for (const [uuid, light] of activeLights.entries()) {
+        if (!activeLightUUIDs.has(uuid)) {
+          if (light.parent === scene) {
+            scene.remove(light);
+          }
+          activeLights.delete(uuid);
+          const helper = activeLightHelpers.get(uuid);
+          if (helper) {
+            scene.remove(helper);
+            activeLightHelpers.delete(uuid);
+          }
+        }
+      }
 
       // A Camera node drives the camera directly from its Location/Rotation/
       // FOV (or its DLT solve) — but only in the *output* window. That is
@@ -498,17 +573,19 @@ export function Viewport({
         currentObject = nextObject;
       }
 
-      // Move/rotate/scale gizmo: attach to whichever selected mesh resolves
-      // to an upstream Transform node, detach otherwise. Frozen mid-drag —
-      // there's nothing to re-resolve (selection can't change while
-      // dragging, see suppressNextClick) and re-attaching the same object
-      // every frame would be wasted traversal for no behavior change.
+      // Move/rotate/scale gizmo: attach to selected mesh or Light
       if (transformControls && !transformControls.dragging) {
         let targetObject: THREE.Object3D | null = null;
-        if (selectedNodeIdRef.current && currentObject) {
-          currentObject.traverse((obj) => {
-            if (!targetObject && obj.userData.nodeId === selectedNodeIdRef.current) targetObject = obj;
-          });
+        if (selectedNodeIdRef.current) {
+          if (currentObject) {
+            currentObject.traverse((obj) => {
+              if (!targetObject && obj.userData.nodeId === selectedNodeIdRef.current) targetObject = obj;
+            });
+          }
+          if (!targetObject) {
+            const light = activeLights.get(selectedNodeIdRef.current);
+            if (light) targetObject = light;
+          }
         }
         const gizmoTarget = targetObject ? resolveGizmoTarget(graphRef.current, selectedNodeIdRef.current!) : null;
 

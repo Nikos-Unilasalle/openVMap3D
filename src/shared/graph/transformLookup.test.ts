@@ -82,6 +82,16 @@ describe("resolveGizmoTarget", () => {
 
 describe("GIZMO_SELECTABLE_TYPES", () => {
   it("lists the primitive object node types", () => {
-    expect(GIZMO_SELECTABLE_TYPES).toEqual(["object/box", "object/plane", "object/sphere"]);
+    expect(GIZMO_SELECTABLE_TYPES).toEqual([
+      "object/box",
+      "object/plane",
+      "object/sphere",
+      "object/obj",
+      "object/text",
+      "texture/plane",
+      "light/directional",
+      "light/point",
+      "light/spot",
+    ]);
   });
 });

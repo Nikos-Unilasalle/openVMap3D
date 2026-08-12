@@ -63,4 +63,29 @@ describe("INSTANCE MANIPULATION NODES", () => {
     const group = singleRes.geometry as THREE.Group;
     expect(group.children.length).toBe(1);
   });
+
+  it("SET_INSTANCE_COLOR_NODE colors THREE.Light instances individually from a List", () => {
+    const light = new THREE.PointLight(0xffffff, 2.0);
+    const arrayRes = ARRAY_NODE.evaluate({ geometry: light }, { count: 2, spacing: 5 }, CTX);
+
+    const colors = [new THREE.Color(0xff0000), new THREE.Color(0x00ff00)];
+    const coloredRes = SET_INSTANCE_COLOR_NODE.evaluate(
+      { geometry: arrayRes.geometry, colors },
+      {},
+      CTX
+    );
+
+    const group = coloredRes.geometry as THREE.Group;
+    expect(group.children.length).toBe(2);
+
+    const light0 = (group.children[0] as THREE.Group).children[0] as THREE.PointLight;
+    expect(light0).toBeInstanceOf(THREE.PointLight);
+    expect(light0.color.r).toBe(1);
+    expect(light0.color.g).toBe(0);
+
+    const light1 = (group.children[1] as THREE.Group).children[0] as THREE.PointLight;
+    expect(light1).toBeInstanceOf(THREE.PointLight);
+    expect(light1.color.g).toBe(1);
+    expect(light1.color.r).toBe(0);
+  });
 });

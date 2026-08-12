@@ -21,6 +21,9 @@ import { RANDOM_LIST_NODE, RANDOM_MATRIX_NODE, RANDOM_VALUE_NODE, RANDOM_VECTOR_
 import { KEYBOARD_NODE } from "./keyboard";
 import { ARRAY_NODE } from "./array";
 import { GET_INSTANCE_NODE, SET_INSTANCE_COLOR_NODE, SET_INSTANCE_TRANSFORM_NODE } from "./instance";
+import { LIGHT_AMBIENT_NODE, LIGHT_DIRECTIONAL_NODE, LIGHT_POINT_NODE, LIGHT_SPOT_NODE } from "./light";
+import { OBJECT_OBJ_NODE } from "./objLoader";
+import { TEXTURE_IMAGE_NODE, TEXTURE_PLANE_NODE, TEXTURE_TRANSFORM_NODE } from "./texture";
 import {
   TEXT_CASE_NODE,
   TEXT_COMPARE_NODE,
@@ -71,11 +74,19 @@ export const STARTER_NODES = [
   OBJECT_SPHERE_NODE,
   OBJECT_TEXT_NODE,
   OBJECT_BAR_GRAPH_NODE,
+  OBJECT_OBJ_NODE,
+  TEXTURE_IMAGE_NODE,
+  TEXTURE_PLANE_NODE,
+  TEXTURE_TRANSFORM_NODE,
   MERGE_NODE,
   ARRAY_NODE,
   SET_INSTANCE_COLOR_NODE,
   SET_INSTANCE_TRANSFORM_NODE,
   GET_INSTANCE_NODE,
+  LIGHT_DIRECTIONAL_NODE,
+  LIGHT_POINT_NODE,
+  LIGHT_SPOT_NODE,
+  LIGHT_AMBIENT_NODE,
   RENDER_NODE,
   COMPARE_NODE,
   BOOLEAN_LOGIC_NODE,
@@ -135,3 +146,6 @@ export * from "./instance";
 export * from "./camera";
 export * from "./grid";
 export * from "./roomCorner";
+export * from "./light";
+export * from "./objLoader";
+export * from "./texture";

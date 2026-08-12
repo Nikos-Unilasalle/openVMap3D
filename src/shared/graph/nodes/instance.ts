@@ -71,8 +71,11 @@ export const SET_INSTANCE_COLOR_NODE: NodeDefinition = {
         ? asColor(colorsList[i % colorsList.length], defaultColor)
         : defaultColor;
 
-      // Apply color to all meshes inside this instance
+      // Apply color to all meshes and lights inside this instance
       clone.traverse((child) => {
+        if (child instanceof THREE.Light) {
+          child.color.copy(targetColor);
+        }
         if (child instanceof THREE.Mesh && child.material) {
           child.material = (child.material as THREE.Material).clone();
           if ("color" in child.material) {
