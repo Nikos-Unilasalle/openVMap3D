@@ -37,6 +37,17 @@ const ADD: NodeDefinition = {
   evaluate: (inputs) => ({ out: (Number(inputs.a) || 0) + (Number(inputs.b) || 0) }),
 };
 
+/** Reads its input directly (not via the `params` argument) — proves the fallback for an unconnected socket comes from defaultParams, not a stale copy of it. */
+const DEFAULTED: NodeDefinition = {
+  type: "test/defaulted",
+  label: "Defaulted",
+  category: "math",
+  inputs: [{ id: "a", label: "A", type: "value" }],
+  outputs: [{ id: "out", label: "Out", type: "value" }],
+  defaultParams: { a: 9 },
+  evaluate: (inputs) => ({ out: Number(inputs.a) }),
+};
+
 const THROWS: NodeDefinition = {
   type: "test/throws",
   label: "Throws",
@@ -49,7 +60,7 @@ const THROWS: NodeDefinition = {
   },
 };
 
-const REGISTRY = createRegistry([CONST, ADD, THROWS]);
+const REGISTRY = createRegistry([CONST, ADD, DEFAULTED, THROWS]);
 
 describe("topoSort", () => {
   test("orders a simple chain source-first", () => {
@@ -111,6 +122,14 @@ describe("evaluateGraph", () => {
     const result = evaluateGraph(graph, REGISTRY, CTX);
 
     expect(result.get("c")?.out).toBe(15);
+  });
+
+  test("an unconnected input with no instance override falls back to defaultParams, not undefined", () => {
+    const graph: Graph = { nodes: [node("a", "test/defaulted")], connections: [] };
+
+    const result = evaluateGraph(graph, REGISTRY, CTX);
+
+    expect(result.get("a")?.out).toBe(9);
   });
 
   test("an unknown node type is skipped, not fatal to the rest of the graph", () => {

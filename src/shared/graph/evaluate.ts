@@ -84,16 +84,20 @@ export function evaluateGraph(graph: Graph, registry: NodeRegistry, ctx: EvalCon
       continue;
     }
 
+    const params = { ...def.defaultParams, ...instance.params };
+    const nodeConnections = graph.connections.filter((c) => c.toNode === nodeId);
+    const socketDefs = def.dynamicInputs ? def.dynamicInputs(nodeConnections) : def.inputs;
     const inputs: Record<string, unknown> = {};
-    for (const socket of def.inputs) {
+    for (const socket of socketDefs) {
       const conn = connectionInto(graph.connections, nodeId, socket.id);
-      inputs[socket.id] = conn
-        ? results.get(conn.fromNode)?.[conn.fromSocket]
-        : instance.params[socket.id];
+      // Unconnected fallback must come from the *merged* params, not raw
+      // instance.params — a freshly placed node (params: {}) has nothing of
+      // its own yet, and every unconnected input silently read as undefined
+      // instead of its declared defaultParams value.
+      inputs[socket.id] = conn ? results.get(conn.fromNode)?.[conn.fromSocket] : params[socket.id];
     }
 
     try {
-      const params = { ...def.defaultParams, ...instance.params };
       results.set(nodeId, def.evaluate(inputs, params, { ...ctx, nodeId }));
     } catch (err) {
       console.error(`node ${nodeId} (${instance.type}) failed to evaluate`, err);

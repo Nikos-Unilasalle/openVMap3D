@@ -3,6 +3,7 @@ export type NodeCategory =
   | "structure"
   | "transform"
   | "math"
+  | "converter"
   | "time"
   | "logic"
   | "io"
@@ -16,6 +17,7 @@ export const CATEGORY_ORDER: NodeCategory[] = [
   "structure",
   "transform",
   "math",
+  "converter",
   "time",
   "logic",
   "io",
@@ -29,6 +31,7 @@ export const CATEGORY_LABEL: Record<NodeCategory, string> = {
   structure: "Structure",
   transform: "Transform",
   math: "Math",
+  converter: "Converter",
   time: "Time / Animation",
   logic: "Logic",
   io: "I/O",
@@ -48,6 +51,7 @@ export const CATEGORY_COLOR: Record<NodeCategory, string> = {
   structure: "#38bdf8",
   transform: "#a855f7",
   math: "#f2c14e",
+  converter: "#10b981",
   time: "#ec4899",
   logic: "#fb923c",
   io: "#6366f1",

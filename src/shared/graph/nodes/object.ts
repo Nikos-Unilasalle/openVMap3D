@@ -55,3 +55,78 @@ export const OBJECT_BOX_NODE: NodeDefinition = {
     return { geometry: mesh };
   },
 };
+
+function planeMesh(nodeId: string): THREE.Mesh {
+  const existing = meshCache.get(nodeId);
+  if (existing) return existing;
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, side: THREE.DoubleSide }),
+  );
+  meshCache.set(nodeId, mesh);
+  return mesh;
+}
+
+/** 2D Plane polygon primitive (flat z=0 quad in 3D). */
+export const OBJECT_PLANE_NODE: NodeDefinition = {
+  type: "object/plane",
+  label: "Plane",
+  category: "structure",
+  inputs: [
+    { id: "matrix", label: "Matrix", type: "matrix" },
+    { id: "color", label: "Color", type: "color" },
+  ],
+  outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
+  defaultParams: { color: new THREE.Color(0xffffff) },
+  paramFields: [{ id: "color", label: "Color (fallback)", kind: "color" }],
+  evaluate: (inputs, params, ctx) => {
+    const mesh = planeMesh(ctx.nodeId);
+
+    const matrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
+    mesh.matrixAutoUpdate = false;
+    mesh.matrix.copy(matrix);
+
+    const color = inputs.color instanceof THREE.Color ? inputs.color : (params.color as THREE.Color);
+    (mesh.material as THREE.MeshStandardMaterial).color.copy(color);
+
+    return { geometry: mesh };
+  },
+};
+
+function sphereMesh(nodeId: string): THREE.Mesh {
+  const existing = meshCache.get(nodeId);
+  if (existing) return existing;
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.5, 32, 16),
+    new THREE.MeshStandardMaterial({ color: 0xffffff }),
+  );
+  meshCache.set(nodeId, mesh);
+  return mesh;
+}
+
+/** Sphere 3D geometry primitive. */
+export const OBJECT_SPHERE_NODE: NodeDefinition = {
+  type: "object/sphere",
+  label: "Sphere",
+  category: "structure",
+  inputs: [
+    { id: "matrix", label: "Matrix", type: "matrix" },
+    { id: "color", label: "Color", type: "color" },
+  ],
+  outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
+  defaultParams: { color: new THREE.Color(0xffffff) },
+  paramFields: [{ id: "color", label: "Color (fallback)", kind: "color" }],
+  evaluate: (inputs, params, ctx) => {
+    const mesh = sphereMesh(ctx.nodeId);
+
+    const matrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
+    mesh.matrixAutoUpdate = false;
+    mesh.matrix.copy(matrix);
+
+    const color = inputs.color instanceof THREE.Color ? inputs.color : (params.color as THREE.Color);
+    (mesh.material as THREE.MeshStandardMaterial).color.copy(color);
+
+    return { geometry: mesh };
+  },
+};
+

@@ -69,3 +69,53 @@ export const DECOMPOSE_MATRIX_NODE: NodeDefinition = {
     return { location, rotation: new THREE.Vector3(euler.x, euler.y, euler.z), scale };
   },
 };
+
+/** Matrix parent node — multiplies Parent Matrix * Child Matrix. */
+export const PARENT_NODE: NodeDefinition = {
+  type: "transform/parent",
+  label: "Parent",
+  category: "transform",
+  inputs: [
+    { id: "parent", label: "Parent", type: "matrix" },
+    { id: "child", label: "Child", type: "matrix" },
+  ],
+  outputs: [{ id: "matrix", label: "Matrix", type: "matrix" }],
+  defaultParams: {},
+  evaluate: (inputs) => {
+    const parent = inputs.parent instanceof THREE.Matrix4 ? inputs.parent : new THREE.Matrix4();
+    const child = inputs.child instanceof THREE.Matrix4 ? inputs.child : new THREE.Matrix4();
+    const matrix = new THREE.Matrix4().multiplyMatrices(parent, child);
+    return { matrix };
+  },
+};
+
+const DEFAULT_TARGET = new THREE.Vector3(0, 0, -1);
+const DEFAULT_UP = new THREE.Vector3(0, 1, 0);
+
+/** Look At node — constructs a matrix orienting Eye towards Target with an Up vector. */
+export const LOOK_AT_NODE: NodeDefinition = {
+  type: "transform/look-at",
+  label: "Look At",
+  category: "transform",
+  inputs: [
+    { id: "eye", label: "Eye", type: "vector" },
+    { id: "target", label: "Target", type: "vector" },
+    { id: "up", label: "Up", type: "vector" },
+  ],
+  outputs: [{ id: "matrix", label: "Matrix", type: "matrix" }],
+  defaultParams: { eye: ZERO.clone(), target: DEFAULT_TARGET.clone(), up: DEFAULT_UP.clone() },
+  paramFields: [
+    { id: "eye", label: "Eye (fallback)", kind: "vector" },
+    { id: "target", label: "Target (fallback)", kind: "vector" },
+    { id: "up", label: "Up (fallback)", kind: "vector" },
+  ],
+  evaluate: (inputs) => {
+    const eye = asVector3(inputs.eye, ZERO);
+    const target = asVector3(inputs.target, DEFAULT_TARGET);
+    const up = asVector3(inputs.up, DEFAULT_UP);
+
+    const matrix = new THREE.Matrix4().lookAt(eye, target, up);
+    return { matrix };
+  },
+};
+
