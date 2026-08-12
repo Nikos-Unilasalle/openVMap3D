@@ -94,9 +94,16 @@ on its param panel when selected. Use one of these exactly (from
 | `particles`   | Particles           |
 | `post`        | Post-render 2D      |
 | `calibration` | Calibration         |
+| `converter`   | Converter            |
 
 Pick the one matching BIBLE.md's catalog section for your node — if BIBLE.md
-lists it under "Logic", use `category: "logic"`.
+lists it under "Logic", use `category: "logic"`. `converter` is the one
+exception: it exists for generic cross-type conversion utilities (Value ↔
+Vector ↔ Color) that aren't in BIBLE.md's catalog at all. If your node IS in
+BIBLE.md under a specific section (e.g. "Compose/Decompose Matrix" is listed
+under Transform), use that section's category — don't recategorize an
+existing node into `converter` just because it superficially "converts"
+something.
 
 ## 4. The socket types
 
@@ -119,17 +126,43 @@ socket carrying `0` or `1` — use `toBoolean`/`fromBoolean` from
 The editor only lets you connect a wire between two sockets of the SAME
 type — that's enforced automatically, you don't need to check it yourself.
 
-## 5. `ctx` — what your node knows about "now"
+## 5. Dynamic input count (rare — skip unless your node explicitly needs it)
+
+Most nodes have a fixed `inputs` list. A few (Merge is the example — see
+`merge.ts`) need the number of inputs to grow as the node gets wired up:
+one empty socket at first, and wiring it creates a new empty one below it,
+forever. That's `dynamicInputs`:
+
+```ts
+import { growingSockets } from "../dynamicInputs";
+
+export const MY_NODE: NodeDefinition = {
+  // ...
+  inputs: [{ id: "in0", label: "In 1", type: "geometry" }],  // the starting state, 0 connections
+  dynamicInputs: (connections) =>
+    growingSockets(connections, "in", (i) => ({ id: `in${i}`, label: `In ${i + 1}`, type: "geometry" })),
+  evaluate: (inputs) => {
+    // inputs has whatever keys are currently connected — in0, in1, ... —
+    // iterate Object.values(inputs), don't assume a fixed set of keys.
+  },
+};
+```
+
+Only add this if your node's whole point is "however many things get wired
+in" (a mixer, a combiner, a fan-in). If it has a known fixed set of inputs,
+just use `inputs` normally — don't reach for this.
+
+## 6. `ctx` — what your node knows about "now"
 
 ```ts
 interface EvalContext {
   time: number;    // seconds since the graph started (deterministic, not wall-clock)
   step: number;     // frame count since start (whole number)
-  nodeId: string;    // this specific node instance's id — see §6
+  nodeId: string;    // this specific node instance's id — see §7
 }
 ```
 
-## 6. If your node needs a GPU resource (mesh, texture, render target)
+## 7. If your node needs a GPU resource (mesh, texture, render target)
 
 Most nodes don't need this section — skip it unless you're building
 something like Object, Particles, or a texture generator.
@@ -155,12 +188,12 @@ in place (this is the one place mutation is correct — you own this object,
 nothing else does), and return it. Note in a comment that the cache has no
 delete-node cleanup yet (known gap, don't try to solve it in your node).
 
-## 7. Register your node
+## 8. Register your node
 
 Open `src/shared/graph/nodes/index.ts`. Add your node to `STARTER_NODES`,
 and if you made a new file, add an `export * from "./yourfile";` line too.
 
-## 8. Write a test
+## 9. Write a test
 
 Open `src/shared/graph/nodes/nodes.test.ts` (or add a new `<file>.test.ts`
 next to your node file, same pattern). Use this `CTX`:
@@ -190,7 +223,7 @@ describe("MY_NODE", () => {
 });
 ```
 
-## 9. Before you say you're done
+## 10. Before you say you're done
 
 Run both, from the repo root, and both must be clean:
 
@@ -201,7 +234,7 @@ npx vitest run
 
 If either fails, fix it — don't hand back code that doesn't pass these.
 
-## 10. Style rules (project-wide, apply to your node too)
+## 11. Style rules (project-wide, apply to your node too)
 
 - `camelCase` for variables/functions, `PascalCase` only for types.
 - No `any`. Cast with `instanceof` checks or `Number(...)`/`String(...)`,

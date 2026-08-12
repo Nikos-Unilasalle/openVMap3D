@@ -57,6 +57,15 @@ export interface NodeDefinition {
   defaultParams: Record<string, unknown>;
   /** See ParamFieldDef — omit for a node with nothing worth exposing in the panel. */
   paramFields?: ParamFieldDef[];
+  /**
+   * When present, overrides `inputs` for a specific instance based on its
+   * own current connections — for a node like Merge whose socket count
+   * grows as wires are added. Given just this instance's own connections
+   * (already filtered to `toNode === this instance`), returns the sockets
+   * to show/evaluate right now. See `dynamicInputs.ts`'s `growingSockets`
+   * for the standard "always exactly one free trailing socket" behavior.
+   */
+  dynamicInputs?: (connections: Connection[]) => SocketDef[];
   evaluate: (
     inputs: Record<string, unknown>,
     params: Record<string, unknown>,

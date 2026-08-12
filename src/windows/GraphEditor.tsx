@@ -57,6 +57,37 @@ function toFlowEdges(graph: Graph, flowNodes: Node<GraphNodeData>[]): Edge[] {
   }));
 }
 
+/**
+ * A node whose def has `dynamicInputs` (e.g. Merge) shows a socket list
+ * derived from its own live connections, not a fixed `def.inputs` — this
+ * recomputes that list for every such node from the current flow edges.
+ * Run after anything that adds/removes an edge, so a just-wired trailing
+ * socket's replacement appears immediately, in the same state update.
+ */
+function refreshDynamicSockets(
+  flowNodes: Node<GraphNodeData>[],
+  flowEdges: Edge[],
+  baseNodes: NodeInstance[],
+  registry: NodeRegistry,
+): Node<GraphNodeData>[] {
+  return flowNodes.map((flowNode) => {
+    const instance = baseNodes.find((n) => n.id === flowNode.id);
+    const def = instance && registry.get(instance.type);
+    if (!def?.dynamicInputs) return flowNode;
+
+    const nodeConnections: Connection[] = flowEdges
+      .filter((e) => e.target === flowNode.id)
+      .map((e) => ({
+        id: e.id,
+        fromNode: e.source,
+        fromSocket: e.sourceHandle ?? "",
+        toNode: e.target,
+        toSocket: e.targetHandle ?? "",
+      }));
+    return { ...flowNode, data: { ...flowNode.data, inputs: def.dynamicInputs(nodeConnections) } };
+  });
+}
+
 /** Positions come from the live xyflow nodes; everything else (type, params) is untouched — this slice never adds/removes/reparams a node, only moves it and rewires it. */
 function toGraph(baseNodes: NodeInstance[], flowNodes: Node<GraphNodeData>[], flowEdges: Edge[]): Graph {
   const nodes = baseNodes.map((n) => {
@@ -91,7 +122,10 @@ interface GraphEditorProps {
  * slice — this one can grow the graph but not shrink it.
  */
 export function GraphEditor({ graph, registry, onGraphChange, onSelectNode }: GraphEditorProps) {
-  const initialNodes = useMemo(() => toFlowNodes(graph, registry), [graph, registry]);
+  const initialNodes = useMemo(() => {
+    const raw = toFlowNodes(graph, registry);
+    return refreshDynamicSockets(raw, toFlowEdges(graph, raw), graph.nodes, registry);
+  }, [graph, registry]);
   const [nodes, setNodes] = useNodesState(initialNodes);
   const [edges, setEdges] = useEdgesState(useMemo(() => toFlowEdges(graph, initialNodes), [graph, initialNodes]));
 
@@ -146,21 +180,25 @@ export function GraphEditor({ graph, registry, onGraphChange, onSelectNode }: Gr
         targetHandle: connection.targetHandle,
         style: { stroke: edgeColor(nodes, connection.source!, connection.sourceHandle!), strokeWidth: EDGE_STROKE_WIDTH },
       };
-      const next = [...withoutConflict, newEdge];
-      setEdges(next);
-      commit(nodes, next);
+      const nextEdges = [...withoutConflict, newEdge];
+      const nextNodes = refreshDynamicSockets(nodes, nextEdges, graph.nodes, registry);
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      commit(nextNodes, nextEdges);
     },
-    [commit, edges, nodes, setEdges],
+    [commit, edges, graph.nodes, nodes, registry, setEdges, setNodes],
   );
 
   const onEdgeContextMenu: EdgeMouseHandler = useCallback(
     (event, edge) => {
       event.preventDefault();
-      const next = applyEdgeChanges([{ type: "remove", id: edge.id }], edges);
-      setEdges(next);
-      commit(nodes, next);
+      const nextEdges = applyEdgeChanges([{ type: "remove", id: edge.id }], edges);
+      const nextNodes = refreshDynamicSockets(nodes, nextEdges, graph.nodes, registry);
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      commit(nextNodes, nextEdges);
     },
-    [commit, edges, nodes, setEdges],
+    [commit, edges, graph.nodes, nodes, registry, setEdges, setNodes],
   );
 
   const onNodeClick = useCallback((_: unknown, node: Node<GraphNodeData>) => onSelectNode(node.id), [onSelectNode]);
@@ -179,7 +217,12 @@ export function GraphEditor({ graph, registry, onGraphChange, onSelectNode }: Gr
         id,
         type: "graphNode",
         position,
-        data: { label: def.label, category: def.category, inputs: def.inputs, outputs: def.outputs },
+        data: {
+          label: def.label,
+          category: def.category,
+          inputs: def.dynamicInputs ? def.dynamicInputs([]) : def.inputs,
+          outputs: def.outputs,
+        },
       };
       const nextNodes = [...nodes, flowNode];
       setNodes(nextNodes);
