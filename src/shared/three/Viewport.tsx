@@ -241,7 +241,18 @@ export function Viewport({
 
       transformControls.addEventListener("objectChange", () => {
         const object = transformControls.object;
-        if (!object || !attachedTransformNodeId || !onTransformChangeRef.current) return;
+        if (!object) return;
+
+        // object.ts sets matrixAutoUpdate = false on every graph-driven mesh
+        // (so it can hold an exact matrix.copy() from the graph), which also
+        // means nothing recomputes .matrix from position/quaternion/scale
+        // automatically. TransformControls mutates those three directly but
+        // never calls this itself — without it the drag was inert on
+        // screen: the mesh only ever snapped to its new pose once dragging
+        // ended and evaluateGraph's own matrix.copy() ran again next frame.
+        object.updateMatrix();
+
+        if (!attachedTransformNodeId || !onTransformChangeRef.current) return;
         const euler = new THREE.Euler().setFromQuaternion(object.quaternion);
         onTransformChangeRef.current(attachedTransformNodeId, {
           location: object.position.clone(),
