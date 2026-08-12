@@ -4,7 +4,9 @@ import { DEFAULT_REGISTRY } from "./shared/graph/nodes";
 import { findRenderNodeId } from "./shared/graph/nodes/render";
 import { Connection, Graph, NodeInstance } from "./shared/graph/types";
 import { broadcastGraph, startBroadcasting } from "./shared/ipc";
-import { Viewport } from "./shared/three/Viewport";
+import { TransformPatch, Viewport } from "./shared/three/Viewport";
+import "./shared/three/viewport.css";
+import { findUpstreamTransformNode, GIZMO_SELECTABLE_TYPES } from "./shared/graph/transformLookup";
 import { CalibrationOverlay } from "./windows/CalibrationOverlay";
 import { GraphEditor } from "./windows/GraphEditor";
 import { OutputWindow } from "./windows/OutputWindow";
@@ -77,6 +79,12 @@ function MainEditor() {
   // broadcast alongside the graph so the operator can align against the
   // real room through the actual projection, not just the editor preview.
   const calibratingNodeId = selectedInstance && selectedInstance.type === CAMERA_NODE.type ? selectedInstance.id : null;
+  // A selectable object with nothing to drag — worth telling the operator
+  // why the gizmo didn't show up, rather than leaving it a silent no-op.
+  const needsTransformHint =
+    !!selectedInstance &&
+    GIZMO_SELECTABLE_TYPES.includes(selectedInstance.type) &&
+    findUpstreamTransformNode(graph, selectedInstance.id) === null;
 
   // Handshake responder: an output window that opens after this one already
   // has state emits "output:ready" on mount; this answers with current state.
@@ -126,6 +134,21 @@ function MainEditor() {
     });
   };
 
+  // Same functional-updater reasoning as onParamChange, but writing all
+  // three fields in one setGraph call rather than three separate
+  // onParamChange calls — the gizmo fires this every frame of a drag, and
+  // three sequential setGraph calls would hit the exact stale-closure
+  // overwrite bug that onParamChange's own comment documents, just via a
+  // different call site.
+  const onTransformChange = (transformNodeId: string, patch: TransformPatch) => {
+    setGraph((prevGraph) => ({
+      ...prevGraph,
+      nodes: prevGraph.nodes.map((n) =>
+        n.id === transformNodeId ? { ...n, params: { ...n.params, ...patch } } : n,
+      ),
+    }));
+  };
+
   const onSplitHandleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     draggingSplit.current = true;
@@ -167,7 +190,13 @@ function MainEditor() {
           registry={DEFAULT_REGISTRY}
           renderNodeId={findRenderNodeId(graph) ?? ""}
           epochMs={epochMs}
+          selectedNodeId={selectedNodeId}
+          onSelectNode={setSelectedNodeId}
+          onTransformChange={onTransformChange}
         />
+        {needsTransformHint && (
+          <div className="viewport-hint">Wire a Transform node into this object's Matrix to move it</div>
+        )}
         {selectedInstance && selectedInstance.type === CAMERA_NODE.type && (
           <CalibrationOverlay
             graph={graph}

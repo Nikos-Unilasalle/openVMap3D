@@ -18,6 +18,19 @@ export interface EvalContext {
    * cleaned up separately). Nodes that don't own external resources ignore it.
    */
   nodeId: string;
+  /**
+   * The node whose mesh is currently being dragged by the viewport's
+   * TransformControls gizmo, if any — the one narrow, documented exception
+   * to `evaluate` being otherwise pure. The graph re-evaluates every node
+   * every frame (see evaluate.ts), which normally means an Object node's
+   * mesh gets its matrix overwritten from the graph on the very next frame
+   * — fine, except *during* a gizmo drag that overwrite would fight the
+   * drag and the mesh would flicker back to its pre-drag pose 60 times a
+   * second. A node whose id matches this one skips that overwrite for the
+   * frame, leaving whatever the gizmo just set. Ignored by nodes that don't
+   * own a mesh.
+   */
+  liveEditNodeId?: string | null;
 }
 
 /**

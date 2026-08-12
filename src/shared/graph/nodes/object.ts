@@ -24,6 +24,10 @@ function boxMesh(nodeId: string): THREE.Mesh {
     new THREE.BoxGeometry(1, 1, 1),
     new THREE.MeshStandardMaterial({ color: 0xffffff }),
   );
+  // Lets the viewport's click-to-select raycast identify which graph node a
+  // hit mesh belongs to (see Viewport.tsx) — only set on the interactively
+  // selectable primitives (box/plane/sphere), not on every geometry node.
+  mesh.userData.nodeId = nodeId;
   meshCache.set(nodeId, mesh);
   return mesh;
 }
@@ -48,9 +52,14 @@ export const OBJECT_BOX_NODE: NodeDefinition = {
   evaluate: (inputs, params, ctx) => {
     const mesh = boxMesh(ctx.nodeId);
 
-    const matrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
-    mesh.matrixAutoUpdate = false;
-    mesh.matrix.copy(matrix);
+    // While this node's mesh is being dragged by the gizmo, leave its matrix
+    // alone — otherwise this frame's graph-driven copy would immediately
+    // overwrite whatever the drag just set (see EvalContext.liveEditNodeId).
+    if (ctx.nodeId !== ctx.liveEditNodeId) {
+      const matrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
+      mesh.matrixAutoUpdate = false;
+      mesh.matrix.copy(matrix);
+    }
 
     const color = inputs.color instanceof THREE.Color ? inputs.color : (params.color as THREE.Color);
     (mesh.material as THREE.MeshStandardMaterial).color.copy(color);
@@ -66,6 +75,7 @@ function planeMesh(nodeId: string): THREE.Mesh {
     new THREE.PlaneGeometry(1, 1),
     new THREE.MeshStandardMaterial({ color: 0xffffff, side: THREE.DoubleSide }),
   );
+  mesh.userData.nodeId = nodeId;
   meshCache.set(nodeId, mesh);
   return mesh;
 }
@@ -85,9 +95,11 @@ export const OBJECT_PLANE_NODE: NodeDefinition = {
   evaluate: (inputs, params, ctx) => {
     const mesh = planeMesh(ctx.nodeId);
 
-    const matrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
-    mesh.matrixAutoUpdate = false;
-    mesh.matrix.copy(matrix);
+    if (ctx.nodeId !== ctx.liveEditNodeId) {
+      const matrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
+      mesh.matrixAutoUpdate = false;
+      mesh.matrix.copy(matrix);
+    }
 
     const color = inputs.color instanceof THREE.Color ? inputs.color : (params.color as THREE.Color);
     (mesh.material as THREE.MeshStandardMaterial).color.copy(color);
@@ -103,6 +115,7 @@ function sphereMesh(nodeId: string): THREE.Mesh {
     new THREE.SphereGeometry(0.5, 32, 16),
     new THREE.MeshStandardMaterial({ color: 0xffffff }),
   );
+  mesh.userData.nodeId = nodeId;
   meshCache.set(nodeId, mesh);
   return mesh;
 }
@@ -122,9 +135,11 @@ export const OBJECT_SPHERE_NODE: NodeDefinition = {
   evaluate: (inputs, params, ctx) => {
     const mesh = sphereMesh(ctx.nodeId);
 
-    const matrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
-    mesh.matrixAutoUpdate = false;
-    mesh.matrix.copy(matrix);
+    if (ctx.nodeId !== ctx.liveEditNodeId) {
+      const matrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
+      mesh.matrixAutoUpdate = false;
+      mesh.matrix.copy(matrix);
+    }
 
     const color = inputs.color instanceof THREE.Color ? inputs.color : (params.color as THREE.Color);
     (mesh.material as THREE.MeshStandardMaterial).color.copy(color);

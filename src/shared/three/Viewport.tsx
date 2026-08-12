@@ -1,11 +1,21 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { ClockState, createClock, tickClock } from "../graph/clock";
 import { evaluateGraph } from "../graph/evaluate";
 import { CAMERA_NODE } from "../graph/nodes/camera";
+import { findUpstreamTransformNode } from "../graph/transformLookup";
 import { Graph, NodeRegistry } from "../graph/types";
 import "./viewport.css";
+
+export type TransformGizmoMode = "translate" | "rotate" | "scale";
+
+export interface TransformPatch {
+  location: THREE.Vector3;
+  rotation: THREE.Vector3;
+  scale: THREE.Vector3;
+}
 
 interface ViewportProps {
   graph: Graph;
@@ -19,6 +29,12 @@ interface ViewportProps {
    * — just the rendered scene. Default false (the editor's own viewport).
    */
   outputMode?: boolean;
+  /** Drives which object shows a transform gizmo — shared with GraphEditor's own node selection (see App.tsx), so clicking an object here and clicking its node in the graph select the same thing. */
+  selectedNodeId?: string | null;
+  /** Fired on a click (not a drag) that hits a selectable mesh, or null on an empty-space click — mirrors GraphEditor's onSelectNode. Omit to disable click-to-select and the gizmo entirely. */
+  onSelectNode?: (nodeId: string | null) => void;
+  /** Fired continuously while dragging the gizmo, once the selected object's `matrix` input traces back to a plain Transform node (see transformLookup.ts) — nothing fires for an object with no such upstream node. */
+  onTransformChange?: (transformNodeId: string, patch: TransformPatch) => void;
 }
 
 /** Create text canvas sprite for corner 3D axes labels ("X", "Y", "Z") */
@@ -131,7 +147,16 @@ function buildMainSceneGridAndAxes(): THREE.Group {
   return group;
 }
 
-export function Viewport({ graph, registry, renderNodeId, epochMs, outputMode = false }: ViewportProps) {
+export function Viewport({
+  graph,
+  registry,
+  renderNodeId,
+  epochMs,
+  outputMode = false,
+  selectedNodeId = null,
+  onSelectNode,
+  onTransformChange,
+}: ViewportProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef(graph);
   graphRef.current = graph;
@@ -140,6 +165,15 @@ export function Viewport({ graph, registry, renderNodeId, epochMs, outputMode = 
   const renderNodeIdRef = useRef(renderNodeId);
   renderNodeIdRef.current = renderNodeId;
   const resetCameraRef = useRef<() => void>(() => {});
+  const selectedNodeIdRef = useRef(selectedNodeId);
+  selectedNodeIdRef.current = selectedNodeId;
+  const onSelectNodeRef = useRef(onSelectNode);
+  onSelectNodeRef.current = onSelectNode;
+  const onTransformChangeRef = useRef(onTransformChange);
+  onTransformChangeRef.current = onTransformChange;
+  const [transformMode, setTransformMode] = useState<TransformGizmoMode>("translate");
+  const transformModeRef = useRef(transformMode);
+  transformModeRef.current = transformMode;
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -179,6 +213,82 @@ export function Viewport({ graph, registry, renderNodeId, epochMs, outputMode = 
     // Gizmo Corner Scene & Camera — editor-only, never baked into the projected output
     const gizmo = outputMode ? null : createGizmoScene();
 
+    // Click-to-select + move/rotate/scale gizmo — editor-only, same reason
+    // as everything else gated on outputMode: the output window shows the
+    // projected content, not editing chrome. `attachedObjectNodeId` and
+    // `attachedTransformNodeId` are plain closure variables, not refs —
+    // nothing outside this effect needs to read them, they only pass
+    // information from the per-frame attach/detach check below to the
+    // 'objectChange' listener and to tick()'s liveEditNodeId computation.
+    const raycaster = outputMode ? null : new THREE.Raycaster();
+    const transformControls = outputMode ? null : new TransformControls(camera, renderer.domElement);
+    let attachedObjectNodeId: string | null = null;
+    let attachedTransformNodeId: string | null = null;
+
+    if (transformControls) {
+      scene.add(transformControls.getHelper());
+
+      // The textbook three.js idiom: disable orbit for the whole gesture the
+      // instant a gizmo handle is grabbed, synchronously within the same
+      // pointerdown dispatch OrbitControls itself is listening to — by the
+      // time OrbitControls would act on a subsequent pointermove, `enabled`
+      // is already false. tick()'s own loop (below) is what keeps it false
+      // for the rest of the drag, since this only fires on state *changes*.
+      transformControls.addEventListener("dragging-changed", (event) => {
+        controls.enabled = !event.value;
+        if (!event.value) suppressNextClick = true;
+      });
+
+      transformControls.addEventListener("objectChange", () => {
+        const object = transformControls.object;
+        if (!object || !attachedTransformNodeId || !onTransformChangeRef.current) return;
+        const euler = new THREE.Euler().setFromQuaternion(object.quaternion);
+        onTransformChangeRef.current(attachedTransformNodeId, {
+          location: object.position.clone(),
+          rotation: new THREE.Vector3(euler.x, euler.y, euler.z),
+          scale: object.scale.clone(),
+        });
+      });
+    }
+
+    // Click vs orbit-drag: a pointerup that moved less than this, and wasn't
+    // the tail end of a gizmo drag (see suppressNextClick above), counts as
+    // a selection click.
+    const CLICK_MOVE_THRESHOLD_PX = 6;
+    let pointerDownAt: { x: number; y: number } | null = null;
+    let suppressNextClick = false;
+
+    function onCanvasPointerDown(e: PointerEvent) {
+      pointerDownAt = { x: e.clientX, y: e.clientY };
+    }
+
+    function onCanvasPointerUp(e: PointerEvent) {
+      const down = pointerDownAt;
+      pointerDownAt = null;
+      if (suppressNextClick) {
+        suppressNextClick = false;
+        return;
+      }
+      if (!down || !onSelectNodeRef.current || !raycaster) return;
+      if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > CLICK_MOVE_THRESHOLD_PX) return;
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      const ndc = new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      raycaster.setFromCamera(ndc, camera);
+      const hit = currentObject
+        ? raycaster.intersectObject(currentObject, true).find((i) => i.object.userData.nodeId)
+        : undefined;
+      onSelectNodeRef.current((hit?.object.userData.nodeId as string) ?? null);
+    }
+
+    if (!outputMode) {
+      renderer.domElement.addEventListener("pointerdown", onCanvasPointerDown);
+      renderer.domElement.addEventListener("pointerup", onCanvasPointerUp);
+    }
+
     function resize() {
       const { clientWidth, clientHeight } = host;
       if (clientWidth === 0 || clientHeight === 0) return;
@@ -208,12 +318,20 @@ export function Viewport({ graph, registry, renderNodeId, epochMs, outputMode = 
     function tick() {
       clock = tickClock(clock, Date.now());
 
+      // Suppress the graph-driven matrix overwrite for exactly the mesh the
+      // gizmo is dragging this frame (see EvalContext.liveEditNodeId and
+      // object.ts) — `transformControls.dragging` is set synchronously by
+      // its own pointer handlers, so this is already current by the time
+      // any given frame runs, no extra bookkeeping needed.
+      const liveEditNodeId = transformControls?.dragging ? attachedObjectNodeId : null;
+
       let results;
       try {
         results = evaluateGraph(graphRef.current, registryRef.current, {
           time: clock.time,
           step: clock.step,
           nodeId: "",
+          liveEditNodeId,
         });
       } catch (err) {
         console.error("graph evaluation failed", err);
@@ -261,8 +379,14 @@ export function Viewport({ graph, registry, renderNodeId, epochMs, outputMode = 
           restoreProjection();
         }
       } else {
-        controls.enabled = true;
-        controls.update();
+        // Don't stomp the gizmo's own disable — tick() runs every animation
+        // frame regardless of pointer state, and would otherwise flip
+        // `enabled` back to true mid-drag within one frame of the
+        // 'dragging-changed' listener turning it off.
+        if (!transformControls?.dragging) {
+          controls.enabled = true;
+          controls.update();
+        }
         restoreProjection();
       }
 
@@ -282,6 +406,36 @@ export function Viewport({ graph, registry, renderNodeId, epochMs, outputMode = 
         if (currentObject) scene.remove(currentObject);
         if (nextObject) scene.add(nextObject);
         currentObject = nextObject;
+      }
+
+      // Move/rotate/scale gizmo: attach to whichever selected mesh resolves
+      // to an upstream Transform node, detach otherwise. Frozen mid-drag —
+      // there's nothing to re-resolve (selection can't change while
+      // dragging, see suppressNextClick) and re-attaching the same object
+      // every frame would be wasted traversal for no behavior change.
+      if (transformControls && !transformControls.dragging) {
+        let targetObject: THREE.Object3D | null = null;
+        if (selectedNodeIdRef.current && currentObject) {
+          currentObject.traverse((obj) => {
+            if (!targetObject && obj.userData.nodeId === selectedNodeIdRef.current) targetObject = obj;
+          });
+        }
+        const transformNodeId = targetObject
+          ? findUpstreamTransformNode(graphRef.current, selectedNodeIdRef.current!)
+          : null;
+
+        if (targetObject && transformNodeId) {
+          if (attachedObjectNodeId !== selectedNodeIdRef.current) {
+            transformControls.attach(targetObject);
+            attachedObjectNodeId = selectedNodeIdRef.current;
+          }
+          attachedTransformNodeId = transformNodeId;
+          transformControls.setMode(transformModeRef.current);
+        } else if (attachedObjectNodeId !== null) {
+          transformControls.detach();
+          attachedObjectNodeId = null;
+          attachedTransformNodeId = null;
+        }
       }
 
       // 1. Render Main Scene
@@ -311,6 +465,11 @@ export function Viewport({ graph, registry, renderNodeId, epochMs, outputMode = 
     return () => {
       cancelAnimationFrame(frameId);
       resizeObserver.disconnect();
+      if (!outputMode) {
+        renderer.domElement.removeEventListener("pointerdown", onCanvasPointerDown);
+        renderer.domElement.removeEventListener("pointerup", onCanvasPointerUp);
+      }
+      transformControls?.dispose();
       controls.dispose();
       renderer.dispose();
       if (host.contains(renderer.domElement)) {
@@ -344,6 +503,22 @@ export function Viewport({ graph, registry, renderNodeId, epochMs, outputMode = 
           >
             Reset Cam
           </button>
+          {onSelectNode && (
+            <div className="viewport-hud-gizmo-modes">
+              {(["translate", "rotate", "scale"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  className={
+                    "viewport-hud-button" + (transformMode === mode ? " viewport-hud-button-active" : "")
+                  }
+                  onClick={() => setTransformMode(mode)}
+                  title={`Gizmo: ${mode}`}
+                >
+                  {mode === "translate" ? "Move" : mode === "rotate" ? "Rotate" : "Scale"}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
