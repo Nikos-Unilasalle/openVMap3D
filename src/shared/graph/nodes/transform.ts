@@ -19,6 +19,7 @@ function asVector3(v: unknown, fallback: THREE.Vector3): THREE.Vector3 {
 export const TRANSFORM_NODE: NodeDefinition = {
   type: "transform",
   label: "Transform",
+  category: "transform",
   inputs: [
     { id: "location", label: "Location", type: "vector" },
     { id: "rotation", label: "Rotation", type: "vector" },
@@ -49,6 +50,7 @@ export const TRANSFORM_NODE: NodeDefinition = {
 export const DECOMPOSE_MATRIX_NODE: NodeDefinition = {
   type: "matrix/decompose",
   label: "Decompose Matrix",
+  category: "transform",
   inputs: [{ id: "matrix", label: "Matrix", type: "matrix" }],
   outputs: [
     { id: "location", label: "Location", type: "vector" },

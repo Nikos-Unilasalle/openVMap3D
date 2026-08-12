@@ -1,3 +1,4 @@
+import { NodeCategory } from "./categories";
 import { SocketDef } from "./sockets";
 
 /** Read-only context every node's evaluate function receives — the only source of "now." */
@@ -48,6 +49,8 @@ export type ParamFieldDef =
 export interface NodeDefinition {
   type: string;
   label: string;
+  /** Drives the node header color, the param panel color, and which palette section it appears in. */
+  category: NodeCategory;
   inputs: SocketDef[];
   outputs: SocketDef[];
   /** Per-instance knobs — also supplies the fallback value for an input socket left unconnected. */

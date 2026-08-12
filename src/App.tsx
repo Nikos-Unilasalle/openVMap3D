@@ -60,6 +60,7 @@ function App() {
         {selectedInstance && selectedDef && (
           <ParamPanel
             label={selectedDef.label}
+            category={selectedDef.category}
             fields={selectedDef.paramFields ?? []}
             params={{ ...selectedDef.defaultParams, ...selectedInstance.params }}
             onChange={onParamChange}

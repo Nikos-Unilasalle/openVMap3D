@@ -34,6 +34,7 @@ function boxMesh(nodeId: string): THREE.Mesh {
 export const OBJECT_BOX_NODE: NodeDefinition = {
   type: "object/box",
   label: "Box",
+  category: "structure",
   inputs: [
     { id: "matrix", label: "Matrix", type: "matrix" },
     { id: "color", label: "Color", type: "color" },

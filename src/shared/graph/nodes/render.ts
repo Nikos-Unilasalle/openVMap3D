@@ -12,6 +12,7 @@ import { NodeDefinition } from "../types";
 export const RENDER_NODE: NodeDefinition = {
   type: "render",
   label: "Render",
+  category: "structure",
   inputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
   outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
   defaultParams: {},

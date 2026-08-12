@@ -15,6 +15,7 @@ const OPS: Record<string, (a: number, b: number) => number> = {
 export const VALUE_MATH_NODE: NodeDefinition = {
   type: "value/math",
   label: "Value Math",
+  category: "math",
   inputs: [
     { id: "a", label: "A", type: "value" },
     { id: "b", label: "B", type: "value" },
@@ -36,6 +37,7 @@ export const VALUE_MATH_NODE: NodeDefinition = {
 export const VALUE_CONSTANT_NODE: NodeDefinition = {
   type: "value/constant",
   label: "Value",
+  category: "math",
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: "value" }],
   defaultParams: { value: 0 },
@@ -53,6 +55,7 @@ export const VALUE_CONSTANT_NODE: NodeDefinition = {
 export const MAP_RANGE_NODE: NodeDefinition = {
   type: "value/map-range",
   label: "Map Range",
+  category: "math",
   inputs: [{ id: "value", label: "Value", type: "value" }],
   outputs: [{ id: "out", label: "Out", type: "value" }],
   defaultParams: { inMin: 0, inMax: 1, outMin: 0, outMax: 1, clamp: 1 },

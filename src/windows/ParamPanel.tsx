@@ -1,10 +1,12 @@
 import * as THREE from "three";
+import { CATEGORY_COLOR, NodeCategory, UNKNOWN_CATEGORY_COLOR } from "../shared/graph/categories";
 import { ParamFieldDef } from "../shared/graph/types";
 import { DragNumberInput } from "./DragNumberInput";
 import "./param-panel.css";
 
 interface ParamPanelProps {
   label: string;
+  category?: NodeCategory;
   fields: ParamFieldDef[];
   params: Record<string, unknown>;
   onChange: (paramId: string, value: unknown) => void;
@@ -61,10 +63,13 @@ function vectorField(field: ParamFieldDef & { kind: "vector" }, value: unknown, 
 }
 
 /** One row per `paramFields` entry, driven entirely by ParamFieldDef['kind'] — a new node needs no new panel code, only a paramFields entry. */
-export function ParamPanel({ label, fields, params, onChange }: ParamPanelProps) {
+export function ParamPanel({ label, category, fields, params, onChange }: ParamPanelProps) {
+  const categoryColor = category ? CATEGORY_COLOR[category] : UNKNOWN_CATEGORY_COLOR;
   return (
     <div className="param-panel">
-      <div className="param-panel-title">{label}</div>
+      <div className="param-panel-title" style={{ color: categoryColor }}>
+        {label}
+      </div>
       {fields.length === 0 && <div className="param-panel-empty">No editable parameters.</div>}
       {fields.map((field) => (
         <div className="param-row" key={field.id}>

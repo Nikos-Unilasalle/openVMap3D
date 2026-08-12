@@ -17,6 +17,7 @@ import "@xyflow/react/dist/style.css";
 import { SOCKET_COLOR } from "../shared/graph/sockets";
 import { Connection, Graph, NodeInstance, NodeRegistry } from "../shared/graph/types";
 import { GraphNode, GraphNodeData } from "./GraphNode";
+import { NodePalette } from "./NodePalette";
 import "./graph-editor.css";
 
 const NODE_TYPES = { graphNode: GraphNode };
@@ -31,6 +32,7 @@ function toFlowNodes(graph: Graph, registry: NodeRegistry): Node<GraphNodeData>[
       position: instance.position,
       data: {
         label: def?.label ?? `${instance.type} (unknown)`,
+        category: def?.category,
         inputs: def?.inputs ?? [],
         outputs: def?.outputs ?? [],
       },
@@ -84,9 +86,9 @@ interface GraphEditorProps {
  * Writable: dragging a node persists its position, dragging a wire from one
  * socket to another creates a connection (type-checked — a Value output
  * cannot plug into a Vector input), right-click on a wire deletes it,
- * clicking a node selects it (see App.tsx for what renders from that).
- * Node add/remove is still the next slice — this one edits the fixed set of
- * nodes it's given, it doesn't create or destroy them.
+ * clicking a node selects it (see App.tsx for what renders from that),
+ * clicking a node in the palette adds one. Node removal is still the next
+ * slice — this one can grow the graph but not shrink it.
  */
 export function GraphEditor({ graph, registry, onGraphChange, onSelectNode }: GraphEditorProps) {
   const initialNodes = useMemo(() => toFlowNodes(graph, registry), [graph, registry]);
@@ -164,23 +166,50 @@ export function GraphEditor({ graph, registry, onGraphChange, onSelectNode }: Gr
   const onNodeClick = useCallback((_: unknown, node: Node<GraphNodeData>) => onSelectNode(node.id), [onSelectNode]);
   const onPaneClick = useCallback(() => onSelectNode(null), [onSelectNode]);
 
+  // Cascades new nodes diagonally so repeated adds don't stack exactly on
+  // top of each other — same "paste offset" trick most node/vector editors use.
+  const addNode = useCallback(
+    (type: string) => {
+      const def = registry.get(type);
+      if (!def) return;
+      const id = crypto.randomUUID();
+      const position = { x: 60 + nodes.length * 24, y: 60 + nodes.length * 24 };
+      const instance: NodeInstance = { id, type, params: {}, position };
+      const flowNode: Node<GraphNodeData> = {
+        id,
+        type: "graphNode",
+        position,
+        data: { label: def.label, category: def.category, inputs: def.inputs, outputs: def.outputs },
+      };
+      const nextNodes = [...nodes, flowNode];
+      setNodes(nextNodes);
+      onGraphChange?.({ ...graph, nodes: [...graph.nodes, instance] });
+    },
+    [graph, nodes, onGraphChange, registry, setNodes],
+  );
+
+  const paletteNodes = useMemo(() => [...registry.values()], [registry]);
+
   return (
     <div className="graph-editor">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={NODE_TYPES}
-        onNodesChange={onNodesChange}
-        onConnect={onConnect}
-        isValidConnection={isValidConnection}
-        onEdgeContextMenu={onEdgeContextMenu}
-        onNodeClick={onNodeClick}
-        onPaneClick={onPaneClick}
-        fitView
-        colorMode="dark"
-      >
-        <Background color="#2c333f" gap={20} />
-      </ReactFlow>
+      <NodePalette nodes={paletteNodes} onAddNode={addNode} />
+      <div className="graph-editor-canvas">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={NODE_TYPES}
+          onNodesChange={onNodesChange}
+          onConnect={onConnect}
+          isValidConnection={isValidConnection}
+          onEdgeContextMenu={onEdgeContextMenu}
+          onNodeClick={onNodeClick}
+          onPaneClick={onPaneClick}
+          fitView
+          colorMode="dark"
+        >
+          <Background color="#2c333f" gap={20} />
+        </ReactFlow>
+      </div>
     </div>
   );
 }

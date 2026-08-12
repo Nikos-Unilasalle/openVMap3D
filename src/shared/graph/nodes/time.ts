@@ -10,6 +10,7 @@ import { NodeDefinition } from "../types";
 export const TIME_NODE: NodeDefinition = {
   type: "time",
   label: "Time",
+  category: "time",
   inputs: [],
   outputs: [
     { id: "seconds", label: "Seconds", type: "value" },

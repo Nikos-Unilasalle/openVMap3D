@@ -43,6 +43,7 @@ import { NodeDefinition } from "../types";
 export const MY_NODE: NodeDefinition = {
   type: "category/my-node",      // unique, lowercase, "category/name"
   label: "My Node",               // shown in the editor
+  category: "math",               // which palette section it lives in — see the table below
   inputs: [
     { id: "a", label: "A", type: "value" },
   ],
@@ -74,7 +75,30 @@ Rules for `evaluate`:
   the pattern: return a safe finite number, never `NaN`/`Infinity` — a bad
   value must not poison every node downstream of it.
 
-## 3. The socket types
+## 3. The category
+
+`category` picks which section of the node palette your node shows up in,
+and its color — the same color shows on the node's header in the graph and
+on its param panel when selected. Use one of these exactly (from
+`src/shared/graph/categories.ts`):
+
+| category      | palette section    |
+|---------------|---------------------|
+| `structure`   | Structure           |
+| `transform`   | Transform           |
+| `math`        | Math                |
+| `time`        | Time / Animation    |
+| `logic`       | Logic               |
+| `io`          | I/O                 |
+| `physics`     | Physics             |
+| `particles`   | Particles           |
+| `post`        | Post-render 2D      |
+| `calibration` | Calibration         |
+
+Pick the one matching BIBLE.md's catalog section for your node — if BIBLE.md
+lists it under "Logic", use `category: "logic"`.
+
+## 4. The socket types
 
 Pick types for `inputs`/`outputs` from exactly these seven — no others exist:
 
@@ -95,17 +119,17 @@ socket carrying `0` or `1` — use `toBoolean`/`fromBoolean` from
 The editor only lets you connect a wire between two sockets of the SAME
 type — that's enforced automatically, you don't need to check it yourself.
 
-## 4. `ctx` — what your node knows about "now"
+## 5. `ctx` — what your node knows about "now"
 
 ```ts
 interface EvalContext {
   time: number;    // seconds since the graph started (deterministic, not wall-clock)
   step: number;     // frame count since start (whole number)
-  nodeId: string;    // this specific node instance's id — see §5
+  nodeId: string;    // this specific node instance's id — see §6
 }
 ```
 
-## 5. If your node needs a GPU resource (mesh, texture, render target)
+## 6. If your node needs a GPU resource (mesh, texture, render target)
 
 Most nodes don't need this section — skip it unless you're building
 something like Object, Particles, or a texture generator.
@@ -131,12 +155,12 @@ in place (this is the one place mutation is correct — you own this object,
 nothing else does), and return it. Note in a comment that the cache has no
 delete-node cleanup yet (known gap, don't try to solve it in your node).
 
-## 6. Register your node
+## 7. Register your node
 
 Open `src/shared/graph/nodes/index.ts`. Add your node to `STARTER_NODES`,
 and if you made a new file, add an `export * from "./yourfile";` line too.
 
-## 7. Write a test
+## 8. Write a test
 
 Open `src/shared/graph/nodes/nodes.test.ts` (or add a new `<file>.test.ts`
 next to your node file, same pattern). Use this `CTX`:
@@ -166,7 +190,7 @@ describe("MY_NODE", () => {
 });
 ```
 
-## 8. Before you say you're done
+## 9. Before you say you're done
 
 Run both, from the repo root, and both must be clean:
 
@@ -177,7 +201,7 @@ npx vitest run
 
 If either fails, fix it — don't hand back code that doesn't pass these.
 
-## 9. Style rules (project-wide, apply to your node too)
+## 10. Style rules (project-wide, apply to your node too)
 
 - `camelCase` for variables/functions, `PascalCase` only for types.
 - No `any`. Cast with `instanceof` checks or `Number(...)`/`String(...)`,

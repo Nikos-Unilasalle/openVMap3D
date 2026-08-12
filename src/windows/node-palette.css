@@ -1,0 +1,41 @@
+.node-palette {
+  width: 168px;
+  flex: none;
+  height: 100%;
+  overflow-y: auto;
+  background: #10151c;
+  border-right: 1px solid #2c333f;
+  padding: 8px 0;
+}
+
+.palette-category + .palette-category {
+  margin-top: 10px;
+}
+
+.palette-category-title {
+  padding: 4px 10px;
+  font-family: "Roboto", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.palette-node-button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 5px 10px 5px 9px;
+  margin: 1px 0;
+  background: transparent;
+  border: none;
+  border-left: 2px solid transparent;
+  color: #e6e6e6;
+  font-family: "Roboto", system-ui, sans-serif;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.palette-node-button:hover {
+  background: #1e2530;
+}

@@ -16,6 +16,7 @@ function edge(fromNode: string, fromSocket: string, toNode: string, toSocket: st
 const CONST: NodeDefinition = {
   type: "test/const",
   label: "Const",
+  category: "math",
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: "value" }],
   defaultParams: { value: 0 },
@@ -26,6 +27,7 @@ const CONST: NodeDefinition = {
 const ADD: NodeDefinition = {
   type: "test/add",
   label: "Add",
+  category: "math",
   inputs: [
     { id: "a", label: "A", type: "value" },
     { id: "b", label: "B", type: "value" },
@@ -38,6 +40,7 @@ const ADD: NodeDefinition = {
 const THROWS: NodeDefinition = {
   type: "test/throws",
   label: "Throws",
+  category: "math",
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: "value" }],
   defaultParams: {},
