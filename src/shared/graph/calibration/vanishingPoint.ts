@@ -113,13 +113,16 @@ export function solveTwoPointCalibration(
   const rotation = cameraBasis(vpA, vpB, f, principalPoint);
 
   // fSpy's axis-assignment step: row1/row2 pick which world axis each VP
-  // represents (here fixed to Z, X — see the doc comment above), row3 is
-  // their cross product (+Y, since Z×X=+Y in a right-handed basis).
+  // represents. Fixed here to -Z, -X (not +Z, +X — verified empirically via
+  // a round-trip test against a known camera; the sign follows from how the
+  // vanishing-point ray convention (z=-f, matching THREE's own "camera
+  // looks down -Z") relates to "world direction a line runs along," which
+  // isn't the same thing to eyeball from the formulas alone). Row3 is their
+  // cross product, +Y since (-Z)×(-X)=+Y in a right-handed basis.
   // viewTransform = rotation * axisAssignment; cameraTransform = its inverse.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const axisAssignment = new THREE.Matrix4().set(
-    0, 0, 1, 0,
-    1, 0, 0, 0,
+    0, 0, -1, 0,
+    -1, 0, 0, 0,
     0, 1, 0, 0,
     0, 0, 0, 1,
   );

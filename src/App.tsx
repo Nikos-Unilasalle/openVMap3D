@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { CAMERA_NODE } from "./shared/graph/nodes/camera";
 import { DEFAULT_REGISTRY } from "./shared/graph/nodes";
 import { findRenderNodeId } from "./shared/graph/nodes/render";
 import { Connection, Graph, NodeInstance } from "./shared/graph/types";
 import { broadcastGraph, startBroadcasting } from "./shared/ipc";
 import { Viewport } from "./shared/three/Viewport";
+import { CalibrationOverlay } from "./windows/CalibrationOverlay";
 import { GraphEditor } from "./windows/GraphEditor";
 import { OutputWindow } from "./windows/OutputWindow";
 import { ParamPanel } from "./windows/ParamPanel";
@@ -96,12 +98,24 @@ function MainEditor() {
     setCurrentFilePath(path);
   };
 
+  // Functional updater, not "read graph, compute, setGraph(new)" — CalibrationOverlay
+  // calls this multiple times synchronously in one commit (rotation, fov,
+  // calibrationLines), and each call closing over the same pre-update `graph`
+  // would overwrite the previous one instead of composing (only the last
+  // param would ever stick). Same class of bug as the GraphEditor.tsx
+  // updater-purity fix earlier — setState-from-a-callback must not read a
+  // snapshot taken before its sibling calls in the same handler.
   const onParamChange = (paramId: string, value: unknown) => {
-    if (!selectedInstance) return;
-    const nextNodes = graph.nodes.map((n) =>
-      n.id === selectedInstance.id ? { ...n, params: { ...n.params, [paramId]: value } } : n,
-    );
-    setGraph({ ...graph, nodes: nextNodes });
+    setGraph((prevGraph) => {
+      const instance = prevGraph.nodes.find((n) => n.id === selectedNodeId);
+      if (!instance) return prevGraph;
+      return {
+        ...prevGraph,
+        nodes: prevGraph.nodes.map((n) =>
+          n.id === instance.id ? { ...n, params: { ...n.params, [paramId]: value } } : n,
+        ),
+      };
+    });
   };
 
   const onSplitHandleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -146,6 +160,9 @@ function MainEditor() {
           renderNodeId={findRenderNodeId(graph) ?? ""}
           epochMs={epochMs}
         />
+        {selectedInstance && selectedInstance.type === CAMERA_NODE.type && (
+          <CalibrationOverlay storedLines={selectedInstance.params.calibrationLines} onChange={onParamChange} />
+        )}
         {selectedInstance && selectedDef && (
           <ParamPanel
             nodeId={selectedInstance.id}

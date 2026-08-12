@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import {
   Background,
   Connection as FlowConnection,
@@ -164,6 +164,25 @@ export function GraphEditor({ graph, registry, onGraphChange, onSelectNode }: Gr
   }, [graph, registry]);
   const [nodes, setNodes] = useNodesState(initialNodes);
   const [edges, setEdges] = useEdgesState(useMemo(() => toFlowEdges(graph, initialNodes), [graph, initialNodes]));
+
+  useEffect(() => {
+    setNodes((prevNodes) =>
+      prevNodes.map((fn) => {
+        const graphNode = graph.nodes.find((gn) => gn.id === fn.id);
+        if (!graphNode) return fn;
+        if (fn.data.params !== graphNode.params) {
+          return {
+            ...fn,
+            data: {
+              ...fn.data,
+              params: graphNode.params,
+            },
+          };
+        }
+        return fn;
+      })
+    );
+  }, [graph.nodes, setNodes]);
 
   const commit = useCallback(
     (nextNodes: Node<GraphNodeData>[], nextEdges: Edge[]) => {

@@ -1,0 +1,46 @@
+.calibration-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4; /* below the param panel (5), above the raw viewport */
+  pointer-events: none;
+}
+
+.calibration-overlay-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.calibration-line {
+  stroke-width: 2.5;
+  pointer-events: none;
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.8));
+}
+
+.calibration-handle {
+  pointer-events: all;
+  cursor: grab;
+  stroke: #0d1117;
+  stroke-width: 2;
+  touch-action: none;
+}
+
+.calibration-handle:active {
+  cursor: grabbing;
+}
+
+.calibration-overlay-warning {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(244, 63, 94, 0.16);
+  border: 1px solid rgba(244, 63, 94, 0.5);
+  color: #fb7185;
+  font-family: "Roboto", system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  pointer-events: none;
+}
