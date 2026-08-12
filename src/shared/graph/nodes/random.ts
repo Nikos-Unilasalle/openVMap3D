@@ -39,6 +39,9 @@ export const RANDOM_VALUE_NODE: NodeDefinition = {
     let val = 0;
     if (algo === "white") {
       val = min + Math.random() * (max - min);
+    } else if (algo === "noise") {
+      const noiseNorm = randomNoise1D(seed * 0.5, 0);
+      val = min + noiseNorm * (max - min);
     } else {
       const rng = createPRNG(seed);
       if (algo === "gaussian") {
@@ -46,9 +49,6 @@ export const RANDOM_VALUE_NODE: NodeDefinition = {
         const stdDev = Math.abs(max - min) / 4;
         val = randomGaussian(rng, mean, stdDev);
         val = Math.max(min, Math.min(max, val));
-      } else if (algo === "noise") {
-        const noiseNorm = randomNoise1D(seed, 0);
-        val = min + noiseNorm * (max - min);
       } else if (algo === "exponential") {
         val = min + randomExponential(rng, 2) * (max - min);
         val = Math.max(min, Math.min(max, val));
@@ -91,7 +91,6 @@ export const RANDOM_VECTOR_NODE: NodeDefinition = {
     let x = 0, y = 0, z = 0;
 
     if (algo === "sphere_surface") {
-      // Normal distribution for uniform points on unit sphere surface
       const u = randomGaussian(rng, 0, 1);
       const v = randomGaussian(rng, 0, 1);
       const w = randomGaussian(rng, 0, 1);
@@ -114,9 +113,9 @@ export const RANDOM_VECTOR_NODE: NodeDefinition = {
       y = randomGaussian(rng, mean, stdDev);
       z = randomGaussian(rng, mean, stdDev);
     } else if (algo === "noise") {
-      x = min + randomNoise1D(seed, 10.1) * (max - min);
-      y = min + randomNoise1D(seed + 100, 20.2) * (max - min);
-      z = min + randomNoise1D(seed + 200, 30.3) * (max - min);
+      x = min + randomNoise1D(seed * 0.5, 10.1) * (max - min);
+      y = min + randomNoise1D(seed * 0.5 + 100, 20.2) * (max - min);
+      z = min + randomNoise1D(seed * 0.5 + 200, 30.3) * (max - min);
     } else {
       // Uniform
       x = randomUniform(rng, min, max);
@@ -183,13 +182,13 @@ export const RANDOM_MATRIX_NODE: NodeDefinition = {
       const s = Math.max(scaleMin, Math.min(scaleMax, randomGaussian(rng, sMean, sStd)));
       sx = sy = sz = s;
     } else if (algo === "noise") {
-      px = (randomNoise1D(seed, 1) * 2 - 1) * posRange;
-      py = (randomNoise1D(seed + 10, 2) * 2 - 1) * posRange;
-      pz = (randomNoise1D(seed + 20, 3) * 2 - 1) * posRange;
-      rx = (randomNoise1D(seed + 30, 4) * 2 - 1) * rotRange;
-      ry = (randomNoise1D(seed + 40, 5) * 2 - 1) * rotRange;
-      rz = (randomNoise1D(seed + 50, 6) * 2 - 1) * rotRange;
-      const sNorm = randomNoise1D(seed + 60, 7);
+      px = (randomNoise1D(seed * 0.5, 1) * 2 - 1) * posRange;
+      py = (randomNoise1D(seed * 0.5 + 10, 2) * 2 - 1) * posRange;
+      pz = (randomNoise1D(seed * 0.5 + 20, 3) * 2 - 1) * posRange;
+      rx = (randomNoise1D(seed * 0.5 + 30, 4) * 2 - 1) * rotRange;
+      ry = (randomNoise1D(seed * 0.5 + 40, 5) * 2 - 1) * rotRange;
+      rz = (randomNoise1D(seed * 0.5 + 50, 6) * 2 - 1) * rotRange;
+      const sNorm = randomNoise1D(seed * 0.5 + 60, 7);
       sx = sy = sz = scaleMin + sNorm * (scaleMax - scaleMin);
     } else {
       // Uniform
@@ -225,7 +224,7 @@ export const RANDOM_LIST_NODE: NodeDefinition = {
     { id: "max", label: "Max", type: "value" },
   ],
   outputs: [{ id: "list", label: "List", type: "list" }],
-  defaultParams: { count: 10, algorithm: "uniform", seed: 0, min: 0, max: 1 },
+  defaultParams: { count: 10, algorithm: "noise", seed: 0, min: 0, max: 1 },
   paramFields: [
     { id: "count", label: "List Size", kind: "number", step: 1 },
     { id: "algorithm", label: "Algorithm", kind: "select", options: ALGO_VALUE_OPTIONS },
@@ -238,7 +237,7 @@ export const RANDOM_LIST_NODE: NodeDefinition = {
     const seed = inputs.seed !== undefined ? Number(inputs.seed) : Number(params.seed) || 0;
     const min = inputs.min !== undefined ? Number(inputs.min) : Number(params.min) ?? 0;
     const max = inputs.max !== undefined ? Number(inputs.max) : Number(params.max) ?? 1;
-    const algo = String(params.algorithm || "uniform");
+    const algo = String(params.algorithm || "noise");
 
     const rng = createPRNG(seed);
     const list: number[] = [];
@@ -247,14 +246,15 @@ export const RANDOM_LIST_NODE: NodeDefinition = {
       let val = 0;
       if (algo === "white") {
         val = min + Math.random() * (max - min);
+      } else if (algo === "noise") {
+        // Continuous smooth 1D Perlin noise for fluid animation
+        const noiseNorm = randomNoise1D(seed * 0.5 + i * 0.25, i * 0.5);
+        val = min + noiseNorm * (max - min);
       } else if (algo === "gaussian") {
         const mean = (min + max) / 2;
         const stdDev = Math.abs(max - min) / 4;
         val = randomGaussian(rng, mean, stdDev);
         val = Math.max(min, Math.min(max, val));
-      } else if (algo === "noise") {
-        const noiseNorm = randomNoise1D(seed + i, i * 0.1);
-        val = min + noiseNorm * (max - min);
       } else if (algo === "exponential") {
         val = min + randomExponential(rng, 2) * (max - min);
         val = Math.max(min, Math.min(max, val));
