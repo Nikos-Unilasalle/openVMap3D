@@ -1,0 +1,78 @@
+/*
+ * BIBLE.md's visual identity: Sonic Pi-inspired, softened — one notch less
+ * saturation than Sonic Pi's neon magenta/cyan, dark grey rather than pure
+ * black, contrast kept. Matches OpenVMap's own panel-tone system (physics =
+ * green, transform = purple, motion = pink #ec4899, shape = cyan #38bdf8),
+ * which is the actual starting point per the bible, not a fresh palette.
+ */
+
+.graph-editor {
+  width: 100%;
+  height: 100%;
+  background: #0d1117;
+}
+
+.graph-editor .react-flow__attribution {
+  display: none;
+}
+
+.graph-node {
+  min-width: 160px;
+  background: #161b22;
+  border: 1px solid #2c333f;
+  border-radius: 8px;
+  color: #e6e6e6;
+  font-family: "Roboto", system-ui, sans-serif;
+  font-size: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.graph-node-title {
+  padding: 7px 10px;
+  background: #1e2530;
+  border-bottom: 1px solid #2c333f;
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #ec4899;
+}
+
+.graph-node-body {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+}
+
+.graph-node-column {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 60px;
+}
+
+.graph-node-column-right {
+  align-items: flex-end;
+}
+
+.graph-node-socket {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  color: #9aa4b2;
+  white-space: nowrap;
+}
+
+.graph-node-socket-out {
+  justify-content: flex-end;
+}
+
+.graph-node .react-flow__handle {
+  width: 9px;
+  height: 9px;
+  border: 1px solid #0d1117;
+}

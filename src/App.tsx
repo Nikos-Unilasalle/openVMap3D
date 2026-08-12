@@ -2,9 +2,10 @@ import { useMemo } from "react";
 import { DEFAULT_REGISTRY } from "./shared/graph/nodes";
 import { Connection, Graph, NodeInstance } from "./shared/graph/types";
 import { Viewport } from "./shared/three/Viewport";
+import { GraphEditor } from "./windows/GraphEditor";
 
-function node(id: string, type: string, params: Record<string, unknown> = {}): NodeInstance {
-  return { id, type, params, position: { x: 0, y: 0 } };
+function node(id: string, type: string, position: { x: number; y: number }, params: Record<string, unknown> = {}): NodeInstance {
+  return { id, type, params, position };
 }
 
 function edge(fromNode: string, fromSocket: string, toNode: string, toSocket: string): Connection {
@@ -21,11 +22,11 @@ function edge(fromNode: string, fromSocket: string, toNode: string, toSocket: st
 function buildSmokeTestGraph(): Graph {
   return {
     nodes: [
-      node("time", "time"),
-      node("rotationVector", "vector/compose", { x: 0, z: 0 }),
-      node("boxTransform", "transform"),
-      node("box", "object/box"),
-      node("output", "render"),
+      node("time", "time", { x: 40, y: 120 }),
+      node("rotationVector", "vector/compose", { x: 280, y: 120 }, { x: 0, z: 0 }),
+      node("boxTransform", "transform", { x: 540, y: 120 }),
+      node("box", "object/box", { x: 800, y: 120 }),
+      node("output", "render", { x: 1040, y: 120 }),
     ],
     connections: [
       edge("time", "seconds", "rotationVector", "y"),
@@ -40,8 +41,13 @@ function App() {
   const graph = useMemo(buildSmokeTestGraph, []);
 
   return (
-    <div style={{ width: "100vw", height: "100vh" }}>
-      <Viewport graph={graph} registry={DEFAULT_REGISTRY} renderNodeId="output" />
+    <div style={{ width: "100vw", height: "100vh", display: "flex", flexDirection: "column" }}>
+      <div style={{ flex: "2 1 0", minHeight: 0 }}>
+        <Viewport graph={graph} registry={DEFAULT_REGISTRY} renderNodeId="output" />
+      </div>
+      <div style={{ flex: "1 1 0", minHeight: 0, borderTop: "1px solid #2c333f" }}>
+        <GraphEditor graph={graph} registry={DEFAULT_REGISTRY} />
+      </div>
     </div>
   );
 }
