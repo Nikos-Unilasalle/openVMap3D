@@ -40,6 +40,7 @@ export const OBJECT_BOX_NODE: NodeDefinition = {
   ],
   outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
   defaultParams: { color: new THREE.Color(0xffffff) },
+  paramFields: [{ id: "color", label: "Color (fallback)", kind: "color" }],
   evaluate: (inputs, params, ctx) => {
     const mesh = boxMesh(ctx.nodeId);
 

@@ -26,6 +26,11 @@ export const TRANSFORM_NODE: NodeDefinition = {
   ],
   outputs: [{ id: "matrix", label: "Matrix", type: "matrix" }],
   defaultParams: { location: ZERO.clone(), rotation: ZERO.clone(), scale: ONE.clone() },
+  paramFields: [
+    { id: "location", label: "Location (fallback)", kind: "vector" },
+    { id: "rotation", label: "Rotation (fallback, rad)", kind: "vector" },
+    { id: "scale", label: "Scale (fallback)", kind: "vector" },
+  ],
   evaluate: (inputs) => {
     const location = asVector3(inputs.location, ZERO);
     const rotation = asVector3(inputs.rotation, ZERO);

@@ -12,6 +12,11 @@ export const VECTOR_COMPOSE_NODE: NodeDefinition = {
   ],
   outputs: [{ id: "out", label: "Out", type: "vector" }],
   defaultParams: { x: 0, y: 0, z: 0 },
+  paramFields: [
+    { id: "x", label: "X (fallback)", kind: "number" },
+    { id: "y", label: "Y (fallback)", kind: "number" },
+    { id: "z", label: "Z (fallback)", kind: "number" },
+  ],
   evaluate: (inputs) => ({
     out: new THREE.Vector3(Number(inputs.x) || 0, Number(inputs.y) || 0, Number(inputs.z) || 0),
   }),

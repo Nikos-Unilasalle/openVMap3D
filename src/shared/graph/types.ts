@@ -20,6 +20,19 @@ export interface EvalContext {
 }
 
 /**
+ * UI hints for the param panel — optional, purely presentational. A node
+ * with no `paramFields` still works fine (its `defaultParams` are still the
+ * fallback for unconnected inputs), it just shows nothing in the panel.
+ * `id` must match a key in `defaultParams`.
+ */
+export type ParamFieldDef =
+  | { id: string; label: string; kind: "number"; step?: number }
+  | { id: string; label: string; kind: "boolean" }
+  | { id: string; label: string; kind: "select"; options: string[] }
+  | { id: string; label: string; kind: "color" }
+  | { id: string; label: string; kind: "vector" };
+
+/**
  * The static description of a node *type* — shared by every instance of it.
  * `evaluate` is pure: same inputs/params/time in, same outputs out, no
  * reaching into global state. That purity is what makes the engine testable
@@ -39,6 +52,8 @@ export interface NodeDefinition {
   outputs: SocketDef[];
   /** Per-instance knobs — also supplies the fallback value for an input socket left unconnected. */
   defaultParams: Record<string, unknown>;
+  /** See ParamFieldDef — omit for a node with nothing worth exposing in the panel. */
+  paramFields?: ParamFieldDef[];
   evaluate: (
     inputs: Record<string, unknown>,
     params: Record<string, unknown>,

@@ -21,6 +21,11 @@ export const VALUE_MATH_NODE: NodeDefinition = {
   ],
   outputs: [{ id: "out", label: "Out", type: "value" }],
   defaultParams: { op: "add", a: 0, b: 0 },
+  paramFields: [
+    { id: "op", label: "Operation", kind: "select", options: Object.keys(OPS) },
+    { id: "a", label: "A (fallback)", kind: "number" },
+    { id: "b", label: "B (fallback)", kind: "number" },
+  ],
   evaluate: (inputs, params) => {
     const op = OPS[String(params.op)] ?? OPS.add;
     return { out: op(Number(inputs.a) || 0, Number(inputs.b) || 0) };
@@ -34,6 +39,7 @@ export const VALUE_CONSTANT_NODE: NodeDefinition = {
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: "value" }],
   defaultParams: { value: 0 },
+  paramFields: [{ id: "value", label: "Value", kind: "number" }],
   evaluate: (_inputs, params) => ({ out: Number(params.value) || 0 }),
 };
 
@@ -50,6 +56,13 @@ export const MAP_RANGE_NODE: NodeDefinition = {
   inputs: [{ id: "value", label: "Value", type: "value" }],
   outputs: [{ id: "out", label: "Out", type: "value" }],
   defaultParams: { inMin: 0, inMax: 1, outMin: 0, outMax: 1, clamp: 1 },
+  paramFields: [
+    { id: "inMin", label: "In Min", kind: "number" },
+    { id: "inMax", label: "In Max", kind: "number" },
+    { id: "outMin", label: "Out Min", kind: "number" },
+    { id: "outMax", label: "Out Max", kind: "number" },
+    { id: "clamp", label: "Clamp", kind: "boolean" },
+  ],
   evaluate: (inputs, params) => {
     const inMin = Number(params.inMin) || 0;
     const inMax = Number(params.inMax) || 0;

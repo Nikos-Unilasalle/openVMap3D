@@ -7,6 +7,7 @@
  */
 
 .graph-editor {
+  position: relative;
   width: 100%;
   height: 100%;
   background: #0d1117;
@@ -75,4 +76,87 @@
   width: 9px;
   height: 9px;
   border: 1px solid #0d1117;
+}
+
+.param-panel {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 220px;
+  max-height: calc(100% - 24px);
+  overflow-y: auto;
+  background: #161b22;
+  border: 1px solid #2c333f;
+  border-radius: 8px;
+  color: #e6e6e6;
+  font-family: "Roboto", system-ui, sans-serif;
+  font-size: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 5;
+}
+
+.param-panel-title {
+  padding: 8px 10px;
+  background: #1e2530;
+  border-bottom: 1px solid #2c333f;
+  border-radius: 8px 8px 0 0;
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #ec4899;
+}
+
+.param-panel-empty {
+  padding: 10px;
+  color: #6b7280;
+}
+
+.param-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid #1e2530;
+}
+
+.param-row label {
+  color: #9aa4b2;
+  white-space: nowrap;
+}
+
+.param-row input[type="number"],
+.param-row select {
+  width: 90px;
+  background: #0d1117;
+  border: 1px solid #2c333f;
+  border-radius: 4px;
+  color: #e6e6e6;
+  font-size: 12px;
+  padding: 2px 4px;
+}
+
+.param-row input[type="color"] {
+  width: 32px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid #2c333f;
+  border-radius: 4px;
+  background: none;
+}
+
+.param-vector {
+  display: flex;
+  gap: 4px;
+}
+
+.param-vector input {
+  width: 46px;
+  background: #0d1117;
+  border: 1px solid #2c333f;
+  border-radius: 4px;
+  color: #e6e6e6;
+  font-size: 11px;
+  padding: 2px 3px;
 }

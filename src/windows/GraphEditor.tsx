@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   Background,
   Connection as FlowConnection,
@@ -17,6 +17,7 @@ import "@xyflow/react/dist/style.css";
 import { SOCKET_COLOR } from "../shared/graph/sockets";
 import { Connection, Graph, NodeInstance, NodeRegistry } from "../shared/graph/types";
 import { GraphNode, GraphNodeData } from "./GraphNode";
+import { ParamPanel } from "./ParamPanel";
 import "./graph-editor.css";
 
 const NODE_TYPES = { graphNode: GraphNode };
@@ -81,9 +82,10 @@ interface GraphEditorProps {
 /**
  * Writable: dragging a node persists its position, dragging a wire from one
  * socket to another creates a connection (type-checked — a Value output
- * cannot plug into a Vector input), right-click on a wire deletes it. Node
- * add/remove and a param-editing panel are still the next slice, not this
- * one — this one only moves and rewires the fixed set of nodes it's given.
+ * cannot plug into a Vector input), right-click on a wire deletes it,
+ * clicking a node opens its param panel (driven by NodeDefinition.paramFields).
+ * Node add/remove is still the next slice — this one edits the fixed set of
+ * nodes it's given, it doesn't create or destroy them.
  */
 export function GraphEditor({ graph, registry, onGraphChange }: GraphEditorProps) {
   const initialNodes = useMemo(() => toFlowNodes(graph, registry), [graph, registry]);
@@ -97,15 +99,17 @@ export function GraphEditor({ graph, registry, onGraphChange }: GraphEditorProps
     [graph.nodes, onGraphChange],
   );
 
+  // commit() calls the parent's setGraph — it must never run inside a
+  // setNodes/setEdges *updater function*, only after, as a plain call in the
+  // handler body. React treats a setState-from-another-component call made
+  // from inside an updater as happening "during render" and warns/breaks.
   const onNodesChange = useCallback(
     (changes: NodeChange<Node<GraphNodeData>>[]) => {
-      setNodes((nds) => {
-        const next = applyNodeChanges(changes, nds);
-        commit(next, edges);
-        return next;
-      });
+      const next = applyNodeChanges(changes, nodes);
+      setNodes(next);
+      commit(next, edges);
     },
-    [commit, edges, setNodes],
+    [commit, edges, nodes, setNodes],
   );
 
   const isValidConnection = useCallback(
@@ -127,37 +131,54 @@ export function GraphEditor({ graph, registry, onGraphChange }: GraphEditorProps
   const onConnect: OnConnect = useCallback(
     (connection) => {
       if (!connection.source || !connection.target || !connection.sourceHandle || !connection.targetHandle) return;
-      setEdges((eds) => {
-        // an input socket takes one wire — a new connection into it replaces whatever was there
-        const withoutConflict = eds.filter(
-          (e) => !(e.target === connection.target && e.targetHandle === connection.targetHandle),
-        );
-        const newEdge: Edge = {
-          id: `${connection.source}.${connection.sourceHandle}->${connection.target}.${connection.targetHandle}`,
-          source: connection.source!,
-          sourceHandle: connection.sourceHandle,
-          target: connection.target!,
-          targetHandle: connection.targetHandle,
-          style: { stroke: edgeColor(nodes, connection.source!, connection.sourceHandle!), strokeWidth: EDGE_STROKE_WIDTH },
-        };
-        const next = [...withoutConflict, newEdge];
-        commit(nodes, next);
-        return next;
-      });
+      // an input socket takes one wire — a new connection into it replaces whatever was there
+      const withoutConflict = edges.filter(
+        (e) => !(e.target === connection.target && e.targetHandle === connection.targetHandle),
+      );
+      const newEdge: Edge = {
+        id: `${connection.source}.${connection.sourceHandle}->${connection.target}.${connection.targetHandle}`,
+        source: connection.source!,
+        sourceHandle: connection.sourceHandle,
+        target: connection.target!,
+        targetHandle: connection.targetHandle,
+        style: { stroke: edgeColor(nodes, connection.source!, connection.sourceHandle!), strokeWidth: EDGE_STROKE_WIDTH },
+      };
+      const next = [...withoutConflict, newEdge];
+      setEdges(next);
+      commit(nodes, next);
     },
-    [commit, nodes, setEdges],
+    [commit, edges, nodes, setEdges],
   );
 
   const onEdgeContextMenu: EdgeMouseHandler = useCallback(
     (event, edge) => {
       event.preventDefault();
-      setEdges((eds) => {
-        const next = applyEdgeChanges([{ type: "remove", id: edge.id }], eds);
-        commit(nodes, next);
-        return next;
-      });
+      const next = applyEdgeChanges([{ type: "remove", id: edge.id }], edges);
+      setEdges(next);
+      commit(nodes, next);
     },
-    [commit, nodes, setEdges],
+    [commit, edges, nodes, setEdges],
+  );
+
+  // Selection drives the param panel; params live only on `graph` (the parent's
+  // source of truth), never on the local xyflow node data — a param edit is a
+  // pure graph.nodes[i].params update, unrelated to position/wire sync above.
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const onNodeClick = useCallback((_: unknown, node: Node<GraphNodeData>) => setSelectedNodeId(node.id), []);
+  const onPaneClick = useCallback(() => setSelectedNodeId(null), []);
+
+  const selectedInstance = graph.nodes.find((n) => n.id === selectedNodeId) ?? null;
+  const selectedDef = selectedInstance ? registry.get(selectedInstance.type) : undefined;
+
+  const onParamChange = useCallback(
+    (paramId: string, value: unknown) => {
+      if (!selectedInstance) return;
+      const nextNodes = graph.nodes.map((n) =>
+        n.id === selectedInstance.id ? { ...n, params: { ...n.params, [paramId]: value } } : n,
+      );
+      onGraphChange?.({ ...graph, nodes: nextNodes });
+    },
+    [graph, onGraphChange, selectedInstance],
   );
 
   return (
@@ -170,11 +191,21 @@ export function GraphEditor({ graph, registry, onGraphChange }: GraphEditorProps
         onConnect={onConnect}
         isValidConnection={isValidConnection}
         onEdgeContextMenu={onEdgeContextMenu}
+        onNodeClick={onNodeClick}
+        onPaneClick={onPaneClick}
         fitView
         colorMode="dark"
       >
         <Background color="#2c333f" gap={20} />
       </ReactFlow>
+      {selectedInstance && selectedDef && (
+        <ParamPanel
+          label={selectedDef.label}
+          fields={selectedDef.paramFields ?? []}
+          params={{ ...selectedDef.defaultParams, ...selectedInstance.params }}
+          onChange={onParamChange}
+        />
+      )}
     </div>
   );
 }
