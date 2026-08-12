@@ -184,6 +184,35 @@ export function GraphEditor({ graph, registry, onGraphChange, onSelectNode }: Gr
     );
   }, [graph.nodes, setNodes]);
 
+  // useEdgesState only seeds its state from its *initial* argument — once
+  // mounted, this component's own `edges` never re-derives from the
+  // `graph.connections` prop again on its own, only from setEdges calls
+  // this component itself makes (onConnect, onEdgeContextMenu). That's
+  // fine as long as every edit route runs through this component, but it's
+  // a silent trap the moment one doesn't (a project reload used to remount
+  // via `key`, sidestepping it — this effect is the general-case fix
+  // instead of relying on every future caller remembering that trick).
+  // Content-compared rather than replaced outright: our own commit() calls
+  // round-trip straight back through this same `graph` prop, and swapping
+  // in a referentially-new-but-identical array every time would fire this
+  // effect in a loop.
+  useEffect(() => {
+    setEdges((prevEdges) => {
+      const nextEdges = toFlowEdges(graph, nodes);
+      const unchanged =
+        prevEdges.length === nextEdges.length &&
+        prevEdges.every(
+          (e, i) =>
+            e.id === nextEdges[i].id &&
+            e.source === nextEdges[i].source &&
+            e.sourceHandle === nextEdges[i].sourceHandle &&
+            e.target === nextEdges[i].target &&
+            e.targetHandle === nextEdges[i].targetHandle,
+        );
+      return unchanged ? prevEdges : nextEdges;
+    });
+  }, [graph.connections, nodes, setEdges]);
+
   const commit = useCallback(
     (nextNodes: Node<GraphNodeData>[], nextEdges: Edge[]) => {
       onGraphChange?.(toGraph(graph.nodes, nextNodes, nextEdges));
