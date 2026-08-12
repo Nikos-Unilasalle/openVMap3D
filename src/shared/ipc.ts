@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
+import { DEFAULT_REGISTRY } from "./graph/nodes";
+import { rehydrateGraphParams } from "./graph/rehydrateParams";
 import { Graph } from "./graph/types";
 
 export interface MonitorInfo {
@@ -68,9 +70,20 @@ export function broadcastGraph(payload: GraphPayload): void {
   void emit(GRAPH_UPDATE_EVENT, payload);
 }
 
-/** Call once from the output window. Applies whatever the main window broadcasts, and handshakes for the current state on mount. */
+/**
+ * Call once from the output window. Applies whatever the main window
+ * broadcasts, and handshakes for the current state on mount.
+ *
+ * Rehydrates the graph before handing it to the caller — every payload
+ * round-trips through Rust as JSON, which strips the prototype off any
+ * THREE.Vector3/Color param a node's `evaluate()` checks with `instanceof`
+ * (see rehydrateParams.ts). The main window's own copy of the graph never
+ * goes through this path, so it never needed the fix.
+ */
 export function startReceiving(onUpdate: (payload: GraphPayload) => void): () => void {
-  const listenPromise = listen<GraphPayload>(GRAPH_UPDATE_EVENT, (event) => onUpdate(event.payload));
+  const listenPromise = listen<GraphPayload>(GRAPH_UPDATE_EVENT, (event) => {
+    onUpdate({ ...event.payload, graph: rehydrateGraphParams(event.payload.graph, DEFAULT_REGISTRY) });
+  });
   void emit(OUTPUT_READY_EVENT);
   return () => {
     void listenPromise.then((unlisten) => unlisten());
