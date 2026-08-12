@@ -144,6 +144,26 @@
   color: #f472b6;
 }
 
+.top-bar-button-output:hover {
+  border-color: #6366f1;
+  color: #818cf8;
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.25);
+}
+
+.top-bar-button-output:hover svg {
+  color: #818cf8;
+}
+
+.top-bar-button-output-active {
+  background: rgba(99, 102, 241, 0.16);
+  border-color: #6366f1;
+  color: #818cf8;
+}
+
+.top-bar-button-output-active svg {
+  color: #818cf8;
+}
+
 .top-bar-right {
   display: flex;
   align-items: center;

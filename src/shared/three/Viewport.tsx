@@ -13,6 +13,12 @@ interface ViewportProps {
   /** Which node in the graph is the terminal `render` node whose output gets drawn. */
   renderNodeId: string;
   epochMs?: number;
+  /**
+   * True for the projector-facing output window: no dev HUD, no orientation
+   * gizmo, no debug ground grid/axis arrows baked into the projected image
+   * — just the rendered scene. Default false (the editor's own viewport).
+   */
+  outputMode?: boolean;
 }
 
 /** Create text canvas sprite for corner 3D axes labels ("X", "Y", "Z") */
@@ -125,7 +131,7 @@ function buildMainSceneGridAndAxes(): THREE.Group {
   return group;
 }
 
-export function Viewport({ graph, registry, renderNodeId, epochMs }: ViewportProps) {
+export function Viewport({ graph, registry, renderNodeId, epochMs, outputMode = false }: ViewportProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef(graph);
   graphRef.current = graph;
@@ -151,9 +157,10 @@ export function Viewport({ graph, registry, renderNodeId, epochMs }: ViewportPro
     sun.position.set(3, 5, 4);
     scene.add(sun);
 
-    // Grid & Origin Axes Helper
-    const gridAndAxes = buildMainSceneGridAndAxes();
-    scene.add(gridAndAxes);
+    // Grid & Origin Axes Helper — editor-only, never baked into the projected output
+    if (!outputMode) {
+      scene.add(buildMainSceneGridAndAxes());
+    }
 
     const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
     camera.position.set(3, 3, 5);
@@ -169,8 +176,8 @@ export function Viewport({ graph, registry, renderNodeId, epochMs }: ViewportPro
       controls.update();
     };
 
-    // Gizmo Corner Scene & Camera
-    const { gizmoScene, gizmoCamera } = createGizmoScene();
+    // Gizmo Corner Scene & Camera — editor-only, never baked into the projected output
+    const gizmo = outputMode ? null : createGizmoScene();
 
     function resize() {
       const { clientWidth, clientHeight } = host;
@@ -237,9 +244,11 @@ export function Viewport({ graph, registry, renderNodeId, epochMs }: ViewportPro
       // the camera's own quaternion (not position-minus-controls.target,
       // which is only meaningful in orbit mode and would be stale while a
       // Camera node is driving the camera directly).
-      const cameraForward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-      gizmoCamera.position.copy(cameraForward).multiplyScalar(-3);
-      gizmoCamera.lookAt(0, 0, 0);
+      if (gizmo) {
+        const cameraForward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+        gizmo.gizmoCamera.position.copy(cameraForward).multiplyScalar(-3);
+        gizmo.gizmoCamera.lookAt(0, 0, 0);
+      }
 
       const output = results.get(renderNodeIdRef.current)?.geometry;
       const nextObject = output instanceof THREE.Object3D ? output : null;
@@ -258,13 +267,15 @@ export function Viewport({ graph, registry, renderNodeId, epochMs }: ViewportPro
       renderer.render(scene, camera);
 
       // 2. Render Corner 3D Orientation Gizmo HUD (110x110 px in bottom-left)
-      const gizmoSize = 110;
-      renderer.clearDepth();
-      renderer.setScissorTest(true);
-      renderer.setScissor(12, 12, gizmoSize, gizmoSize);
-      renderer.setViewport(12, 12, gizmoSize, gizmoSize);
-      renderer.render(gizmoScene, gizmoCamera);
-      renderer.setScissorTest(false);
+      if (gizmo) {
+        const gizmoSize = 110;
+        renderer.clearDepth();
+        renderer.setScissorTest(true);
+        renderer.setScissor(12, 12, gizmoSize, gizmoSize);
+        renderer.setViewport(12, 12, gizmoSize, gizmoSize);
+        renderer.render(gizmo.gizmoScene, gizmo.gizmoCamera);
+        renderer.setScissorTest(false);
+      }
 
       frameId = requestAnimationFrame(tick);
     }
@@ -280,33 +291,35 @@ export function Viewport({ graph, registry, renderNodeId, epochMs }: ViewportPro
         host.removeChild(renderer.domElement);
       }
     };
-  }, [epochMs]);
+  }, [epochMs, outputMode]);
 
   return (
     <div className="viewport-container" ref={hostRef}>
-      {/* Top-Left Viewport HUD & Controls */}
-      <div className="viewport-hud">
-        <div className="viewport-hud-title">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polygon points="12 2 2 7 12 12 22 7 12 2" />
-            <polyline points="2 17 12 22 22 17" />
-            <polyline points="2 12 12 17 22 12" />
-          </svg>
-          Viewport 3D
+      {/* Top-Left Viewport HUD & Controls — editor-only, never shown in the output window */}
+      {!outputMode && (
+        <div className="viewport-hud">
+          <div className="viewport-hud-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polygon points="12 2 2 7 12 12 22 7 12 2" />
+              <polyline points="2 17 12 22 22 17" />
+              <polyline points="2 12 12 17 22 12" />
+            </svg>
+            Viewport 3D
+          </div>
+          <div className="viewport-hud-legend">
+            <span className="viewport-hud-axis viewport-hud-axis-x">X</span>
+            <span className="viewport-hud-axis viewport-hud-axis-y">Y</span>
+            <span className="viewport-hud-axis viewport-hud-axis-z">Z</span>
+          </div>
+          <button
+            className="viewport-hud-button"
+            onClick={() => resetCameraRef.current()}
+            title="Réinitialiser la caméra 3D"
+          >
+            Reset Cam
+          </button>
         </div>
-        <div className="viewport-hud-legend">
-          <span className="viewport-hud-axis viewport-hud-axis-x">X</span>
-          <span className="viewport-hud-axis viewport-hud-axis-y">Y</span>
-          <span className="viewport-hud-axis viewport-hud-axis-z">Z</span>
-        </div>
-        <button
-          className="viewport-hud-button"
-          onClick={() => resetCameraRef.current()}
-          title="Réinitialiser la caméra 3D"
-        >
-          Reset Cam
-        </button>
-      </div>
+      )}
     </div>
   );
 }

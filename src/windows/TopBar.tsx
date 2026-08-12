@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ensureOvmExtension,
   incrementFilename,
@@ -7,6 +7,7 @@ import {
   saveGraphToPath,
 } from "../shared/graph/storage";
 import { Graph } from "../shared/graph/types";
+import { closeOutputWindow, listMonitors, onOutputClosed, openOutputWindow } from "../shared/ipc";
 import "./top-bar.css";
 
 export interface TopBarProps {
@@ -28,6 +29,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [toastError, setToastError] = useState(false);
   const [isEditingFilename, setIsEditingFilename] = useState(false);
   const [filenameInput, setFilenameInput] = useState(currentFilename);
+  const [isOutputOpen, setIsOutputOpen] = useState(false);
 
   const showToast = (msg: string, error = false) => {
     setToastMessage(msg);
@@ -36,6 +38,34 @@ export const TopBar: React.FC<TopBarProps> = ({
       setToastMessage(null);
       setToastError(false);
     }, 3500);
+  };
+
+  // Tracks the OS-level close (red X on the output window), not just our own button.
+  useEffect(() => onOutputClosed(() => setIsOutputOpen(false)), []);
+
+  // The projector: opens fullscreen on the second monitor when there is one,
+  // otherwise the only one there is. "Il faudrait une fenêtre plein écran
+  // pour le deuxième écran" — one click, no monitor picker, since that's
+  // the actual ask; a picker is easy to add later if a third display shows up.
+  const handleToggleOutput = async () => {
+    try {
+      if (isOutputOpen) {
+        await closeOutputWindow();
+        setIsOutputOpen(false);
+        return;
+      }
+      const monitors = await listMonitors();
+      const target = monitors[1] ?? monitors[0];
+      if (!target) {
+        showToast("Aucun écran détecté", true);
+        return;
+      }
+      await openOutputWindow(target, true);
+      setIsOutputOpen(true);
+    } catch (err: unknown) {
+      const error = err as Error;
+      showToast(`Erreur sortie : ${error.message}`, true);
+    }
   };
 
   // 0. NEW GRAPH
@@ -200,6 +230,20 @@ export const TopBar: React.FC<TopBarProps> = ({
             <line x1="10" y1="5" x2="14" y2="5" />
           </svg>
           Incremental Save
+        </button>
+
+        {/* OUTPUT — fullscreen window on the second monitor (the video projector) */}
+        <button
+          className={`top-bar-button top-bar-button-output${isOutputOpen ? " top-bar-button-output-active" : ""}`}
+          onClick={handleToggleOutput}
+          title={isOutputOpen ? "Fermer la fenêtre de sortie" : "Ouvrir la sortie plein écran (deuxième écran)"}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2" y="3" width="20" height="14" rx="2" />
+            <line x1="8" y1="21" x2="16" y2="21" />
+            <line x1="12" y1="17" x2="12" y2="21" />
+          </svg>
+          {isOutputOpen ? "Close Output" : "Output"}
         </button>
       </div>
 
