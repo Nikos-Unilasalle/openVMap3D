@@ -33,6 +33,21 @@ export interface SocketDef {
   type: SocketType;
 }
 
+/**
+ * One color per socket type, shared by node handles and the wires between
+ * them — a wire is always the color of the type flowing through it, so a
+ * mismatched drag reads as wrong before the connection is even attempted.
+ */
+export const SOCKET_COLOR: Record<SocketType, string> = {
+  value: "#f2c14e",
+  vector: "#38bdf8",
+  matrix: "#a855f7",
+  color: "#ec4899",
+  geometry: "#22c55e",
+  texture: "#2dd4bf",
+  list: "#94a3b8",
+};
+
 /** Booleans travel as 0/1 on a `value` socket — see the module doc above. */
 export function toBoolean(v: unknown): boolean {
   return typeof v === "number" && v !== 0;

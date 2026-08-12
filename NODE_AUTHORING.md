@@ -1,0 +1,189 @@
+# Writing a node for OpenVMap3D
+
+This is a step-by-step guide for adding ONE node type to the graph engine.
+Follow it exactly. Do not improvise file locations or the shape of
+`NodeDefinition` — copy the patterns below.
+
+The full target node list (what to build, organized by category) is in
+`BIBLE.md` at the repo root. Pick one node from there, build it following
+this guide, then stop — one node per task, don't try to build several at once.
+
+## 1. Where files live
+
+```
+src/shared/graph/
+  sockets.ts          <- the 7 socket types (read-only, don't edit)
+  types.ts             <- NodeDefinition/EvalContext shape (read-only, don't edit)
+  nodes/
+    time.ts
+    valueMath.ts
+    vector.ts
+    transform.ts
+    object.ts
+    render.ts
+    <yourfile>.ts      <- you add a node here, in an existing file or a new one
+    index.ts            <- you register your node here
+    nodes.test.ts        <- you add a test here
+```
+
+Group related nodes in one file (e.g. all Value-type nodes are in
+`valueMath.ts`). If your node doesn't fit an existing file, create a new
+one named after the category (e.g. `logic.ts`, `particles.ts`).
+
+**Never touch:** anything under `src/windows/` (the node editor UI) or
+`src/shared/three/Viewport.tsx`. Node appearance (box shape, socket colors,
+handle position) is 100% generic and driven by your node's `inputs`/
+`outputs` list — you never write UI code for a new node.
+
+## 2. The shape you must produce
+
+```ts
+import { NodeDefinition } from "../types";
+
+export const MY_NODE: NodeDefinition = {
+  type: "category/my-node",      // unique, lowercase, "category/name"
+  label: "My Node",               // shown in the editor
+  inputs: [
+    { id: "a", label: "A", type: "value" },
+  ],
+  outputs: [
+    { id: "out", label: "Out", type: "value" },
+  ],
+  defaultParams: { a: 0 },        // fallback value when "a" has no wire, plus any per-instance knobs
+  evaluate: (inputs, params, ctx) => {
+    const a = Number(inputs.a) || 0;
+    return { out: a * 2 };
+  },
+};
+```
+
+Rules for `evaluate`:
+- **Pure.** Same `inputs`/`params`/`ctx.time` in → same output out, every
+  time. No reading `Date.now()`, no `Math.random()`, no reading any
+  variable that isn't one of the three arguments. Time comes from
+  `ctx.time` (seconds) or `ctx.step` (frame count) — never a wall clock.
+- **Never mutate `inputs` or `params`.** They may be shared with other
+  nodes reading the same wire. If you need to change a `THREE.Vector3`
+  etc., make a new one (`inputs.vector.clone()`), don't call `.set()` on
+  the one you were handed. (Exception: see §5, GPU resources.)
+- Return an object with exactly the keys in your `outputs` list.
+- Handle bad/missing input defensively — an unconnected input arrives as
+  `undefined`, not your default. Always do `Number(inputs.a) || 0` or an
+  `instanceof` check with a fallback, never assume the type is right.
+  Look at `value/math`'s divide-by-zero handling in `valueMath.ts` for
+  the pattern: return a safe finite number, never `NaN`/`Infinity` — a bad
+  value must not poison every node downstream of it.
+
+## 3. The socket types
+
+Pick types for `inputs`/`outputs` from exactly these seven — no others exist:
+
+| type       | carries                    | color   |
+|------------|-----------------------------|---------|
+| `value`    | `number` (also booleans: 0/1) | yellow |
+| `vector`   | `THREE.Vector3`             | blue    |
+| `matrix`   | `THREE.Matrix4`             | purple  |
+| `color`    | `THREE.Color`               | pink    |
+| `geometry` | `THREE.Object3D`            | green   |
+| `texture`  | `THREE.Texture`             | teal    |
+| `list`     | `unknown[]`                 | gray    |
+
+There is no Boolean or Trigger type. A boolean travels as a `value`
+socket carrying `0` or `1` — use `toBoolean`/`fromBoolean` from
+`sockets.ts` to convert.
+
+The editor only lets you connect a wire between two sockets of the SAME
+type — that's enforced automatically, you don't need to check it yourself.
+
+## 4. `ctx` — what your node knows about "now"
+
+```ts
+interface EvalContext {
+  time: number;    // seconds since the graph started (deterministic, not wall-clock)
+  step: number;     // frame count since start (whole number)
+  nodeId: string;    // this specific node instance's id — see §5
+}
+```
+
+## 5. If your node needs a GPU resource (mesh, texture, render target)
+
+Most nodes don't need this section — skip it unless you're building
+something like Object, Particles, or a texture generator.
+
+`evaluate()` runs every frame and must be pure, but a `THREE.Mesh` (say)
+needs to be the SAME object every frame, not a fresh one 60 times a
+second. Pattern (copy this from `object.ts`):
+
+```ts
+const myCache = new Map<string, THREE.Mesh>();
+
+function getOrCreate(nodeId: string): THREE.Mesh {
+  const existing = myCache.get(nodeId);
+  if (existing) return existing;
+  const mesh = new THREE.Mesh(/* ... */);
+  myCache.set(nodeId, mesh);
+  return mesh;
+}
+```
+
+Then inside `evaluate`, look it up via `ctx.nodeId`, mutate ITS properties
+in place (this is the one place mutation is correct — you own this object,
+nothing else does), and return it. Note in a comment that the cache has no
+delete-node cleanup yet (known gap, don't try to solve it in your node).
+
+## 6. Register your node
+
+Open `src/shared/graph/nodes/index.ts`. Add your node to `STARTER_NODES`,
+and if you made a new file, add an `export * from "./yourfile";` line too.
+
+## 7. Write a test
+
+Open `src/shared/graph/nodes/nodes.test.ts` (or add a new `<file>.test.ts`
+next to your node file, same pattern). Use this `CTX`:
+
+```ts
+const CTX: EvalContext = { time: 0, step: 0, nodeId: "test" };
+```
+
+Test at minimum:
+- The normal case with plausible inputs.
+- What happens with NO inputs connected (uses `defaultParams` — must not
+  throw, must not return `NaN`).
+- Any edge case that could divide by zero, index out of range, or produce
+  `Infinity`.
+
+Example (copy the shape, change the numbers):
+
+```ts
+describe("MY_NODE", () => {
+  test("doubles the input", () => {
+    expect(MY_NODE.evaluate({ a: 3 }, MY_NODE.defaultParams, CTX).out).toBe(6);
+  });
+
+  test("unconnected input falls back to defaultParams", () => {
+    expect(MY_NODE.evaluate({}, MY_NODE.defaultParams, CTX).out).toBe(0);
+  });
+});
+```
+
+## 8. Before you say you're done
+
+Run both, from the repo root, and both must be clean:
+
+```bash
+npx tsc --noEmit
+npx vitest run
+```
+
+If either fails, fix it — don't hand back code that doesn't pass these.
+
+## 9. Style rules (project-wide, apply to your node too)
+
+- `camelCase` for variables/functions, `PascalCase` only for types.
+- No `any`. Cast with `instanceof` checks or `Number(...)`/`String(...)`,
+  like the examples above.
+- No comments explaining WHAT the code does — code should read that on
+  its own. A comment is only for a non-obvious WHY (a workaround, a
+  deliberate tradeoff) — see the comments in `valueMath.ts`/`object.ts`
+  for the level of comment this project actually wants.
+- Keep the file under ~300 lines. If a category grows past that, split it.

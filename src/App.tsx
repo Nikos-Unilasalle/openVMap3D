@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useState } from "react";
 import { DEFAULT_REGISTRY } from "./shared/graph/nodes";
 import { Connection, Graph, NodeInstance } from "./shared/graph/types";
 import { Viewport } from "./shared/three/Viewport";
@@ -38,7 +38,7 @@ function buildSmokeTestGraph(): Graph {
 }
 
 function App() {
-  const graph = useMemo(buildSmokeTestGraph, []);
+  const [graph, setGraph] = useState<Graph>(buildSmokeTestGraph);
 
   return (
     <div style={{ width: "100vw", height: "100vh", display: "flex", flexDirection: "column" }}>
@@ -46,7 +46,7 @@ function App() {
         <Viewport graph={graph} registry={DEFAULT_REGISTRY} renderNodeId="output" />
       </div>
       <div style={{ flex: "1 1 0", minHeight: 0, borderTop: "1px solid #2c333f" }}>
-        <GraphEditor graph={graph} registry={DEFAULT_REGISTRY} />
+        <GraphEditor graph={graph} registry={DEFAULT_REGISTRY} onGraphChange={setGraph} />
       </div>
     </div>
   );

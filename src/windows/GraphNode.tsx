@@ -1,5 +1,5 @@
 import { Handle, Position } from "@xyflow/react";
-import { SocketDef } from "../shared/graph/sockets";
+import { SOCKET_COLOR, SocketDef } from "../shared/graph/sockets";
 
 export interface GraphNodeData {
   label: string;
@@ -7,16 +7,6 @@ export interface GraphNodeData {
   outputs: SocketDef[];
   [key: string]: unknown;
 }
-
-const SOCKET_COLOR: Record<SocketDef["type"], string> = {
-  value: "#f2c14e",
-  vector: "#38bdf8",
-  matrix: "#a855f7",
-  color: "#ec4899",
-  geometry: "#22c55e",
-  texture: "#2dd4bf",
-  list: "#94a3b8",
-};
 
 /**
  * Generic node renderer — every node type looks the same shape (title,
