@@ -11,7 +11,16 @@ import * as THREE from "three";
  * exists to feed a three.js renderer, so there is no independent math layer
  * to keep in sync with it.
  */
-export type SocketType = "value" | "vector" | "matrix" | "color" | "geometry" | "texture" | "list";
+export type SocketType =
+  | "value"
+  | "vector"
+  | "matrix"
+  | "color"
+  | "geometry"
+  | "texture"
+  | "list"
+  | "text"
+  | "any";
 
 /** The runtime value a socket of each type actually carries during evaluation. */
 export interface SocketValueMap {
@@ -23,6 +32,8 @@ export interface SocketValueMap {
   geometry: THREE.Object3D;
   texture: THREE.Texture;
   list: unknown[];
+  text: string;
+  any: unknown;
 }
 
 export type SocketValue<T extends SocketType = SocketType> = SocketValueMap[T];
@@ -46,6 +57,8 @@ export const SOCKET_COLOR: Record<SocketType, string> = {
   geometry: "#22c55e",
   texture: "#2dd4bf",
   list: "#94a3b8",
+  text: "#f97316",
+  any: "#e2e8f0",
 };
 
 /** Booleans travel as 0/1 on a `value` socket — see the module doc above. */

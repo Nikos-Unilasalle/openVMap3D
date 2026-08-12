@@ -1,5 +1,5 @@
 import { NodeDefinition } from "../types";
-import { fromBoolean, toBoolean } from "../sockets";
+import { fromBoolean, SocketType, toBoolean } from "../sockets";
 
 const COMPARE_OPS = ["equal", "not_equal", "greater", "greater_equal", "less", "less_equal"];
 
@@ -176,5 +176,58 @@ export const GATE_NODE: NodeDefinition = {
     const offValue = Number(params.offValue) || 0;
 
     return { out: enable ? value : offValue };
+  },
+};
+
+/**
+ * Logic Bridge node — Conditional Multiplexer / Switch.
+ * Selects between Input A (If True) and Input B (If False) based on Condition (0 or 1).
+ * Inputs A & B and Output dynamically adapt to match whatever socket type is connected to them.
+ */
+export const LOGIC_BRIDGE_NODE: NodeDefinition = {
+  type: "logic/bridge",
+  label: "Logic Bridge",
+  category: "logic",
+  inputs: [
+    { id: "condition", label: "Condition", type: "value" },
+    { id: "ifTrue", label: "If True (A)", type: "any" },
+    { id: "ifFalse", label: "If False (B)", type: "any" },
+  ],
+  dynamicInputs: (_connections, connectionTypes) => {
+    const connTrue = connectionTypes?.find((c) => c.connection.toSocket === "ifTrue");
+    const connFalse = connectionTypes?.find((c) => c.connection.toSocket === "ifFalse");
+
+    const activeType: SocketType =
+      (connTrue && connTrue.sourceSocketType !== "any" ? connTrue.sourceSocketType : undefined) ||
+      (connFalse && connFalse.sourceSocketType !== "any" ? connFalse.sourceSocketType : undefined) ||
+      "any";
+
+    return [
+      { id: "condition", label: "Condition", type: "value" },
+      { id: "ifTrue", label: "If True (A)", type: activeType },
+      { id: "ifFalse", label: "If False (B)", type: activeType },
+    ];
+  },
+  dynamicOutputs: (_connections, connectionTypes) => {
+    const connTrue = connectionTypes?.find((c) => c.connection.toSocket === "ifTrue");
+    const connFalse = connectionTypes?.find((c) => c.connection.toSocket === "ifFalse");
+
+    const activeType: SocketType =
+      (connTrue && connTrue.sourceSocketType !== "any" ? connTrue.sourceSocketType : undefined) ||
+      (connFalse && connFalse.sourceSocketType !== "any" ? connFalse.sourceSocketType : undefined) ||
+      "any";
+
+    return [{ id: "out", label: "Output", type: activeType }];
+  },
+  outputs: [{ id: "out", label: "Output", type: "any" }],
+  defaultParams: { condition: 1 },
+  paramFields: [{ id: "condition", label: "Condition (1=True, 0=False)", kind: "boolean" }],
+  evaluate: (inputs, params) => {
+    const cond = toBoolean(inputs.condition !== undefined ? inputs.condition : params.condition);
+    const valTrue = inputs.ifTrue;
+    const valFalse = inputs.ifFalse;
+
+    const result = cond ? valTrue : valFalse;
+    return { out: result };
   },
 };

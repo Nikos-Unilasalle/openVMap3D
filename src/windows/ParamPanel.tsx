@@ -111,7 +111,16 @@ export function ParamPanel({ nodeId, label, category, fields, params, onChange }
           {field.kind === "boolean" && booleanField(params[field.id], (v) => onChange(field.id, v))}
           {field.kind === "select" && selectField(field, params[field.id], (v) => onChange(field.id, v))}
           {field.kind === "color" && colorField(params[field.id], (v) => onChange(field.id, v))}
+          {field.kind === "text" && (
+            <input
+              type="text"
+              className="param-text-input"
+              value={String(params[field.id] ?? "")}
+              onChange={(e) => onChange(field.id, e.target.value)}
+            />
+          )}
           {field.kind === "file" && fileField(nodeId, field, params[field.id], (v) => onChange(field.id, v))}
+
         </div>
       ))}
     </div>

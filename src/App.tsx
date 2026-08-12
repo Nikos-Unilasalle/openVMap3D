@@ -4,6 +4,7 @@ import { Connection, Graph, NodeInstance } from "./shared/graph/types";
 import { Viewport } from "./shared/three/Viewport";
 import { GraphEditor } from "./windows/GraphEditor";
 import { ParamPanel } from "./windows/ParamPanel";
+import { TopBar } from "./windows/TopBar";
 
 function node(id: string, type: string, position: { x: number; y: number }, params: Record<string, unknown> = {}): NodeInstance {
   return { id, type, params, position };
@@ -13,13 +14,6 @@ function edge(fromNode: string, fromSocket: string, toNode: string, toSocket: st
   return { id: `${fromNode}.${fromSocket}->${toNode}.${toSocket}`, fromNode, fromSocket, toNode, toSocket };
 }
 
-/**
- * Hand-built smoke-test graph: Time -> Compose Vector -> Transform -> Object
- * (Box) -> Render. Proves the whole pipe end to end — a live signal reaching
- * a rendered, moving 3D object — before there's an editor to build this kind
- * of graph interactively. Delete once the node editor (task: xyflow canvas)
- * can build and load one instead.
- */
 function buildSmokeTestGraph(): Graph {
   return {
     nodes: [
@@ -45,11 +39,28 @@ function App() {
   const [graph, setGraph] = useState<Graph>(buildSmokeTestGraph);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [splitPercent, setSplitPercent] = useState(50);
+  const [currentFilename, setCurrentFilename] = useState("project_v1.ovm");
+  const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
+  const [editorKey, setEditorKey] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const draggingSplit = useRef(false);
 
   const selectedInstance = graph.nodes.find((n) => n.id === selectedNodeId) ?? null;
   const selectedDef = selectedInstance ? DEFAULT_REGISTRY.get(selectedInstance.type) : undefined;
+
+  const handleLoadGraph = (newGraph: Graph, filename?: string) => {
+    setGraph(newGraph);
+    setSelectedNodeId(null);
+    setEditorKey((k) => k + 1);
+    if (filename) {
+      setCurrentFilename(filename);
+    }
+  };
+
+  const handleFilenameChange = (name: string, path: string | null) => {
+    setCurrentFilename(name);
+    setCurrentFilePath(path);
+  };
 
   const onParamChange = (paramId: string, value: unknown) => {
     if (!selectedInstance) return;
@@ -87,6 +98,13 @@ function App() {
       ref={containerRef}
       style={{ width: "100vw", height: "100vh", display: "flex", flexDirection: "column" }}
     >
+      <TopBar
+        graph={graph}
+        onLoadGraph={handleLoadGraph}
+        currentFilename={currentFilename}
+        currentFilePath={currentFilePath}
+        onFilenameChange={handleFilenameChange}
+      />
       <div style={{ height: `${splitPercent}%`, minHeight: 0, position: "relative" }}>
         <Viewport graph={graph} registry={DEFAULT_REGISTRY} renderNodeId="output" />
         {selectedInstance && selectedDef && (
@@ -109,7 +127,13 @@ function App() {
         style={{ height: 6, flexShrink: 0, cursor: "row-resize", background: "#2c333f" }}
       />
       <div style={{ flex: 1, minHeight: 0 }}>
-        <GraphEditor graph={graph} registry={DEFAULT_REGISTRY} onGraphChange={setGraph} onSelectNode={setSelectedNodeId} />
+        <GraphEditor
+          key={editorKey}
+          graph={graph}
+          registry={DEFAULT_REGISTRY}
+          onGraphChange={setGraph}
+          onSelectNode={setSelectedNodeId}
+        />
       </div>
     </div>
   );

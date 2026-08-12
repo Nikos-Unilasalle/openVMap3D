@@ -1,37 +1,129 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { ClockState, createClock, tickClock } from "../graph/clock";
 import { evaluateGraph } from "../graph/evaluate";
 import { Graph, NodeRegistry } from "../graph/types";
-import { ClockState, createClock, tickClock } from "../graph/clock";
+import "./viewport.css";
 
 interface ViewportProps {
   graph: Graph;
   registry: NodeRegistry;
   /** Which node in the graph is the terminal `render` node whose output gets drawn. */
   renderNodeId: string;
-  /**
-   * Ms epoch the graph's clock counts steps from — see clock.ts. Defaults to
-   * mount time. Single window today; once an output-window split exists,
-   * this is the one value that has to come from outside (broadcast once),
-   * everything else derives locally.
-   */
   epochMs?: number;
 }
 
-/**
- * Owns the three.js renderer/scene/camera and the per-frame evaluate-and-draw
- * loop. Mirrors OpenVMap's SceneRenderer.tsx: refs for the latest graph/
- * registry (so the running RAF loop always reads current data without the
- * effect re-running and tearing down the GL context on every edit),
- * ResizeObserver instead of a fixed size, explicit renderer.dispose() on
- * unmount.
- *
- * Lighting is hardcoded here today (ambient + one directional), not
- * graph-authored — BIBLE.md wants a `Light` node, but Render only accepts a
- * single Geometry input for now (see render.ts), so a light and the object
- * it lights can't both flow into it yet. Move lighting into the graph once
- * Render (or Sequence feeding it) fans in more than one object.
- */
+/** Create text canvas sprite for corner 3D axes labels ("X", "Y", "Z") */
+function createTextSprite(text: string, color: string): THREE.Sprite {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(32, 32, 26, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#ffffff";
+    ctx.stroke();
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 26px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, 32, 32);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  const spriteMaterial = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+  const sprite = new THREE.Sprite(spriteMaterial);
+  sprite.scale.set(0.32, 0.32, 1);
+  return sprite;
+}
+
+/** Build 3D Axes Triad Gizmo for Corner HUD */
+function createGizmoScene(): { gizmoScene: THREE.Scene; gizmoCamera: THREE.PerspectiveCamera } {
+  const gizmoScene = new THREE.Scene();
+  const gizmoCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 10);
+  gizmoCamera.position.set(0, 0, 3);
+  gizmoCamera.lookAt(0, 0, 0);
+
+  const axisLength = 1.0;
+  const axes = [
+    { dir: new THREE.Vector3(1, 0, 0), color: 0xf43f5e, hexColor: "#f43f5e", label: "X" },
+    { dir: new THREE.Vector3(0, 1, 0), color: 0x22c55e, hexColor: "#22c55e", label: "Y" },
+    { dir: new THREE.Vector3(0, 0, 1), color: 0x38bdf8, hexColor: "#38bdf8", label: "Z" },
+  ];
+
+  axes.forEach(({ dir, color, hexColor, label }) => {
+    // Axis line
+    const points = [new THREE.Vector3(0, 0, 0), dir.clone().multiplyScalar(axisLength)];
+    const geom = new THREE.BufferGeometry().setFromPoints(points);
+    const mat = new THREE.LineBasicMaterial({ color, linewidth: 3 });
+    gizmoScene.add(new THREE.Line(geom, mat));
+
+    // Label Sprite
+    const sprite = createTextSprite(label, hexColor);
+    sprite.position.copy(dir.clone().multiplyScalar(axisLength + 0.2));
+    gizmoScene.add(sprite);
+  });
+
+  // Center origin dot
+  const dotGeom = new THREE.SphereGeometry(0.08, 16, 16);
+  const dotMat = new THREE.MeshBasicMaterial({ color: 0xe2e8f0 });
+  gizmoScene.add(new THREE.Mesh(dotGeom, dotMat));
+
+  return { gizmoScene, gizmoCamera };
+}
+
+/** Build main 3D Scene Grid & Origin Axes Helper */
+function buildMainSceneGridAndAxes(): THREE.Group {
+  const group = new THREE.Group();
+
+  // Ground Grid (XZ Plane)
+  const gridHelper = new THREE.GridHelper(20, 20, 0x38bdf8, 0x1f2937);
+  gridHelper.position.y = -0.001; // Avoid z-fighting with objects at y=0
+  group.add(gridHelper);
+
+  // 3D Axis Arrows at Origin
+  const axisLength = 1.5;
+  const headLength = 0.3;
+  const headWidth = 0.12;
+
+  const xAxis = new THREE.ArrowHelper(
+    new THREE.Vector3(1, 0, 0),
+    new THREE.Vector3(0, 0, 0),
+    axisLength,
+    0xf43f5e,
+    headLength,
+    headWidth
+  );
+  const yAxis = new THREE.ArrowHelper(
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(0, 0, 0),
+    axisLength,
+    0x22c55e,
+    headLength,
+    headWidth
+  );
+  const zAxis = new THREE.ArrowHelper(
+    new THREE.Vector3(0, 0, 1),
+    new THREE.Vector3(0, 0, 0),
+    axisLength,
+    0x38bdf8,
+    headLength,
+    headWidth
+  );
+
+  group.add(xAxis);
+  group.add(yAxis);
+  group.add(zAxis);
+
+  return group;
+}
+
 export function Viewport({ graph, registry, renderNodeId, epochMs }: ViewportProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef(graph);
@@ -40,17 +132,15 @@ export function Viewport({ graph, registry, renderNodeId, epochMs }: ViewportPro
   registryRef.current = registry;
   const renderNodeIdRef = useRef(renderNodeId);
   renderNodeIdRef.current = renderNodeId;
+  const resetCameraRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     if (!hostRef.current) return;
-    // Rebound to a fresh const: TS narrows `hostRef.current` to non-null at
-    // this line, but that narrowing doesn't reliably survive into the nested
-    // closures below (resize, tick) since they're hoisted function
-    // declarations — a plain, separately-typed binding sidesteps that.
     const host: HTMLDivElement = hostRef.current;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.autoClear = false;
     host.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
@@ -60,9 +150,26 @@ export function Viewport({ graph, registry, renderNodeId, epochMs }: ViewportPro
     sun.position.set(3, 5, 4);
     scene.add(sun);
 
+    // Grid & Origin Axes Helper
+    const gridAndAxes = buildMainSceneGridAndAxes();
+    scene.add(gridAndAxes);
+
     const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
     camera.position.set(3, 3, 5);
     camera.lookAt(0, 0, 0);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+
+    resetCameraRef.current = () => {
+      camera.position.set(3, 3, 5);
+      controls.target.set(0, 0, 0);
+      controls.update();
+    };
+
+    // Gizmo Corner Scene & Camera
+    const { gizmoScene, gizmoCamera } = createGizmoScene();
 
     function resize() {
       const { clientWidth, clientHeight } = host;
@@ -82,6 +189,14 @@ export function Viewport({ graph, registry, renderNodeId, epochMs }: ViewportPro
 
     function tick() {
       clock = tickClock(clock, Date.now());
+      controls.update();
+
+      // Sync corner Gizmo camera orientation with main camera
+      gizmoCamera.position
+        .copy(camera.position)
+        .sub(controls.target)
+        .setLength(3);
+      gizmoCamera.lookAt(0, 0, 0);
 
       let results;
       try {
@@ -91,10 +206,6 @@ export function Viewport({ graph, registry, renderNodeId, epochMs }: ViewportPro
           nodeId: "",
         });
       } catch (err) {
-        // A bug in a specific node is already caught inside evaluateGraph;
-        // this is the backstop for something evaluateGraph itself couldn't
-        // anticipate (e.g. a malformed graph object) — must not take the
-        // render loop down, or the output goes silently, permanently black.
         console.error("graph evaluation failed", err);
         frameId = requestAnimationFrame(tick);
         return;
@@ -108,22 +219,64 @@ export function Viewport({ graph, registry, renderNodeId, epochMs }: ViewportPro
         currentObject = nextObject;
       }
 
+      // 1. Render Main Scene
+      const width = host.clientWidth;
+      const height = host.clientHeight;
+      renderer.setViewport(0, 0, width, height);
+      renderer.setScissorTest(false);
+      renderer.clear();
       renderer.render(scene, camera);
+
+      // 2. Render Corner 3D Orientation Gizmo HUD (110x110 px in bottom-left)
+      const gizmoSize = 110;
+      renderer.clearDepth();
+      renderer.setScissorTest(true);
+      renderer.setScissor(12, 12, gizmoSize, gizmoSize);
+      renderer.setViewport(12, 12, gizmoSize, gizmoSize);
+      renderer.render(gizmoScene, gizmoCamera);
+      renderer.setScissorTest(false);
+
       frameId = requestAnimationFrame(tick);
     }
+
     frameId = requestAnimationFrame(tick);
 
     return () => {
       cancelAnimationFrame(frameId);
       resizeObserver.disconnect();
+      controls.dispose();
       renderer.dispose();
-      host.removeChild(renderer.domElement);
+      if (host.contains(renderer.domElement)) {
+        host.removeChild(renderer.domElement);
+      }
     };
-    // Deliberately not depending on graph/registry/renderNodeId: those are
-    // read through refs every frame so editing the graph doesn't tear down
-    // and recreate the WebGL context — only remount (mount/unmount) should.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [epochMs]);
 
-  return <div ref={hostRef} style={{ width: "100%", height: "100%" }} />;
+  return (
+    <div className="viewport-container" ref={hostRef}>
+      {/* Top-Left Viewport HUD & Controls */}
+      <div className="viewport-hud">
+        <div className="viewport-hud-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polygon points="12 2 2 7 12 12 22 7 12 2" />
+            <polyline points="2 17 12 22 22 17" />
+            <polyline points="2 12 12 17 22 12" />
+          </svg>
+          Viewport 3D
+        </div>
+        <div className="viewport-hud-legend">
+          <span className="viewport-hud-axis viewport-hud-axis-x">X</span>
+          <span className="viewport-hud-axis viewport-hud-axis-y">Y</span>
+          <span className="viewport-hud-axis viewport-hud-axis-z">Z</span>
+        </div>
+        <button
+          className="viewport-hud-button"
+          onClick={() => resetCameraRef.current()}
+          title="Réinitialiser la caméra 3D"
+        >
+          Reset Cam
+        </button>
+      </div>
+    </div>
+  );
 }

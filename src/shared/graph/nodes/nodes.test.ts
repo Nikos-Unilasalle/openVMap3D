@@ -2,13 +2,25 @@ import * as THREE from "three";
 import { describe, expect, test } from "vitest";
 import { EvalContext } from "../types";
 import { MAP_RANGE_NODE, VALUE_MATH_NODE } from "./valueMath";
-import { TRANSFORM_NODE, DECOMPOSE_MATRIX_NODE, PARENT_NODE, LOOK_AT_NODE } from "./transform";
+import { TRANSFORM_NODE, DECOMPOSE_MATRIX_NODE, PARENT_NODE, LOOK_AT_NODE, MATRIX_TRANSFORM_NODE, TRANSFORM_VECTOR_NODE } from "./transform";
 import { VECTOR_MATH_NODE } from "./vector";
-import { COMPARE_NODE, BOOLEAN_LOGIC_NODE, TRIGGER_NODE, TOGGLE_NODE, GATE_NODE } from "./logic";
+import { COMPARE_NODE, BOOLEAN_LOGIC_NODE, TRIGGER_NODE, TOGGLE_NODE, GATE_NODE, LOGIC_BRIDGE_NODE } from "./logic";
 import { OSCILLATOR_NODE, ENVELOPE_NODE } from "./oscillator";
 import { COLOR_COMPOSE_NODE, COLOR_DECOMPOSE_NODE, COLOR_MATH_NODE } from "./color";
-import { OBJECT_PLANE_NODE, OBJECT_SPHERE_NODE } from "./object";
-import { COLOR_TO_VECTOR_NODE, VALUE_TO_COLOR_NODE, VALUE_TO_VECTOR_NODE, VECTOR_TO_COLOR_NODE } from "./converter";
+import { OBJECT_BAR_GRAPH_NODE, OBJECT_PLANE_NODE, OBJECT_SPHERE_NODE, OBJECT_TEXT_NODE } from "./object";
+
+import { COLOR_TO_VECTOR_NODE, VALUE_TO_COLOR_NODE, VALUE_TO_TEXT_NODE, VALUE_TO_VECTOR_NODE, VECTOR_TO_COLOR_NODE } from "./converter";
+import { TEXT_CONSTANT_NODE } from "./text";
+import { COLOR_PALETTE_LIST_NODE, GENERATE_LIST_NODE, GET_LIST_ITEM_NODE, LIST_COMBINE_MATH_NODE, LIST_LENGTH_NODE, LIST_MATH_NODE, LIST_STATISTICS_NODE, SLICE_LIST_NODE } from "./list";
+import { INSPECTOR_NODE } from "./inspector";
+import { AUDIO_PEAK_DETECTOR_NODE, AUDIO_PLAYER_NODE, AUDIO_SPECTRUM_NODE, AUDIO_SYNTH_NODE, MICROPHONE_INPUT_NODE } from "./sound";
+import { RANDOM_LIST_NODE, RANDOM_MATRIX_NODE, RANDOM_VALUE_NODE, RANDOM_VECTOR_NODE } from "./random";
+
+
+
+
+
+
 
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "test" };
 
@@ -126,7 +138,29 @@ describe("PARENT_NODE & LOOK_AT_NODE", () => {
     const res = LOOK_AT_NODE.evaluate({ eye, target, up }, {}, CTX).matrix as THREE.Matrix4;
     expect(res).toBeInstanceOf(THREE.Matrix4);
   });
+
+  test("matrix transform incremental composition", () => {
+    const base = new THREE.Matrix4().makeTranslation(5, 0, 0);
+    const loc = new THREE.Vector3(0, 3, 0);
+    const res = MATRIX_TRANSFORM_NODE.evaluate({ matrix: base, location: loc }, MATRIX_TRANSFORM_NODE.defaultParams, CTX).matrix as THREE.Matrix4;
+
+    const pos = new THREE.Vector3();
+    pos.setFromMatrixPosition(res);
+    expect(pos.x).toBe(5);
+    expect(pos.y).toBe(3);
+  });
+
+  test("transform vector by matrix", () => {
+    const vec = new THREE.Vector3(1, 2, 3);
+    const mat = new THREE.Matrix4().makeTranslation(10, 20, 30);
+    const res = TRANSFORM_VECTOR_NODE.evaluate({ vector: vec, matrix: mat }, {}, CTX).vector as THREE.Vector3;
+
+    expect(res.x).toBe(11);
+    expect(res.y).toBe(22);
+    expect(res.z).toBe(33);
+  });
 });
+
 
 describe("LOGIC NODES", () => {
   test("compare node", () => {
@@ -159,6 +193,28 @@ describe("LOGIC NODES", () => {
   test("gate node", () => {
     expect(GATE_NODE.evaluate({ value: 42, enable: 1 }, {}, CTX).out).toBe(42);
     expect(GATE_NODE.evaluate({ value: 42, enable: 0 }, { offValue: 0 }, CTX).out).toBe(0);
+  });
+
+  test("logic bridge node (conditional multiplexer & type adaptation)", () => {
+    // Condition = 1 -> returns ifTrue (A)
+    const resTrue = LOGIC_BRIDGE_NODE.evaluate({ condition: 1, ifTrue: "MatrixA", ifFalse: "MatrixB" }, {}, CTX);
+    expect(resTrue.out).toBe("MatrixA");
+
+    // Condition = 0 -> returns ifFalse (B)
+    const resFalse = LOGIC_BRIDGE_NODE.evaluate({ condition: 0, ifTrue: "MatrixA", ifFalse: "MatrixB" }, {}, CTX);
+    expect(resFalse.out).toBe("MatrixB");
+
+    // Test dynamic input & output type adaptation
+    const dynamicInputs = LOGIC_BRIDGE_NODE.dynamicInputs!([], [
+      { connection: { id: "c1", fromNode: "n1", fromSocket: "matrix", toNode: "bridge", toSocket: "ifTrue" }, sourceSocketType: "matrix" },
+    ]);
+    expect(dynamicInputs.find((s) => s.id === "ifTrue")?.type).toBe("matrix");
+    expect(dynamicInputs.find((s) => s.id === "ifFalse")?.type).toBe("matrix");
+
+    const dynamicOutputs = LOGIC_BRIDGE_NODE.dynamicOutputs!([], [
+      { connection: { id: "c1", fromNode: "n1", fromSocket: "matrix", toNode: "bridge", toSocket: "ifTrue" }, sourceSocketType: "matrix" },
+    ]);
+    expect(dynamicOutputs.find((s) => s.id === "out")?.type).toBe("matrix");
   });
 });
 
@@ -231,6 +287,16 @@ describe("CONVERTER NODES", () => {
     expect(res.g).toBeCloseTo(0.5);
     expect(res.b).toBeCloseTo(0.5);
   });
+
+  test("value to text formatting", () => {
+    const res = VALUE_TO_TEXT_NODE.evaluate({ value: 12.3456, decimals: 2, prefix: "FPS: ", suffix: " Hz" }, {}, CTX).text as string;
+    expect(res).toBe("FPS: 12.35 Hz");
+  });
+
+  test("text constant", () => {
+    const res = TEXT_CONSTANT_NODE.evaluate({}, { text: "OpenVMap3D" }, CTX).text as string;
+    expect(res).toBe("OpenVMap3D");
+  });
 });
 
 describe("OBJECT PRIMITIVES", () => {
@@ -243,4 +309,167 @@ describe("OBJECT PRIMITIVES", () => {
     const res = OBJECT_SPHERE_NODE.evaluate({}, OBJECT_SPHERE_NODE.defaultParams, CTX).geometry as THREE.Mesh;
     expect(res).toBeInstanceOf(THREE.Mesh);
   });
+
+  test("text object evaluation", () => {
+    const color = new THREE.Color(1, 0, 0);
+    const res = OBJECT_TEXT_NODE.evaluate({ text: "Test Text", font: "monospace", fontSize: 96, color }, OBJECT_TEXT_NODE.defaultParams, CTX).geometry as THREE.Mesh;
+    expect(res).toBeInstanceOf(THREE.Mesh);
+    expect((res.material as THREE.MeshBasicMaterial).color.r).toBe(1);
+    expect((res.material as THREE.MeshBasicMaterial).color.g).toBe(0);
+  });
+
+  test("bar graph object evaluation with labels and positions", () => {
+    const values = [0.2, 0.5, 1.0, 0.8];
+    const colors = [new THREE.Color(1, 0, 0), new THREE.Color(0, 1, 0)];
+    const params = { ...OBJECT_BAR_GRAPH_NODE.defaultParams, count: 4, spacing: 0.1, barWidth: 0.5, maxHeight: 10, showLabels: 1, labelPosition: "below_flat" };
+    const group = OBJECT_BAR_GRAPH_NODE.evaluate({ values, colors }, params, CTX).geometry as THREE.Group;
+
+    expect(group).toBeInstanceOf(THREE.Group);
+    const barsGroup = group.children[0] as THREE.Group;
+    expect(barsGroup.children.length).toBe(4);
+
+    const bar2 = barsGroup.children[2] as THREE.Mesh;
+    expect(bar2.scale.y).toBe(10); // value 1.0 * maxHeight 10
+
+    const labelsGroup = group.children[1] as THREE.Group;
+    expect(labelsGroup.visible).toBe(true);
+    expect(labelsGroup.children.length).toBe(4);
+  });
+
 });
+
+describe("LIST NODES", () => {
+  test("generate list", () => {
+    const list = GENERATE_LIST_NODE.evaluate({ count: 5, start: 10, step: 2 }, {}, CTX).list as number[];
+    expect(list).toEqual([10, 12, 14, 16, 18]);
+  });
+
+  test("get list item and list length", () => {
+    const sample = [10, 20, 30, 40];
+    expect(LIST_LENGTH_NODE.evaluate({ list: sample }, {}, CTX).length).toBe(4);
+    expect(GET_LIST_ITEM_NODE.evaluate({ list: sample, index: 2 }, {}, CTX).val).toBe(30);
+  });
+
+  test("list math operations", () => {
+    const sample = [1, 2, 3];
+    const mult = LIST_MATH_NODE.evaluate({ list: sample, factor: 10 }, { op: "multiply" }, CTX).list as number[];
+    expect(mult).toEqual([10, 20, 30]);
+
+    const remapped = LIST_MATH_NODE.evaluate({ list: [10, 20, 30] }, { op: "remap_01" }, CTX).list as number[];
+    expect(remapped[0]).toBeCloseTo(0);
+    expect(remapped[2]).toBeCloseTo(1);
+  });
+
+  test("color palette list", () => {
+    const startColor = new THREE.Color(1, 0, 0);
+    const endColor = new THREE.Color(0, 0, 1);
+    const palette = COLOR_PALETTE_LIST_NODE.evaluate({ count: 3, startColor, endColor }, {}, CTX).list as THREE.Color[];
+
+    expect(palette.length).toBe(3);
+    expect(palette[0].r).toBe(1);
+    expect(palette[2].b).toBe(1);
+  });
+
+  test("slice list", () => {
+    const sample = [10, 20, 30, 40, 50];
+    const sliced = SLICE_LIST_NODE.evaluate({ list: sample, start: 1, count: 3 }, {}, CTX).list as number[];
+    expect(sliced).toEqual([20, 30, 40]);
+  });
+
+  test("list statistics", () => {
+    const stats = LIST_STATISTICS_NODE.evaluate({ list: [10, 20, 30, 40] }, {}, CTX);
+    expect(stats.sum).toBe(100);
+    expect(stats.average).toBe(25);
+    expect(stats.min).toBe(10);
+    expect(stats.max).toBe(40);
+    expect(stats.median).toBe(25);
+    expect(stats.count).toBe(4);
+  });
+
+  test("combine lists math", () => {
+    const res = LIST_COMBINE_MATH_NODE.evaluate({ a: [10, 20], b: [5, 2] }, { op: "multiply" }, CTX).list as number[];
+    expect(res).toEqual([50, 40]);
+  });
+});
+
+describe("INSPECTOR NODE", () => {
+  test("passes through input value and updates store", () => {
+    const vectorVal = new THREE.Vector3(1, 2, 3);
+    const res = INSPECTOR_NODE.evaluate({ input: vectorVal }, {}, { ...CTX, nodeId: "inspect-1" });
+    expect(res.out).toBe(vectorVal);
+  });
+});
+
+describe("SOUND NODES", () => {
+  test("audio player node evaluation fallback", () => {
+    const res = AUDIO_PLAYER_NODE.evaluate({ play: 0, volume: 0.8 }, AUDIO_PLAYER_NODE.defaultParams, { ...CTX, nodeId: "sound-player-1" });
+    expect(res.volume).toBe(0);
+  });
+
+  test("audio spectrum node fallback spectrum generation", () => {
+    const res = AUDIO_SPECTRUM_NODE.evaluate({ bins: 16 }, AUDIO_SPECTRUM_NODE.defaultParams, { ...CTX, nodeId: "sound-spectrum-1" });
+    expect(Array.isArray(res.spectrum)).toBe(true);
+    expect((res.spectrum as number[]).length).toBe(16);
+  });
+
+  test("microphone input node evaluation", () => {
+    const res = MICROPHONE_INPUT_NODE.evaluate({ enable: 0 }, MICROPHONE_INPUT_NODE.defaultParams, { ...CTX, nodeId: "sound-mic-1" });
+    expect(res.volume).toBe(0);
+  });
+
+  test("audio peak detector rising edge threshold trigger", () => {
+    const res1 = AUDIO_PEAK_DETECTOR_NODE.evaluate({ volume: 0.1 }, { threshold: 0.5, decay: 0.9 }, { ...CTX, nodeId: "peak-1" });
+    expect(res1.trigger).toBe(0);
+
+    const res2 = AUDIO_PEAK_DETECTOR_NODE.evaluate({ volume: 0.9 }, { threshold: 0.5, decay: 0.9 }, { ...CTX, nodeId: "peak-1" });
+    expect(res2.trigger).toBe(1);
+    expect(res2.peak).toBeGreaterThan(0.8);
+  });
+
+  test("audio synth node evaluation", () => {
+    const res = AUDIO_SYNTH_NODE.evaluate({ frequency: 440, trigger: 0 }, AUDIO_SYNTH_NODE.defaultParams, { ...CTX, nodeId: "synth-1" });
+    expect(res.volume).toBe(0);
+  });
+
+  test("audio spectrum node with scalar bins input", () => {
+    const res = AUDIO_SPECTRUM_NODE.evaluate({ bins: 16 }, { smoothing: 0.8 }, { ...CTX, nodeId: "spec-1" });
+    expect(Array.isArray(res.spectrum)).toBe(true);
+    expect((res.spectrum as number[]).length).toBe(16);
+  });
+});
+
+describe("RANDOM NODES", () => {
+  test("random value deterministic PRNG", () => {
+    const res1 = RANDOM_VALUE_NODE.evaluate({ seed: 42, min: 10, max: 20 }, { algorithm: "uniform" }, CTX);
+    const res2 = RANDOM_VALUE_NODE.evaluate({ seed: 42, min: 10, max: 20 }, { algorithm: "uniform" }, CTX);
+    expect(res1.value).toBe(res2.value);
+    expect(res1.value as number).toBeGreaterThanOrEqual(10);
+    expect(res1.value as number).toBeLessThanOrEqual(20);
+  });
+
+  test("random vector evaluation with sphere_surface algo", () => {
+    const res = RANDOM_VECTOR_NODE.evaluate({ seed: 100, max: 5 }, { algorithm: "sphere_surface" }, CTX);
+    const vec = res.vector as THREE.Vector3;
+    expect(vec.length()).toBeCloseTo(5, 4);
+  });
+
+  test("random matrix evaluation", () => {
+    const res = RANDOM_MATRIX_NODE.evaluate({ seed: 77, posRange: 3 }, { algorithm: "gaussian" }, CTX);
+    const mat = res.matrix as THREE.Matrix4;
+    expect(mat.elements.length).toBe(16);
+  });
+
+  test("random list deterministic generation", () => {
+    const res = RANDOM_LIST_NODE.evaluate({ count: 5, seed: 123, min: 0, max: 1 }, { algorithm: "gaussian" }, CTX);
+    const list = res.list as number[];
+    expect(list.length).toBe(5);
+    expect(list.every((v) => typeof v === "number" && !isNaN(v))).toBe(true);
+  });
+});
+
+
+
+
+
+
+

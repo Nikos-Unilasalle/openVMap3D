@@ -1,0 +1,231 @@
+import { NodeDefinition } from "../types";
+
+/** Text Constant node — outputs a fixed text string. */
+export const TEXT_CONSTANT_NODE: NodeDefinition = {
+  type: "text/constant",
+  label: "Text",
+  category: "text",
+  inputs: [],
+  outputs: [{ id: "text", label: "Text", type: "text" }],
+  defaultParams: { text: "Hello" },
+  paramFields: [{ id: "text", label: "Text", kind: "text" }],
+  evaluate: (_inputs, params) => ({
+    text: String(params.text ?? ""),
+  }),
+};
+
+/** Text Concatenate node — joins text strings with an optional separator. */
+export const TEXT_CONCAT_NODE: NodeDefinition = {
+  type: "text/concat",
+  label: "Text Concat",
+  category: "text",
+  inputs: [
+    { id: "textA", label: "Text A", type: "text" },
+    { id: "textB", label: "Text B", type: "text" },
+    { id: "separator", label: "Separator", type: "text" },
+  ],
+  outputs: [{ id: "text", label: "Text", type: "text" }],
+  defaultParams: { textA: "", textB: "", separator: "" },
+  paramFields: [
+    { id: "textA", label: "Text A", kind: "text" },
+    { id: "textB", label: "Text B", kind: "text" },
+    { id: "separator", label: "Separator", kind: "text" },
+  ],
+  evaluate: (inputs, params) => {
+    const a = inputs.textA !== undefined ? String(inputs.textA) : String(params.textA ?? "");
+    const b = inputs.textB !== undefined ? String(inputs.textB) : String(params.textB ?? "");
+    const sep = inputs.separator !== undefined ? String(inputs.separator) : String(params.separator ?? "");
+
+    return { text: `${a}${sep}${b}` };
+  },
+};
+
+/** Text Substring node — extracts a portion of a string. */
+export const TEXT_SUBSTRING_NODE: NodeDefinition = {
+  type: "text/substring",
+  label: "Text Substring",
+  category: "text",
+  inputs: [
+    { id: "text", label: "Text", type: "text" },
+    { id: "start", label: "Start Index", type: "value" },
+    { id: "length", label: "Length", type: "value" },
+  ],
+  outputs: [{ id: "text", label: "Text", type: "text" }],
+  defaultParams: { text: "", start: 0, length: 5 },
+  paramFields: [
+    { id: "text", label: "Text", kind: "text" },
+    { id: "start", label: "Start Index", kind: "number", step: 1 },
+    { id: "length", label: "Length", kind: "number", step: 1 },
+  ],
+  evaluate: (inputs, params) => {
+    const str = inputs.text !== undefined ? String(inputs.text) : String(params.text ?? "");
+    const start = Math.max(0, Math.floor(inputs.start !== undefined ? Number(inputs.start) : Number(params.start) || 0));
+    const lenInput = inputs.length !== undefined ? Number(inputs.length) : Number(params.length);
+    const len = lenInput !== undefined && !isNaN(lenInput) ? Math.max(0, Math.floor(lenInput)) : str.length;
+
+    return { text: str.substring(start, start + len) };
+  },
+};
+
+/** Text Length node — returns the number of characters in a string. */
+export const TEXT_LENGTH_NODE: NodeDefinition = {
+  type: "text/length",
+  label: "Text Length",
+  category: "text",
+  inputs: [{ id: "text", label: "Text", type: "text" }],
+  outputs: [{ id: "value", label: "Length", type: "value" }],
+  defaultParams: { text: "" },
+  paramFields: [{ id: "text", label: "Text", kind: "text" }],
+  evaluate: (inputs, params) => {
+    const str = inputs.text !== undefined ? String(inputs.text) : String(params.text ?? "");
+    return { value: str.length };
+  },
+};
+
+/** Text Case node — converts text case (UPPERCASE, lowercase, Title Case). */
+export const TEXT_CASE_NODE: NodeDefinition = {
+  type: "text/case",
+  label: "Text Case",
+  category: "text",
+  inputs: [{ id: "text", label: "Text", type: "text" }],
+  outputs: [{ id: "text", label: "Text", type: "text" }],
+  defaultParams: { text: "", mode: "uppercase" },
+  paramFields: [
+    { id: "text", label: "Text", kind: "text" },
+    {
+      id: "mode",
+      label: "Mode",
+      kind: "select",
+      options: ["uppercase", "lowercase", "capitalize"],
+    },
+  ],
+  evaluate: (inputs, params) => {
+    const str = inputs.text !== undefined ? String(inputs.text) : String(params.text ?? "");
+    const mode = String(params.mode || "uppercase");
+
+    let result = str;
+    if (mode === "uppercase") {
+      result = str.toUpperCase();
+    } else if (mode === "lowercase") {
+      result = str.toLowerCase();
+    } else if (mode === "capitalize") {
+      result = str.replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+
+    return { text: result };
+  },
+};
+
+/** Text Replace node — replaces occurrences of search text with replacement text. */
+export const TEXT_REPLACE_NODE: NodeDefinition = {
+  type: "text/replace",
+  label: "Text Replace",
+  category: "text",
+  inputs: [
+    { id: "text", label: "Text", type: "text" },
+    { id: "search", label: "Search", type: "text" },
+    { id: "replace", label: "Replace", type: "text" },
+  ],
+  outputs: [{ id: "text", label: "Text", type: "text" }],
+  defaultParams: { text: "", search: "", replace: "" },
+  paramFields: [
+    { id: "text", label: "Text", kind: "text" },
+    { id: "search", label: "Search", kind: "text" },
+    { id: "replace", label: "Replace", kind: "text" },
+  ],
+  evaluate: (inputs, params) => {
+    const str = inputs.text !== undefined ? String(inputs.text) : String(params.text ?? "");
+    const search = inputs.search !== undefined ? String(inputs.search) : String(params.search ?? "");
+    const replacement = inputs.replace !== undefined ? String(inputs.replace) : String(params.replace ?? "");
+
+    if (!search) return { text: str };
+    return { text: str.split(search).join(replacement) };
+  },
+};
+
+/** Text Split node — splits a text string into a list of strings by delimiter. */
+export const TEXT_SPLIT_NODE: NodeDefinition = {
+  type: "text/split",
+  label: "Text Split",
+  category: "text",
+  inputs: [
+    { id: "text", label: "Text", type: "text" },
+    { id: "delimiter", label: "Delimiter", type: "text" },
+  ],
+  outputs: [{ id: "list", label: "List", type: "list" }],
+  defaultParams: { text: "", delimiter: "," },
+  paramFields: [
+    { id: "text", label: "Text", kind: "text" },
+    { id: "delimiter", label: "Delimiter", kind: "text" },
+  ],
+  evaluate: (inputs, params) => {
+    const str = inputs.text !== undefined ? String(inputs.text) : String(params.text ?? "");
+    const delim = inputs.delimiter !== undefined ? String(inputs.delimiter) : String(params.delimiter ?? ",");
+
+    const list = str ? str.split(delim) : [];
+    return { list };
+  },
+};
+
+/** Text Trim node — removes leading and trailing whitespace. */
+export const TEXT_TRIM_NODE: NodeDefinition = {
+  type: "text/trim",
+  label: "Text Trim",
+  category: "text",
+  inputs: [{ id: "text", label: "Text", type: "text" }],
+  outputs: [{ id: "text", label: "Text", type: "text" }],
+  defaultParams: { text: "" },
+  paramFields: [{ id: "text", label: "Text", kind: "text" }],
+  evaluate: (inputs, params) => {
+    const str = inputs.text !== undefined ? String(inputs.text) : String(params.text ?? "");
+    return { text: str.trim() };
+  },
+};
+
+/** Text Compare / Contains node — evaluates string comparisons (contains, equals, startsWith, endsWith). */
+export const TEXT_COMPARE_NODE: NodeDefinition = {
+  type: "text/compare",
+  label: "Text Compare",
+  category: "text",
+  inputs: [
+    { id: "textA", label: "Text A", type: "text" },
+    { id: "textB", label: "Text B", type: "text" },
+  ],
+  outputs: [{ id: "value", label: "Result", type: "value" }],
+  defaultParams: { textA: "", textB: "", mode: "equals", ignoreCase: true },
+  paramFields: [
+    { id: "textA", label: "Text A", kind: "text" },
+    { id: "textB", label: "Text B", kind: "text" },
+    {
+      id: "mode",
+      label: "Mode",
+      kind: "select",
+      options: ["equals", "contains", "startsWith", "endsWith"],
+    },
+    { id: "ignoreCase", label: "Ignore Case", kind: "boolean" },
+  ],
+  evaluate: (inputs, params) => {
+    let a = inputs.textA !== undefined ? String(inputs.textA) : String(params.textA ?? "");
+    let b = inputs.textB !== undefined ? String(inputs.textB) : String(params.textB ?? "");
+    const mode = String(params.mode || "equals");
+    const ignoreCase = Boolean(params.ignoreCase ?? true);
+
+    if (ignoreCase) {
+      a = a.toLowerCase();
+      b = b.toLowerCase();
+    }
+
+    let match = false;
+    if (mode === "contains") {
+      match = a.includes(b);
+    } else if (mode === "startsWith") {
+      match = a.startsWith(b);
+    } else if (mode === "endsWith") {
+      match = a.endsWith(b);
+    } else {
+      match = a === b;
+    }
+
+    return { value: match ? 1 : 0 };
+  },
+};

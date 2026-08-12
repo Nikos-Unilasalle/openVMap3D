@@ -66,3 +66,37 @@ export const VALUE_TO_COLOR_NODE: NodeDefinition = {
     return { color: new THREE.Color(v, v, v) };
   },
 };
+
+/** Value to Text converter — formats a numerical scalar value into a text string with optional prefix, suffix, and decimal control. */
+export const VALUE_TO_TEXT_NODE: NodeDefinition = {
+  type: "converter/value-to-text",
+  label: "Value to Text",
+  category: "converter",
+  inputs: [
+
+    { id: "value", label: "Value", type: "value" },
+    { id: "decimals", label: "Decimals", type: "value" },
+    { id: "prefix", label: "Prefix", type: "text" },
+    { id: "suffix", label: "Suffix", type: "text" },
+  ],
+  outputs: [{ id: "text", label: "Text", type: "text" }],
+  defaultParams: { value: 0, decimals: 2, prefix: "", suffix: "" },
+  paramFields: [
+    { id: "value", label: "Value (fallback)", kind: "number" },
+    { id: "decimals", label: "Decimals", kind: "number" },
+    { id: "prefix", label: "Prefix", kind: "text" },
+    { id: "suffix", label: "Suffix", kind: "text" },
+  ],
+  evaluate: (inputs, params) => {
+    const val = inputs.value !== undefined ? Number(inputs.value) || 0 : Number(params.value) || 0;
+    const dec = Math.max(0, Math.min(20, Math.floor(inputs.decimals !== undefined ? Number(inputs.decimals) || 0 : Number(params.decimals) || 2)));
+    const prefix = inputs.prefix !== undefined ? String(inputs.prefix) : String(params.prefix ?? "");
+    const suffix = inputs.suffix !== undefined ? String(inputs.suffix) : String(params.suffix ?? "");
+
+    const formattedVal = val.toFixed(dec);
+    return { text: `${prefix}${formattedVal}${suffix}` };
+  },
+};
+
+
+

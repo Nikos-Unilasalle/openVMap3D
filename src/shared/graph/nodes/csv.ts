@@ -12,10 +12,12 @@ import { NodeDefinition } from "../types";
 export const CSV_READER_NODE: NodeDefinition = {
   type: "io/csv-reader",
   label: "CSV Reader",
-  category: "io",
+  category: "list",
   inputs: [{ id: "row", label: "Row", type: "value" }],
+
   outputs: [
     { id: "column", label: "Column", type: "list" },
+    { id: "rowValues", label: "Row Values", type: "list" },
     { id: "value", label: "Value", type: "value" },
   ],
   defaultParams: { filePath: "", column: "", row: 0 },
@@ -41,14 +43,26 @@ export const CSV_READER_NODE: NodeDefinition = {
   },
   evaluate: (inputs, params, ctx) => {
     const csv = getCsv(ctx.nodeId);
-    if (!csv || csv.headers.length === 0) return { column: [], value: 0 };
+    if (!csv || csv.headers.length === 0 || csv.rows.length === 0) {
+      return { column: [], rowValues: [], value: 0 };
+    }
 
     const column = String(params.column || csv.headers[0]);
     const values = csv.rows.map((row) => row[column] ?? "");
 
-    const rowIndex = Math.min(values.length - 1, Math.max(0, Math.floor(Number(inputs.row) || 0)));
+    const rawRowInput = inputs.row !== undefined ? inputs.row : params.row;
+    const rowIndex = Math.min(csv.rows.length - 1, Math.max(0, Math.floor(Number(rawRowInput) || 0)));
+
+    const selectedRowObj = csv.rows[rowIndex] ?? {};
+    const rowValues = csv.headers.map((h) => {
+      const rawVal = selectedRowObj[h];
+      const num = Number(rawVal);
+      return !isNaN(num) && rawVal !== "" ? num : rawVal ?? "";
+    });
+
     const value = values.length > 0 ? Number(values[rowIndex]) || 0 : 0;
 
-    return { column: values, value };
+    return { column: values, rowValues, value };
   },
 };
+

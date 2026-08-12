@@ -84,3 +84,27 @@
   height: 9px;
   border: 1px solid #0d1117;
 }
+
+.graph-node-inspector {
+  margin: 6px 10px 8px 10px;
+  padding: 6px 8px;
+  background: #0d1117;
+  border: 1px solid #2c333f;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 11px;
+  color: #38bdf8;
+  word-break: break-all;
+  max-width: 240px;
+}
+
+.inspector-color-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: middle;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+

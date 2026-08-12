@@ -119,3 +119,62 @@ export const LOOK_AT_NODE: NodeDefinition = {
   },
 };
 
+/**
+ * Matrix Transform node — transforms an existing base Matrix4 by applying
+ * incremental translation (Location), rotation (Euler), and scaling (Scale).
+ */
+export const MATRIX_TRANSFORM_NODE: NodeDefinition = {
+  type: "transform/matrix-transform",
+  label: "Matrix Transform",
+  category: "transform",
+  inputs: [
+    { id: "matrix", label: "Matrix", type: "matrix" },
+    { id: "location", label: "Location", type: "vector" },
+    { id: "rotation", label: "Rotation", type: "vector" },
+    { id: "scale", label: "Scale", type: "vector" },
+  ],
+  outputs: [{ id: "matrix", label: "Matrix", type: "matrix" }],
+  defaultParams: { location: ZERO.clone(), rotation: ZERO.clone(), scale: ONE.clone() },
+  paramFields: [
+    { id: "location", label: "Location Offset", kind: "vector" },
+    { id: "rotation", label: "Rotation Offset (rad)", kind: "vector" },
+    { id: "scale", label: "Scale Multiplier", kind: "vector" },
+  ],
+  evaluate: (inputs) => {
+    const baseMatrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
+    const location = asVector3(inputs.location, ZERO);
+    const rotation = asVector3(inputs.rotation, ZERO);
+    const scale = asVector3(inputs.scale, ONE);
+
+    const quaternion = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(rotation.x, rotation.y, rotation.z),
+    );
+    const deltaMatrix = new THREE.Matrix4().compose(location, quaternion, scale);
+
+    const matrix = new THREE.Matrix4().multiplyMatrices(baseMatrix, deltaMatrix);
+    return { matrix };
+  },
+};
+
+/**
+ * Transform Vector node — multiplies a 3D Vector by a Matrix4 transform.
+ */
+export const TRANSFORM_VECTOR_NODE: NodeDefinition = {
+  type: "transform/transform-vector",
+  label: "Transform Vector",
+  category: "transform",
+  inputs: [
+    { id: "vector", label: "Vector", type: "vector" },
+    { id: "matrix", label: "Matrix", type: "matrix" },
+  ],
+  outputs: [{ id: "vector", label: "Vector", type: "vector" }],
+  defaultParams: { vector: ZERO.clone() },
+  paramFields: [{ id: "vector", label: "Vector (fallback)", kind: "vector" }],
+  evaluate: (inputs) => {
+    const v = asVector3(inputs.vector, ZERO);
+    const m = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
+    return { vector: v.clone().applyMatrix4(m) };
+  },
+};
+
+

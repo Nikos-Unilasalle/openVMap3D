@@ -25,8 +25,10 @@ describe("CSV_READER_NODE", () => {
     const result = CSV_READER_NODE.evaluate({ row: 1 }, { column: "temperature" }, { ...CTX, nodeId: "csv-basic" });
 
     expect(result.column).toEqual(["18.5", "19.2", "20.1"]);
+    expect(result.rowValues).toEqual([19.2, 58]);
     expect(result.value).toBeCloseTo(19.2);
   });
+
 
   test("an out-of-range row clamps to the last row instead of throwing", () => {
     setCsv("csv-clamp", { headers: ["x"], rows: [{ x: "1" }, { x: "2" }] });

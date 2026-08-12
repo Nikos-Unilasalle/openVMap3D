@@ -32,6 +32,8 @@ function toFlowNodes(graph: Graph, registry: NodeRegistry): Node<GraphNodeData>[
       type: "graphNode",
       position: instance.position,
       data: {
+        nodeId: instance.id,
+        nodeType: instance.type,
         label: def?.label ?? `${instance.type} (unknown)`,
         category: def?.category,
         inputs: def?.inputs ?? [],
@@ -40,6 +42,7 @@ function toFlowNodes(graph: Graph, registry: NodeRegistry): Node<GraphNodeData>[
     };
   });
 }
+
 
 /** A wire's color follows its *source* socket's type — by construction the target matches, since isValidConnection rejects mismatched types. */
 function edgeColor(nodes: Node<GraphNodeData>[], nodeId: string, socketId: string): string {
@@ -74,18 +77,44 @@ function refreshDynamicSockets(
   return flowNodes.map((flowNode) => {
     const instance = baseNodes.find((n) => n.id === flowNode.id);
     const def = instance && registry.get(instance.type);
-    if (!def?.dynamicInputs) return flowNode;
+    if (!def?.dynamicInputs && !def?.dynamicOutputs) return flowNode;
 
-    const nodeConnections: Connection[] = flowEdges
-      .filter((e) => e.target === flowNode.id)
-      .map((e) => ({
-        id: e.id,
-        fromNode: e.source,
-        fromSocket: e.sourceHandle ?? "",
-        toNode: e.target,
-        toSocket: e.targetHandle ?? "",
-      }));
-    return { ...flowNode, data: { ...flowNode.data, inputs: def.dynamicInputs(nodeConnections) } };
+    const nodeIncomingConnections = flowEdges.filter((e) => e.target === flowNode.id);
+    const nodeConnectionsWithTypes = nodeIncomingConnections.map((e) => {
+      const sourceNode = flowNodes.find((n) => n.id === e.source);
+      const sourceSocketDef = sourceNode?.data.outputs.find((s) => s.id === e.sourceHandle);
+      return {
+        connection: {
+          id: e.id,
+          fromNode: e.source,
+          fromSocket: e.sourceHandle ?? "",
+          toNode: e.target,
+          toSocket: e.targetHandle ?? "",
+        },
+        sourceSocketType: sourceSocketDef?.type || ("any" as const),
+      };
+    });
+
+    const connList = nodeConnectionsWithTypes.map((ct) => ct.connection);
+
+    let nextInputs = flowNode.data.inputs;
+    if (def.dynamicInputs) {
+      nextInputs = def.dynamicInputs(connList, nodeConnectionsWithTypes);
+    }
+
+    let nextOutputs = flowNode.data.outputs;
+    if (def.dynamicOutputs) {
+      nextOutputs = def.dynamicOutputs(connList, nodeConnectionsWithTypes);
+    }
+
+    return {
+      ...flowNode,
+      data: {
+        ...flowNode.data,
+        inputs: nextInputs,
+        outputs: nextOutputs,
+      },
+    };
   });
 }
 
@@ -167,7 +196,9 @@ export function GraphEditor({ graph, registry, onGraphChange, onSelectNode }: Gr
       const targetSocket = nodes
         .find((n) => n.id === connection.target)
         ?.data.inputs.find((s) => s.id === connection.targetHandle);
-      return !!sourceSocket && !!targetSocket && sourceSocket.type === targetSocket.type;
+      if (!sourceSocket || !targetSocket) return false;
+      if (sourceSocket.type === "any" || targetSocket.type === "any") return true;
+      return sourceSocket.type === targetSocket.type;
     },
     [nodes],
   );
@@ -225,6 +256,8 @@ export function GraphEditor({ graph, registry, onGraphChange, onSelectNode }: Gr
         type: "graphNode",
         position,
         data: {
+          nodeId: id,
+          nodeType: type,
           label: def.label,
           category: def.category,
           inputs: def.dynamicInputs ? def.dynamicInputs([]) : def.inputs,
@@ -237,6 +270,7 @@ export function GraphEditor({ graph, registry, onGraphChange, onSelectNode }: Gr
     },
     [graph, nodes, onGraphChange, registry, setNodes],
   );
+
 
   const paletteNodes = useMemo(() => [...registry.values()], [registry]);
 

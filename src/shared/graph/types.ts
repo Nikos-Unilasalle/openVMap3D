@@ -32,6 +32,7 @@ export type ParamFieldDef =
   | { id: string; label: string; kind: "select"; options: string[] }
   | { id: string; label: string; kind: "color" }
   | { id: string; label: string; kind: "vector"; step?: number }
+  | { id: string; label: string; kind: "text" }
   | {
       id: string;
       label: string;
@@ -83,12 +84,21 @@ export interface NodeDefinition {
   /**
    * When present, overrides `inputs` for a specific instance based on its
    * own current connections — for a node like Merge whose socket count
-   * grows as wires are added. Given just this instance's own connections
-   * (already filtered to `toNode === this instance`), returns the sockets
-   * to show/evaluate right now. See `dynamicInputs.ts`'s `growingSockets`
-   * for the standard "always exactly one free trailing socket" behavior.
+   * grows as wires are added or Logic Bridge whose inputs change socket type.
    */
-  dynamicInputs?: (connections: Connection[]) => SocketDef[];
+  dynamicInputs?: (
+    connections: Connection[],
+    connectionTypes?: { connection: Connection; sourceSocketType: import("./sockets").SocketType }[],
+  ) => SocketDef[];
+  /**
+   * When present, overrides `outputs` for a specific instance based on its
+   * own current connections — for a node like Logic Bridge whose output type
+   * adapts to match its connected input type.
+   */
+  dynamicOutputs?: (
+    connections: Connection[],
+    connectionTypes?: { connection: Connection; sourceSocketType: import("./sockets").SocketType }[],
+  ) => SocketDef[];
   evaluate: (
     inputs: Record<string, unknown>,
     params: Record<string, unknown>,
