@@ -97,13 +97,13 @@ on its param panel when selected. Use one of these exactly (from
 | `converter`   | Converter            |
 
 Pick the one matching BIBLE.md's catalog section for your node — if BIBLE.md
-lists it under "Logic", use `category: "logic"`. `converter` is the one
-exception: it exists for generic cross-type conversion utilities (Value ↔
-Vector ↔ Color) that aren't in BIBLE.md's catalog at all. If your node IS in
-BIBLE.md under a specific section (e.g. "Compose/Decompose Matrix" is listed
-under Transform), use that section's category — don't recategorize an
-existing node into `converter` just because it superficially "converts"
-something.
+lists it under "Logic", use `category: "logic"`. Two exceptions:
+- **Any Compose/Decompose node** (Compose Vector, Decompose Matrix, Compose
+  Color, etc.) always uses `category: "converter"`, regardless of which
+  BIBLE.md section it's listed under — grouped together for findability,
+  not by what they conceptually belong to.
+- **Generic cross-type conversion utilities** (Value ↔ Vector ↔ Color, not
+  in BIBLE.md's catalog at all) also use `converter`.
 
 ## 4. The socket types
 

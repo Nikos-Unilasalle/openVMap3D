@@ -50,7 +50,7 @@ export const TRANSFORM_NODE: NodeDefinition = {
 export const DECOMPOSE_MATRIX_NODE: NodeDefinition = {
   type: "matrix/decompose",
   label: "Decompose Matrix",
-  category: "transform",
+  category: "converter",
   inputs: [{ id: "matrix", label: "Matrix", type: "matrix" }],
   outputs: [
     { id: "location", label: "Location", type: "vector" },

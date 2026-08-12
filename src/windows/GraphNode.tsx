@@ -16,12 +16,13 @@ export interface GraphNodeData {
  * NodeDefinition's socket list rather than one React component per node
  * type. A new node type in the registry needs no new UI code to show up here.
  * The title's color is the node's category color — the same color also
- * shows in the palette section it came from and its param panel.
+ * shows in the palette section it came from, its param panel, and (as a
+ * border) here when the node is selected.
  */
-export function GraphNode({ data }: { data: GraphNodeData }) {
+export function GraphNode({ data, selected }: { data: GraphNodeData; selected?: boolean }) {
   const categoryColor = data.category ? CATEGORY_COLOR[data.category] : UNKNOWN_CATEGORY_COLOR;
   return (
-    <div className="graph-node">
+    <div className="graph-node" style={{ borderColor: selected ? categoryColor : undefined }}>
       <div className="graph-node-title" style={{ color: categoryColor }}>
         {data.label}
       </div>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DEFAULT_REGISTRY } from "./shared/graph/nodes";
 import { Connection, Graph, NodeInstance } from "./shared/graph/types";
 import { Viewport } from "./shared/three/Viewport";
@@ -38,9 +38,15 @@ function buildSmokeTestGraph(): Graph {
   };
 }
 
+const MIN_PANE_PERCENT = 15;
+const MAX_PANE_PERCENT = 85;
+
 function App() {
   const [graph, setGraph] = useState<Graph>(buildSmokeTestGraph);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [splitPercent, setSplitPercent] = useState(50);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const draggingSplit = useRef(false);
 
   const selectedInstance = graph.nodes.find((n) => n.id === selectedNodeId) ?? null;
   const selectedDef = selectedInstance ? DEFAULT_REGISTRY.get(selectedInstance.type) : undefined;
@@ -53,9 +59,35 @@ function App() {
     setGraph({ ...graph, nodes: nextNodes });
   };
 
+  const onSplitHandleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    draggingSplit.current = true;
+  }, []);
+
+  useEffect(() => {
+    function onMouseMove(e: MouseEvent) {
+      if (!draggingSplit.current || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const percent = ((e.clientY - rect.top) / rect.height) * 100;
+      setSplitPercent(Math.min(MAX_PANE_PERCENT, Math.max(MIN_PANE_PERCENT, percent)));
+    }
+    function onMouseUp() {
+      draggingSplit.current = false;
+    }
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
+
   return (
-    <div style={{ width: "100vw", height: "100vh", display: "flex", flexDirection: "column" }}>
-      <div style={{ flex: "2 1 0", minHeight: 0, position: "relative" }}>
+    <div
+      ref={containerRef}
+      style={{ width: "100vw", height: "100vh", display: "flex", flexDirection: "column" }}
+    >
+      <div style={{ height: `${splitPercent}%`, minHeight: 0, position: "relative" }}>
         <Viewport graph={graph} registry={DEFAULT_REGISTRY} renderNodeId="output" />
         {selectedInstance && selectedDef && (
           <ParamPanel
@@ -67,7 +99,11 @@ function App() {
           />
         )}
       </div>
-      <div style={{ flex: "1 1 0", minHeight: 0, borderTop: "1px solid #2c333f" }}>
+      <div
+        onMouseDown={onSplitHandleMouseDown}
+        style={{ height: 6, flexShrink: 0, cursor: "row-resize", background: "#2c333f" }}
+      />
+      <div style={{ flex: 1, minHeight: 0 }}>
         <GraphEditor graph={graph} registry={DEFAULT_REGISTRY} onGraphChange={setGraph} onSelectNode={setSelectedNodeId} />
       </div>
     </div>

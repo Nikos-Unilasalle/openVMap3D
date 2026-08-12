@@ -6,6 +6,11 @@
   background: #10151c;
   border-right: 1px solid #2c333f;
   padding: 8px 0;
+  scrollbar-width: none; /* Firefox */
+}
+
+.node-palette::-webkit-scrollbar {
+  display: none; /* Chromium/WebKit (Tauri's webview) */
 }
 
 .palette-category + .palette-category {

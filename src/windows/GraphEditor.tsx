@@ -8,6 +8,7 @@ import {
   NodeChange,
   OnConnect,
   ReactFlow,
+  SelectionMode,
   applyEdgeChanges,
   applyNodeChanges,
   useEdgesState,
@@ -120,6 +121,12 @@ interface GraphEditorProps {
  * clicking a node selects it (see App.tsx for what renders from that),
  * clicking a node in the palette adds one. Node removal is still the next
  * slice — this one can grow the graph but not shrink it.
+ *
+ * Left-drag on empty canvas draws a selection box (selects any node it
+ * touches) instead of panning — panning moved to middle/right-click-drag,
+ * the same tradeoff most node editors (Blender included) make once
+ * drag-select exists, since a plain click already pans nowhere useful but
+ * a stray left-drag was the only way to box-select nodes.
  */
 export function GraphEditor({ graph, registry, onGraphChange, onSelectNode }: GraphEditorProps) {
   const initialNodes = useMemo(() => {
@@ -247,6 +254,9 @@ export function GraphEditor({ graph, registry, onGraphChange, onSelectNode }: Gr
           onEdgeContextMenu={onEdgeContextMenu}
           onNodeClick={onNodeClick}
           onPaneClick={onPaneClick}
+          selectionOnDrag
+          selectionMode={SelectionMode.Partial}
+          panOnDrag={[1, 2]}
           fitView
           colorMode="dark"
         >
