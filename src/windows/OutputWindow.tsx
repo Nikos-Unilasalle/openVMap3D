@@ -72,6 +72,7 @@ export function OutputWindow() {
           renderNodeId={renderNodeId}
           epochMs={payload?.epochMs}
           outputMode
+          previewCameraPose={payload?.previewCamera ?? null}
         />
       ) : null}
       {calibratingNodeId ? <OutputCalibrationHandles graph={graph} cameraNodeId={calibratingNodeId} /> : null}

@@ -48,6 +48,23 @@ export interface GraphPayload {
   epochMs: number;
   /** The node currently being calibrated in the main editor (Camera node selected), or null. Lets the output window know whose calibration handles to draw over the projection — alignment is judged against the real room in the actual projected light, not in the editor preview. */
   calibratingNodeId: string | null;
+  /**
+   * The editor's own free-orbit camera pose, mirrored to the output window
+   * — but only actually *used* there when no Camera node exists in the
+   * graph (see Viewport.tsx). Two vocations, two behaviors: video mapping
+   * wires up a Camera node and the output locks to its calibrated pose,
+   * full stop, orbiting the editor must never disturb that. Motion design
+   * has no projector to align against — there the output is a preview
+   * monitor, and showing whatever the editor is currently looking at
+   * (Blender's viewport/render relationship) is strictly more useful than
+   * a fixed default angle nobody chose.
+   */
+  previewCamera: PreviewCameraPose | null;
+}
+
+export interface PreviewCameraPose {
+  position: [number, number, number];
+  quaternion: [number, number, number, number];
 }
 
 /**

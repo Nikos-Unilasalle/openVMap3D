@@ -3,7 +3,7 @@ import { CAMERA_NODE } from "./shared/graph/nodes/camera";
 import { DEFAULT_REGISTRY } from "./shared/graph/nodes";
 import { findRenderNodeId } from "./shared/graph/nodes/render";
 import { Connection, Graph, NodeInstance } from "./shared/graph/types";
-import { broadcastGraph, startBroadcasting } from "./shared/ipc";
+import { broadcastGraph, PreviewCameraPose, startBroadcasting } from "./shared/ipc";
 import { TransformPatch, Viewport } from "./shared/three/Viewport";
 import "./shared/three/viewport.css";
 import { findUpstreamTransformNode, GIZMO_SELECTABLE_TYPES } from "./shared/graph/transformLookup";
@@ -72,6 +72,11 @@ function MainEditor() {
   const [epochMs] = useState(() => Date.now());
   const graphRef = useRef(graph);
   graphRef.current = graph;
+  // Not React state on purpose — this changes at orbit-drag frequency, and
+  // nothing in this component's own render output depends on it (only the
+  // outgoing broadcast does). A state variable here would re-render
+  // MainEditor's whole tree on every orbit tick for no visual benefit.
+  const previewCameraRef = useRef<PreviewCameraPose | null>(null);
 
   const selectedInstance = graph.nodes.find((n) => n.id === selectedNodeId) ?? null;
   const selectedDef = selectedInstance ? DEFAULT_REGISTRY.get(selectedInstance.type) : undefined;
@@ -87,18 +92,41 @@ function MainEditor() {
     findUpstreamTransformNode(graph, selectedInstance.id) === null;
 
   // Handshake responder: an output window that opens after this one already
-  // has state emits "output:ready" on mount; this answers with current state.
+  // has state emits "output:ready" on mount; this answers with current
+  // state, previewCameraRef included so a late-opened output window gets
+  // the editor's current view immediately rather than a stale default.
   useEffect(
-    () => startBroadcasting(() => ({ graph: graphRef.current, epochMs, calibratingNodeId })),
+    () =>
+      startBroadcasting(() => ({
+        graph: graphRef.current,
+        epochMs,
+        calibratingNodeId,
+        previewCamera: previewCameraRef.current,
+      })),
     [epochMs, calibratingNodeId],
   );
   // Push broadcast on every structural graph change or calibration-target
   // change — not per frame; each window's own render loop derives per-frame
   // animation locally from the shared epoch (see clock.ts), so this is the
-  // only IPC that happens at all.
+  // only IPC that happens on its own. The camera pose broadcasts
+  // separately, imperatively, from onPreviewCameraChange below — it
+  // changes at orbit-drag frequency, entirely decoupled from graph edits.
   useEffect(() => {
-    broadcastGraph({ graph, epochMs, calibratingNodeId });
+    broadcastGraph({ graph, epochMs, calibratingNodeId, previewCamera: previewCameraRef.current });
   }, [graph, epochMs, calibratingNodeId]);
+
+  // Video mapping wires up a Camera node and the output locks to its
+  // calibrated pose — orbiting here must never disturb that (see
+  // Viewport.tsx's calibrationMatrix branch). Motion design has no
+  // projector to align against; there the output is a preview monitor, and
+  // mirroring whatever the editor is currently looking at (Blender's
+  // viewport/render relationship) beats a fixed angle nobody chose. The
+  // output window itself decides which of the two applies — it already
+  // knows whether a Camera node exists — this just keeps it fed either way.
+  const onPreviewCameraChange = (pose: PreviewCameraPose) => {
+    previewCameraRef.current = pose;
+    broadcastGraph({ graph: graphRef.current, epochMs, calibratingNodeId, previewCamera: pose });
+  };
 
   const handleLoadGraph = (newGraph: Graph, filename?: string) => {
     setGraph(newGraph);
@@ -193,6 +221,7 @@ function MainEditor() {
           selectedNodeId={selectedNodeId}
           onSelectNode={setSelectedNodeId}
           onTransformChange={onTransformChange}
+          onCameraChange={onPreviewCameraChange}
         />
         {needsTransformHint && (
           <div className="viewport-hint">Wire a Transform node into this object's Matrix to move it</div>

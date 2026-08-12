@@ -7,6 +7,7 @@ import { evaluateGraph } from "../graph/evaluate";
 import { CAMERA_NODE } from "../graph/nodes/camera";
 import { findUpstreamTransformNode } from "../graph/transformLookup";
 import { Graph, NodeRegistry } from "../graph/types";
+import type { PreviewCameraPose } from "../ipc";
 import "./viewport.css";
 
 export type TransformGizmoMode = "translate" | "rotate" | "scale";
@@ -35,6 +36,10 @@ interface ViewportProps {
   onSelectNode?: (nodeId: string | null) => void;
   /** Fired continuously while dragging the gizmo, once the selected object's `matrix` input traces back to a plain Transform node (see transformLookup.ts) — nothing fires for an object with no such upstream node. */
   onTransformChange?: (transformNodeId: string, patch: TransformPatch) => void;
+  /** Editor-only: fired on every orbit-camera change (and once on mount), so the output window can mirror the current view when there's no Camera node to lock onto instead — see the `previewCameraPose` prop below. */
+  onCameraChange?: (pose: PreviewCameraPose) => void;
+  /** Output-only: the editor's last-broadcast orbit pose. Applied only when there's no Camera node driving the camera (see the calibrationMatrix branch in tick()) — a Camera node's calibrated lock always wins. */
+  previewCameraPose?: PreviewCameraPose | null;
 }
 
 /** Create text canvas sprite for corner 3D axes labels ("X", "Y", "Z") */
@@ -156,6 +161,8 @@ export function Viewport({
   selectedNodeId = null,
   onSelectNode,
   onTransformChange,
+  onCameraChange,
+  previewCameraPose = null,
 }: ViewportProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef(graph);
@@ -171,6 +178,10 @@ export function Viewport({
   onSelectNodeRef.current = onSelectNode;
   const onTransformChangeRef = useRef(onTransformChange);
   onTransformChangeRef.current = onTransformChange;
+  const onCameraChangeRef = useRef(onCameraChange);
+  onCameraChangeRef.current = onCameraChange;
+  const previewCameraPoseRef = useRef(previewCameraPose);
+  previewCameraPoseRef.current = previewCameraPose;
   const [transformMode, setTransformMode] = useState<TransformGizmoMode>("translate");
   const transformModeRef = useRef(transformMode);
   transformModeRef.current = transformMode;
@@ -209,6 +220,25 @@ export function Viewport({
       controls.target.set(0, 0, 0);
       controls.update();
     };
+
+    // Motion-design preview sync (editor side): every orbit move, tell
+    // whoever's listening (App.tsx) where the editor camera now is, so the
+    // output window can mirror it when there's no Camera node to lock onto
+    // instead. 'change' fires once per damping-settling frame while
+    // orbiting, then stops — not a fixed-rate per-frame broadcast, just
+    // "whenever the view actually moved." Fired once immediately too, so a
+    // freshly-opened output window's handshake response already has a real
+    // pose instead of nothing.
+    function emitCameraPose() {
+      onCameraChangeRef.current?.({
+        position: [camera.position.x, camera.position.y, camera.position.z],
+        quaternion: [camera.quaternion.x, camera.quaternion.y, camera.quaternion.z, camera.quaternion.w],
+      });
+    }
+    if (!outputMode) {
+      controls.addEventListener("change", emitCameraPose);
+      emitCameraPose();
+    }
 
     // Gizmo Corner Scene & Camera — editor-only, never baked into the projected output
     const gizmo = outputMode ? null : createGizmoScene();
@@ -389,6 +419,18 @@ export function Viewport({
           if (camera.fov !== fov) camera.fov = fov;
           restoreProjection();
         }
+      } else if (outputMode && previewCameraPoseRef.current) {
+        // Motion design: no Camera node exists to lock onto, so mirror
+        // whatever the editor's own orbit camera is currently looking at
+        // instead of sitting on a fixed default angle nobody chose. Applied
+        // directly rather than through OrbitControls (the output window
+        // has no pointer interaction of its own to reconcile with).
+        controls.enabled = false;
+        const [px, py, pz] = previewCameraPoseRef.current.position;
+        const [qx, qy, qz, qw] = previewCameraPoseRef.current.quaternion;
+        camera.position.set(px, py, pz);
+        camera.quaternion.set(qx, qy, qz, qw);
+        restoreProjection();
       } else {
         // Don't stomp the gizmo's own disable — tick() runs every animation
         // frame regardless of pointer state, and would otherwise flip
@@ -479,6 +521,7 @@ export function Viewport({
       if (!outputMode) {
         renderer.domElement.removeEventListener("pointerdown", onCanvasPointerDown);
         renderer.domElement.removeEventListener("pointerup", onCanvasPointerUp);
+        controls.removeEventListener("change", emitCameraPose);
       }
       transformControls?.dispose();
       controls.dispose();
