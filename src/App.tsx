@@ -6,7 +6,7 @@ import { Connection, Graph, NodeInstance } from "./shared/graph/types";
 import { broadcastGraph, PreviewCameraPose, startBroadcasting } from "./shared/ipc";
 import { TransformPatch, Viewport } from "./shared/three/Viewport";
 import "./shared/three/viewport.css";
-import { findUpstreamTransformNode, GIZMO_SELECTABLE_TYPES } from "./shared/graph/transformLookup";
+import { GIZMO_SELECTABLE_TYPES, resolveGizmoTarget } from "./shared/graph/transformLookup";
 import { CalibrationOverlay } from "./windows/CalibrationOverlay";
 import { GraphEditor } from "./windows/GraphEditor";
 import { OutputWindow } from "./windows/OutputWindow";
@@ -89,7 +89,7 @@ function MainEditor() {
   const needsTransformHint =
     !!selectedInstance &&
     GIZMO_SELECTABLE_TYPES.includes(selectedInstance.type) &&
-    findUpstreamTransformNode(graph, selectedInstance.id) === null;
+    resolveGizmoTarget(graph, selectedInstance.id) === null;
 
   // Handshake responder: an output window that opens after this one already
   // has state emits "output:ready" on mount; this answers with current

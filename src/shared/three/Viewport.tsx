@@ -3,9 +3,9 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { ClockState, createClock, tickClock } from "../graph/clock";
-import { evaluateGraph } from "../graph/evaluate";
+import { EvalResult, evaluateGraph } from "../graph/evaluate";
 import { CAMERA_NODE } from "../graph/nodes/camera";
-import { findUpstreamTransformNode } from "../graph/transformLookup";
+import { GizmoTarget, resolveGizmoTarget } from "../graph/transformLookup";
 import { Graph, NodeRegistry } from "../graph/types";
 import type { PreviewCameraPose } from "../ipc";
 import "./viewport.css";
@@ -246,14 +246,18 @@ export function Viewport({
     // Click-to-select + move/rotate/scale gizmo — editor-only, same reason
     // as everything else gated on outputMode: the output window shows the
     // projected content, not editing chrome. `attachedObjectNodeId` and
-    // `attachedTransformNodeId` are plain closure variables, not refs —
+    // `attachedGizmoTarget` are plain closure variables, not refs —
     // nothing outside this effect needs to read them, they only pass
     // information from the per-frame attach/detach check below to the
     // 'objectChange' listener and to tick()'s liveEditNodeId computation.
     const raycaster = outputMode ? null : new THREE.Raycaster();
     const transformControls = outputMode ? null : new TransformControls(camera, renderer.domElement);
     let attachedObjectNodeId: string | null = null;
-    let attachedTransformNodeId: string | null = null;
+    let attachedGizmoTarget: GizmoTarget | null = null;
+    // Refreshed every tick() — the 'objectChange' listener needs the
+    // *current* base matrix for an "offset" target (see below), and this is
+    // the cheapest way to get it without re-running evaluateGraph itself.
+    let latestResults: EvalResult | null = null;
 
     if (transformControls) {
       scene.add(transformControls.getHelper());
@@ -282,12 +286,44 @@ export function Viewport({
         // ended and evaluateGraph's own matrix.copy() ran again next frame.
         object.updateMatrix();
 
-        if (!attachedTransformNodeId || !onTransformChangeRef.current) return;
-        const euler = new THREE.Euler().setFromQuaternion(object.quaternion);
-        onTransformChangeRef.current(attachedTransformNodeId, {
-          location: object.position.clone(),
+        if (!attachedGizmoTarget || !onTransformChangeRef.current) return;
+
+        if (attachedGizmoTarget.kind === "absolute") {
+          // A plain Transform node's location/rotation/scale directly
+          // compose the object's final matrix — the gizmo's own dragged
+          // world pose IS what belongs in its params.
+          const euler = new THREE.Euler().setFromQuaternion(object.quaternion);
+          onTransformChangeRef.current(attachedGizmoTarget.transformNodeId, {
+            location: object.position.clone(),
+            rotation: new THREE.Vector3(euler.x, euler.y, euler.z),
+            scale: object.scale.clone(),
+          });
+          return;
+        }
+
+        // "offset" — a Matrix Transform node's location/rotation/scale are
+        // a *local delta* on top of whatever its own `matrix` input
+        // currently resolves to (final = base * delta, see
+        // transform.ts's MATRIX_TRANSFORM_NODE). Writing the gizmo's
+        // absolute world pose straight in would double-count that base —
+        // solving `delta = inverse(base) * final` is what the offset
+        // written back has to be instead. No base wired in -> identity,
+        // matching MATRIX_TRANSFORM_NODE's own evaluate fallback.
+        const baseResult = attachedGizmoTarget.baseSourceNodeId
+          ? latestResults?.get(attachedGizmoTarget.baseSourceNodeId)?.matrix
+          : undefined;
+        const baseMatrix = baseResult instanceof THREE.Matrix4 ? baseResult : new THREE.Matrix4();
+        const deltaMatrix = baseMatrix.clone().invert().multiply(object.matrix);
+
+        const location = new THREE.Vector3();
+        const quaternion = new THREE.Quaternion();
+        const scale = new THREE.Vector3();
+        deltaMatrix.decompose(location, quaternion, scale);
+        const euler = new THREE.Euler().setFromQuaternion(quaternion);
+        onTransformChangeRef.current(attachedGizmoTarget.transformNodeId, {
+          location,
           rotation: new THREE.Vector3(euler.x, euler.y, euler.z),
-          scale: object.scale.clone(),
+          scale,
         });
       });
     }
@@ -379,6 +415,7 @@ export function Viewport({
         frameId = requestAnimationFrame(tick);
         return;
       }
+      latestResults = results;
 
       // A Camera node drives the camera directly from its Location/Rotation/
       // FOV (or its DLT solve) — but only in the *output* window. That is
@@ -473,21 +510,19 @@ export function Viewport({
             if (!targetObject && obj.userData.nodeId === selectedNodeIdRef.current) targetObject = obj;
           });
         }
-        const transformNodeId = targetObject
-          ? findUpstreamTransformNode(graphRef.current, selectedNodeIdRef.current!)
-          : null;
+        const gizmoTarget = targetObject ? resolveGizmoTarget(graphRef.current, selectedNodeIdRef.current!) : null;
 
-        if (targetObject && transformNodeId) {
+        if (targetObject && gizmoTarget) {
           if (attachedObjectNodeId !== selectedNodeIdRef.current) {
             transformControls.attach(targetObject);
             attachedObjectNodeId = selectedNodeIdRef.current;
           }
-          attachedTransformNodeId = transformNodeId;
+          attachedGizmoTarget = gizmoTarget;
           transformControls.setMode(transformModeRef.current);
         } else if (attachedObjectNodeId !== null) {
           transformControls.detach();
           attachedObjectNodeId = null;
-          attachedTransformNodeId = null;
+          attachedGizmoTarget = null;
         }
       }
 
