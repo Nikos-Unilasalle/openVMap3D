@@ -91,9 +91,14 @@ function App() {
         <Viewport graph={graph} registry={DEFAULT_REGISTRY} renderNodeId="output" />
         {selectedInstance && selectedDef && (
           <ParamPanel
+            nodeId={selectedInstance.id}
             label={selectedDef.label}
             category={selectedDef.category}
-            fields={selectedDef.paramFields ?? []}
+            fields={
+              selectedDef.dynamicParamFields
+                ? selectedDef.dynamicParamFields(selectedInstance)
+                : (selectedDef.paramFields ?? [])
+            }
             params={{ ...selectedDef.defaultParams, ...selectedInstance.params }}
             onChange={onParamChange}
           />

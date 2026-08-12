@@ -1,3 +1,5 @@
+import { open } from "@tauri-apps/plugin-dialog";
+import { readTextFile } from "@tauri-apps/plugin-fs";
 import * as THREE from "three";
 import { CATEGORY_COLOR, NodeCategory, UNKNOWN_CATEGORY_COLOR } from "../shared/graph/categories";
 import { ParamFieldDef } from "../shared/graph/types";
@@ -5,6 +7,7 @@ import { DragNumberInput } from "./DragNumberInput";
 import "./param-panel.css";
 
 interface ParamPanelProps {
+  nodeId: string;
   label: string;
   category?: NodeCategory;
   fields: ParamFieldDef[];
@@ -39,6 +42,29 @@ function colorField(value: unknown, onChange: (v: unknown) => void) {
   );
 }
 
+function fileField(nodeId: string, field: ParamFieldDef & { kind: "file" }, value: unknown, onChange: (v: unknown) => void) {
+  const fileName = typeof value === "string" && value ? (value.split(/[\\/]/).pop() ?? value) : "Choose file…";
+  return (
+    <button
+      type="button"
+      className="param-file-button"
+      onClick={async () => {
+        const extensions = field.accept?.map((ext) => ext.replace(/^\./, "")) ?? [];
+        const path = await open({
+          multiple: false,
+          filters: extensions.length ? [{ name: "File", extensions }] : undefined,
+        });
+        if (!path || Array.isArray(path)) return;
+        const content = await readTextFile(path);
+        field.onLoaded?.(nodeId, path, content);
+        onChange(path);
+      }}
+    >
+      {fileName}
+    </button>
+  );
+}
+
 function vectorField(field: ParamFieldDef & { kind: "vector" }, value: unknown, onChange: (v: unknown) => void) {
   const v = value instanceof THREE.Vector3 ? value : new THREE.Vector3();
   const axis = (key: "x" | "y" | "z") => (
@@ -63,7 +89,7 @@ function vectorField(field: ParamFieldDef & { kind: "vector" }, value: unknown, 
 }
 
 /** One row per `paramFields` entry, driven entirely by ParamFieldDef['kind'] — a new node needs no new panel code, only a paramFields entry. */
-export function ParamPanel({ label, category, fields, params, onChange }: ParamPanelProps) {
+export function ParamPanel({ nodeId, label, category, fields, params, onChange }: ParamPanelProps) {
   const categoryColor = category ? CATEGORY_COLOR[category] : UNKNOWN_CATEGORY_COLOR;
   return (
     <div className="param-panel">
@@ -85,6 +111,7 @@ export function ParamPanel({ label, category, fields, params, onChange }: ParamP
           {field.kind === "boolean" && booleanField(params[field.id], (v) => onChange(field.id, v))}
           {field.kind === "select" && selectField(field, params[field.id], (v) => onChange(field.id, v))}
           {field.kind === "color" && colorField(params[field.id], (v) => onChange(field.id, v))}
+          {field.kind === "file" && fileField(nodeId, field, params[field.id], (v) => onChange(field.id, v))}
         </div>
       ))}
     </div>

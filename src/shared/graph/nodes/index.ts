@@ -10,6 +10,7 @@ import { BOOLEAN_LOGIC_NODE, COMPARE_NODE, GATE_NODE, TOGGLE_NODE, TRIGGER_NODE 
 import { ENVELOPE_NODE, OSCILLATOR_NODE } from "./oscillator";
 import { COLOR_COMPOSE_NODE, COLOR_CONSTANT_NODE, COLOR_DECOMPOSE_NODE, COLOR_MATH_NODE } from "./color";
 import { COLOR_TO_VECTOR_NODE, VALUE_TO_COLOR_NODE, VALUE_TO_VECTOR_NODE, VECTOR_TO_COLOR_NODE } from "./converter";
+import { CSV_READER_NODE } from "./csv";
 
 /** The starter catalogue — grows node by node; BIBLE.md has the full target list. */
 export const STARTER_NODES = [
@@ -44,6 +45,7 @@ export const STARTER_NODES = [
   GATE_NODE,
   OSCILLATOR_NODE,
   ENVELOPE_NODE,
+  CSV_READER_NODE,
 ];
 
 export const DEFAULT_REGISTRY = createRegistry(STARTER_NODES);
@@ -59,3 +61,4 @@ export * from "./oscillator";
 export * from "./color";
 export * from "./converter";
 export * from "./merge";
+export * from "./csv";

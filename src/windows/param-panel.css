@@ -95,3 +95,23 @@
   cursor: text;
   user-select: text;
 }
+
+.param-file-button {
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  outline: none;
+  border-radius: 4px;
+  color: #e6e6e6;
+  font-size: 11px;
+  font-family: inherit;
+  padding: 3px 6px;
+  cursor: pointer;
+}
+
+.param-file-button:hover {
+  background: rgba(255, 255, 255, 0.14);
+}

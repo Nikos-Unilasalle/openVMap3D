@@ -31,7 +31,21 @@ export type ParamFieldDef =
   | { id: string; label: string; kind: "boolean" }
   | { id: string; label: string; kind: "select"; options: string[] }
   | { id: string; label: string; kind: "color" }
-  | { id: string; label: string; kind: "vector"; step?: number };
+  | { id: string; label: string; kind: "vector"; step?: number }
+  | {
+      id: string;
+      label: string;
+      kind: "file";
+      accept?: string[];
+      /**
+       * Called with the instance's id, the picked path, and the file's text
+       * content right after a successful pick — before `onChange(id, path)`
+       * stores the path itself. This is how a node parses/caches what it
+       * actually needs (CSV Reader's csvStore, say) without the generic
+       * param panel needing to know anything CSV-specific.
+       */
+      onLoaded?: (nodeId: string, path: string, content: string) => void;
+    };
 
 /**
  * The static description of a node *type* — shared by every instance of it.
@@ -57,6 +71,15 @@ export interface NodeDefinition {
   defaultParams: Record<string, unknown>;
   /** See ParamFieldDef — omit for a node with nothing worth exposing in the panel. */
   paramFields?: ParamFieldDef[];
+  /**
+   * When present, overrides `paramFields` for a specific instance — for a
+   * node like CSV Reader whose "which column" dropdown can't be known until
+   * a file has actually been loaded for *this* instance. Takes the
+   * instance itself (so it can key into whatever module-level cache the
+   * node's own file keeps its loaded state in, the same "cache outside the
+   * pure calculation, keyed by a stable id" pattern as `EvalContext.nodeId`).
+   */
+  dynamicParamFields?: (instance: NodeInstance) => ParamFieldDef[];
   /**
    * When present, overrides `inputs` for a specific instance based on its
    * own current connections — for a node like Merge whose socket count
