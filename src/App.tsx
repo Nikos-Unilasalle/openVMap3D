@@ -71,18 +71,26 @@ function MainEditor() {
   const graphRef = useRef(graph);
   graphRef.current = graph;
 
-  // Handshake responder: an output window that opens after this one already
-  // has state emits "output:ready" on mount; this answers with current state.
-  useEffect(() => startBroadcasting(() => ({ graph: graphRef.current, epochMs })), [epochMs]);
-  // Push broadcast on every structural graph change — not per frame; each
-  // window's own render loop derives per-frame animation locally from the
-  // shared epoch (see clock.ts), so this is the only IPC that happens at all.
-  useEffect(() => {
-    broadcastGraph({ graph, epochMs });
-  }, [graph, epochMs]);
-
   const selectedInstance = graph.nodes.find((n) => n.id === selectedNodeId) ?? null;
   const selectedDef = selectedInstance ? DEFAULT_REGISTRY.get(selectedInstance.type) : undefined;
+  // Which node's calibrationLines the output window should draw, if any —
+  // broadcast alongside the graph so the operator can align against the
+  // real room through the actual projection, not just the editor preview.
+  const calibratingNodeId = selectedInstance && selectedInstance.type === CAMERA_NODE.type ? selectedInstance.id : null;
+
+  // Handshake responder: an output window that opens after this one already
+  // has state emits "output:ready" on mount; this answers with current state.
+  useEffect(
+    () => startBroadcasting(() => ({ graph: graphRef.current, epochMs, calibratingNodeId })),
+    [epochMs, calibratingNodeId],
+  );
+  // Push broadcast on every structural graph change or calibration-target
+  // change — not per frame; each window's own render loop derives per-frame
+  // animation locally from the shared epoch (see clock.ts), so this is the
+  // only IPC that happens at all.
+  useEffect(() => {
+    broadcastGraph({ graph, epochMs, calibratingNodeId });
+  }, [graph, epochMs, calibratingNodeId]);
 
   const handleLoadGraph = (newGraph: Graph, filename?: string) => {
     setGraph(newGraph);

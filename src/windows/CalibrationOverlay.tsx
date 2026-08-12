@@ -1,47 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { LineSegment, Point2D, solveTwoPointCalibration } from "../shared/graph/calibration/vanishingPoint";
+import { CalibrationLinesView } from "../shared/graph/calibration/CalibrationLinesView";
+import {
+  CALIBRATION_COLOR_A,
+  CALIBRATION_COLOR_B,
+  DEFAULT_RELATIVE_LINES,
+  StoredLines,
+  isStoredLines,
+  toPixels,
+  toRelative,
+} from "../shared/graph/calibration/lines";
+import { solveTwoPointCalibration } from "../shared/graph/calibration/vanishingPoint";
 import "./calibration-overlay.css";
-
-type LineSet = [LineSegment, LineSegment];
-
-interface StoredLines {
-  lineSetA: LineSet;
-  lineSetB: LineSet;
-}
-
-const COLOR_A = "#f43f5e";
-const COLOR_B = "#38bdf8";
-
-/** Relative (0..1) starting layout — deliberately spread and non-parallel so there's always a valid solve before the operator has touched anything. */
-const DEFAULT_RELATIVE: StoredLines = {
-  lineSetA: [
-    [{ x: 0.3, y: 0.62 }, { x: 0.45, y: 0.25 }],
-    [{ x: 0.58, y: 0.6 }, { x: 0.5, y: 0.24 }],
-  ],
-  lineSetB: [
-    [{ x: 0.18, y: 0.4 }, { x: 0.72, y: 0.32 }],
-    [{ x: 0.18, y: 0.56 }, { x: 0.72, y: 0.5 }],
-  ],
-};
-
-function toPixels(lines: StoredLines, width: number, height: number): StoredLines {
-  const scale = (p: Point2D): Point2D => ({ x: p.x * width, y: p.y * height });
-  const scaleSet = (set: LineSet): LineSet => [
-    [scale(set[0][0]), scale(set[0][1])],
-    [scale(set[1][0]), scale(set[1][1])],
-  ];
-  return { lineSetA: scaleSet(lines.lineSetA), lineSetB: scaleSet(lines.lineSetB) };
-}
-
-function toRelative(lines: StoredLines, width: number, height: number): StoredLines {
-  const scale = (p: Point2D): Point2D => ({ x: p.x / width, y: p.y / height });
-  const scaleSet = (set: LineSet): LineSet => [
-    [scale(set[0][0]), scale(set[0][1])],
-    [scale(set[1][0]), scale(set[1][1])],
-  ];
-  return { lineSetA: scaleSet(lines.lineSetA), lineSetB: scaleSet(lines.lineSetB) };
-}
 
 interface CalibrationOverlayProps {
   /** The Camera node's own current params — read the persisted line layout, if any, from here. */
@@ -78,7 +48,7 @@ export function CalibrationOverlay({ storedLines, onChange }: CalibrationOverlay
   // actual pixel size — resolution-independent storage, pixel-space editing.
   useEffect(() => {
     if (size.width === 0 || size.height === 0 || lines) return;
-    const relative = isStoredLines(storedLines) ? storedLines : DEFAULT_RELATIVE;
+    const relative = isStoredLines(storedLines) ? storedLines : DEFAULT_RELATIVE_LINES;
     setLines(toPixels(relative, size.width, size.height));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [size]);
@@ -103,42 +73,21 @@ export function CalibrationOverlay({ storedLines, onChange }: CalibrationOverlay
   }
 
   const handles: { set: "lineSetA" | "lineSetB"; line: 0 | 1; point: 0 | 1; color: string }[] = [
-    { set: "lineSetA", line: 0, point: 0, color: COLOR_A },
-    { set: "lineSetA", line: 0, point: 1, color: COLOR_A },
-    { set: "lineSetA", line: 1, point: 0, color: COLOR_A },
-    { set: "lineSetA", line: 1, point: 1, color: COLOR_A },
-    { set: "lineSetB", line: 0, point: 0, color: COLOR_B },
-    { set: "lineSetB", line: 0, point: 1, color: COLOR_B },
-    { set: "lineSetB", line: 1, point: 0, color: COLOR_B },
-    { set: "lineSetB", line: 1, point: 1, color: COLOR_B },
+    { set: "lineSetA", line: 0, point: 0, color: CALIBRATION_COLOR_A },
+    { set: "lineSetA", line: 0, point: 1, color: CALIBRATION_COLOR_A },
+    { set: "lineSetA", line: 1, point: 0, color: CALIBRATION_COLOR_A },
+    { set: "lineSetA", line: 1, point: 1, color: CALIBRATION_COLOR_A },
+    { set: "lineSetB", line: 0, point: 0, color: CALIBRATION_COLOR_B },
+    { set: "lineSetB", line: 0, point: 1, color: CALIBRATION_COLOR_B },
+    { set: "lineSetB", line: 1, point: 0, color: CALIBRATION_COLOR_B },
+    { set: "lineSetB", line: 1, point: 1, color: CALIBRATION_COLOR_B },
   ];
 
   return (
     <div ref={containerRef} className="calibration-overlay">
       {invalid && <div className="calibration-overlay-warning">Lines too close to parallel — adjust</div>}
+      <CalibrationLinesView className="calibration-overlay-svg" lines={lines} width={size.width} height={size.height} />
       <svg className="calibration-overlay-svg" width={size.width} height={size.height}>
-        {([0, 1] as const).map((line) => (
-          <line
-            key={`A${line}`}
-            className="calibration-line"
-            stroke={COLOR_A}
-            x1={lines.lineSetA[line][0].x}
-            y1={lines.lineSetA[line][0].y}
-            x2={lines.lineSetA[line][1].x}
-            y2={lines.lineSetA[line][1].y}
-          />
-        ))}
-        {([0, 1] as const).map((line) => (
-          <line
-            key={`B${line}`}
-            className="calibration-line"
-            stroke={COLOR_B}
-            x1={lines.lineSetB[line][0].x}
-            y1={lines.lineSetB[line][0].y}
-            x2={lines.lineSetB[line][1].x}
-            y2={lines.lineSetB[line][1].y}
-          />
-        ))}
         {handles.map(({ set, line, point, color }) => {
           const pos = lines[set][line][point];
           return (
@@ -179,14 +128,5 @@ export function CalibrationOverlay({ storedLines, onChange }: CalibrationOverlay
         })}
       </svg>
     </div>
-  );
-}
-
-function isStoredLines(value: unknown): value is StoredLines {
-  return (
-    !!value &&
-    typeof value === "object" &&
-    "lineSetA" in (value as object) &&
-    "lineSetB" in (value as object)
   );
 }
