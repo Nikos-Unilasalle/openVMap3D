@@ -1,4 +1,6 @@
 import { createRegistry } from "../types";
+import { CAMERA_NODE } from "./camera";
+import { GRID_NODE } from "./grid";
 import { DECOMPOSE_MATRIX_NODE, LOOK_AT_NODE, MATRIX_TRANSFORM_NODE, PARENT_NODE, TRANSFORM_NODE, TRANSFORM_VECTOR_NODE } from "./transform";
 import { MAP_RANGE_NODE, VALUE_CONSTANT_NODE, VALUE_MATH_NODE } from "./valueMath";
 import { MERGE_NODE } from "./merge";
@@ -102,6 +104,8 @@ export const STARTER_NODES = [
   RANDOM_VECTOR_NODE,
   RANDOM_MATRIX_NODE,
   RANDOM_LIST_NODE,
+  CAMERA_NODE,
+  GRID_NODE,
 ];
 
 export const DEFAULT_REGISTRY = createRegistry(STARTER_NODES);
@@ -126,3 +130,5 @@ export * from "./text";
 export * from "./keyboard";
 export * from "./array";
 export * from "./instance";
+export * from "./camera";
+export * from "./grid";

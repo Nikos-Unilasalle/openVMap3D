@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { ClockState, createClock, tickClock } from "../graph/clock";
 import { evaluateGraph } from "../graph/evaluate";
+import { CAMERA_NODE } from "../graph/nodes/camera";
 import { Graph, NodeRegistry } from "../graph/types";
 import "./viewport.css";
 
@@ -189,14 +190,6 @@ export function Viewport({ graph, registry, renderNodeId, epochMs }: ViewportPro
 
     function tick() {
       clock = tickClock(clock, Date.now());
-      controls.update();
-
-      // Sync corner Gizmo camera orientation with main camera
-      gizmoCamera.position
-        .copy(camera.position)
-        .sub(controls.target)
-        .setLength(3);
-      gizmoCamera.lookAt(0, 0, 0);
 
       let results;
       try {
@@ -210,6 +203,43 @@ export function Viewport({ graph, registry, renderNodeId, epochMs }: ViewportPro
         frameId = requestAnimationFrame(tick);
         return;
       }
+
+      // Manual Alignment (BIBLE.md's Calibration section): a Camera node in
+      // the graph drives this camera directly from its scrubbed Location/
+      // Rotation/FOV params, instead of the default hardcoded pose — and
+      // free orbit navigation is disabled while it does, since the whole
+      // point is dialing in exact numbers against the real projector output,
+      // not a mouse drag that would fight them every frame. No Camera node
+      // in the graph -> behaves exactly as before (orbit, default pose).
+      const cameraInstance = graphRef.current.nodes.find((n) => n.type === CAMERA_NODE.type);
+      const cameraResult = cameraInstance ? results.get(cameraInstance.id) : undefined;
+      const calibrationMatrix = cameraResult?.matrix instanceof THREE.Matrix4 ? cameraResult.matrix : null;
+
+      if (calibrationMatrix) {
+        controls.enabled = false;
+        const position = new THREE.Vector3();
+        const quaternion = new THREE.Quaternion();
+        const scale = new THREE.Vector3();
+        calibrationMatrix.decompose(position, quaternion, scale);
+        camera.position.copy(position);
+        camera.quaternion.copy(quaternion);
+        const fov = Number(cameraResult?.fov) || camera.fov;
+        if (camera.fov !== fov) {
+          camera.fov = fov;
+          camera.updateProjectionMatrix();
+        }
+      } else {
+        controls.enabled = true;
+        controls.update();
+      }
+
+      // Sync corner Gizmo camera orientation with main camera — derived from
+      // the camera's own quaternion (not position-minus-controls.target,
+      // which is only meaningful in orbit mode and would be stale while a
+      // Camera node is driving the camera directly).
+      const cameraForward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+      gizmoCamera.position.copy(cameraForward).multiplyScalar(-3);
+      gizmoCamera.lookAt(0, 0, 0);
 
       const output = results.get(renderNodeIdRef.current)?.geometry;
       const nextObject = output instanceof THREE.Object3D ? output : null;
