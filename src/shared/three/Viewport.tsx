@@ -221,16 +221,18 @@ export function Viewport({ graph, registry, renderNodeId, epochMs, outputMode = 
         return;
       }
 
-      // Manual Alignment (BIBLE.md's Calibration section): a Camera node in
-      // the graph drives this camera directly from its scrubbed Location/
-      // Rotation/FOV params, instead of the default hardcoded pose — and
-      // free orbit navigation is disabled while it does, since the whole
-      // point is dialing in exact numbers against the real projector output,
-      // not a mouse drag that would fight them every frame. No Camera node
-      // in the graph -> behaves exactly as before (orbit, default pose).
+      // A Camera node drives the camera directly from its Location/Rotation/
+      // FOV (or its DLT solve) — but only in the *output* window. That is
+      // the one view that has to show exactly what the real projector will
+      // show, which orbit navigation would otherwise fight every frame. The
+      // editor's own viewport stays freely orbitable regardless of a Camera
+      // node's presence or mode, since it's for building/inspecting the
+      // scene, not for judging alignment — that judgment only means
+      // anything against the actual projected output (see OutputWindow).
       const cameraInstance = graphRef.current.nodes.find((n) => n.type === CAMERA_NODE.type);
       const cameraResult = cameraInstance ? results.get(cameraInstance.id) : undefined;
-      const calibrationMatrix = cameraResult?.matrix instanceof THREE.Matrix4 ? cameraResult.matrix : null;
+      const calibrationMatrix =
+        outputMode && cameraResult?.matrix instanceof THREE.Matrix4 ? cameraResult.matrix : null;
 
       if (calibrationMatrix) {
         controls.enabled = false;
