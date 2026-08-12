@@ -29,7 +29,9 @@ export const VALUE_MATH_NODE: NodeDefinition = {
   ],
   evaluate: (inputs, params) => {
     const op = OPS[String(params.op)] ?? OPS.add;
-    return { out: op(Number(inputs.a) || 0, Number(inputs.b) || 0) };
+    const a = inputs.a !== undefined ? Number(inputs.a) : (Number(params.a) || 0);
+    const b = inputs.b !== undefined ? Number(inputs.b) : (Number(params.b) || 0);
+    return { out: op(isNaN(a) ? 0 : a, isNaN(b) ? 0 : b) };
   },
 };
 

@@ -40,7 +40,7 @@ export function randomExponential(rng: () => number, lambda = 1): number {
 
 /** Simple 1D smooth gradient noise based on seed offset */
 export function randomNoise1D(seed: number, t: number): number {
-  const x = seed * 17.13 + t * 0.5;
+  const x = seed + t * 0.5;
   const xi = Math.floor(x);
   const xf = x - xi;
   const u = xf * xf * (3 - 2 * xf);
