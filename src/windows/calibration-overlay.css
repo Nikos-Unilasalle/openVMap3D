@@ -1,7 +1,17 @@
 .calibration-overlay {
   position: absolute;
   inset: 0;
-  z-index: 4; /* below the param panel (5), above the raw viewport */
+  /*
+   * Above the param panel (5), not below it. The panel's own box (top:12,
+   * right:12, 210px wide) swallows pointer events across its whole
+   * rectangle, not just its fields — a handle whose default or dragged
+   * position lands under it (very likely: real ceiling corners commonly
+   * project toward the upper-right, exactly where the panel always sits)
+   * would be permanently ungrabbable otherwise. The panel stays fully
+   * usable regardless — only .calibration-handle circles have
+   * pointer-events:all, everything else here is pointer-events:none.
+   */
+  z-index: 6;
   pointer-events: none;
 }
 
