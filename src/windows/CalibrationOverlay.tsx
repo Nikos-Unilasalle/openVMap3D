@@ -1,123 +1,108 @@
 import { useEffect, useRef, useState } from "react";
-import * as THREE from "three";
-import { CalibrationLinesView } from "../shared/graph/calibration/CalibrationLinesView";
-import {
-  CALIBRATION_COLOR_A,
-  CALIBRATION_COLOR_B,
-  DEFAULT_RELATIVE_LINES,
-  StoredLines,
-  isStoredLines,
-  toPixels,
-  toRelative,
-} from "../shared/graph/calibration/lines";
-import { solveTwoPointCalibration } from "../shared/graph/calibration/vanishingPoint";
+import { CalibrationHandlesView, toPixels, toRelative } from "../shared/graph/calibration/CalibrationHandlesView";
+import { findReferencePointsForCamera } from "../shared/graph/calibration/graphLookup";
+import { CalibrationPicks, DEFAULT_PICKS, isCalibrationPicks, solveFromPicks } from "../shared/graph/calibration/picks";
+import { referencePointColor } from "../shared/graph/calibration/roomCorner";
+import { Graph } from "../shared/graph/types";
 import "./calibration-overlay.css";
 
+/** Reprojection error, in fractions of the image, above which the alignment is worth flagging. */
+const SLOPPY_PICK_THRESHOLD = 0.004;
+
 interface CalibrationOverlayProps {
-  /** The Camera node's own current params — read the persisted line layout, if any, from here. */
-  storedLines: unknown;
+  graph: Graph;
+  cameraNodeId: string;
+  /** The Camera node's own params — the stored picks live here. */
+  storedPicks: unknown;
   onChange: (paramId: string, value: unknown) => void;
 }
 
+function statusOf(error: number | null): { text: string; tone: "ok" | "warn" | "bad" } {
+  if (error === null) return { text: "Not solvable yet — place all six handles", tone: "bad" };
+  if (error > SLOPPY_PICK_THRESHOLD) {
+    return { text: `Solved, but loosely (residual ${(error * 100).toFixed(2)}% of image)`, tone: "warn" };
+  }
+  return { text: `Solved (residual ${(error * 100).toFixed(3)}% of image)`, tone: "ok" };
+}
+
 /**
- * Manual Alignment's actual interaction (BIBLE.md's Calibration section):
- * drag reference lines directly over the live view until they match real
- * room edges, live — not a photo, not scrubbed numbers. Two line sets (2
- * lines each) give two vanishing points; solveTwoPointCalibration turns
- * those into the Camera node's Rotation + FOV, recomputed on every drag.
+ * Calibration by direct manipulation, the way BIBLE.md describes it: the
+ * reference corner is projected live, and the operator drags each handle
+ * onto the matching real corner of the room while watching the projection.
+ *
+ * Every handle carries a known 3D coordinate (from the wired Room Corner
+ * node), which is what lets the Camera node's DLT solve recover the
+ * projector's *position* along with its orientation, focal lengths and lens
+ * shift. The earlier line-tracing version could recover none of those but
+ * orientation, which is why the scene never landed in the room.
+ *
+ * A drag writes one param — the picks. The solve is the Camera node's own
+ * job, so there is no second copy of the answer to keep in sync, and no
+ * multi-write ordering to get wrong.
  */
-export function CalibrationOverlay({ storedLines, onChange }: CalibrationOverlayProps) {
+export function CalibrationOverlay({ graph, cameraNodeId, storedPicks, onChange }: CalibrationOverlayProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
-  const [lines, setLines] = useState<StoredLines | null>(null);
-  const [invalid, setInvalid] = useState(false);
-  const dragging = useRef<{ set: "lineSetA" | "lineSetB"; line: 0 | 1; point: 0 | 1 } | null>(null);
+  const dragging = useRef<string | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
     const el = containerRef.current;
-    const observer = new ResizeObserver(() => {
-      setSize({ width: el.clientWidth, height: el.clientHeight });
-    });
+    const observer = new ResizeObserver(() => setSize({ width: el.clientWidth, height: el.clientHeight }));
     observer.observe(el);
     setSize({ width: el.clientWidth, height: el.clientHeight });
     return () => observer.disconnect();
   }, []);
 
-  // Seed from stored (relative) positions once we know the container's
-  // actual pixel size — resolution-independent storage, pixel-space editing.
-  useEffect(() => {
-    if (size.width === 0 || size.height === 0 || lines) return;
-    const relative = isStoredLines(storedLines) ? storedLines : DEFAULT_RELATIVE_LINES;
-    setLines(toPixels(relative, size.width, size.height));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [size]);
+  const points = findReferencePointsForCamera(graph, cameraNodeId);
+  const picks: CalibrationPicks = isCalibrationPicks(storedPicks) ? storedPicks : DEFAULT_PICKS;
 
-  const commit = (next: StoredLines) => {
-    setLines(next);
-    const result = solveTwoPointCalibration(next.lineSetA, next.lineSetB, size.width, size.height);
-    if (!result) {
-      setInvalid(true);
-      onChange("calibrationLines", toRelative(next, size.width, size.height));
-      return;
-    }
-    setInvalid(false);
-    const euler = new THREE.Euler().setFromQuaternion(result.quaternion);
-    onChange("rotation", new THREE.Vector3(euler.x, euler.y, euler.z));
-    onChange("fov", result.fovDegrees);
-    onChange("calibrationLines", toRelative(next, size.width, size.height));
-  };
-
-  if (!lines) {
-    return <div ref={containerRef} className="calibration-overlay" />;
+  if (!points) {
+    return (
+      <div ref={containerRef} className="calibration-overlay">
+        <div className="calibration-overlay-warning">
+          Wire a Room Corner node into the Camera's Ref Points to calibrate
+        </div>
+      </div>
+    );
   }
 
-  const handles: { set: "lineSetA" | "lineSetB"; line: 0 | 1; point: 0 | 1; color: string }[] = [
-    { set: "lineSetA", line: 0, point: 0, color: CALIBRATION_COLOR_A },
-    { set: "lineSetA", line: 0, point: 1, color: CALIBRATION_COLOR_A },
-    { set: "lineSetA", line: 1, point: 0, color: CALIBRATION_COLOR_A },
-    { set: "lineSetA", line: 1, point: 1, color: CALIBRATION_COLOR_A },
-    { set: "lineSetB", line: 0, point: 0, color: CALIBRATION_COLOR_B },
-    { set: "lineSetB", line: 0, point: 1, color: CALIBRATION_COLOR_B },
-    { set: "lineSetB", line: 1, point: 0, color: CALIBRATION_COLOR_B },
-    { set: "lineSetB", line: 1, point: 1, color: CALIBRATION_COLOR_B },
-  ];
+  const solved = solveFromPicks(points, picks);
+  const status = statusOf(solved ? solved.reprojectionError : null);
+
+  const moveHandle = (id: string, clientX: number, clientY: number) => {
+    if (!containerRef.current || size.width === 0 || size.height === 0) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const relative = toRelative({ x: clientX - rect.left, y: clientY - rect.top }, size.width, size.height);
+    onChange("calibrationPicks", { ...picks, [id]: relative });
+  };
 
   return (
     <div ref={containerRef} className="calibration-overlay">
-      {invalid && <div className="calibration-overlay-warning">Lines too close to parallel — adjust</div>}
-      <CalibrationLinesView className="calibration-overlay-svg" lines={lines} width={size.width} height={size.height} />
+      <div className={`calibration-overlay-status calibration-overlay-status-${status.tone}`}>{status.text}</div>
+      <CalibrationHandlesView points={points} picks={picks} width={size.width} height={size.height} showLabels />
       <svg className="calibration-overlay-svg" width={size.width} height={size.height}>
-        {handles.map(({ set, line, point, color }) => {
-          const pos = lines[set][line][point];
+        {points.map((point) => {
+          const pick = picks[point.id];
+          if (!pick) return null;
+          const at = toPixels(pick, size.width, size.height);
           return (
             <circle
-              key={`${set}${line}${point}`}
+              key={point.id}
               className="calibration-handle"
-              cx={pos.x}
-              cy={pos.y}
-              r={7}
-              fill={color}
+              cx={at.x}
+              cy={at.y}
+              r={11}
+              fill={referencePointColor(point.id)}
+              fillOpacity={0.25}
+              stroke={referencePointColor(point.id)}
               onPointerDown={(e) => {
                 e.currentTarget.setPointerCapture(e.pointerId);
-                dragging.current = { set, line, point };
+                dragging.current = point.id;
               }}
               onPointerMove={(e) => {
-                if (!dragging.current || !containerRef.current) return;
-                const rect = containerRef.current.getBoundingClientRect();
-                const { set: dSet, line: dLine, point: dPoint } = dragging.current;
-                const next: StoredLines = {
-                  lineSetA: [
-                    [{ ...lines.lineSetA[0][0] }, { ...lines.lineSetA[0][1] }],
-                    [{ ...lines.lineSetA[1][0] }, { ...lines.lineSetA[1][1] }],
-                  ],
-                  lineSetB: [
-                    [{ ...lines.lineSetB[0][0] }, { ...lines.lineSetB[0][1] }],
-                    [{ ...lines.lineSetB[1][0] }, { ...lines.lineSetB[1][1] }],
-                  ],
-                };
-                next[dSet][dLine][dPoint] = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-                commit(next);
+                if (dragging.current !== point.id) return;
+                moveHandle(point.id, e.clientX, e.clientY);
               }}
               onPointerUp={(e) => {
                 e.currentTarget.releasePointerCapture(e.pointerId);

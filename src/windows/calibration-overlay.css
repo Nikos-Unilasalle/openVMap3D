@@ -12,16 +12,34 @@
 }
 
 .calibration-line {
-  stroke-width: 2.5;
+  stroke-width: 2;
   pointer-events: none;
   filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.8));
 }
 
+.calibration-handle-dot {
+  pointer-events: none;
+  stroke: #0d1117;
+  stroke-width: 1.5;
+}
+
+.calibration-handle-label {
+  fill: #e2e8f0;
+  font-family: "Roboto", system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: #0d1117;
+  stroke-width: 3px;
+  pointer-events: none;
+}
+
+/* The grab target is deliberately larger than the dot it moves — a 6px dot
+   is the right size to aim a room corner with, and the wrong size to grab. */
 .calibration-handle {
   pointer-events: all;
   cursor: grab;
-  stroke: #0d1117;
-  stroke-width: 2;
+  stroke-width: 1.5;
   touch-action: none;
 }
 
@@ -29,18 +47,36 @@
   cursor: grabbing;
 }
 
+.calibration-overlay-status,
 .calibration-overlay-warning {
   position: absolute;
   top: 12px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(244, 63, 94, 0.16);
-  border: 1px solid rgba(244, 63, 94, 0.5);
-  color: #fb7185;
   font-family: "Roboto", system-ui, sans-serif;
   font-size: 11px;
   font-weight: 600;
   padding: 4px 10px;
   border-radius: 6px;
   pointer-events: none;
+  white-space: nowrap;
+}
+
+.calibration-overlay-status-ok {
+  background: rgba(34, 197, 94, 0.16);
+  border: 1px solid rgba(34, 197, 94, 0.5);
+  color: #4ade80;
+}
+
+.calibration-overlay-status-warn {
+  background: rgba(242, 193, 78, 0.16);
+  border: 1px solid rgba(242, 193, 78, 0.5);
+  color: #f2c14e;
+}
+
+.calibration-overlay-status-bad,
+.calibration-overlay-warning {
+  background: rgba(244, 63, 94, 0.16);
+  border: 1px solid rgba(244, 63, 94, 0.5);
+  color: #fb7185;
 }

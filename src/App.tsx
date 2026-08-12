@@ -73,7 +73,7 @@ function MainEditor() {
 
   const selectedInstance = graph.nodes.find((n) => n.id === selectedNodeId) ?? null;
   const selectedDef = selectedInstance ? DEFAULT_REGISTRY.get(selectedInstance.type) : undefined;
-  // Which node's calibrationLines the output window should draw, if any —
+  // Which node's calibration handles the output window should draw, if any —
   // broadcast alongside the graph so the operator can align against the
   // real room through the actual projection, not just the editor preview.
   const calibratingNodeId = selectedInstance && selectedInstance.type === CAMERA_NODE.type ? selectedInstance.id : null;
@@ -106,11 +106,11 @@ function MainEditor() {
     setCurrentFilePath(path);
   };
 
-  // Functional updater, not "read graph, compute, setGraph(new)" — CalibrationOverlay
-  // calls this multiple times synchronously in one commit (rotation, fov,
-  // calibrationLines), and each call closing over the same pre-update `graph`
-  // would overwrite the previous one instead of composing (only the last
-  // param would ever stick). Same class of bug as the GraphEditor.tsx
+  // Functional updater, not "read graph, compute, setGraph(new)": a caller
+  // that fires this more than once synchronously in one handler would
+  // otherwise have each call close over the same pre-update `graph` and
+  // overwrite its siblings instead of composing, so only the last param
+  // would ever stick. Same class of bug as the GraphEditor.tsx
   // updater-purity fix earlier — setState-from-a-callback must not read a
   // snapshot taken before its sibling calls in the same handler.
   const onParamChange = (paramId: string, value: unknown) => {
@@ -169,7 +169,12 @@ function MainEditor() {
           epochMs={epochMs}
         />
         {selectedInstance && selectedInstance.type === CAMERA_NODE.type && (
-          <CalibrationOverlay storedLines={selectedInstance.params.calibrationLines} onChange={onParamChange} />
+          <CalibrationOverlay
+            graph={graph}
+            cameraNodeId={selectedInstance.id}
+            storedPicks={selectedInstance.params.calibrationPicks}
+            onChange={onParamChange}
+          />
         )}
         {selectedInstance && selectedDef && (
           <ParamPanel

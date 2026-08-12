@@ -187,6 +187,45 @@ for "recover spatial alignment," but its actual technique — a single static
 photo plus vanishing-point picks — isn't the approach here; noted so nobody
 goes implementing a vanishing-point picker UI expecting it to be used.
 
+**Settled 2026-08-12, after building the wrong one first.** A vanishing-point
+picker *was* built (draggable lines over the live view, no photo), and it
+failed on the real install for three reasons worth recording so the mistake
+isn't repeated:
+
+1. Two vanishing points recover rotation and focal length — **never
+   position**. The projector sits somewhere specific in the room, so the
+   scene landed nowhere near the physical space however carefully the lines
+   were traced. An object at the world origin simply vanished off-frame.
+2. A projector's principal point is far off-centre (lens shift / throw
+   offset — the image is thrown well above the lens axis). The
+   vanishing-point formula assumes it centred, so the model could not
+   describe the actual hardware at all.
+3. A small projection area — one or two walls, the usual room corner — means
+   the traced lines are nearly parallel, so the vanishing points sit near
+   infinity and the solve is wildly ill-conditioned: a couple of pixels of
+   drag swinging the focal length by tens of percent.
+
+What replaced it is still exactly the direct-manipulation model described
+above, with one change that fixes all three at once: **each dragged control
+point carries a known 3D coordinate.** A `Room Corner` node takes three tape
+measurements of the actual room and emits both a reference wireframe (with a
+subdivision grid — a bare outline gives the eye nothing to judge alignment
+by once it lands on a real wall) and the six room corners as named reference
+points. The operator drags one handle onto each matching physical corner,
+and a Direct Linear Transform solves the projector's *whole* state at once:
+position, orientation, both focal lengths, and the off-centre principal
+point that is its lens shift.
+
+The DLT's one degeneracy is all reference points lying on a single plane —
+which a room *corner* avoids by construction. So the cramped two-wall
+install that broke the vanishing-point method is precisely the configuration
+this one wants. Solved pose feeds the camera as a full asymmetric projection
+matrix, not an fov, since `fov` cannot express a lens shift by definition.
+
+Reprojection error is surfaced as an output and in the overlay: with more
+equations than unknowns the solve always returns *something*, so the operator
+needs the residual to know whether it returned something true.
+
 **Open, not yet decided:** `Outline` specifically — unlike Glow, an outline
 is normally a *per-object* 3D technique (edge detection or an
 inverted-normals duplicate-shell trick), not a screen-space pass, so it may

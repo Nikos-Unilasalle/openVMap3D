@@ -9,7 +9,7 @@ import {
   smallestEigenvector,
   transpose,
 } from "./linalg";
-import { Point2D } from "./vanishingPoint";
+import { Point2D } from "./types";
 
 /**
  * Calibration by 3D<->2D point correspondence (the Direct Linear Transform),

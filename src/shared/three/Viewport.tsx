@@ -195,6 +195,16 @@ export function Viewport({ graph, registry, renderNodeId, epochMs, outputMode = 
     let clock: ClockState = createClock(epochMs ?? Date.now());
     let frameId = 0;
 
+    // A copied-in projection matrix stays copied in until something rebuilds
+    // it — switching the Camera node back to manual, or deleting it, would
+    // otherwise leave the viewport stuck on the last solved frustum.
+    let projectionOverridden = false;
+    function restoreProjection() {
+      if (!projectionOverridden) return;
+      camera.updateProjectionMatrix();
+      projectionOverridden = false;
+    }
+
     function tick() {
       clock = tickClock(clock, Date.now());
 
@@ -230,14 +240,28 @@ export function Viewport({ graph, registry, renderNodeId, epochMs, outputMode = 
         calibrationMatrix.decompose(position, quaternion, scale);
         camera.position.copy(position);
         camera.quaternion.copy(quaternion);
-        const fov = Number(cameraResult?.fov) || camera.fov;
-        if (camera.fov !== fov) {
-          camera.fov = fov;
-          camera.updateProjectionMatrix();
+
+        // A solved projector has an off-centre principal point (lens shift),
+        // which `fov` structurally cannot express — it forces a symmetric
+        // frustum. So when the Camera node hands back a full projection
+        // matrix, it is copied in directly, overriding whatever
+        // updateProjectionMatrix built from fov/aspect. The copy happens
+        // every frame, which is also what keeps it winning over the resize
+        // handler's own updateProjectionMatrix call.
+        const projection = cameraResult?.projection;
+        if (projection instanceof THREE.Matrix4) {
+          camera.projectionMatrix.copy(projection);
+          camera.projectionMatrixInverse.copy(projection).invert();
+          projectionOverridden = true;
+        } else {
+          const fov = Number(cameraResult?.fov) || camera.fov;
+          if (camera.fov !== fov) camera.fov = fov;
+          restoreProjection();
         }
       } else {
         controls.enabled = true;
         controls.update();
+        restoreProjection();
       }
 
       // Sync corner Gizmo camera orientation with main camera — derived from

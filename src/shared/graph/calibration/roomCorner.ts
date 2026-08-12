@@ -48,6 +48,32 @@ export function roomCornerReferencePoints({ width, height, depth }: RoomCornerDi
   ];
 }
 
+export const CALIBRATION_COLOR_CORNER = "#22c55e";
+export const CALIBRATION_COLOR_WALL_A = "#f43f5e";
+export const CALIBRATION_COLOR_WALL_B = "#38bdf8";
+
+/**
+ * Which reference points to join up in the calibration overlay, and in what
+ * colour. Six loose dots are unreadable; drawn as two wall quads sharing a
+ * corner edge they read as the corner they represent, so the operator can
+ * see the shape they are aiming at rather than deducing it.
+ */
+export const HANDLE_EDGES: { from: string; to: string; color: string }[] = [
+  { from: "corner-floor", to: "corner-ceiling", color: CALIBRATION_COLOR_CORNER },
+  { from: "corner-floor", to: "wallA-floor", color: CALIBRATION_COLOR_WALL_A },
+  { from: "corner-ceiling", to: "wallA-ceiling", color: CALIBRATION_COLOR_WALL_A },
+  { from: "wallA-floor", to: "wallA-ceiling", color: CALIBRATION_COLOR_WALL_A },
+  { from: "corner-floor", to: "wallB-floor", color: CALIBRATION_COLOR_WALL_B },
+  { from: "corner-ceiling", to: "wallB-ceiling", color: CALIBRATION_COLOR_WALL_B },
+  { from: "wallB-floor", to: "wallB-ceiling", color: CALIBRATION_COLOR_WALL_B },
+];
+
+/** Handle colour per reference point — matches the wall each one belongs to. */
+export function referencePointColor(id: string): string {
+  if (id.startsWith("corner")) return CALIBRATION_COLOR_CORNER;
+  return id.startsWith("wallA") ? CALIBRATION_COLOR_WALL_A : CALIBRATION_COLOR_WALL_B;
+}
+
 function wallEdges(
   origin: THREE.Vector3,
   across: THREE.Vector3,

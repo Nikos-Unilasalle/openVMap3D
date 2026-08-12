@@ -44,7 +44,7 @@ export interface GraphPayload {
    * phase with the main window instead of its own Date.now() at mount.
    */
   epochMs: number;
-  /** The node currently being calibrated in the main editor (Camera node selected), or null. Lets the output window know whose `calibrationLines` param to draw over the projection — the operator aligns against the real room through the actual projected output, not just the editor preview. */
+  /** The node currently being calibrated in the main editor (Camera node selected), or null. Lets the output window know whose calibration handles to draw over the projection — alignment is judged against the real room in the actual projected light, not in the editor preview. */
   calibratingNodeId: string | null;
 }
 

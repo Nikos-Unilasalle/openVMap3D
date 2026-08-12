@@ -1,18 +1,21 @@
 import { useEffect, useRef, useState } from "react";
-import { CalibrationLinesView } from "../shared/graph/calibration/CalibrationLinesView";
-import { isStoredLines, StoredLines, toPixels } from "../shared/graph/calibration/lines";
+import { CalibrationHandlesView } from "../shared/graph/calibration/CalibrationHandlesView";
+import { findReferencePointsForCamera } from "../shared/graph/calibration/graphLookup";
+import { CalibrationPicks, DEFAULT_PICKS, isCalibrationPicks } from "../shared/graph/calibration/picks";
 import { DEFAULT_REGISTRY } from "../shared/graph/nodes";
 import { findRenderNodeId } from "../shared/graph/nodes/render";
 import { emptyGraph, Graph } from "../shared/graph/types";
 import { GraphPayload, notifyOutputClosed, startReceiving } from "../shared/ipc";
 import { Viewport } from "../shared/three/Viewport";
+import "./calibration-overlay.css";
 
 /**
- * Read-only mirror of CalibrationOverlay's lines, no handles/drag — the
- * whole point is the operator watches THIS window (the real projection)
- * while dragging in the main editor, so the lines must render here too.
+ * The calibration handles as they appear in the real projection — read-only,
+ * unlabelled, no drag targets. This is the copy that matters: alignment is
+ * judged by looking at the wall, not at the editor's preview, so the handles
+ * have to be visible in the light actually hitting the room.
  */
-function OutputCalibrationLines({ storedLines }: { storedLines: unknown }) {
+function OutputCalibrationHandles({ graph, cameraNodeId }: { graph: Graph; cameraNodeId: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
 
@@ -25,15 +28,16 @@ function OutputCalibrationLines({ storedLines }: { storedLines: unknown }) {
     return () => observer.disconnect();
   }, []);
 
-  if (!isStoredLines(storedLines) || size.width === 0 || size.height === 0) {
-    return <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />;
-  }
-
-  const pixelLines: StoredLines = toPixels(storedLines, size.width, size.height);
+  const points = findReferencePointsForCamera(graph, cameraNodeId);
+  const camera = graph.nodes.find((n) => n.id === cameraNodeId);
+  const stored = camera?.params.calibrationPicks;
+  const picks: CalibrationPicks = isCalibrationPicks(stored) ? stored : DEFAULT_PICKS;
 
   return (
-    <div ref={containerRef} style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
-      <CalibrationLinesView lines={pixelLines} width={size.width} height={size.height} />
+    <div ref={containerRef} className="calibration-overlay">
+      {points && size.width > 0 && (
+        <CalibrationHandlesView points={points} picks={picks} width={size.width} height={size.height} />
+      )}
     </div>
   );
 }
@@ -57,9 +61,7 @@ export function OutputWindow() {
 
   const graph: Graph = payload?.graph ?? emptyGraph();
   const renderNodeId = findRenderNodeId(graph);
-  const calibratingNode = payload?.calibratingNodeId
-    ? graph.nodes.find((n) => n.id === payload.calibratingNodeId)
-    : undefined;
+  const calibratingNodeId = payload?.calibratingNodeId ?? null;
 
   return (
     <div style={{ width: "100vw", height: "100vh", background: "#000", position: "relative" }}>
@@ -72,7 +74,7 @@ export function OutputWindow() {
           outputMode
         />
       ) : null}
-      {calibratingNode ? <OutputCalibrationLines storedLines={calibratingNode.params.calibrationLines} /> : null}
+      {calibratingNodeId ? <OutputCalibrationHandles graph={graph} cameraNodeId={calibratingNodeId} /> : null}
     </div>
   );
 }

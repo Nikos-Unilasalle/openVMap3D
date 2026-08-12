@@ -1,5 +1,10 @@
 import * as THREE from "three";
-import { RoomCornerDimensions, roomCornerEdges, DEFAULT_ROOM_CORNER } from "../calibration/roomCorner";
+import {
+  DEFAULT_ROOM_CORNER,
+  RoomCornerDimensions,
+  roomCornerEdges,
+  roomCornerReferencePoints,
+} from "../calibration/roomCorner";
 import { NodeDefinition } from "../types";
 
 const DEFAULT_SUBDIVISIONS = 4;
@@ -76,7 +81,10 @@ export const ROOM_CORNER_NODE: NodeDefinition = {
     { id: "height", label: "Height (m)", type: "value" },
     { id: "depth", label: "Depth (m)", type: "value" },
   ],
-  outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
+  outputs: [
+    { id: "geometry", label: "Geometry", type: "geometry" },
+    { id: "points", label: "Ref Points", type: "list" },
+  ],
   defaultParams: {
     width: DEFAULT_ROOM_CORNER.width,
     height: DEFAULT_ROOM_CORNER.height,
@@ -95,6 +103,12 @@ export const ROOM_CORNER_NODE: NodeDefinition = {
     const dimensions = readRoomCornerDimensions(inputs, params);
     const subdivisions = Math.max(0, Math.floor(Number(params.subdivisions) || DEFAULT_SUBDIVISIONS));
     const color = params.color instanceof THREE.Color ? params.color : new THREE.Color(DEFAULT_COLOR);
-    return { geometry: getCornerLines(ctx.nodeId, dimensions, subdivisions, color) };
+    return {
+      geometry: getCornerLines(ctx.nodeId, dimensions, subdivisions, color),
+      // Wire this into the Camera node's Ref Points — it is what turns each
+      // dragged handle into a known 3D coordinate, and so what makes the
+      // solve recover position rather than only orientation.
+      points: roomCornerReferencePoints(dimensions),
+    };
   },
 };
