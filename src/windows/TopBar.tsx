@@ -8,6 +8,7 @@ import {
 } from "../shared/graph/storage";
 import { Graph } from "../shared/graph/types";
 import { closeOutputWindow, listMonitors, onOutputClosed, openOutputWindow } from "../shared/ipc";
+import logoUrl from "../assets/logo.png";
 import "./top-bar.css";
 
 export interface TopBarProps {
@@ -162,7 +163,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       {/* Left branding */}
       <div className="top-bar-left">
         <div className="top-bar-logo">
-          <img src="/logo.png" alt="openVmap" className="top-bar-logo-img" />
+          <img src={logoUrl} alt="openVmap" className="top-bar-logo-img" />
           <span className="top-bar-logo-text">openVmap</span>
         </div>
         <div className="top-bar-divider" />
