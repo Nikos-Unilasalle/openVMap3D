@@ -4,6 +4,10 @@ import { DEFAULT_REGISTRY } from "./graph/nodes";
 import { rehydrateGraphParams } from "./graph/rehydrateParams";
 import { Graph } from "./graph/types";
 
+export function isTauri(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
 export interface MonitorInfo {
   name: string;
   width: number;
