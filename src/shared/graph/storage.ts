@@ -90,11 +90,40 @@ export function deserializeGraph(jsonString: string): Graph {
   return { nodes: data.nodes, connections: data.connections };
 }
 
+export function isTauri(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
 /**
- * Open file via native Tauri dialog.
+ * Open file via native Tauri dialog or browser file picker.
  * Returns { graph, filename } on success, null on cancel.
  */
 export async function openGraphWithFilePicker(): Promise<{ graph: Graph; filename: string } | null> {
+  if (!isTauri()) {
+    return new Promise((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".ovm,.json";
+      input.onchange = async () => {
+        const file = input.files?.[0];
+        if (!file) {
+          resolve(null);
+          return;
+        }
+        try {
+          const text = await file.text();
+          const graph = deserializeGraph(text);
+          resolve({ graph, filename: file.name });
+        } catch (e) {
+          alert("Erreur lors de la lecture du fichier : " + (e as Error).message);
+          resolve(null);
+        }
+      };
+      input.oncancel = () => resolve(null);
+      input.click();
+    });
+  }
+
   const selected = await dialogOpen({
     multiple: false,
     filters: [{ name: "OpenVMap Project", extensions: ["ovm", "json"] }],
@@ -110,7 +139,7 @@ export async function openGraphWithFilePicker(): Promise<{ graph: Graph; filenam
 }
 
 /**
- * Save file via native Tauri dialog (Save As).
+ * Save file via native Tauri dialog or browser blob download.
  * Returns saved filename on success, null on cancel.
  */
 export async function saveGraphAsWithFilePicker(
@@ -119,6 +148,17 @@ export async function saveGraphAsWithFilePicker(
 ): Promise<string | null> {
   const filename = ensureOvmExtension(suggestedFilename);
   const jsonString = serializeGraph(graph);
+
+  if (!isTauri()) {
+    const blob = new Blob([jsonString], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    return filename;
+  }
 
   const filePath = await dialogSave({
     defaultPath: filename,
@@ -142,6 +182,20 @@ export async function saveGraphToPath(
   filePath: string
 ): Promise<string> {
   const jsonString = serializeGraph(graph);
+
+  if (!isTauri()) {
+    const parts = filePath.split(/[\/\\]/);
+    const filename = parts[parts.length - 1] || filePath;
+    const blob = new Blob([jsonString], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    return filename;
+  }
+
   await writeTextFile(filePath, jsonString);
   const parts = filePath.split(/[\/\\]/);
   return parts[parts.length - 1] || filePath;
