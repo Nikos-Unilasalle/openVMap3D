@@ -5,7 +5,25 @@ const ZERO = new THREE.Vector3(0, 0, 0);
 const ONE = new THREE.Vector3(1, 1, 1);
 
 export function asVector3(v: unknown, fallback: THREE.Vector3): THREE.Vector3 {
-  return v instanceof THREE.Vector3 ? v : fallback;
+  if (v instanceof THREE.Vector3) return v;
+  if (v && typeof v === "object") {
+    const obj = v as Record<string, unknown>;
+    const x = Number(obj.x);
+    const y = Number(obj.y);
+    const z = Number(obj.z);
+    if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
+      return new THREE.Vector3(x, y, z);
+    }
+  }
+  if (Array.isArray(v)) {
+    const x = Number(v[0]);
+    const y = Number(v[1]);
+    const z = Number(v[2]);
+    if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
+      return new THREE.Vector3(x, y, z);
+    }
+  }
+  return fallback;
 }
 
 /** location/rotation(Euler, radians)/scale -> a single composed Matrix4 — the LSR-to-matrix convention every transform-producing node in this file shares. */

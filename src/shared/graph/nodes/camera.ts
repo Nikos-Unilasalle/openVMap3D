@@ -15,7 +15,17 @@ const NEAR = 0.05;
 const FAR = 500;
 
 function asVector3(v: unknown, fallback: THREE.Vector3): THREE.Vector3 {
-  return v instanceof THREE.Vector3 ? v : fallback;
+  if (v instanceof THREE.Vector3) return v;
+  if (v && typeof v === "object") {
+    const obj = v as Record<string, unknown>;
+    const x = Number(obj.x);
+    const y = Number(obj.y);
+    const z = Number(obj.z);
+    if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
+      return new THREE.Vector3(x, y, z);
+    }
+  }
+  return fallback;
 }
 
 function manualPose(inputs: Record<string, unknown>) {
