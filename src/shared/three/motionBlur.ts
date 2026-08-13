@@ -35,16 +35,12 @@ const SAMPLES = 16;
  * screen in one frame would otherwise ask for a smear the size of the
  * viewport, which reads as a broken frame rather than fast motion.
  */
-const MAX_VELOCITY_UV = 0.08;
+const MAX_VELOCITY_UV = 0.05;
 
 /**
- * Maps the node's 0..1 knob onto shutter length. 1.0 would be a physically
- * true 360° shutter (blur spanning exactly the frame-to-frame displacement),
- * which at 60fps is subtle; 2.0 gives the exaggerated look this kind of tool
- * usually wants at full tilt. The one number to change if the effect reads
- * too strong or too weak overall.
+ * Maps the node's 0..1 knob onto shutter length.
  */
-const SHUTTER_SCALE = 2.0;
+const SHUTTER_SCALE = 1.0;
 
 const VELOCITY_VERTEX_SHADER = /* glsl */ `
   uniform mat4 prevModelMatrix;
@@ -109,18 +105,36 @@ const MOTION_BLUR_SHADER = {
 
       vec2 velocity = velocitySample.xy * intensity;
       float speed = length(velocity);
+      if (speed < 0.0005) {
+        gl_FragColor = sharp;
+        return;
+      }
       if (speed > maxVelocity) velocity *= maxVelocity / speed;
 
-      // Centred on the pixel rather than trailing behind it: a real shutter
-      // is open either side of the sampled instant, so a moving edge blurs
-      // symmetrically instead of dragging a comet tail.
-      vec4 sum = vec4(0.0);
+      // Gamma-correct linear space accumulation to preserve exact energy & brightness
+      vec3 sumRgb = vec3(0.0);
+      float sumAlpha = 0.0;
+      float totalWeight = 0.0;
+
       for (int i = 0; i < SAMPLES; i++) {
         float t = float(i) / float(SAMPLES - 1) - 0.5;
-        sum += texture2D(tDiffuse, vUv + velocity * t);
+        vec2 sampleUv = vUv + velocity * t;
+        vec4 sampleColor = texture2D(tDiffuse, sampleUv);
+        vec3 linearColor = pow(max(sampleColor.rgb, vec3(0.0)), vec3(2.2));
+        float w = sampleColor.a > 0.0 ? sampleColor.a : 0.01;
+        sumRgb += linearColor * w;
+        sumAlpha += sampleColor.a;
+        totalWeight += w;
       }
 
-      gl_FragColor = sum / float(SAMPLES);
+      if (totalWeight > 0.0) {
+        vec3 avgLinear = sumRgb / totalWeight;
+        vec3 srgbAvg = pow(max(avgLinear, vec3(0.0)), vec3(1.0 / 2.2));
+        float avgAlpha = sumAlpha / float(SAMPLES);
+        gl_FragColor = vec4(srgbAvg, avgAlpha);
+      } else {
+        gl_FragColor = sharp;
+      }
     }
   `,
 };
