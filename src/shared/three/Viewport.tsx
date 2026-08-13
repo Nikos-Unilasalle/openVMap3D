@@ -1183,16 +1183,8 @@ export function Viewport({
       const motionBlur = typeof renderResult?.motionBlur === "number" ? renderResult.motionBlur : 0;
 
       if (postConfigs.length > 0 || motionBlur > 0) {
-        // 1a. Render pristine Background Layer (unaffected by Post-Processing!)
-        renderer.clearColor();
-        renderer.render(bgScene, camera);
+        scene.background = bgScene.background;
 
-        // 1b. Main 3D scene has transparent background so postprocess ONLY applies to 3D objects!
-        scene.background = null;
-
-        // Velocity has to be measured off the same scene state the colour
-        // pass is about to draw, and into its own target, so it runs before
-        // the composer touches anything.
         if (motionBlur > 0) {
           motionBlurEffect.renderVelocity(renderer, scene, camera);
         }
@@ -1202,18 +1194,8 @@ export function Viewport({
         // Rebuild composer pass order
         composer.passes.length = 0;
         composer.addPass(renderPass);
-        // EffectComposer never clears its own ping-pong buffers, so leaving
-        // this pass on `clear = false` drew each frame on top of whatever
-        // was still in that buffer two frames ago — uncontrolled ghosting.
-        // Clearing to *transparent* black (rather than just `clear = true`,
-        // which would use the renderer's own opaque clear alpha and bury the
-        // pristine background layer below) gives this pass a clean frame
-        // while keeping the alpha the final composite blends over that
-        // background with. It also leaves the motion-blur pass below as the
-        // only thing that accumulates, which is what makes its `damp`
-        // actually mean something.
         renderPass.clearColor = new THREE.Color(0x000000);
-        renderPass.clearAlpha = 0;
+        renderPass.clearAlpha = 1;
         renderPass.clear = true;
         renderPass.clearDepth = true;
 

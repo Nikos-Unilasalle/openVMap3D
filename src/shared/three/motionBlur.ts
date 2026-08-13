@@ -203,11 +203,13 @@ export function createMotionBlur(width: number, height: number): MotionBlur {
 
     const previousTarget = renderer.getRenderTarget();
     const previousOverride = scene.overrideMaterial;
+    const previousBackground = scene.background;
     const previousClearColor = new THREE.Color();
     renderer.getClearColor(previousClearColor);
     const previousClearAlpha = renderer.getClearAlpha();
 
     isRenderingVelocity = true;
+    scene.background = null;
     scene.overrideMaterial = velocityMaterial;
     renderer.setRenderTarget(velocityTarget);
     renderer.setClearColor(0x000000, 0);
@@ -216,6 +218,7 @@ export function createMotionBlur(width: number, height: number): MotionBlur {
     isRenderingVelocity = false;
 
     scene.overrideMaterial = previousOverride;
+    scene.background = previousBackground;
     renderer.setClearColor(previousClearColor, previousClearAlpha);
     renderer.setRenderTarget(previousTarget);
     for (const object of hidden) object.visible = true;
