@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![OpenVMap3D Banner](public/img/rad-grad.png)
+![OpenVMap3D Banner](public/img/videomap.jpg)
 
 **Moteur de Studio 3D & Node Graph Temps Réel pour le Video-Mapping, la Data-Visualisation et les Arts Numériques**
 
