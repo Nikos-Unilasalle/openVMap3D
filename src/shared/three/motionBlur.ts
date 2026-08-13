@@ -111,30 +111,14 @@ const MOTION_BLUR_SHADER = {
       }
       if (speed > maxVelocity) velocity *= maxVelocity / speed;
 
-      // Gamma-correct linear space accumulation to preserve exact energy & brightness
-      vec3 sumRgb = vec3(0.0);
-      float sumAlpha = 0.0;
-      float totalWeight = 0.0;
-
+      vec4 sum = vec4(0.0);
       for (int i = 0; i < SAMPLES; i++) {
         float t = float(i) / float(SAMPLES - 1) - 0.5;
         vec2 sampleUv = vUv + velocity * t;
-        vec4 sampleColor = texture2D(tDiffuse, sampleUv);
-        vec3 linearColor = pow(max(sampleColor.rgb, vec3(0.0)), vec3(2.2));
-        float w = sampleColor.a > 0.0 ? sampleColor.a : 0.01;
-        sumRgb += linearColor * w;
-        sumAlpha += sampleColor.a;
-        totalWeight += w;
+        sum += texture2D(tDiffuse, sampleUv);
       }
 
-      if (totalWeight > 0.0) {
-        vec3 avgLinear = sumRgb / totalWeight;
-        vec3 srgbAvg = pow(max(avgLinear, vec3(0.0)), vec3(1.0 / 2.2));
-        float avgAlpha = sumAlpha / float(SAMPLES);
-        gl_FragColor = vec4(srgbAvg, avgAlpha);
-      } else {
-        gl_FragColor = sharp;
-      }
+      gl_FragColor = sum / float(SAMPLES);
     }
   `,
 };
