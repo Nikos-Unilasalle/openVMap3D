@@ -27,7 +27,7 @@ input, textarea, [contenteditable="true"], .drag-number-editing, .param-text-inp
   flex-direction: row;
   width: 100%;
   height: 100%;
-  background: #0d1117;
+  background: var(--canvas-bg);
 }
 
 .graph-editor-canvas {
@@ -37,26 +37,42 @@ input, textarea, [contenteditable="true"], .drag-number-editing, .param-text-inp
   height: 100%;
 }
 
+/*
+ * xyflow's own stylesheet has a `prefers-color-scheme: dark` block that sets
+ * --xy-background-color-default to a hard-coded #141414 and paints it on
+ * .react-flow itself — a child element that covers the whole canvas, so it
+ * rendered on top of --canvas-bg regardless of what this file set on the
+ * containers around it. This is xyflow's own documented override point
+ * (`background-color: var(--xy-background-color, ...)`), not a hack.
+ */
+.graph-editor-canvas .react-flow {
+  --xy-background-color: var(--canvas-bg);
+}
+
 .graph-editor .react-flow__attribution {
   display: none;
 }
 
 .graph-node {
   min-width: 160px;
-  background: #161b22;
-  border: 1px solid #2c333f;
+  background: var(--canvas-node);
+  border: 1px solid var(--chrome-border);
   border-radius: 8px;
-  color: #e6e6e6;
+  color: var(--canvas-text);
   font-family: "Roboto", system-ui, sans-serif;
   font-size: 12px;
-  overflow: hidden;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
 }
 
 .graph-node-title {
   padding: 7px 10px;
-  background: #1e2530;
-  border-bottom: 1px solid #2c333f;
+  background: var(--canvas-node-raised);
+  border-bottom: 1px solid var(--chrome-border);
+  /* Matches the card's own 8px minus its 1px border, so the header still
+     looks cleanly rounded into the top corners without relying on the
+     card's overflow:hidden — which used to do that job, and clipped every
+     socket handle's outer half along with it (see the handle rule below). */
+  border-radius: 7px 7px 0 0;
   font-weight: 700;
   font-size: 11px;
   text-transform: uppercase;
@@ -87,7 +103,7 @@ input, textarea, [contenteditable="true"], .drag-number-editing, .param-text-inp
   align-items: center;
   gap: 6px;
   padding: 0 10px;
-  color: #9aa4b2;
+  color: var(--canvas-text-muted);
   white-space: nowrap;
 }
 
@@ -98,14 +114,14 @@ input, textarea, [contenteditable="true"], .drag-number-editing, .param-text-inp
 .graph-node .react-flow__handle {
   width: 9px;
   height: 9px;
-  border: 1px solid #0d1117;
+  border: 1px solid var(--canvas-bg);
 }
 
 .graph-node-inspector {
   margin: 6px 10px 8px 10px;
   padding: 6px 8px;
-  background: #0d1117;
-  border: 1px solid #2c333f;
+  background: var(--canvas-bg);
+  border: 1px solid var(--chrome-border);
   border-radius: 4px;
   font-family: monospace;
   font-size: 11px;

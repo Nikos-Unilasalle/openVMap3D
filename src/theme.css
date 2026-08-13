@@ -1,0 +1,48 @@
+/**
+ * The app's chrome palette, in one place.
+ *
+ * Started life as a near-black GitHub-dark set (#0d1117 / #161b22), which
+ * left the 3D view and the node canvas reading as holes rather than surfaces.
+ * These are the same hues lifted several steps toward Blender's own editor
+ * greys: a desaturated blue-slate, light enough that panels, wires and node
+ * bodies separate from each other without needing heavy borders.
+ *
+ * Only *chrome* lives here. Socket and category colours stay where they are
+ * (sockets.ts, categories.ts) — they carry meaning, not decoration, and a
+ * theme must never be able to repaint them.
+ */
+:root {
+  /* Deepest surface: window background, canvas behind the node graph. */
+  --chrome-bg: #2f3641;
+  /* Panels, bars, node bodies sitting on top of --chrome-bg. */
+  --chrome-surface: #3b434f;
+  /* Raised rows and inputs inside a panel. */
+  --chrome-surface-raised: #47505d;
+  /* Borders and dividers. */
+  --chrome-border: #5a6472;
+  /* Primary text. */
+  --chrome-text: #eef2f6;
+  /* Secondary text: labels, hints. */
+  --chrome-text-muted: #b3bdc9;
+
+  /*
+   * The node-graph workspace (canvas + palette + node bodies) is pulled from
+   * the SAME blue-grey family as the 3D viewport's own background
+   * (VIEWPORT_BG_TOP/BOTTOM in Viewport.tsx), not an independently invented
+   * palette — a first pass tried a light canvas with darker nodes and it
+   * both broke (xyflow's own dark-mode default painted the canvas flat
+   * black underneath it — see the --xy-background-color override in
+   * graph-editor.css) and looked wrong: pastel socket colors (yellow, cyan,
+   * pink) wash out against a light node body, which matters here because
+   * the whole point of that colour-coding is to read a wire's type at a
+   * glance. Medium-dark keeps every socket colour saturated against it.
+   */
+  --canvas-bg: #3c4552;
+  --canvas-node: #4c5561;
+  --canvas-node-raised: #58626f;
+  --canvas-dot: #5b6572;
+  /* Light text, same direction as --chrome-text — these surfaces are
+     medium-dark, not light. */
+  --canvas-text: #eef2f6;
+  --canvas-text-muted: #aab4c0;
+}

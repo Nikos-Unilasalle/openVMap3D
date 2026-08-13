@@ -162,20 +162,8 @@ export const TopBar: React.FC<TopBarProps> = ({
       {/* Left branding */}
       <div className="top-bar-left">
         <div className="top-bar-logo">
-          <svg
-            className="top-bar-logo-icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <polygon points="12 2 2 7 12 12 22 7 12 2" />
-            <polyline points="2 17 12 22 22 17" />
-            <polyline points="2 12 12 17 22 12" />
-          </svg>
-          OpenVMap 3D
+          <img src="/logo.png" alt="openVmap" className="top-bar-logo-img" />
+          <span className="top-bar-logo-text">openVmap</span>
         </div>
         <div className="top-bar-divider" />
       </div>

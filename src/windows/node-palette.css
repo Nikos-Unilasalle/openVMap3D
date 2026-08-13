@@ -3,8 +3,11 @@
   flex: none;
   height: 100%;
   overflow-y: auto;
-  background: #10151c;
-  border-right: 1px solid #2c333f;
+  /* Was a hard-coded #10151c, darker than any theme token and untouched by
+     it — the "left list background too dark" this fixes. Matches the node
+     canvas it sits beside rather than the darker top-bar/panel chrome. */
+  background: var(--canvas-bg);
+  border-right: 1px solid var(--chrome-border);
   padding: 8px 0;
   scrollbar-width: none; /* Firefox */
 }
@@ -35,12 +38,12 @@
   background: transparent;
   border: none;
   border-left: 2px solid transparent;
-  color: #e6e6e6;
+  color: var(--canvas-text);
   font-family: "Roboto", system-ui, sans-serif;
   font-size: 12px;
   cursor: pointer;
 }
 
 .palette-node-button:hover {
-  background: #1e2530;
+  background: var(--canvas-node-raised);
 }

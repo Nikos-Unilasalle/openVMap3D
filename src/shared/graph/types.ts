@@ -57,17 +57,18 @@ export type ParamFieldDef =
    * tells the panel to show and accept degrees, which is what anyone
    * dialling in an angle by hand actually wants to type.
    */
-  | { id: string; label: string; kind: "number"; step?: number; degrees?: boolean }
-  | { id: string; label: string; kind: "boolean" }
-  | { id: string; label: string; kind: "select"; options: string[] }
-  | { id: string; label: string; kind: "color" }
-  | { id: string; label: string; kind: "vector"; step?: number; degrees?: boolean }
-  | { id: string; label: string; kind: "text" }
+  | { id: string; label: string; kind: "number"; step?: number; degrees?: boolean; group?: string }
+  | { id: string; label: string; kind: "boolean"; group?: string }
+  | { id: string; label: string; kind: "select"; options: string[]; group?: string }
+  | { id: string; label: string; kind: "color"; group?: string }
+  | { id: string; label: string; kind: "vector"; step?: number; degrees?: boolean; group?: string }
+  | { id: string; label: string; kind: "text"; group?: string }
   | {
       id: string;
       label: string;
       kind: "file";
       accept?: string[];
+      group?: string;
       /**
        * Called with the instance's id, the picked path, and the file's text
        * content right after a successful pick — before `onChange(id, path)`

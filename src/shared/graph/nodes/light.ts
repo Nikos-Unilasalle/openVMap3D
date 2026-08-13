@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
 import { createNodeCache } from "../nodeCaches";
+import { composeNativeMatrix } from "./transform";
 
 const lightCache = createNodeCache<THREE.Light>((l) => l.dispose?.());
 
@@ -33,11 +34,19 @@ export const LIGHT_DIRECTIONAL_NODE: NodeDefinition = {
   ],
   outputs: [{ id: "light", label: "Light", type: "geometry" }],
   defaultParams: {
+    // Was a runtime `if (!inputs.matrix) matrix.setPosition(5,10,7)` fallback
+    // — the native-transform default now *is* that "nothing wired in yet" case.
+    location: new THREE.Vector3(5, 10, 7),
+    rotation: new THREE.Vector3(0, 0, 0),
+    scale: new THREE.Vector3(1, 1, 1),
     color: new THREE.Color(0xffffff),
     intensity: 1.5,
     castShadow: 1,
   },
   paramFields: [
+    { id: "location", label: "Location", kind: "vector" },
+    { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true },
+    { id: "scale", label: "Scale", kind: "vector" },
     { id: "color", label: "Color", kind: "color" },
     { id: "intensity", label: "Intensity", kind: "number", step: 0.1 },
     { id: "castShadow", label: "Cast Shadows", kind: "boolean" },
@@ -69,13 +78,8 @@ export const LIGHT_DIRECTIONAL_NODE: NodeDefinition = {
     light.castShadow = castShadow;
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
-      const matrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
-      if (!inputs.matrix) {
-        // Default position if no matrix connected
-        matrix.setPosition(5, 10, 7);
-      }
       light.matrixAutoUpdate = false;
-      light.matrix.copy(matrix);
+      light.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
     }
 
     return { light };
@@ -97,6 +101,9 @@ export const LIGHT_POINT_NODE: NodeDefinition = {
   ],
   outputs: [{ id: "light", label: "Light", type: "geometry" }],
   defaultParams: {
+    location: new THREE.Vector3(0, 5, 0),
+    rotation: new THREE.Vector3(0, 0, 0),
+    scale: new THREE.Vector3(1, 1, 1),
     color: new THREE.Color(0xffffff),
     intensity: 2.0,
     distance: 15,
@@ -104,6 +111,9 @@ export const LIGHT_POINT_NODE: NodeDefinition = {
     castShadow: 1,
   },
   paramFields: [
+    { id: "location", label: "Location", kind: "vector" },
+    { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true },
+    { id: "scale", label: "Scale", kind: "vector" },
     { id: "color", label: "Color", kind: "color" },
     { id: "intensity", label: "Intensity", kind: "number", step: 0.1 },
     { id: "distance", label: "Distance", kind: "number", step: 0.5 },
@@ -134,12 +144,8 @@ export const LIGHT_POINT_NODE: NodeDefinition = {
     light.castShadow = castShadow;
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
-      const matrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
-      if (!inputs.matrix) {
-        matrix.setPosition(0, 5, 0);
-      }
       light.matrixAutoUpdate = false;
-      light.matrix.copy(matrix);
+      light.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
     }
 
     return { light };
@@ -161,6 +167,9 @@ export const LIGHT_SPOT_NODE: NodeDefinition = {
   ],
   outputs: [{ id: "light", label: "Light", type: "geometry" }],
   defaultParams: {
+    location: new THREE.Vector3(0, 6, 4),
+    rotation: new THREE.Vector3(0, 0, 0),
+    scale: new THREE.Vector3(1, 1, 1),
     color: new THREE.Color(0xffffff),
     intensity: 3.0,
     angle: 45,
@@ -168,6 +177,9 @@ export const LIGHT_SPOT_NODE: NodeDefinition = {
     castShadow: 1,
   },
   paramFields: [
+    { id: "location", label: "Location", kind: "vector" },
+    { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true },
+    { id: "scale", label: "Scale", kind: "vector" },
     { id: "color", label: "Color", kind: "color" },
     { id: "intensity", label: "Intensity", kind: "number", step: 0.1 },
     { id: "angle", label: "Cone Angle (°)", kind: "number", step: 5 },
@@ -198,19 +210,20 @@ export const LIGHT_SPOT_NODE: NodeDefinition = {
     light.castShadow = castShadow;
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
-      const matrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
-      if (!inputs.matrix) {
-        matrix.setPosition(0, 6, 4);
-      }
       light.matrixAutoUpdate = false;
-      light.matrix.copy(matrix);
+      light.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
     }
 
     return { light };
   },
 };
 
-/** Ambient Light node — global ambient fill light. */
+/**
+ * Ambient Light node — deliberately has no location/rotation/scale, unlike
+ * every other light here: THREE.AmbientLight is position-independent (it
+ * lights the whole scene uniformly), so transform params on it would be
+ * inert fields that visibly do nothing.
+ */
 export const LIGHT_AMBIENT_NODE: NodeDefinition = {
   type: "light/ambient",
   label: "Ambient Light",

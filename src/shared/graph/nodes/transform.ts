@@ -4,8 +4,30 @@ import { NodeDefinition } from "../types";
 const ZERO = new THREE.Vector3(0, 0, 0);
 const ONE = new THREE.Vector3(1, 1, 1);
 
-function asVector3(v: unknown, fallback: THREE.Vector3): THREE.Vector3 {
+export function asVector3(v: unknown, fallback: THREE.Vector3): THREE.Vector3 {
   return v instanceof THREE.Vector3 ? v : fallback;
+}
+
+/** location/rotation(Euler, radians)/scale -> a single composed Matrix4 — the LSR-to-matrix convention every transform-producing node in this file shares. */
+export function composeTransform(location: THREE.Vector3, rotation: THREE.Vector3, scale: THREE.Vector3): THREE.Matrix4 {
+  const quaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(rotation.x, rotation.y, rotation.z));
+  return new THREE.Matrix4().compose(location, quaternion, scale);
+}
+
+/**
+ * `final = base(location/rotation/scale) × delta(wiredMatrix)` — for a node
+ * that owns its own initial pose (an object or light's native
+ * location/rotation/scale params) but still accepts an incoming `matrix` to
+ * modify that pose without cancelling it. Same composition
+ * MATRIX_TRANSFORM_NODE below already does, roles reversed: there the wired
+ * matrix is the base and the node's own params are the delta; here the
+ * node's own params are the base and the wired matrix is the delta, applied
+ * in the base's local frame.
+ */
+export function composeNativeMatrix(wiredMatrix: unknown, location: unknown, rotation: unknown, scale: unknown): THREE.Matrix4 {
+  const delta = wiredMatrix instanceof THREE.Matrix4 ? wiredMatrix : new THREE.Matrix4();
+  const base = composeTransform(asVector3(location, ZERO), asVector3(rotation, ZERO), asVector3(scale, ONE));
+  return new THREE.Matrix4().multiplyMatrices(base, delta);
 }
 
 /**
@@ -36,13 +58,7 @@ export const TRANSFORM_NODE: NodeDefinition = {
     const location = asVector3(inputs.location, ZERO);
     const rotation = asVector3(inputs.rotation, ZERO);
     const scale = asVector3(inputs.scale, ONE);
-
-    const quaternion = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(rotation.x, rotation.y, rotation.z),
-    );
-    const matrix = new THREE.Matrix4().compose(location, quaternion, scale);
-
-    return { matrix };
+    return { matrix: composeTransform(location, rotation, scale) };
   },
 };
 
@@ -145,11 +161,7 @@ export const MATRIX_TRANSFORM_NODE: NodeDefinition = {
     const location = asVector3(inputs.location, ZERO);
     const rotation = asVector3(inputs.rotation, ZERO);
     const scale = asVector3(inputs.scale, ONE);
-
-    const quaternion = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(rotation.x, rotation.y, rotation.z),
-    );
-    const deltaMatrix = new THREE.Matrix4().compose(location, quaternion, scale);
+    const deltaMatrix = composeTransform(location, rotation, scale);
 
     const matrix = new THREE.Matrix4().multiplyMatrices(baseMatrix, deltaMatrix);
     return { matrix };

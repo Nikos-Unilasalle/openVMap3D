@@ -8,15 +8,18 @@ import {
   NodeChange,
   OnConnect,
   ReactFlow,
+  ReactFlowProvider,
   SelectionMode,
   applyEdgeChanges,
   applyNodeChanges,
   useEdgesState,
   useNodesState,
+  useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import * as THREE from "three";
 import { DEFAULT_PICKS } from "../shared/graph/calibration/picks";
+import { findCompatibleSocket, segmentIntersectsRect } from "../shared/graph/insertOnWire";
 import { disposeNodeCaches } from "../shared/graph/nodeCaches";
 import { SOCKET_COLOR } from "../shared/graph/sockets";
 import { Connection, Graph, NodeInstance, NodeRegistry } from "../shared/graph/types";
@@ -45,6 +48,8 @@ function cloneDefaultParams(defaultParams: Record<string, unknown>): Record<stri
 
 const NODE_TYPES = { graphNode: GraphNode };
 const EDGE_STROKE_WIDTH = 3;
+const DEFAULT_NODE_WIDTH = 160;
+const DEFAULT_NODE_HEIGHT = 90;
 
 function toFlowNodes(graph: Graph, registry: NodeRegistry): Node<GraphNodeData>[] {
   return graph.nodes.map((instance) => {
@@ -65,8 +70,6 @@ function toFlowNodes(graph: Graph, registry: NodeRegistry): Node<GraphNodeData>[
   });
 }
 
-
-/** A wire's color follows its *source* socket's type — by construction the target matches, since isValidConnection rejects mismatched types. */
 function edgeColor(nodes: Node<GraphNodeData>[], nodeId: string, socketId: string): string {
   const socket = nodes.find((n) => n.id === nodeId)?.data.outputs.find((s) => s.id === socketId);
   return socket ? SOCKET_COLOR[socket.type] : "#6b7280";
@@ -83,13 +86,6 @@ function toFlowEdges(graph: Graph, flowNodes: Node<GraphNodeData>[]): Edge[] {
   }));
 }
 
-/**
- * A node whose def has `dynamicInputs` (e.g. Merge) shows a socket list
- * derived from its own live connections, not a fixed `def.inputs` — this
- * recomputes that list for every such node from the current flow edges.
- * Run after anything that adds/removes an edge, so a just-wired trailing
- * socket's replacement appears immediately, in the same state update.
- */
 function refreshDynamicSockets(
   flowNodes: Node<GraphNodeData>[],
   flowEdges: Edge[],
@@ -140,7 +136,6 @@ function refreshDynamicSockets(
   });
 }
 
-/** Positions come from the live xyflow nodes; everything else (type, params) is untouched — this slice never adds/removes/reparams a node, only moves it and rewires it. */
 function toGraph(baseNodes: NodeInstance[], flowNodes: Node<GraphNodeData>[], flowEdges: Edge[]): Graph {
   const flowNodeIds = new Set(flowNodes.map((f) => f.id));
   const nodes = baseNodes
@@ -164,34 +159,34 @@ function toGraph(baseNodes: NodeInstance[], flowNodes: Node<GraphNodeData>[], fl
 interface GraphEditorProps {
   graph: Graph;
   registry: NodeRegistry;
-  /** Called after any drag or rewire with the updated graph — the parent (App) owns the actual Graph state, this component just edits it. */
   onGraphChange?: (graph: Graph) => void;
-  /** Selection lives in the parent (App) — the param panel it drives is rendered over the Viewport, not here. */
   onSelectNode: (nodeId: string | null) => void;
   selectedNodeId?: string | null;
 }
 
-/**
- * Writable: dragging a node persists its position, dragging a wire from one
- * socket to another creates a connection (type-checked — a Value output
- * cannot plug into a Vector input), right-click on a wire deletes it,
- * clicking a node selects it (see App.tsx for what renders from that),
- * clicking a node in the palette adds one. Node removal is still the next
- * slice — this one can grow the graph but not shrink it.
- *
- * Left-drag on empty canvas draws a selection box (selects any node it
- * touches) instead of panning — panning moved to middle/right-click-drag,
- * the same tradeoff most node editors (Blender included) make once
- * drag-select exists, since a plain click already pans nowhere useful but
- * a stray left-drag was the only way to box-select nodes.
- */
-export function GraphEditor({ graph, registry, onGraphChange, onSelectNode, selectedNodeId }: GraphEditorProps) {
+function GraphEditorContent({ graph, registry, onGraphChange, onSelectNode, selectedNodeId }: GraphEditorProps) {
+  const { screenToFlowPosition } = useReactFlow();
+
   const initialNodes = useMemo(() => {
     const raw = toFlowNodes(graph, registry);
     return refreshDynamicSockets(raw, toFlowEdges(graph, raw), graph.nodes, registry);
   }, [graph, registry]);
   const [nodes, setNodes] = useNodesState(initialNodes);
   const [edges, setEdges] = useEdgesState(useMemo(() => toFlowEdges(graph, initialNodes), [graph, initialNodes]));
+
+  const connectingHandleRef = useRef<{
+    nodeId: string;
+    handleId: string;
+    handleType: "source" | "target";
+  } | null>(null);
+  const connectFiredRef = useRef(false);
+
+  const [pendingWireConnection, setPendingWireConnection] = useState<{
+    nodeId: string;
+    handleId: string;
+    handleType: "source" | "target";
+    position: { x: number; y: number };
+  } | null>(null);
 
   useEffect(() => {
     const rawNodes = toFlowNodes(graph, registry);
@@ -240,10 +235,6 @@ export function GraphEditor({ graph, registry, onGraphChange, onSelectNode, sele
     [graph.nodes, onGraphChange],
   );
 
-  // commit() calls the parent's setGraph — it must never run inside a
-  // setNodes/setEdges *updater function*, only after, as a plain call in the
-  // handler body. React treats a setState-from-another-component call made
-  // from inside an updater as happening "during render" and warns/breaks.
   const onNodesChange = useCallback(
     (changes: NodeChange<Node<GraphNodeData>>[]) => {
       const next = applyNodeChanges(changes, nodes);
@@ -267,18 +258,11 @@ export function GraphEditor({ graph, registry, onGraphChange, onSelectNode, sele
   const onNodesDelete = useCallback(
     (deletedNodes: Node<GraphNodeData>[]) => {
       const deletedIds = new Set(deletedNodes.map((n) => n.id));
-
-      // Node ids are stable — saved into .ovm files and restored identically
-      // by undo — so a node whose per-node caches were never cleared would
-      // come back holding its *previous* mesh, texture or remembered state.
-      // Deleting a node and adding it again looked like it remembered the old
-      // values because it did. See nodeCaches.ts.
       disposeNodeCaches(deletedIds);
 
       const nextNodes = nodes.filter((n) => !deletedIds.has(n.id));
       const nextEdges = edges.filter((e) => !deletedIds.has(e.source) && !deletedIds.has(e.target));
 
-      // Reset calibration picks on any camera whose room corner input was disconnected/deleted
       const updatedGraphNodes = graph.nodes
         .filter((n) => !deletedIds.has(n.id))
         .map((n) => {
@@ -329,10 +313,15 @@ export function GraphEditor({ graph, registry, onGraphChange, onSelectNode, sele
     [nodes],
   );
 
+  const onConnectStart = useCallback((_: any, { nodeId, handleId, handleType }: any) => {
+    connectingHandleRef.current = nodeId && handleId && handleType ? { nodeId, handleId, handleType } : null;
+    connectFiredRef.current = false;
+  }, []);
+
   const onConnect: OnConnect = useCallback(
     (connection) => {
+      connectFiredRef.current = true;
       if (!connection.source || !connection.target || !connection.sourceHandle || !connection.targetHandle) return;
-      // an input socket takes one wire — a new connection into it replaces whatever was there
       const withoutConflict = edges.filter(
         (e) => !(e.target === connection.target && e.targetHandle === connection.targetHandle),
       );
@@ -353,6 +342,38 @@ export function GraphEditor({ graph, registry, onGraphChange, onSelectNode, sele
     [commit, edges, graph.nodes, nodes, registry, setEdges, setNodes],
   );
 
+  const [searchModalOpen, setSearchModalOpen] = useState(false);
+
+  const onConnectEnd = useCallback(
+    (event: any) => {
+      const handleInfo = connectingHandleRef.current;
+      connectingHandleRef.current = null;
+
+      if (!handleInfo || connectFiredRef.current) return;
+
+      let clientX = 0;
+      let clientY = 0;
+      if (event && "clientX" in event && typeof event.clientX === "number") {
+        clientX = event.clientX;
+        clientY = event.clientY;
+      } else if (event && "changedTouches" in event && event.changedTouches?.length) {
+        clientX = event.changedTouches[0].clientX;
+        clientY = event.changedTouches[0].clientY;
+      }
+
+      const position = screenToFlowPosition({ x: clientX, y: clientY });
+
+      setPendingWireConnection({
+        nodeId: handleInfo.nodeId,
+        handleId: handleInfo.handleId,
+        handleType: handleInfo.handleType,
+        position,
+      });
+      setSearchModalOpen(true);
+    },
+    [screenToFlowPosition],
+  );
+
   const onEdgeContextMenu: EdgeMouseHandler = useCallback(
     (event, edge) => {
       event.preventDefault();
@@ -365,23 +386,94 @@ export function GraphEditor({ graph, registry, onGraphChange, onSelectNode, sele
     [commit, edges, graph.nodes, nodes, registry, setEdges, setNodes],
   );
 
+  const onNodeDragStop = useCallback(
+    (event: unknown, draggedNode: Node<GraphNodeData>) => {
+      if (!(event instanceof MouseEvent) || !event.shiftKey) return;
+
+      const nodesById = new Map(nodes.map((n) => [n.id, n]));
+      const dimensionsOf = (n: Node<GraphNodeData>) => ({
+        width: n.measured?.width ?? DEFAULT_NODE_WIDTH,
+        height: n.measured?.height ?? DEFAULT_NODE_HEIGHT,
+      });
+      const draggedRect = { x: draggedNode.position.x, y: draggedNode.position.y, ...dimensionsOf(draggedNode) };
+
+      const anchor = (n: Node<GraphNodeData>, side: "source" | "target") => {
+        const { width, height } = dimensionsOf(n);
+        return { x: n.position.x + (side === "source" ? width : 0), y: n.position.y + height / 2 };
+      };
+
+      const candidate = edges.find((edge) => {
+        if (edge.source === draggedNode.id || edge.target === draggedNode.id) return false;
+        const sourceNode = nodesById.get(edge.source);
+        const targetNode = nodesById.get(edge.target);
+        if (!sourceNode || !targetNode) return false;
+        return segmentIntersectsRect(anchor(sourceNode, "source"), anchor(targetNode, "target"), draggedRect);
+      });
+      if (!candidate) return;
+
+      const sourceSocket = nodesById.get(candidate.source)?.data.outputs.find((s) => s.id === candidate.sourceHandle);
+      const targetSocket = nodesById.get(candidate.target)?.data.inputs.find((s) => s.id === candidate.targetHandle);
+      if (!sourceSocket || !targetSocket) return;
+
+      const inSocket = findCompatibleSocket(draggedNode.data.inputs, sourceSocket.type);
+      const outSocket = findCompatibleSocket(draggedNode.data.outputs, targetSocket.type);
+      if (!inSocket || !outSocket) return;
+
+      const beforeEdge: Edge = {
+        id: `${candidate.source}.${candidate.sourceHandle}->${draggedNode.id}.${inSocket.id}`,
+        source: candidate.source,
+        sourceHandle: candidate.sourceHandle,
+        target: draggedNode.id,
+        targetHandle: inSocket.id,
+        style: candidate.style,
+      };
+      const afterEdge: Edge = {
+        id: `${draggedNode.id}.${outSocket.id}->${candidate.target}.${candidate.targetHandle}`,
+        source: draggedNode.id,
+        sourceHandle: outSocket.id,
+        target: candidate.target,
+        targetHandle: candidate.targetHandle,
+        style: { stroke: edgeColor(nodes, draggedNode.id, outSocket.id), strokeWidth: EDGE_STROKE_WIDTH },
+      };
+
+      const nextEdges = [
+        ...edges.filter(
+          (e) => e.id !== candidate.id && !(e.target === draggedNode.id && e.targetHandle === inSocket.id),
+        ),
+        beforeEdge,
+        afterEdge,
+      ];
+      const nextNodes = refreshDynamicSockets(nodes, nextEdges, graph.nodes, registry);
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      commit(nextNodes, nextEdges);
+    },
+    [commit, edges, graph.nodes, nodes, registry, setEdges, setNodes],
+  );
+
   const onNodeClick = useCallback((_: unknown, node: Node<GraphNodeData>) => onSelectNode(node.id), [onSelectNode]);
   const onPaneClick = useCallback(() => onSelectNode(null), [onSelectNode]);
 
-  // Cascades new nodes diagonally so repeated adds don't stack exactly on
-  // top of each other — same "paste offset" trick most node/vector editors use.
   const addNode = useCallback(
     (type: string) => {
       const def = registry.get(type);
       if (!def) return;
       const id = crypto.randomUUID();
-      const position = { x: 60 + nodes.length * 24, y: 60 + nodes.length * 24 };
+
+      const position = pendingWireConnection
+        ? { x: pendingWireConnection.position.x, y: pendingWireConnection.position.y }
+        : { x: 60 + nodes.length * 24, y: 60 + nodes.length * 24 };
+
       const instance: NodeInstance = {
         id,
         type,
         params: cloneDefaultParams(def.defaultParams || {}),
         position,
       };
+
+      const inputs = def.dynamicInputs ? def.dynamicInputs([]) : def.inputs;
+      const outputs = def.outputs;
+
       const flowNode: Node<GraphNodeData> = {
         id,
         type: "graphNode",
@@ -391,15 +483,72 @@ export function GraphEditor({ graph, registry, onGraphChange, onSelectNode, sele
           nodeType: type,
           label: def.label,
           category: def.category,
-          inputs: def.dynamicInputs ? def.dynamicInputs([]) : def.inputs,
-          outputs: def.outputs,
+          inputs,
+          outputs,
         },
       };
-      const nextNodes = [...nodes, flowNode];
-      setNodes(nextNodes);
-      onGraphChange?.({ ...graph, nodes: [...graph.nodes, instance] });
+
+      let nextEdges = [...edges];
+
+      if (pendingWireConnection) {
+        const sourceNode = nodes.find((n) => n.id === pendingWireConnection.nodeId);
+
+        if (pendingWireConnection.handleType === "source") {
+          const sourceSocket = sourceNode?.data.outputs.find((s) => s.id === pendingWireConnection.handleId);
+          const sourceType = sourceSocket?.type || "any";
+          const matchingInput =
+            inputs.find((s) => s.type === sourceType || s.type === "any" || sourceType === "any") || inputs[0];
+
+          if (matchingInput) {
+            const newEdge: Edge = {
+              id: `${pendingWireConnection.nodeId}.${pendingWireConnection.handleId}->${id}.${matchingInput.id}`,
+              source: pendingWireConnection.nodeId,
+              sourceHandle: pendingWireConnection.handleId,
+              target: id,
+              targetHandle: matchingInput.id,
+              style: {
+                stroke: edgeColor(nodes, pendingWireConnection.nodeId, pendingWireConnection.handleId),
+                strokeWidth: EDGE_STROKE_WIDTH,
+              },
+            };
+            nextEdges.push(newEdge);
+          }
+        } else if (pendingWireConnection.handleType === "target") {
+          const targetSocket = sourceNode?.data.inputs.find((s) => s.id === pendingWireConnection.handleId);
+          const targetType = targetSocket?.type || "any";
+          const matchingOutput =
+            outputs.find((s) => s.type === targetType || s.type === "any" || targetType === "any") || outputs[0];
+
+          if (matchingOutput) {
+            const withoutConflict = nextEdges.filter(
+              (e) => !(e.target === pendingWireConnection.nodeId && e.targetHandle === pendingWireConnection.handleId),
+            );
+            const newEdge: Edge = {
+              id: `${id}.${matchingOutput.id}->${pendingWireConnection.nodeId}.${pendingWireConnection.handleId}`,
+              source: id,
+              sourceHandle: matchingOutput.id,
+              target: pendingWireConnection.nodeId,
+              targetHandle: pendingWireConnection.handleId,
+              style: {
+                stroke: SOCKET_COLOR[matchingOutput.type] || "#6b7280",
+                strokeWidth: EDGE_STROKE_WIDTH,
+              },
+            };
+            nextEdges = [...withoutConflict, newEdge];
+          }
+        }
+
+        setPendingWireConnection(null);
+      }
+
+      const unrefreshedNodes = [...nodes, flowNode];
+      const finalNodes = refreshDynamicSockets(unrefreshedNodes, nextEdges, [...graph.nodes, instance], registry);
+
+      setNodes(finalNodes);
+      setEdges(nextEdges);
+      onGraphChange?.(toGraph([...graph.nodes, instance], finalNodes, nextEdges));
     },
-    [graph, nodes, onGraphChange, registry, setNodes],
+    [graph, nodes, edges, pendingWireConnection, onGraphChange, registry, setNodes, setEdges],
   );
 
   const clipboardRef = useRef<{ nodes: NodeInstance[]; connections: Connection[] } | null>(null);
@@ -500,8 +649,6 @@ export function GraphEditor({ graph, registry, onGraphChange, onSelectNode, sele
     pasteClipboard();
   }, [copySelected, pasteClipboard]);
 
-  const [searchModalOpen, setSearchModalOpen] = useState(false);
-
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const activeEl = document.activeElement;
@@ -567,9 +714,12 @@ export function GraphEditor({ graph, registry, onGraphChange, onSelectNode, sele
           onEdgesChange={onEdgesChange}
           onNodesDelete={onNodesDelete}
           onEdgesDelete={onEdgesDelete}
+          onConnectStart={onConnectStart}
+          onConnectEnd={onConnectEnd}
           onConnect={onConnect}
           isValidConnection={isValidConnection}
           onEdgeContextMenu={onEdgeContextMenu}
+          onNodeDragStop={onNodeDragStop}
           onNodeClick={onNodeClick}
           onPaneClick={onPaneClick}
           selectionOnDrag
@@ -578,7 +728,7 @@ export function GraphEditor({ graph, registry, onGraphChange, onSelectNode, sele
           fitView
           colorMode="dark"
         >
-          <Background color="#2c333f" gap={20} />
+          <Background color="#5b6572" gap={20} />
         </ReactFlow>
       </div>
 
@@ -586,9 +736,20 @@ export function GraphEditor({ graph, registry, onGraphChange, onSelectNode, sele
         <NodeSearchModal
           registry={registry}
           onSelectNodeType={(type) => addNode(type)}
-          onClose={() => setSearchModalOpen(false)}
+          onClose={() => {
+            setSearchModalOpen(false);
+            setPendingWireConnection(null);
+          }}
         />
       )}
     </div>
+  );
+}
+
+export function GraphEditor(props: GraphEditorProps) {
+  return (
+    <ReactFlowProvider>
+      <GraphEditorContent {...props} />
+    </ReactFlowProvider>
   );
 }

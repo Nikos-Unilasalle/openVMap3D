@@ -74,41 +74,41 @@ export const ARRAY_NODE: NodeDefinition = {
   dynamicParamFields: (instance) => {
     const mode = String(instance?.params?.mode || "linear");
     const fields: ParamFieldDef[] = [
-      { id: "mode", label: "Mode", kind: "select", options: ["linear", "circular", "grid", "grid3d"] },
+      { id: "mode", label: "Mode", kind: "select", options: ["linear", "circular", "grid", "grid3d"], group: "Pattern & Grid" },
     ];
 
     if (mode === "linear") {
       fields.push(
-        { id: "count", label: "Count", kind: "number", step: 1 },
-        { id: "axis", label: "Linear Axis", kind: "select", options: ["X", "Y", "Z"] },
-        { id: "spacing", label: "Linear Spacing", kind: "number", step: 0.1 },
+        { id: "count", label: "Count", kind: "number", step: 1, group: "Pattern & Grid" },
+        { id: "axis", label: "Linear Axis", kind: "select", options: ["X", "Y", "Z"], group: "Pattern & Grid" },
+        { id: "spacing", label: "Linear Spacing", kind: "number", step: 0.1, group: "Pattern & Grid" },
       );
     } else if (mode === "circular") {
       fields.push(
-        { id: "count", label: "Count", kind: "number", step: 1 },
-        { id: "radius", label: "Circular Radius", kind: "number", step: 0.1 },
-        { id: "plane", label: "Circular Plane", kind: "select", options: ["XZ", "XY", "YZ"] },
-        { id: "totalAngle", label: "Total Angle (°)", kind: "number", step: 15 },
-        { id: "orient", label: "Orient to Circle", kind: "boolean" },
+        { id: "count", label: "Count", kind: "number", step: 1, group: "Pattern & Grid" },
+        { id: "radius", label: "Circular Radius", kind: "number", step: 0.1, group: "Pattern & Grid" },
+        { id: "plane", label: "Circular Plane", kind: "select", options: ["XZ", "XY", "YZ"], group: "Pattern & Grid" },
+        { id: "totalAngle", label: "Total Angle (°)", kind: "number", step: 15, group: "Pattern & Grid" },
+        { id: "orient", label: "Orient to Circle", kind: "boolean", group: "Pattern & Grid" },
       );
     } else if (mode === "grid") {
       fields.push(
-        { id: "gridCols", label: "Cols (X)", kind: "number", step: 1 },
-        { id: "gridRows", label: "Rows (Y/Z)", kind: "number", step: 1 },
-        { id: "spacingX", label: "Spacing X", kind: "number", step: 0.1 },
-        { id: "spacingY", label: "Spacing Y/Z", kind: "number", step: 0.1 },
-        { id: "plane", label: "Grid Plane", kind: "select", options: ["XZ", "XY", "YZ"] },
-        { id: "centerGrid", label: "Center Grid", kind: "boolean" },
+        { id: "gridCols", label: "Cols (X)", kind: "number", step: 1, group: "Pattern & Grid" },
+        { id: "gridRows", label: "Rows (Y/Z)", kind: "number", step: 1, group: "Pattern & Grid" },
+        { id: "spacingX", label: "Spacing X", kind: "number", step: 0.1, group: "Pattern & Grid" },
+        { id: "spacingY", label: "Spacing Y/Z", kind: "number", step: 0.1, group: "Pattern & Grid" },
+        { id: "plane", label: "Grid Plane", kind: "select", options: ["XZ", "XY", "YZ"], group: "Pattern & Grid" },
+        { id: "centerGrid", label: "Center Grid", kind: "boolean", group: "Pattern & Grid" },
       );
     } else if (mode === "grid3d") {
       fields.push(
-        { id: "countX", label: "Count X", kind: "number", step: 1 },
-        { id: "countY", label: "Count Y", kind: "number", step: 1 },
-        { id: "countZ", label: "Count Z", kind: "number", step: 1 },
-        { id: "spacingX", label: "Spacing X", kind: "number", step: 0.1 },
-        { id: "spacingY", label: "Spacing Y", kind: "number", step: 0.1 },
-        { id: "spacingZ", label: "Spacing Z", kind: "number", step: 0.1 },
-        { id: "centerGrid", label: "Center Grid", kind: "boolean" },
+        { id: "countX", label: "Count X", kind: "number", step: 1, group: "Pattern & Grid" },
+        { id: "countY", label: "Count Y", kind: "number", step: 1, group: "Pattern & Grid" },
+        { id: "countZ", label: "Count Z", kind: "number", step: 1, group: "Pattern & Grid" },
+        { id: "spacingX", label: "Spacing X", kind: "number", step: 0.1, group: "Pattern & Grid" },
+        { id: "spacingY", label: "Spacing Y", kind: "number", step: 0.1, group: "Pattern & Grid" },
+        { id: "spacingZ", label: "Spacing Z", kind: "number", step: 0.1, group: "Pattern & Grid" },
+        { id: "centerGrid", label: "Center Grid", kind: "boolean", group: "Pattern & Grid" },
       );
     }
     return fields;

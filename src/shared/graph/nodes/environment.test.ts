@@ -11,7 +11,11 @@ describe("ENVIRONMENT NODE", () => {
     const env = res.environment as EnvironmentData;
     expect(env).toBeDefined();
     expect(env.color).toBeInstanceOf(THREE.Color);
-    expect(env.color.getHexString()).toBe("0d1117");
+    // Compared against the node's own default rather than a hard-coded hex:
+    // the background tint is a theme choice that has already changed once,
+    // and what matters here is that evaluate falls back to it, not what
+    // shade it happens to be.
+    expect(env.color.getHexString()).toBe((ENVIRONMENT_NODE.defaultParams.color as THREE.Color).getHexString());
     expect(env.intensity).toBe(1.0);
     expect(env.showBackground).toBe(true);
     expect(env.blurriness).toBe(0.0);

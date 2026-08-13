@@ -3,6 +3,7 @@ import { NodeDefinition, ParamFieldDef } from "../types";
 import { toBoolean } from "../sockets";
 import { defaultFont } from "../../three/fonts/helvetikerFont";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
+import { composeNativeMatrix } from "./transform";
 
 export function numberInput(input: unknown, param: unknown, fallback: number): number {
   const raw = input !== undefined ? input : param;
@@ -219,19 +220,32 @@ const COMMON_PRIMITIVE_INPUTS = [
 ];
 
 const COMMON_MATERIAL_PARAM_FIELDS: ParamFieldDef[] = [
-  { id: "color", label: "Color (fallback)", kind: "color" },
-  { id: "emissive", label: "Emissive (Glow)", kind: "color" },
-  { id: "emissiveIntensity", label: "Emissive Intensity", kind: "number", step: 0.1 },
-  { id: "shadeless", label: "Shadeless (Unlit)", kind: "boolean" },
-  { id: "roughness", label: "Roughness", kind: "number", step: 0.05 },
-  { id: "metalness", label: "Metalness", kind: "number", step: 0.05 },
-  { id: "wireframe", label: "Wireframe", kind: "boolean" },
-  { id: "wireframeLinewidth", label: "Wireframe Width", kind: "number", step: 0.5 },
-  { id: "opacity", label: "Opacity", kind: "number", step: 0.05 },
+  { id: "color", label: "Color (fallback)", kind: "color", group: "Material" },
+  { id: "emissive", label: "Emissive (Glow)", kind: "color", group: "Material" },
+  { id: "emissiveIntensity", label: "Emissive Intensity", kind: "number", step: 0.1, group: "Material" },
+  { id: "shadeless", label: "Shadeless (Unlit)", kind: "boolean", group: "Material" },
+  { id: "roughness", label: "Roughness", kind: "number", step: 0.05, group: "Material" },
+  { id: "metalness", label: "Metalness", kind: "number", step: 0.05, group: "Material" },
+  { id: "wireframe", label: "Wireframe", kind: "boolean", group: "Material" },
+  { id: "wireframeLinewidth", label: "Wireframe Width", kind: "number", step: 0.5, group: "Material" },
+  { id: "opacity", label: "Opacity", kind: "number", step: 0.05, group: "Material" },
+];
+
+/**
+ * The object's own initial pose — see composeNativeMatrix in transform.ts.
+ * Listed first, same convention as TRANSFORM_NODE putting location/rotation/
+ * scale ahead of everything else: it's the property every other field here
+ * is positioned/oriented/sized relative to.
+ */
+const NATIVE_TRANSFORM_PARAM_FIELDS: ParamFieldDef[] = [
+  { id: "location", label: "Location", kind: "vector", group: "Transform" },
+  { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true, group: "Transform" },
+  { id: "scale", label: "Scale", kind: "vector", group: "Transform" },
 ];
 
 function buildPrimitiveDynamicParamFields(extraFields: ParamFieldDef[] = []): () => ParamFieldDef[] {
   return () => [
+    ...NATIVE_TRANSFORM_PARAM_FIELDS,
     ...extraFields,
     {
       id: "texturePath",
@@ -295,6 +309,9 @@ function buildPrimitiveDynamicParamFields(extraFields: ParamFieldDef[] = []): ()
 }
 
 const COMMON_DEFAULT_PARAMS = {
+  location: new THREE.Vector3(0, 0, 0),
+  rotation: new THREE.Vector3(0, 0, 0),
+  scale: new THREE.Vector3(1, 1, 1),
   texturePath: "",
   normalMapPath: "",
   uvScaleX: 1,
@@ -342,9 +359,8 @@ export const OBJECT_BOX_NODE: NodeDefinition = {
     const mesh = boxMesh(ctx.nodeId);
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
-      const matrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(matrix);
+      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
     }
 
     const matParams = extractMaterialParams(inputs, params);
@@ -383,9 +399,8 @@ export const OBJECT_PLANE_NODE: NodeDefinition = {
     const mesh = planeMesh(ctx.nodeId);
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
-      const matrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(matrix);
+      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
     }
 
     const matParams = extractMaterialParams(inputs, params);
@@ -424,9 +439,8 @@ export const OBJECT_SPHERE_NODE: NodeDefinition = {
     const mesh = sphereMesh(ctx.nodeId);
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
-      const matrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(matrix);
+      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
     }
 
     const matParams = extractMaterialParams(inputs, params);
@@ -468,9 +482,8 @@ export const OBJECT_DISC_NODE: NodeDefinition = {
     const mesh = discMesh(ctx.nodeId);
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
-      const matrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(matrix);
+      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
     }
 
     const depth = Math.max(0, numberInput(inputs.depth, params.depth, 0));
@@ -527,9 +540,8 @@ export const OBJECT_CYLINDER_NODE: NodeDefinition = {
     const mesh = cylinderMesh(ctx.nodeId);
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
-      const matrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(matrix);
+      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
     }
 
     const matParams = extractMaterialParams(inputs, params);
@@ -568,9 +580,8 @@ export const OBJECT_CONE_NODE: NodeDefinition = {
     const mesh = coneMesh(ctx.nodeId);
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
-      const matrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(matrix);
+      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
     }
 
     const matParams = extractMaterialParams(inputs, params);
@@ -666,7 +677,7 @@ export const OBJECT_TEXT_NODE: NodeDefinition = {
     const fontSize = Math.max(8, inputs.fontSize !== undefined ? Number(inputs.fontSize) || 64 : Number(params.fontSize) || 64);
     const depth = Math.max(0.001, inputs.depth !== undefined ? Number(inputs.depth) : Number(params.depth) ?? 0.1);
 
-    const baseMatrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
+    const baseMatrix = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale);
 
     const stateChanged =
       textState.lastText !== textStr ||
@@ -829,9 +840,8 @@ export const OBJECT_BAR_GRAPH_NODE: NodeDefinition = {
     const group = state.group;
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
-      const matrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
       group.matrixAutoUpdate = false;
-      group.matrix.copy(matrix);
+      group.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
     }
 
     const rawValues = Array.isArray(inputs.values)

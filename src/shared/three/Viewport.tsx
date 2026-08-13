@@ -133,48 +133,95 @@ function createGizmoScene(): { gizmoScene: THREE.Scene; gizmoCamera: THREE.Persp
   return { gizmoScene, gizmoCamera };
 }
 
+/**
+ * Viewport palette, modelled on Blender's own 3D view rather than the near
+ * black the rest of the app started from: a soft blue-grey gradient reads as
+ * *space* around the scene, and it gives dark geometry something to sit
+ * against instead of vanishing into the background.
+ */
+const VIEWPORT_BG_TOP = "#39424f";
+const VIEWPORT_BG_BOTTOM = "#59636f";
+const GRID_LINE = 0x6a7482;
+const GRID_LINE_MAJOR = 0x7c8794;
+/** Muted enough to read as reference lines, not as scene content — same reason Blender desaturates its own. */
+const AXIS_X_COLOR = 0xa8555f;
+const AXIS_Z_COLOR = 0x4d7fa6;
+
+/**
+ * TransformControls' own gizmo defaults to pure #f00/#0f0/#00f — harsh
+ * against everything else in this file already being softened toward
+ * Blender's own muted palette. Same treatment, same reasoning as the axis
+ * lines above, via TransformControls.setColors() (its own public API for
+ * this — no need to reach into gizmo internals).
+ */
+const GIZMO_X_COLOR = 0xe0757f;
+const GIZMO_Y_COLOR = 0x8fcf8a;
+const GIZMO_Z_COLOR = 0x6fa8dc;
+/** The axis actively being dragged, or hovered. */
+const GIZMO_ACTIVE_COLOR = 0xf0c674;
+
+/**
+ * Blender's vertical viewport gradient, as a 2px-wide canvas texture. Assigned
+ * to `scene.background`, three.js stretches it flat across the frame (the
+ * equirect wrapping only applies to textures explicitly mapped that way).
+ */
+function createViewportBackground(): THREE.Texture {
+  const canvas = document.createElement("canvas");
+  canvas.width = 2;
+  canvas.height = 256;
+  const ctx = canvas.getContext("2d")!;
+  const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  gradient.addColorStop(0, VIEWPORT_BG_TOP);
+  gradient.addColorStop(1, VIEWPORT_BG_BOTTOM);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
 /** Build main 3D Scene Grid & Origin Axes Helper */
 function buildMainSceneGridAndAxes(): THREE.Group {
   const group = new THREE.Group();
 
   // Ground Grid (XZ Plane)
-  const gridHelper = new THREE.GridHelper(20, 20, 0x38bdf8, 0x1f2937);
+  const gridHelper = new THREE.GridHelper(20, 20, GRID_LINE_MAJOR, GRID_LINE);
   gridHelper.position.y = -0.001; // Avoid z-fighting with objects at y=0
   group.add(gridHelper);
 
-  // 3D Axis Arrows at Origin
-  const axisLength = 1.5;
-  const headLength = 0.3;
-  const headWidth = 0.12;
+  // The two in-plane axes drawn the length of the grid, Blender-style: a
+  // coloured line running the whole floor tells you which way X and Z go far
+  // more legibly than a short arrow at the origin does, and it stays readable
+  // when the camera is right down on the ground plane.
+  const half = 10;
+  for (const [axis, color] of [
+    [new THREE.Vector3(1, 0, 0), AXIS_X_COLOR],
+    [new THREE.Vector3(0, 0, 1), AXIS_Z_COLOR],
+  ] as const) {
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([
+        axis.clone().multiplyScalar(-half),
+        axis.clone().multiplyScalar(half),
+      ]),
+      new THREE.LineBasicMaterial({ color }),
+    );
+    line.position.y = 0.001;
+    group.add(line);
+  }
 
-  const xAxis = new THREE.ArrowHelper(
-    new THREE.Vector3(1, 0, 0),
-    new THREE.Vector3(0, 0, 0),
-    axisLength,
-    0xf43f5e,
-    headLength,
-    headWidth
-  );
-  const yAxis = new THREE.ArrowHelper(
+  // Only "up" gets an arrow now. X and Z are the two floor lines above, and
+  // stacking a second, brighter set of markers on the same axes at the origin
+  // just cluttered it — the corner orientation gizmo already names all three.
+  const upArrow = new THREE.ArrowHelper(
     new THREE.Vector3(0, 1, 0),
     new THREE.Vector3(0, 0, 0),
-    axisLength,
-    0x22c55e,
-    headLength,
-    headWidth
+    1.2,
+    0x6f9e57,
+    0.24,
+    0.1,
   );
-  const zAxis = new THREE.ArrowHelper(
-    new THREE.Vector3(0, 0, 1),
-    new THREE.Vector3(0, 0, 0),
-    axisLength,
-    0x38bdf8,
-    headLength,
-    headWidth
-  );
-
-  group.add(xAxis);
-  group.add(yAxis);
-  group.add(zAxis);
+  group.add(upArrow);
 
   return group;
 }
@@ -295,6 +342,9 @@ export function Viewport({
   const renderNodeIdRef = useRef(renderNodeId);
   renderNodeIdRef.current = renderNodeId;
   const resetCameraRef = useRef<() => void>(() => {});
+  const setAxisViewRef = useRef<(axis: "x" | "y" | "z", sign: 1 | -1) => void>(() => {});
+  /** Which side each axis button last snapped to, so clicking it again flips to the opposite view (Left <-> Right, and so on). */
+  const axisSideRef = useRef<Record<"x" | "y" | "z", 1 | -1>>({ x: -1, y: 1, z: 1 });
   const resetSimulationRef = useRef<() => void>(() => {});
   const selectedNodeIdRef = useRef(selectedNodeId);
   selectedNodeIdRef.current = selectedNodeId;
@@ -312,6 +362,13 @@ export function Viewport({
   const transformModeRef = useRef(transformMode);
   transformModeRef.current = transformMode;
 
+  const [isOrthographic, setIsOrthographic] = useState(false);
+  const toggleCameraModeRef = useRef<(isOrtho: boolean) => void>(() => {});
+
+  useEffect(() => {
+    toggleCameraModeRef.current(isOrthographic);
+  }, [isOrthographic]);
+
   useEffect(() => {
     if (!hostRef.current) return;
     const host: HTMLDivElement = hostRef.current;
@@ -323,10 +380,11 @@ export function Viewport({
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     host.appendChild(renderer.domElement);
 
+    const viewportBackground = createViewportBackground();
     const scene = new THREE.Scene();
     const bgScene = new THREE.Scene();
-    bgScene.background = new THREE.Color(0x0d1117);
-    scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+    bgScene.background = viewportBackground;
+    scene.add(new THREE.AmbientLight(0xffffff, 0.65));
     const sun = new THREE.DirectionalLight(0xffffff, 1.2);
     sun.position.set(3, 5, 4);
     scene.add(sun);
@@ -339,36 +397,104 @@ export function Viewport({
       editorUiScene.add(buildMainSceneGridAndAxes());
     }
 
-    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
-    camera.position.set(3, 3, 5);
-    camera.lookAt(0, 0, 0);
+    const perspectiveCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+    perspectiveCamera.position.set(3, 3, 5);
+    perspectiveCamera.lookAt(0, 0, 0);
+
+    const orthographicCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
+    orthographicCamera.position.set(3, 3, 5);
+    orthographicCamera.lookAt(0, 0, 0);
+
+    let activeCamera: THREE.PerspectiveCamera | THREE.OrthographicCamera = isOrthographic
+      ? orthographicCamera
+      : perspectiveCamera;
+    let camera: THREE.PerspectiveCamera | THREE.OrthographicCamera = activeCamera;
 
     const composer = new EffectComposer(renderer);
-    const renderPass = new RenderPass(scene, camera);
+    const renderPass = new RenderPass(scene, activeCamera);
     composer.addPass(renderPass);
 
-    const controls = new OrbitControls(camera, renderer.domElement);
+    const controls = new OrbitControls(activeCamera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
 
+    toggleCameraModeRef.current = (isOrtho: boolean) => {
+      const nextCam = isOrtho ? orthographicCamera : perspectiveCamera;
+      const prevCam = isOrtho ? perspectiveCamera : orthographicCamera;
+
+      nextCam.position.copy(prevCam.position);
+      nextCam.quaternion.copy(prevCam.quaternion);
+      nextCam.up.copy(prevCam.up);
+
+      const { clientWidth, clientHeight } = host;
+      const aspect = clientWidth && clientHeight ? clientWidth / clientHeight : 1;
+
+      if (isOrtho) {
+        const d = nextCam.position.distanceTo(controls.target) || 5;
+        const fovRad = THREE.MathUtils.degToRad(perspectiveCamera.fov);
+        const halfHeight = Math.tan(fovRad / 2) * d;
+        const halfWidth = halfHeight * aspect;
+        orthographicCamera.left = -halfWidth;
+        orthographicCamera.right = halfWidth;
+        orthographicCamera.top = halfHeight;
+        orthographicCamera.bottom = -halfHeight;
+        orthographicCamera.updateProjectionMatrix();
+      } else {
+        perspectiveCamera.aspect = aspect;
+        perspectiveCamera.updateProjectionMatrix();
+      }
+
+      activeCamera = nextCam;
+      camera = activeCamera;
+      controls.object = camera;
+      renderPass.camera = camera;
+      if (transformControls) transformControls.camera = camera;
+      controls.update();
+    };
+
     resetCameraRef.current = () => {
-      camera.position.set(3, 3, 5);
+      perspectiveCamera.position.set(3, 3, 5);
+      perspectiveCamera.up.set(0, 1, 0);
+      perspectiveCamera.lookAt(0, 0, 0);
+
+      orthographicCamera.position.set(3, 3, 5);
+      orthographicCamera.up.set(0, 1, 0);
+      orthographicCamera.lookAt(0, 0, 0);
+
       controls.target.set(0, 0, 0);
       controls.update();
     };
 
-    // Motion-design preview sync (editor side): every orbit move, tell
-    // whoever's listening (App.tsx) where the editor camera now is, so the
-    // output window can mirror it when there's no Camera node to lock onto
-    // instead. 'change' fires once per damping-settling frame while
-    // orbiting, then stops — not a fixed-rate per-frame broadcast, just
-    // "whenever the view actually moved." Fired once immediately too, so a
-    // freshly-opened output window's handshake response already has a real
-    // pose instead of nothing.
+    /**
+     * Snaps to an axis-aligned view, the way Blender's numpad views work.
+     * Keeps the current orbit target and distance, so it reframes what you
+     * were already looking at instead of jumping back to the origin.
+     */
+    setAxisViewRef.current = (axis, sign) => {
+      const target = controls.target.clone();
+      const distance = activeCamera.position.distanceTo(target) || 5;
+      const direction = new THREE.Vector3(
+        axis === "x" ? sign : 0,
+        axis === "y" ? sign : 0,
+        axis === "z" ? sign : 0,
+      );
+      const upVector = new THREE.Vector3(0, axis === "y" ? 0 : 1, axis === "y" ? -sign : 0);
+
+      perspectiveCamera.up.copy(upVector);
+      perspectiveCamera.position.copy(target).addScaledVector(direction, distance);
+      perspectiveCamera.lookAt(target);
+
+      orthographicCamera.up.copy(upVector);
+      orthographicCamera.position.copy(target).addScaledVector(direction, distance);
+      orthographicCamera.lookAt(target);
+
+      controls.update();
+    };
+
     function emitCameraPose() {
       onCameraChangeRef.current?.({
-        position: [camera.position.x, camera.position.y, camera.position.z],
-        quaternion: [camera.quaternion.x, camera.quaternion.y, camera.quaternion.z, camera.quaternion.w],
+        position: [activeCamera.position.x, activeCamera.position.y, activeCamera.position.z],
+        quaternion: [activeCamera.quaternion.x, activeCamera.quaternion.y, activeCamera.quaternion.z, activeCamera.quaternion.w],
       });
     }
     if (!outputMode) {
@@ -376,24 +502,68 @@ export function Viewport({
       emitCameraPose();
     }
 
-    // Gizmo Corner Scene & Camera — editor-only, never baked into the projected output
     const gizmo = outputMode ? null : createGizmoScene();
 
-    // Click-to-select + move/rotate/scale gizmo — editor-only, same reason
-    // as everything else gated on outputMode: the output window shows the
-    // projected content, not editing chrome. `attachedObjectNodeId` and
-    // `attachedGizmoTarget` are plain closure variables, not refs —
-    // nothing outside this effect needs to read them, they only pass
-    // information from the per-frame attach/detach check below to the
-    // 'objectChange' listener and to tick()'s liveEditNodeId computation.
     const raycaster = outputMode ? null : new THREE.Raycaster();
-    const transformControls = outputMode ? null : new TransformControls(camera, renderer.domElement);
+    const transformControls = outputMode ? null : new TransformControls(activeCamera, renderer.domElement);
+    transformControls?.setColors(GIZMO_X_COLOR, GIZMO_Y_COLOR, GIZMO_Z_COLOR, GIZMO_ACTIVE_COLOR);
     let attachedObjectNodeId: string | null = null;
     let attachedGizmoTarget: GizmoTarget | null = null;
     // Refreshed every tick() — the 'objectChange' listener needs the
     // *current* base matrix for an "offset" target (see below), and this is
     // the cheapest way to get it without re-running evaluateGraph itself.
     let latestResults: EvalResult | null = null;
+
+    // Hold Shift to snap the gizmo to fixed increments — 1 unit for
+    // move/scale, 15° for rotate. Three's TransformControls has no built-in
+    // modifier-key toggle; it just reads translationSnap/rotationSnap/
+    // scaleSnap fresh on every pointermove (see its own source), so setting
+    // them live on keydown/keyup is enough to make snapping track the key
+    // in real time, including toggling mid-drag.
+    const TRANSLATION_SNAP = 1;
+    const ROTATION_SNAP = THREE.MathUtils.degToRad(15);
+    const SCALE_SNAP = 1;
+
+    // translationSnap is deliberately NEVER set on transformControls itself —
+    // its world-space snap path calls object.getWorldPosition(), which goes
+    // through updateWorldMatrix(). Every graph-driven mesh has
+    // matrixAutoUpdate = false (see object.ts), which makes updateWorldMatrix
+    // skip recomputing .matrix from the position TransformControls just set —
+    // so it read back the *previous* frame's stale world position every time,
+    // snapped that unchanging value, and wrote it straight back: the object
+    // never appeared to move at all while translating with snap on. rotate's
+    // snap (an internal angle accumulator) and scale's snap (mode='scale'
+    // forces local space, a plain .scale round with no matrixWorld involved)
+    // don't touch matrixWorld and so don't hit this — hence only translate
+    // needed a workaround. Snapping translation ourselves, in objectChange
+    // below, right before we call object.updateMatrix(), sidesteps the whole
+    // stale-matrixWorld path: we round the position TransformControls *did*
+    // just set correctly, not a stale re-derived one.
+    let snapEnabled = false;
+
+    function setSnapEnabled(enabled: boolean) {
+      snapEnabled = enabled;
+      if (!transformControls) return;
+      transformControls.rotationSnap = enabled ? ROTATION_SNAP : null;
+      transformControls.scaleSnap = enabled ? SCALE_SNAP : null;
+    }
+
+    function onSnapKeyDown(e: KeyboardEvent) {
+      if (e.key === "Shift") setSnapEnabled(true);
+    }
+    function onSnapKeyUp(e: KeyboardEvent) {
+      if (e.key === "Shift") setSnapEnabled(false);
+    }
+    // Alt-tabbing away mid-drag fires no keyup for whatever was held — without
+    // this, snapping could get stuck on until the next Shift press-and-release.
+    function onSnapWindowBlur() {
+      setSnapEnabled(false);
+    }
+    if (!outputMode) {
+      window.addEventListener("keydown", onSnapKeyDown);
+      window.addEventListener("keyup", onSnapKeyUp);
+      window.addEventListener("blur", onSnapWindowBlur);
+    }
 
     if (transformControls) {
       editorUiScene.add(transformControls.getHelper());
@@ -413,6 +583,21 @@ export function Viewport({
       transformControls.addEventListener("objectChange", () => {
         const object = transformControls.object;
         if (!object) return;
+
+        // Manual translation snap — see the comment by TRANSLATION_SNAP's
+        // declaration for why this can't just be transformControls'
+        // own translationSnap. .position here is what TransformControls'
+        // translate math just set correctly this frame (a plain local
+        // assignment, no matrixWorld involved) — rounding it directly, before
+        // updateMatrix() below, is what makes the *displayed* mesh snap, not
+        // just whatever eventually gets written back to the graph.
+        if (snapEnabled && transformModeRef.current === "translate") {
+          object.position.set(
+            Math.round(object.position.x / TRANSLATION_SNAP) * TRANSLATION_SNAP,
+            Math.round(object.position.y / TRANSLATION_SNAP) * TRANSLATION_SNAP,
+            Math.round(object.position.z / TRANSLATION_SNAP) * TRANSLATION_SNAP,
+          );
+        }
 
         // object.ts sets matrixAutoUpdate = false on every graph-driven mesh
         // (so it can hold an exact matrix.copy() from the graph), which also
@@ -442,10 +627,13 @@ export function Viewport({
         //    whatever the animation happened to be showing that frame.
         const patch: TransformPatch = {};
         const mode = transformModeRef.current;
+        // Which node id actually owns the params a drag writes into — the
+        // upstream Transform/MatrixTransform for "absolute"/"offset", or the
+        // object itself for "native" (see transformLookup.ts).
+        const targetNodeId =
+          attachedGizmoTarget.kind === "native" ? attachedGizmoTarget.objectNodeId : attachedGizmoTarget.transformNodeId;
         const wired = new Set(
-          graphRef.current.connections
-            .filter((c) => c.toNode === attachedGizmoTarget!.transformNodeId)
-            .map((c) => c.toSocket),
+          graphRef.current.connections.filter((c) => c.toNode === targetNodeId).map((c) => c.toSocket),
         );
 
         if (attachedGizmoTarget.kind === "absolute") {
@@ -460,29 +648,62 @@ export function Viewport({
           if (mode === "scale" && !wired.has("scale")) patch.scale = object.scale.clone();
 
           if (Object.keys(patch).length > 0) {
-            onTransformChangeRef.current(attachedGizmoTarget.transformNodeId, patch);
+            onTransformChangeRef.current(targetNodeId, patch);
           }
           return;
         }
 
-        // "offset" — a Matrix Transform node's location/rotation/scale are
-        // a *local delta* on top of whatever its own `matrix` input
-        // currently resolves to (final = base * delta, see
-        // transform.ts's MATRIX_TRANSFORM_NODE). Writing the gizmo's
-        // absolute world pose straight in would double-count that base —
-        // solving `delta = inverse(base) * final` is what the offset
-        // written back has to be instead. No base wired in -> identity,
-        // matching MATRIX_TRANSFORM_NODE's own evaluate fallback.
-        const baseResult = attachedGizmoTarget.baseSourceNodeId
-          ? latestResults?.get(attachedGizmoTarget.baseSourceNodeId)?.matrix
+        if (attachedGizmoTarget.kind === "offset") {
+          // A Matrix Transform node's location/rotation/scale are a *local
+          // delta* on top of whatever its own `matrix` input currently
+          // resolves to (final = base * delta, see transform.ts's
+          // MATRIX_TRANSFORM_NODE). Writing the gizmo's absolute world pose
+          // straight in would double-count that base — solving
+          // `delta = inverse(base) * final` is what the offset written back
+          // has to be instead. No base wired in -> identity, matching
+          // MATRIX_TRANSFORM_NODE's own evaluate fallback.
+          const baseResult = attachedGizmoTarget.baseSourceNodeId
+            ? latestResults?.get(attachedGizmoTarget.baseSourceNodeId)?.matrix
+            : undefined;
+          const baseMatrix = baseResult instanceof THREE.Matrix4 ? baseResult : new THREE.Matrix4();
+          const deltaMatrix = baseMatrix.clone().invert().multiply(object.matrix);
+
+          const location = new THREE.Vector3();
+          const quaternion = new THREE.Quaternion();
+          const scale = new THREE.Vector3();
+          deltaMatrix.decompose(location, quaternion, scale);
+
+          if (mode === "translate" && !wired.has("location")) patch.location = location;
+          if (mode === "rotate" && !wired.has("rotation")) {
+            const euler = new THREE.Euler().setFromQuaternion(quaternion);
+            patch.rotation = new THREE.Vector3(euler.x, euler.y, euler.z);
+          }
+          if (mode === "scale" && !wired.has("scale")) patch.scale = scale;
+
+          if (Object.keys(patch).length > 0) {
+            onTransformChangeRef.current(targetNodeId, patch);
+          }
+          return;
+        }
+
+        // "native" — the object's own location/rotation/scale ARE the base;
+        // whatever's wired into its `matrix` input is the delta (see
+        // composeNativeMatrix in transform.ts: final = base * delta). The
+        // inverse of "offset"'s problem: there the base is fixed and delta
+        // gets solved for; here the delta is fixed (from
+        // deltaSourceNodeId's current result) and the base does —
+        // `base = final * delta⁻¹`. No delta wired in -> identity, matching
+        // composeNativeMatrix's own fallback.
+        const deltaResult = attachedGizmoTarget.deltaSourceNodeId
+          ? latestResults?.get(attachedGizmoTarget.deltaSourceNodeId)?.matrix
           : undefined;
-        const baseMatrix = baseResult instanceof THREE.Matrix4 ? baseResult : new THREE.Matrix4();
-        const deltaMatrix = baseMatrix.clone().invert().multiply(object.matrix);
+        const deltaMatrix = deltaResult instanceof THREE.Matrix4 ? deltaResult : new THREE.Matrix4();
+        const baseMatrix = object.matrix.clone().multiply(deltaMatrix.clone().invert());
 
         const location = new THREE.Vector3();
         const quaternion = new THREE.Quaternion();
         const scale = new THREE.Vector3();
-        deltaMatrix.decompose(location, quaternion, scale);
+        baseMatrix.decompose(location, quaternion, scale);
 
         if (mode === "translate" && !wired.has("location")) patch.location = location;
         if (mode === "rotate" && !wired.has("rotation")) {
@@ -492,7 +713,7 @@ export function Viewport({
         if (mode === "scale" && !wired.has("scale")) patch.scale = scale;
 
         if (Object.keys(patch).length > 0) {
-          onTransformChangeRef.current(attachedGizmoTarget.transformNodeId, patch);
+          onTransformChangeRef.current(targetNodeId, patch);
         }
       });
     }
@@ -540,11 +761,23 @@ export function Viewport({
     function resize() {
       const { clientWidth, clientHeight } = host;
       if (clientWidth === 0 || clientHeight === 0) return;
+      const aspect = clientWidth / clientHeight;
       renderer.setSize(clientWidth, clientHeight);
       composer.setSize(clientWidth, clientHeight);
       motionBlurEffect.setSize(clientWidth, clientHeight);
-      camera.aspect = clientWidth / clientHeight;
-      camera.updateProjectionMatrix();
+
+      perspectiveCamera.aspect = aspect;
+      perspectiveCamera.updateProjectionMatrix();
+
+      const d = activeCamera.position.distanceTo(controls.target) || 5;
+      const fovRad = THREE.MathUtils.degToRad(perspectiveCamera.fov);
+      const halfHeight = Math.tan(fovRad / 2) * d;
+      const halfWidth = halfHeight * aspect;
+      orthographicCamera.left = -halfWidth;
+      orthographicCamera.right = halfWidth;
+      orthographicCamera.top = halfHeight;
+      orthographicCamera.bottom = -halfHeight;
+      orthographicCamera.updateProjectionMatrix();
     }
 
     const resizeObserver = new ResizeObserver(resize);
@@ -785,9 +1018,11 @@ export function Viewport({
           camera.projectionMatrix.copy(projection);
           camera.projectionMatrixInverse.copy(projection).invert();
           projectionOverridden = true;
-        } else {
+        } else if (camera instanceof THREE.PerspectiveCamera) {
           const fov = Number(cameraResult?.fov) || camera.fov;
           if (camera.fov !== fov) camera.fov = fov;
+          restoreProjection();
+        } else {
           restoreProjection();
         }
       } else if (outputMode && previewCameraPoseRef.current) {
@@ -926,7 +1161,7 @@ export function Viewport({
         }
       } else {
         scene.environment = null;
-        bgScene.background = new THREE.Color(0x0d1117);
+        bgScene.background = viewportBackground;
         (bgScene as any).backgroundBlurriness = 0;
         (scene as any).backgroundBlurriness = 0;
       }
@@ -1182,11 +1417,15 @@ export function Viewport({
         renderer.domElement.removeEventListener("pointerdown", onCanvasPointerDown);
         renderer.domElement.removeEventListener("pointerup", onCanvasPointerUp);
         controls.removeEventListener("change", emitCameraPose);
+        window.removeEventListener("keydown", onSnapKeyDown);
+        window.removeEventListener("keyup", onSnapKeyUp);
+        window.removeEventListener("blur", onSnapWindowBlur);
       }
       transformControls?.dispose();
       controls.dispose();
       passCache.forEach((entry) => disposePass(entry));
       passCache.clear();
+      viewportBackground.dispose();
       motionBlurEffect.dispose();
       blurQuad.dispose();
       hBlurMaterial.dispose();
@@ -1205,18 +1444,62 @@ export function Viewport({
       {/* Top-Left Viewport HUD & Controls — editor-only, never shown in the output window */}
       {!outputMode && (
         <div className="viewport-hud">
-          <div className="viewport-hud-title">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polygon points="12 2 2 7 12 12 22 7 12 2" />
-              <polyline points="2 17 12 22 22 17" />
-              <polyline points="2 12 12 17 22 12" />
+          <button
+            type="button"
+            className={`viewport-hud-button ${isOrthographic ? "viewport-hud-button-active" : ""}`}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+              color: isOrthographic ? "#38bdf8" : "#cbd5e1",
+              fontWeight: 600,
+            }}
+            onClick={() => setIsOrthographic((prev) => !prev)}
+            title={
+              isOrthographic
+                ? "Vue Orthographique (clic pour passer en Perspective)"
+                : "Vue Perspective (clic pour passer en Orthographique)"
+            }
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              {isOrthographic ? (
+                <>
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <path d="M3 9h18M3 15h18M9 3v18M15 3v18" opacity="0.4" />
+                </>
+              ) : (
+                <>
+                  <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                  <polyline points="2 17 12 22 22 17" />
+                  <polyline points="2 12 12 17 22 12" />
+                </>
+              )}
             </svg>
-            Viewport 3D
-          </div>
+            {isOrthographic ? "Ortho" : "Persp"}
+          </button>
           <div className="viewport-hud-legend">
-            <span className="viewport-hud-axis viewport-hud-axis-x">X</span>
-            <span className="viewport-hud-axis viewport-hud-axis-y">Y</span>
-            <span className="viewport-hud-axis viewport-hud-axis-z">Z</span>
+            {(
+              [
+                { axis: "x", label: "X", views: ["Right", "Left"] },
+                { axis: "y", label: "Y", views: ["Top", "Bottom"] },
+                { axis: "z", label: "Z", views: ["Front", "Back"] },
+              ] as const
+            ).map(({ axis, label, views }) => (
+              <button
+                key={axis}
+                type="button"
+                className={`viewport-hud-axis viewport-hud-axis-${axis}`}
+                title={`Vue ${views[0]} / ${views[1]} (clic pour basculer)`}
+                onClick={() => {
+                  const sign = axisSideRef.current[axis];
+                  setAxisViewRef.current(axis, sign);
+                  // Flip for next time, so the same button walks both sides.
+                  axisSideRef.current[axis] = (sign === 1 ? -1 : 1) as 1 | -1;
+                }}
+              >
+                {label}
+              </button>
+            ))}
           </div>
           <button
             className="viewport-hud-button"

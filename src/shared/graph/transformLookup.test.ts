@@ -50,33 +50,56 @@ describe("resolveGizmoTarget", () => {
     expect(result).toEqual({ kind: "offset", transformNodeId: "mt1", baseSourceNodeId: null });
   });
 
-  it("returns null when nothing is wired into matrix", () => {
+  it("falls through to a native target when nothing is wired into matrix, for an object type with a native pose", () => {
     const graph: Graph = { nodes: [node("box1", "object/box")], connections: [] };
-    expect(resolveGizmoTarget(graph, "box1")).toBeNull();
+    expect(resolveGizmoTarget(graph, "box1")).toEqual({
+      kind: "native",
+      objectNodeId: "box1",
+      deltaSourceNodeId: null,
+    });
   });
 
-  it("returns null when the wired source is not a Transform or Matrix Transform node", () => {
+  it("falls through to a native target when the wired source is not a Transform or Matrix Transform node — the wired node becomes the delta", () => {
     // Arrange — a Look At node also outputs a matrix, but isn't editable via location/rotation/scale
     const graph: Graph = {
       nodes: [node("look1", "transform/look-at"), node("box1", "object/box")],
       connections: [wire("look1", "matrix", "box1", "matrix")],
     };
 
-    // Act / Assert
-    expect(resolveGizmoTarget(graph, "box1")).toBeNull();
+    // Act / Assert — the object's own native pose is still draggable; the
+    // Look At output composes on top of it as the delta, not cancelling it.
+    expect(resolveGizmoTarget(graph, "box1")).toEqual({
+      kind: "native",
+      objectNodeId: "box1",
+      deltaSourceNodeId: "look1",
+    });
   });
 
-  it("ignores a connection into a different socket", () => {
+  it("a connection into a different socket doesn't count as a delta source", () => {
     const graph: Graph = {
       nodes: [node("t1", "transform"), node("box1", "object/box")],
       connections: [wire("t1", "matrix", "box1", "color")],
     };
-    expect(resolveGizmoTarget(graph, "box1")).toBeNull();
+    expect(resolveGizmoTarget(graph, "box1")).toEqual({
+      kind: "native",
+      objectNodeId: "box1",
+      deltaSourceNodeId: null,
+    });
   });
 
   it("returns null for an unknown object node id", () => {
     const graph: Graph = { nodes: [], connections: [] };
     expect(resolveGizmoTarget(graph, "missing")).toBeNull();
+  });
+
+  it("returns null for an object type with no native pose (e.g. Ambient Light, position-independent) and nothing Transform-like wired in", () => {
+    const graph: Graph = { nodes: [node("amb1", "light/ambient")], connections: [] };
+    expect(resolveGizmoTarget(graph, "amb1")).toBeNull();
+  });
+
+  it("returns null for a node type not in GIZMO_SELECTABLE_TYPES at all", () => {
+    const graph: Graph = { nodes: [node("merge1", "structure/merge")], connections: [] };
+    expect(resolveGizmoTarget(graph, "merge1")).toBeNull();
   });
 });
 
@@ -89,12 +112,14 @@ describe("GIZMO_SELECTABLE_TYPES", () => {
       "object/disc",
       "object/cylinder",
       "object/cone",
+      "object/bar_graph",
       "object/obj",
       "object/text",
       "texture/plane",
       "light/directional",
       "light/point",
       "light/spot",
+      "calibration/camera",
     ]);
   });
 });

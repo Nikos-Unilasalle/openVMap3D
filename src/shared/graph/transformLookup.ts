@@ -1,7 +1,12 @@
 import { MATRIX_TRANSFORM_NODE, TRANSFORM_NODE } from "./nodes/transform";
 import { Graph } from "./types";
 
-/** Node types whose mesh tags itself with a nodeId (see object.ts) and so can be click-selected and gizmo-edited in the viewport. */
+/**
+ * Node types whose mesh tags itself with a nodeId (see object.ts) and so can
+ * be click-selected and gizmo-edited in the viewport. Doubles as the set of
+ * types that own a native location/rotation/scale pose (composeNativeMatrix
+ * in transform.ts) — see the "native" GizmoTarget kind below.
+ */
 export const GIZMO_SELECTABLE_TYPES = [
   "object/box",
   "object/plane",
@@ -9,12 +14,14 @@ export const GIZMO_SELECTABLE_TYPES = [
   "object/disc",
   "object/cylinder",
   "object/cone",
+  "object/bar_graph",
   "object/obj",
   "object/text",
   "texture/plane",
   "light/directional",
   "light/point",
   "light/spot",
+  "calibration/camera",
 ];
 
 /**
@@ -34,30 +41,54 @@ export const GIZMO_SELECTABLE_TYPES = [
  *   i.e. base is the identity, same fallback MATRIX_TRANSFORM_NODE's own
  *   evaluate uses).
  *
+ * - "native": neither of the above is wired directly upstream, but the
+ *   object's own type owns a native pose (composeNativeMatrix in
+ *   transform.ts — `final = base(object's own location/rotation/scale) ×
+ *   delta(whatever's wired into its matrix input, identity if nothing is)`.
+ *   The gizmo drags the object's own params as the base, same
+ *   `base = final × delta⁻¹` inversion as "offset" but solved for the
+ *   opposite unknown (there the base is fixed and the delta gets solved
+ *   for; here the delta is fixed — from `deltaSourceNodeId` — and the base
+ *   does). A strict superset of the old behavior: previously wiring
+ *   anything other than Transform/MatrixTransform into `matrix` (a bare
+ *   `Parent`, or nothing at all) meant no gizmo; now it falls through to
+ *   "native" instead.
+ *
+ * "absolute" and "offset" are checked first and preserved exactly — a graph
+ * that already wires an explicit Transform/Matrix Transform node upstream
+ * keeps editing *that* node, not the object's own (in that case unused)
+ * native params.
+ *
  * Deliberately still one hop, not a full chain walk: `transform/parent`,
  * `transform/look-at`, or any other matrix-producing node has no single
- * location/rotation/scale to drag — those cases return null (no gizmo)
- * rather than guessing. Chaining is edited through each node's own param
- * fields instead, same as it is today.
+ * location/rotation/scale to drag — those cases fall through to "native" (or
+ * to null, for an object type with no native pose) rather than guessing.
+ * Chaining is edited through each node's own param fields instead, same as
+ * it is today.
  */
 export type GizmoTarget =
   | { kind: "absolute"; transformNodeId: string }
-  | { kind: "offset"; transformNodeId: string; baseSourceNodeId: string | null };
+  | { kind: "offset"; transformNodeId: string; baseSourceNodeId: string | null }
+  | { kind: "native"; objectNodeId: string; deltaSourceNodeId: string | null };
+
+const NATIVE_TRANSFORM_TYPES = new Set<string>(GIZMO_SELECTABLE_TYPES);
 
 export function resolveGizmoTarget(graph: Graph, objectNodeId: string): GizmoTarget | null {
   const connection = graph.connections.find((c) => c.toNode === objectNodeId && c.toSocket === "matrix");
-  if (!connection) return null;
+  const source = connection ? graph.nodes.find((n) => n.id === connection.fromNode) : undefined;
 
-  const source = graph.nodes.find((n) => n.id === connection.fromNode);
-  if (!source) return null;
-
-  if (source.type === TRANSFORM_NODE.type) {
+  if (source?.type === TRANSFORM_NODE.type) {
     return { kind: "absolute", transformNodeId: source.id };
   }
 
-  if (source.type === MATRIX_TRANSFORM_NODE.type) {
+  if (source?.type === MATRIX_TRANSFORM_NODE.type) {
     const baseConnection = graph.connections.find((c) => c.toNode === source.id && c.toSocket === "matrix");
     return { kind: "offset", transformNodeId: source.id, baseSourceNodeId: baseConnection?.fromNode ?? null };
+  }
+
+  const objectNode = graph.nodes.find((n) => n.id === objectNodeId);
+  if (objectNode && NATIVE_TRANSFORM_TYPES.has(objectNode.type)) {
+    return { kind: "native", objectNodeId, deltaSourceNodeId: connection?.fromNode ?? null };
   }
 
   return null;

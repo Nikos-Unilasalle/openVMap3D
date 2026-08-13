@@ -3,6 +3,7 @@ import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { NodeDefinition } from "../types";
 import { toBoolean } from "../sockets";
 import { createNodeCache } from "../nodeCaches";
+import { composeNativeMatrix } from "./transform";
 
 interface ObjState {
   group: THREE.Group;
@@ -77,6 +78,9 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
   ],
   outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
   defaultParams: {
+    location: new THREE.Vector3(0, 0, 0),
+    rotation: new THREE.Vector3(0, 0, 0),
+    scale: new THREE.Vector3(1, 1, 1),
     filePath: "",
     texturePath: "",
     normalMapPath: "",
@@ -176,6 +180,9 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
         }
       },
     },
+    { id: "location", label: "Location", kind: "vector" },
+    { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true },
+    { id: "scale", label: "Scale", kind: "vector" },
     { id: "color", label: "Color (fallback)", kind: "color" },
     { id: "shadeless", label: "Shadeless (Unlit)", kind: "boolean" },
     { id: "uvScaleX", label: "UV Scale X (Tile)", kind: "number", step: 0.1 },
@@ -194,9 +201,8 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
 
     // Apply matrix transformation
     if (ctx.nodeId !== ctx.liveEditNodeId) {
-      const matrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
       group.matrixAutoUpdate = false;
-      group.matrix.copy(matrix);
+      group.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
     }
 
     const color = asColor(inputs.color, asColor(params.color, new THREE.Color(0xffffff)));

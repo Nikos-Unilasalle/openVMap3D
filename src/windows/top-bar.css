@@ -1,6 +1,6 @@
 /*
  * TopBar toolbar styling matching OpenVMap 3D visual identity:
- * Dark grey (#161b22, #1e2530), sharp borders (#2c333f), glowing accent hovers:
+ * Dark grey (var(--chrome-surface), var(--chrome-surface-raised)), sharp borders (var(--chrome-border)), glowing accent hovers:
  * Load (cyan #38bdf8), Save (emerald #22c55e), Save As (purple #a855f7), Inc Save (pink #ec4899)
  */
 
@@ -10,10 +10,10 @@
   justify-content: space-between;
   height: 42px;
   min-height: 42px;
-  background: #161b22;
-  border-bottom: 1px solid #2c333f;
+  background: var(--chrome-surface);
+  border-bottom: 1px solid var(--chrome-border);
   padding: 0 16px;
-  color: #e6e6e6;
+  color: var(--chrome-text);
   font-family: "Roboto", system-ui, sans-serif;
   font-size: 12px;
   user-select: none;
@@ -30,26 +30,35 @@
 .top-bar-logo {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   font-weight: 800;
-  font-size: 13px;
+  font-size: 15px;
   letter-spacing: 0.05em;
-  background: linear-gradient(135deg, #38bdf8 0%, #a855f7 50%, #ec4899 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  text-transform: uppercase;
+  color: #ffffff;
+  
 }
 
-.top-bar-logo-icon {
-  width: 20px;
-  height: 20px;
-  color: #38bdf8;
+.top-bar-logo-img {
+  height: 108px;
+  width: auto;
+  object-fit: contain;
+  margin-top: -3px;
+  margin-bottom: -23px;
+  margin-left: -32px; 
+  margin-right: -30px;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.top-bar-logo-text {
+  position: relative;
+  z-index: 21;
 }
 
 .top-bar-divider {
   width: 1px;
   height: 20px;
-  background: #2c333f;
+  background: var(--chrome-border);
   margin: 0 4px;
 }
 
@@ -65,10 +74,10 @@
   gap: 6px;
   height: 28px;
   padding: 0 12px;
-  background: #1e2530;
-  border: 1px solid #2c333f;
+  background: var(--chrome-surface-raised);
+  border: 1px solid var(--chrome-border);
   border-radius: 6px;
-  color: #9aa4b2;
+  color: var(--chrome-text-muted);
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
@@ -175,8 +184,8 @@
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
-  background: #0d1117;
-  border: 1px solid #2c333f;
+  background: var(--chrome-bg);
+  border: 1px solid var(--chrome-border);
   border-radius: 6px;
   font-family: "Roboto Mono", monospace;
   font-size: 11px;
@@ -190,7 +199,7 @@
 }
 
 .top-bar-filename-edit-input {
-  background: #0d1117;
+  background: var(--chrome-bg);
   border: 1px solid #38bdf8;
   border-radius: 4px;
   color: #ffffff;

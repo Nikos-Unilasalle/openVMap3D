@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
 import { createNodeCache } from "../nodeCaches";
+import { composeNativeMatrix } from "./transform";
 
 interface TextureNodeState {
   texture?: THREE.Texture;
@@ -129,6 +130,9 @@ export const TEXTURE_PLANE_NODE: NodeDefinition = {
   ],
   outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
   defaultParams: {
+    location: new THREE.Vector3(0, 0, 0),
+    rotation: new THREE.Vector3(0, 0, 0),
+    scale: new THREE.Vector3(1, 1, 1),
     filePath: "",
     color: new THREE.Color(0xffffff),
     doubleSided: true,
@@ -137,6 +141,9 @@ export const TEXTURE_PLANE_NODE: NodeDefinition = {
     metalness: 0.1,
   },
   dynamicParamFields: () => [
+    { id: "location", label: "Location", kind: "vector" },
+    { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true },
+    { id: "scale", label: "Scale", kind: "vector" },
     {
       id: "filePath",
       label: "Image File (Fallback)",
@@ -205,12 +212,16 @@ export const TEXTURE_PLANE_NODE: NodeDefinition = {
 
     // Apply Matrix transformation
     if (ctx.nodeId !== ctx.liveEditNodeId) {
-      const matrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix.clone() : new THREE.Matrix4();
+      // The aspect correction is itself layered onto whatever's wired into
+      // `matrix` (the delta), not onto the node's own native pose (the
+      // base) — composeNativeMatrix's own base×delta order then puts the
+      // native transform underneath both.
+      const wiredMatrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix.clone() : new THREE.Matrix4();
       if (keepAspect && aspect !== 1.0) {
-        matrix.multiply(new THREE.Matrix4().makeScale(aspect, 1.0, 1.0));
+        wiredMatrix.multiply(new THREE.Matrix4().makeScale(aspect, 1.0, 1.0));
       }
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(matrix);
+      mesh.matrix.copy(composeNativeMatrix(wiredMatrix, params.location, params.rotation, params.scale));
     }
 
     // Update material properties

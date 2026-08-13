@@ -169,7 +169,7 @@ export const ENVIRONMENT_NODE: NodeDefinition = {
   ],
   outputs: [{ id: "environment", label: "Environment", type: "any" }],
   defaultParams: {
-    color: new THREE.Color(0x0d1117),
+    color: new THREE.Color(0x3f4956),
     intensity: 1.0,
     background: 1,
     blurriness: 0.0,
@@ -221,7 +221,7 @@ export const ENVIRONMENT_NODE: NodeDefinition = {
       loadBackgroundImageTexture(ctx.nodeId, params.backgroundImagePath);
     }
 
-    const color = asColor(inputs.color, asColor(params.color, new THREE.Color(0x0d1117)));
+    const color = asColor(inputs.color, asColor(params.color, new THREE.Color(0x3f4956)));
     const intensity = Math.max(0, numberInput(inputs.intensity, params.intensity, 1.0));
 
     const rawBg = inputs.background !== undefined ? inputs.background : params.background;
