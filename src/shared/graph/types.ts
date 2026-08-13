@@ -1,3 +1,4 @@
+import * as THREE from "three";
 import { NodeCategory } from "./categories";
 import { SocketDef } from "./sockets";
 
@@ -31,6 +32,15 @@ export interface EvalContext {
    * own a mesh.
    */
   liveEditNodeId?: string | null;
+  /**
+   * The window's own WebGLRenderer, when one exists — only a node that owns
+   * a GPU resource needing a live renderer to construct (a Particle Simulate
+   * node's GPUComputationRenderer) reads this; every other node ignores it,
+   * same as liveEditNodeId. Absent in contexts with no renderer at all
+   * (tests, a headless evaluate call) — those nodes degrade gracefully
+   * rather than throwing.
+   */
+  renderer?: THREE.WebGLRenderer;
 }
 
 /**
@@ -40,11 +50,18 @@ export interface EvalContext {
  * `id` must match a key in `defaultParams`.
  */
 export type ParamFieldDef =
-  | { id: string; label: string; kind: "number"; step?: number }
+  /**
+   * `degrees` is a *display* unit only: the param itself, and every socket
+   * carrying the same quantity, stay in radians so an Oscillator or Value
+   * Math node can feed a rotation input without unit gymnastics. It only
+   * tells the panel to show and accept degrees, which is what anyone
+   * dialling in an angle by hand actually wants to type.
+   */
+  | { id: string; label: string; kind: "number"; step?: number; degrees?: boolean }
   | { id: string; label: string; kind: "boolean" }
   | { id: string; label: string; kind: "select"; options: string[] }
   | { id: string; label: string; kind: "color" }
-  | { id: string; label: string; kind: "vector"; step?: number }
+  | { id: string; label: string; kind: "vector"; step?: number; degrees?: boolean }
   | { id: string; label: string; kind: "text" }
   | {
       id: string;

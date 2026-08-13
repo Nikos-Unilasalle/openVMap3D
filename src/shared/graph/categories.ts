@@ -15,6 +15,7 @@ export type NodeCategory =
   | "physics"
   | "particles"
   | "post"
+  | "postprocess"
   | "calibration";
 
 /** Palette/section display order — matches BIBLE.md's catalog order. */
@@ -33,6 +34,7 @@ export const CATEGORY_ORDER: NodeCategory[] = [
   "io",
   "physics",
   "particles",
+  "postprocess",
   "post",
   "calibration",
 ];
@@ -53,6 +55,7 @@ export const CATEGORY_LABEL: Record<NodeCategory, string> = {
   physics: "Physics",
   particles: "Particles",
   post: "Post-render 2D",
+  postprocess: "Post-Process & FX",
   calibration: "Calibration",
 };
 
@@ -78,6 +81,7 @@ export const CATEGORY_COLOR: Record<NodeCategory, string> = {
   physics: "#22c55e",
   particles: "#2dd4bf",
   post: "#f43f5e",
+  postprocess: "#c084fc",
   calibration: "#94a3b8",
 };
 

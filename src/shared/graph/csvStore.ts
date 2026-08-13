@@ -1,3 +1,4 @@
+import { createNodeCache } from "./nodeCaches";
 /**
  * Loaded-CSV cache, keyed by node id — same shape as the GPU-resource
  * caches (object.ts's meshCache, merge.ts's groupCache): loading is a
@@ -13,7 +14,7 @@ export interface CsvData {
   rows: Record<string, string>[];
 }
 
-const csvCache = new Map<string, CsvData>();
+const csvCache = createNodeCache<CsvData>();
 
 export function getCsv(nodeId: string): CsvData | undefined {
   return csvCache.get(nodeId);

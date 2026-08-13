@@ -29,7 +29,7 @@ export const TRANSFORM_NODE: NodeDefinition = {
   defaultParams: { location: ZERO.clone(), rotation: ZERO.clone(), scale: ONE.clone() },
   paramFields: [
     { id: "location", label: "Location (fallback)", kind: "vector" },
-    { id: "rotation", label: "Rotation (fallback, rad)", kind: "vector" },
+    { id: "rotation", label: "Rotation (°, fallback)", kind: "vector", step: 1, degrees: true },
     { id: "scale", label: "Scale (fallback)", kind: "vector" },
   ],
   evaluate: (inputs) => {
@@ -137,7 +137,7 @@ export const MATRIX_TRANSFORM_NODE: NodeDefinition = {
   defaultParams: { location: ZERO.clone(), rotation: ZERO.clone(), scale: ONE.clone() },
   paramFields: [
     { id: "location", label: "Location Offset", kind: "vector" },
-    { id: "rotation", label: "Rotation Offset (rad)", kind: "vector" },
+    { id: "rotation", label: "Rotation Offset (°)", kind: "vector", step: 1, degrees: true },
     { id: "scale", label: "Scale Multiplier", kind: "vector" },
   ],
   evaluate: (inputs) => {

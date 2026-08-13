@@ -6,6 +6,7 @@ import {
   roomCornerReferencePoints,
 } from "../calibration/roomCorner";
 import { NodeDefinition } from "../types";
+import { createNodeCache, disposeObject3D } from "../nodeCaches";
 
 const DEFAULT_SUBDIVISIONS = 4;
 const DEFAULT_COLOR = 0x22c55e;
@@ -21,7 +22,24 @@ interface CachedCorner {
   key: string;
 }
 
-const cornerCache = new Map<string, CachedCorner>();
+const cornerCache = createNodeCache<CachedCorner>((c) => disposeObject3D(c.lines));
+
+export function clearRoomCornerCache(nodeId?: string) {
+  if (nodeId) {
+    const cached = cornerCache.get(nodeId);
+    if (cached) {
+      cached.lines.geometry.dispose();
+      (cached.lines.material as THREE.Material).dispose();
+      cornerCache.delete(nodeId);
+    }
+  } else {
+    cornerCache.forEach((cached) => {
+      cached.lines.geometry.dispose();
+      (cached.lines.material as THREE.Material).dispose();
+    });
+    cornerCache.clear();
+  }
+}
 
 function getCornerLines(
   nodeId: string,

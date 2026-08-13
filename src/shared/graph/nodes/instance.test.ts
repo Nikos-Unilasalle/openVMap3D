@@ -2,9 +2,55 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { EvalContext } from "../types";
 import { ARRAY_NODE } from "./array";
-import { GET_INSTANCE_NODE, SET_INSTANCE_COLOR_NODE, SET_INSTANCE_TRANSFORM_NODE } from "./instance";
+import { GEOMETRY_TRANSFORM_NODE, GET_INSTANCE_NODE, SET_INSTANCE_COLOR_NODE, SET_INSTANCE_TRANSFORM_NODE } from "./instance";
+import { COMBINE_VECTOR_LISTS_NODE, SPLIT_VECTOR_LIST_NODE } from "./list";
 
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "inst-test" };
+
+describe("GEOMETRY TRANSFORM NODE", () => {
+  it("GEOMETRY_TRANSFORM_NODE transforms geometry with location, rotX, scale inputs", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const res = GEOMETRY_TRANSFORM_NODE.evaluate(
+      { geometry: box, posX: 5, posY: 10, rotY: 90, scaleZ: 2 },
+      {},
+      CTX
+    );
+
+    const group = res.geometry as THREE.Group;
+    expect(group).toBeInstanceOf(THREE.Group);
+    expect(group.children.length).toBe(1);
+
+    const wrapper = group.children[0] as THREE.Group;
+    const pos = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    const scale = new THREE.Vector3();
+    wrapper.matrix.decompose(pos, quat, scale);
+
+    expect(pos.x).toBe(5);
+    expect(pos.y).toBe(10);
+    expect(scale.z).toBe(2);
+  });
+
+  it("GEOMETRY_TRANSFORM_NODE applies Matrix4 transformation", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const matrix = new THREE.Matrix4().makeTranslation(3, 4, 5);
+
+    const res = GEOMETRY_TRANSFORM_NODE.evaluate(
+      { geometry: box, matrix },
+      {},
+      CTX
+    );
+
+    const group = res.geometry as THREE.Group;
+    const wrapper = group.children[0] as THREE.Group;
+    const pos = new THREE.Vector3();
+    wrapper.matrix.decompose(pos, new THREE.Quaternion(), new THREE.Vector3());
+
+    expect(pos.x).toBe(3);
+    expect(pos.y).toBe(4);
+    expect(pos.z).toBe(5);
+  });
+});
 
 describe("INSTANCE MANIPULATION NODES", () => {
   it("SET_INSTANCE_COLOR_NODE colors instances individually from a List", () => {
@@ -49,6 +95,32 @@ describe("INSTANCE MANIPULATION NODES", () => {
     expect(group.children.length).toBe(2);
   });
 
+  it("SET_INSTANCE_TRANSFORM_NODE applies default single scalar X, Y, Z transforms to all instances", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const arrayRes = ARRAY_NODE.evaluate({ geometry: box }, { count: 3, spacing: 2 }, CTX);
+
+    const transformedRes = SET_INSTANCE_TRANSFORM_NODE.evaluate(
+      { geometry: arrayRes.geometry },
+      { posX: 1.5, posY: 3.0, posZ: 4.5, scaleX: 2.0 },
+      CTX
+    );
+
+    const group = transformedRes.geometry as THREE.Group;
+    expect(group.children.length).toBe(3);
+
+    group.children.forEach((child) => {
+      const pos = new THREE.Vector3();
+      const quat = new THREE.Quaternion();
+      const scale = new THREE.Vector3();
+      (child as THREE.Group).matrix.decompose(pos, quat, scale);
+
+      expect(pos.x).toBeCloseTo(1.5);
+      expect(pos.y).toBeCloseTo(3.0);
+      expect(pos.z).toBeCloseTo(4.5);
+      expect(scale.x).toBeCloseTo(2.0);
+    });
+  });
+
   it("GET_INSTANCE_NODE extracts single instance by index", () => {
     const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
     const arrayRes = ARRAY_NODE.evaluate({ geometry: box }, { count: 5, spacing: 2 }, CTX);
@@ -87,5 +159,56 @@ describe("INSTANCE MANIPULATION NODES", () => {
     expect(light1).toBeInstanceOf(THREE.PointLight);
     expect(light1.color.g).toBe(1);
     expect(light1.color.r).toBe(0);
+  });
+
+  it("SET_INSTANCE_TRANSFORM_NODE accepts separated posX, posY, posZ, rotX, scaleY lists", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const arrayRes = ARRAY_NODE.evaluate({ geometry: box }, { count: 3, spacing: 2 }, CTX);
+
+    const posX = [10, 20, 30];
+    const posY = [1, 2, 3];
+    const scaleY = [0.5, 1.5, 2.5];
+
+    const transformedRes = SET_INSTANCE_TRANSFORM_NODE.evaluate(
+      { geometry: arrayRes.geometry, posX, posY, scaleY },
+      {},
+      CTX
+    );
+
+    const group = transformedRes.geometry as THREE.Group;
+    expect(group.children.length).toBe(3);
+
+    const wrapper0 = group.children[0] as THREE.Group;
+    const pos0 = new THREE.Vector3();
+    const quat0 = new THREE.Quaternion();
+    const scale0 = new THREE.Vector3();
+    wrapper0.matrix.decompose(pos0, quat0, scale0);
+
+    expect(pos0.x).toBe(10);
+    expect(pos0.y).toBe(1);
+    expect(scale0.y).toBe(0.5);
+  });
+});
+
+describe("COMBINE & SPLIT VECTOR LIST NODES", () => {
+  it("COMBINE_VECTOR_LISTS_NODE composes 3 number lists into a list of THREE.Vector3", () => {
+    const xList = [1, 2, 3];
+    const yList = [10, 20, 30];
+    const res = COMBINE_VECTOR_LISTS_NODE.evaluate({ xList, yList }, { zDefault: 5 }, CTX);
+    const vecList = res.vectorList as THREE.Vector3[];
+
+    expect(vecList.length).toBe(3);
+    expect(vecList[0]).toEqual(new THREE.Vector3(1, 10, 5));
+    expect(vecList[1]).toEqual(new THREE.Vector3(2, 20, 5));
+    expect(vecList[2]).toEqual(new THREE.Vector3(3, 30, 5));
+  });
+
+  it("SPLIT_VECTOR_LIST_NODE decomposes vector list into X, Y, Z lists", () => {
+    const vectorList = [new THREE.Vector3(1, 2, 3), new THREE.Vector3(4, 5, 6)];
+    const res = SPLIT_VECTOR_LIST_NODE.evaluate({ vectorList }, {}, CTX);
+
+    expect(res.xList).toEqual([1, 4]);
+    expect(res.yList).toEqual([2, 5]);
+    expect(res.zList).toEqual([3, 6]);
   });
 });

@@ -1,5 +1,6 @@
 import { NodeDefinition } from "../types";
 import { fromBoolean, SocketType, toBoolean } from "../sockets";
+import { createNodeCache } from "../nodeCaches";
 
 const COMPARE_OPS = ["equal", "not_equal", "greater", "greater_equal", "less", "less_equal"];
 
@@ -104,7 +105,7 @@ export const BOOLEAN_LOGIC_NODE: NodeDefinition = {
 };
 
 /** State map for Trigger node: node ID -> previous boolean state */
-const triggerStateCache = new Map<string, boolean>();
+const triggerStateCache = createNodeCache<boolean>();
 
 /** Trigger node — rising-edge detector. Outputs 1 on the exact step the input transitions from false to true. */
 export const TRIGGER_NODE: NodeDefinition = {
@@ -126,7 +127,7 @@ export const TRIGGER_NODE: NodeDefinition = {
 };
 
 /** State map for Toggle node: node ID -> { state: boolean, prevTrigger: boolean } */
-const toggleStateCache = new Map<string, { state: boolean; prevTrigger: boolean }>();
+const toggleStateCache = createNodeCache<{ state: boolean; prevTrigger: boolean }>();
 
 /** Toggle node — flip-flop that toggles output state (0/1) on rising edge of trigger input. */
 export const TOGGLE_NODE: NodeDefinition = {

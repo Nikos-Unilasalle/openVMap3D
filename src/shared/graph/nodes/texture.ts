@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
+import { createNodeCache } from "../nodeCaches";
 
 interface TextureNodeState {
   texture?: THREE.Texture;
@@ -8,7 +9,7 @@ interface TextureNodeState {
   lastPath?: string;
 }
 
-const textureCache = new Map<string, TextureNodeState>();
+const textureCache = createNodeCache<TextureNodeState>((s) => s.texture?.dispose());
 
 function getState(nodeId: string): TextureNodeState {
   let state = textureCache.get(nodeId);

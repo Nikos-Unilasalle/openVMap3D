@@ -1,0 +1,49 @@
+import * as THREE from "three";
+import { describe, expect, test } from "vitest";
+import { activeParticleCount, buildEmitterConfig, textureSizeFor } from "./particleRuntime";
+
+describe("textureSizeFor", () => {
+  test("returns the smallest square covering the requested capacity", () => {
+    expect(textureSizeFor(4096)).toBe(64);
+    expect(textureSizeFor(100)).toBe(10);
+  });
+
+  test("rounds up when capacity isn't a perfect square", () => {
+    expect(textureSizeFor(101)).toBe(11);
+  });
+
+  test("never returns less than 1", () => {
+    expect(textureSizeFor(0)).toBe(1);
+    expect(textureSizeFor(-5)).toBe(1);
+  });
+});
+
+describe("buildEmitterConfig", () => {
+  test("bundles position, velocity and spawn rate as-is", () => {
+    const position = new THREE.Vector3(1, 2, 3);
+    const velocity = new THREE.Vector3(0, 5, 0);
+
+    const config = buildEmitterConfig(position, velocity, 200);
+
+    expect(config).toEqual({ position, velocity, spawnRate: 200 });
+  });
+});
+
+describe("activeParticleCount", () => {
+  test("follows the steady-state population = rate × lifetime relation", () => {
+    expect(activeParticleCount(200, 3, 10_000)).toBe(600);
+  });
+
+  test("caps at the texture's capacity", () => {
+    expect(activeParticleCount(1000, 10, 500)).toBe(500);
+  });
+
+  test("is zero for a non-positive lifetime", () => {
+    expect(activeParticleCount(200, 0, 10_000)).toBe(0);
+    expect(activeParticleCount(200, -1, 10_000)).toBe(0);
+  });
+
+  test("is never negative", () => {
+    expect(activeParticleCount(-50, 3, 10_000)).toBe(0);
+  });
+});

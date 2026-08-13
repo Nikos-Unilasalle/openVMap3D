@@ -20,6 +20,7 @@ export type SocketType =
   | "texture"
   | "list"
   | "text"
+  | "postprocess"
   | "any";
 
 /** The runtime value a socket of each type actually carries during evaluation. */
@@ -33,6 +34,7 @@ export interface SocketValueMap {
   texture: THREE.Texture;
   list: unknown[];
   text: string;
+  postprocess: unknown[];
   any: unknown;
 }
 
@@ -58,6 +60,7 @@ export const SOCKET_COLOR: Record<SocketType, string> = {
   texture: "#2dd4bf",
   list: "#94a3b8",
   text: "#f97316",
+  postprocess: "#c084fc",
   any: "#e2e8f0",
 };
 

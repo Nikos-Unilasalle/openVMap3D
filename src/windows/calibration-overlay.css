@@ -90,3 +90,21 @@
   border: 1px solid rgba(244, 63, 94, 0.5);
   color: #fb7185;
 }
+
+/* The status strip is click-through so it never blocks a handle drag; the
+   one control inside it has to opt back in to receiving clicks. */
+.calibration-overlay-fix {
+  pointer-events: auto;
+  margin-left: 8px;
+  padding: 2px 8px;
+  font: inherit;
+  color: #0d1117;
+  background: #fb7185;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.calibration-overlay-fix:hover {
+  background: #fda4af;
+}

@@ -85,7 +85,7 @@ export const CAMERA_NODE: NodeDefinition = {
   paramFields: [
     { id: "mode", label: "Mode", kind: "select", options: ["manual", "calibrated"] },
     { id: "location", label: "Location", kind: "vector" },
-    { id: "rotation", label: "Rotation (rad)", kind: "vector" },
+    { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true },
     { id: "fov", label: "FOV (deg)", kind: "number" },
   ],
   evaluate: (inputs, params) => {

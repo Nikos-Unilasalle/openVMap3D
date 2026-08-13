@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
+import { createNodeCache } from "../nodeCaches";
 
-const lightCache = new Map<string, THREE.Light>();
+const lightCache = createNodeCache<THREE.Light>((l) => l.dispose?.());
 
 function asColor(v: unknown, fallback: THREE.Color): THREE.Color {
   if (v instanceof THREE.Color) return v;

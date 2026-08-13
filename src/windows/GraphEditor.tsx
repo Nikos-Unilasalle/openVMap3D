@@ -15,12 +15,33 @@ import {
   useNodesState,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import * as THREE from "three";
+import { DEFAULT_PICKS } from "../shared/graph/calibration/picks";
+import { disposeNodeCaches } from "../shared/graph/nodeCaches";
 import { SOCKET_COLOR } from "../shared/graph/sockets";
 import { Connection, Graph, NodeInstance, NodeRegistry } from "../shared/graph/types";
 import { GraphNode, GraphNodeData } from "./GraphNode";
 import { NodePalette } from "./NodePalette";
 import { NodeSearchModal } from "./NodeSearchModal";
 import "./graph-editor.css";
+
+function cloneDefaultParams(defaultParams: Record<string, unknown>): Record<string, unknown> {
+  const cloned: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(defaultParams)) {
+    if (value instanceof THREE.Color) {
+      cloned[key] = value.clone();
+    } else if (value instanceof THREE.Vector3) {
+      cloned[key] = value.clone();
+    } else if (value instanceof THREE.Matrix4) {
+      cloned[key] = value.clone();
+    } else if (typeof value === "object" && value !== null) {
+      cloned[key] = JSON.parse(JSON.stringify(value));
+    } else {
+      cloned[key] = value;
+    }
+  }
+  return cloned;
+}
 
 const NODE_TYPES = { graphNode: GraphNode };
 const EDGE_STROKE_WIDTH = 3;
@@ -121,17 +142,22 @@ function refreshDynamicSockets(
 
 /** Positions come from the live xyflow nodes; everything else (type, params) is untouched — this slice never adds/removes/reparams a node, only moves it and rewires it. */
 function toGraph(baseNodes: NodeInstance[], flowNodes: Node<GraphNodeData>[], flowEdges: Edge[]): Graph {
-  const nodes = baseNodes.map((n) => {
-    const flowNode = flowNodes.find((f) => f.id === n.id);
-    return flowNode ? { ...n, position: flowNode.position } : n;
-  });
-  const connections: Connection[] = flowEdges.map((e) => ({
-    id: e.id,
-    fromNode: e.source,
-    fromSocket: e.sourceHandle ?? "",
-    toNode: e.target,
-    toSocket: e.targetHandle ?? "",
-  }));
+  const flowNodeIds = new Set(flowNodes.map((f) => f.id));
+  const nodes = baseNodes
+    .filter((n) => flowNodeIds.has(n.id))
+    .map((n) => {
+      const flowNode = flowNodes.find((f) => f.id === n.id);
+      return flowNode ? { ...n, position: flowNode.position } : n;
+    });
+  const connections: Connection[] = flowEdges
+    .filter((e) => flowNodeIds.has(e.source) && flowNodeIds.has(e.target))
+    .map((e) => ({
+      id: e.id,
+      fromNode: e.source,
+      fromSocket: e.sourceHandle ?? "",
+      toNode: e.target,
+      toSocket: e.targetHandle ?? "",
+    }));
   return { nodes, connections };
 }
 
@@ -168,52 +194,44 @@ export function GraphEditor({ graph, registry, onGraphChange, onSelectNode, sele
   const [edges, setEdges] = useEdgesState(useMemo(() => toFlowEdges(graph, initialNodes), [graph, initialNodes]));
 
   useEffect(() => {
-    setNodes((prevNodes) =>
-      prevNodes.map((fn) => {
+    const rawNodes = toFlowNodes(graph, registry);
+    const flowEdges = toFlowEdges(graph, rawNodes);
+    const nextNodes = refreshDynamicSockets(rawNodes, flowEdges, graph.nodes, registry);
+
+    setNodes((prevNodes) => {
+      const prevIds = prevNodes.map((n) => n.id).join(",");
+      const nextIds = nextNodes.map((n) => n.id).join(",");
+      if (prevIds !== nextIds) {
+        return nextNodes;
+      }
+      return prevNodes.map((fn) => {
         const graphNode = graph.nodes.find((gn) => gn.id === fn.id);
         if (!graphNode) return fn;
-        if (fn.data.params !== graphNode.params) {
-          return {
-            ...fn,
-            data: {
-              ...fn.data,
-              params: graphNode.params,
-            },
-          };
-        }
-        return fn;
-      })
-    );
-  }, [graph.nodes, setNodes]);
+        return {
+          ...fn,
+          position: graphNode.position,
+          data: {
+            ...fn.data,
+            params: graphNode.params,
+          },
+        };
+      });
+    });
 
-  // useEdgesState only seeds its state from its *initial* argument — once
-  // mounted, this component's own `edges` never re-derives from the
-  // `graph.connections` prop again on its own, only from setEdges calls
-  // this component itself makes (onConnect, onEdgeContextMenu). That's
-  // fine as long as every edit route runs through this component, but it's
-  // a silent trap the moment one doesn't (a project reload used to remount
-  // via `key`, sidestepping it — this effect is the general-case fix
-  // instead of relying on every future caller remembering that trick).
-  // Content-compared rather than replaced outright: our own commit() calls
-  // round-trip straight back through this same `graph` prop, and swapping
-  // in a referentially-new-but-identical array every time would fire this
-  // effect in a loop.
-  useEffect(() => {
     setEdges((prevEdges) => {
-      const nextEdges = toFlowEdges(graph, nodes);
       const unchanged =
-        prevEdges.length === nextEdges.length &&
+        prevEdges.length === flowEdges.length &&
         prevEdges.every(
           (e, i) =>
-            e.id === nextEdges[i].id &&
-            e.source === nextEdges[i].source &&
-            e.sourceHandle === nextEdges[i].sourceHandle &&
-            e.target === nextEdges[i].target &&
-            e.targetHandle === nextEdges[i].targetHandle,
+            e.id === flowEdges[i].id &&
+            e.source === flowEdges[i].source &&
+            e.sourceHandle === flowEdges[i].sourceHandle &&
+            e.target === flowEdges[i].target &&
+            e.targetHandle === flowEdges[i].targetHandle,
         );
-      return unchanged ? prevEdges : nextEdges;
+      return unchanged ? prevEdges : flowEdges;
     });
-  }, [graph.connections, nodes, setEdges]);
+  }, [graph, registry, setNodes, setEdges]);
 
   const commit = useCallback(
     (nextNodes: Node<GraphNodeData>[], nextEdges: Edge[]) => {
@@ -233,6 +251,64 @@ export function GraphEditor({ graph, registry, onGraphChange, onSelectNode, sele
       commit(next, edges);
     },
     [commit, edges, nodes, setNodes],
+  );
+
+  const onEdgesChange = useCallback(
+    (changes: any) => {
+      const nextEdges = applyEdgeChanges(changes, edges);
+      const nextNodes = refreshDynamicSockets(nodes, nextEdges, graph.nodes, registry);
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      commit(nextNodes, nextEdges);
+    },
+    [commit, edges, graph.nodes, nodes, registry, setEdges, setNodes],
+  );
+
+  const onNodesDelete = useCallback(
+    (deletedNodes: Node<GraphNodeData>[]) => {
+      const deletedIds = new Set(deletedNodes.map((n) => n.id));
+
+      // Node ids are stable — saved into .ovm files and restored identically
+      // by undo — so a node whose per-node caches were never cleared would
+      // come back holding its *previous* mesh, texture or remembered state.
+      // Deleting a node and adding it again looked like it remembered the old
+      // values because it did. See nodeCaches.ts.
+      disposeNodeCaches(deletedIds);
+
+      const nextNodes = nodes.filter((n) => !deletedIds.has(n.id));
+      const nextEdges = edges.filter((e) => !deletedIds.has(e.source) && !deletedIds.has(e.target));
+
+      // Reset calibration picks on any camera whose room corner input was disconnected/deleted
+      const updatedGraphNodes = graph.nodes
+        .filter((n) => !deletedIds.has(n.id))
+        .map((n) => {
+          if (n.type === "camera") {
+            const hasRefPoints = nextEdges.some((e) => e.target === n.id && e.targetHandle === "refPoints");
+            if (!hasRefPoints) {
+              return { ...n, params: { ...n.params, calibrationPicks: { ...DEFAULT_PICKS } } };
+            }
+          }
+          return n;
+        });
+
+      const refreshedNodes = refreshDynamicSockets(nextNodes, nextEdges, updatedGraphNodes, registry);
+      setNodes(refreshedNodes);
+      setEdges(nextEdges);
+      onGraphChange?.(toGraph(updatedGraphNodes, refreshedNodes, nextEdges));
+    },
+    [edges, graph.nodes, nodes, onGraphChange, registry, setEdges, setNodes],
+  );
+
+  const onEdgesDelete = useCallback(
+    (deletedEdges: Edge[]) => {
+      const deletedIds = new Set(deletedEdges.map((e) => e.id));
+      const nextEdges = edges.filter((e) => !deletedIds.has(e.id));
+      const nextNodes = refreshDynamicSockets(nodes, nextEdges, graph.nodes, registry);
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      commit(nextNodes, nextEdges);
+    },
+    [commit, edges, graph.nodes, nodes, registry, setEdges, setNodes],
   );
 
   const isValidConnection = useCallback(
@@ -300,7 +376,12 @@ export function GraphEditor({ graph, registry, onGraphChange, onSelectNode, sele
       if (!def) return;
       const id = crypto.randomUUID();
       const position = { x: 60 + nodes.length * 24, y: 60 + nodes.length * 24 };
-      const instance: NodeInstance = { id, type, params: {}, position };
+      const instance: NodeInstance = {
+        id,
+        type,
+        params: cloneDefaultParams(def.defaultParams || {}),
+        position,
+      };
       const flowNode: Node<GraphNodeData> = {
         id,
         type: "graphNode",
@@ -483,6 +564,9 @@ export function GraphEditor({ graph, registry, onGraphChange, onSelectNode, sele
           edges={edges}
           nodeTypes={NODE_TYPES}
           onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodesDelete={onNodesDelete}
+          onEdgesDelete={onEdgesDelete}
           onConnect={onConnect}
           isValidConnection={isValidConnection}
           onEdgeContextMenu={onEdgeContextMenu}

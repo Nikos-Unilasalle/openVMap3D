@@ -1,5 +1,6 @@
 import { NodeDefinition } from "../types";
 import { toBoolean } from "../sockets";
+import { createNodeCache } from "../nodeCaches";
 
 const WAVEFORMS = ["sine", "saw", "square", "triangle"];
 
@@ -68,7 +69,7 @@ interface EnvelopeState {
   levelAtRelease: number;
 }
 
-const envelopeCache = new Map<string, EnvelopeState>();
+const envelopeCache = createNodeCache<EnvelopeState>();
 
 /**
  * Envelope node — Attack / Release envelope generator.

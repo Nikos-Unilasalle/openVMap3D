@@ -1,9 +1,10 @@
 import { fromBoolean } from "../sockets";
 import { NodeDefinition } from "../types";
+import { createNodeCache } from "../nodeCaches";
 
 // Global set tracking currently pressed keys
 const pressedKeys = new Set<string>();
-const prevKeyStateCache = new Map<string, boolean>();
+const prevKeyStateCache = createNodeCache<boolean>();
 
 if (typeof window !== "undefined") {
   window.addEventListener("keydown", (e) => {

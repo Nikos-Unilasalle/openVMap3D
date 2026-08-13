@@ -5,17 +5,42 @@ import { TransformControls } from "three/examples/jsm/controls/TransformControls
 import { ClockState, createClock, tickClock } from "../graph/clock";
 import { EvalResult, evaluateGraph } from "../graph/evaluate";
 import { CAMERA_NODE } from "../graph/nodes/camera";
+import { resetAllParticleSimulations } from "../graph/particleRuntime";
 import { GizmoTarget, resolveGizmoTarget } from "../graph/transformLookup";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import { VignetteShader } from "three/examples/jsm/shaders/VignetteShader.js";
+import { RGBShiftShader } from "three/examples/jsm/shaders/RGBShiftShader.js";
+import { FilmPass } from "three/examples/jsm/postprocessing/FilmPass.js";
+import { GlitchPass } from "three/examples/jsm/postprocessing/GlitchPass.js";
+import { OutlinePass } from "three/examples/jsm/postprocessing/OutlinePass.js";
+import { BokehPass } from "three/examples/jsm/postprocessing/BokehPass.js";
+import { FXAAPass } from "three/examples/jsm/postprocessing/FXAAPass.js";
+import { createMotionBlur } from "./motionBlur";
+import { ColorCorrectionShader } from "three/examples/jsm/shaders/ColorCorrectionShader.js";
+import { KaleidoShader } from "three/examples/jsm/shaders/KaleidoShader.js";
+import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
+import { HorizontalBlurShader } from "three/examples/jsm/shaders/HorizontalBlurShader.js";
+import { VerticalBlurShader } from "three/examples/jsm/shaders/VerticalBlurShader.js";
+import { EnvironmentData } from "../graph/nodes/environment";
+import { PostProcessConfig } from "../graph/nodes/postprocessing";
 import { Graph, NodeRegistry } from "../graph/types";
 import type { PreviewCameraPose } from "../ipc";
 import "./viewport.css";
 
 export type TransformGizmoMode = "translate" | "rotate" | "scale";
 
+/**
+ * Partial on purpose: a gizmo drag writes only the channel it is actually
+ * dragging, and only when that channel isn't driven by a wire — see the
+ * `objectChange` handler for why writing all three corrupted hand-set values.
+ */
 export interface TransformPatch {
-  location: THREE.Vector3;
-  rotation: THREE.Vector3;
-  scale: THREE.Vector3;
+  location?: THREE.Vector3;
+  rotation?: THREE.Vector3;
+  scale?: THREE.Vector3;
 }
 
 interface ViewportProps {
@@ -36,6 +61,8 @@ interface ViewportProps {
   onSelectNode?: (nodeId: string | null) => void;
   /** Fired continuously while dragging the gizmo, once the selected object's `matrix` input traces back to a plain Transform node (see transformLookup.ts) — nothing fires for an object with no such upstream node. */
   onTransformChange?: (transformNodeId: string, patch: TransformPatch) => void;
+  /** Fired once when a gizmo drag begins — the parent records one undo step for the whole drag (see App.tsx). */
+  onTransformStart?: () => void;
   /** Editor-only: fired on every orbit-camera change (and once on mount), so the output window can mirror the current view when there's no Camera node to lock onto instead — see the `previewCameraPose` prop below. */
   onCameraChange?: (pose: PreviewCameraPose) => void;
   /** Output-only: the editor's last-broadcast orbit pose. Applied only when there's no Camera node driving the camera (see the calibrationMatrix branch in tick()) — a Camera node's calibrated lock always wins. */
@@ -152,18 +179,114 @@ function buildMainSceneGridAndAxes(): THREE.Group {
   return group;
 }
 
+/**
+ * Fits `texture` (a flat background image) into a `viewportW`×`viewportH`
+ * canvas per `fit`, then applies the user's extra scale/offset/rotation on
+ * top — same "texture.offset/repeat/rotation drive the sample" mechanism
+ * texture.ts already uses for uvScale/uvOffset, just computed here because
+ * only Viewport.tsx knows the actual canvas size (environment.ts's evaluate
+ * has no canvas to measure against).
+ *
+ * "contain" has no true letterbox (a flat background texture always fills
+ * the screen quad) — the padding reads as stretched edge pixels via
+ * ClampToEdgeWrapping instead of a solid color bar. Acceptable trade for a
+ * VJ tool; a real letterbox would need a dedicated background shader pass.
+ */
+function applyBackgroundImageTransform(texture: THREE.Texture, env: EnvironmentData, viewportW: number, viewportH: number): void {
+  const img = texture.image as { width?: number; height?: number } | undefined;
+  let repeatX = 1;
+  let repeatY = 1;
+
+  if (img?.width && img?.height && viewportW > 0 && viewportH > 0) {
+    const canvasAspect = viewportW / viewportH;
+    const imageAspect = img.width / img.height;
+    if (env.backgroundFit === "cover") {
+      if (canvasAspect > imageAspect) repeatY = imageAspect / canvasAspect;
+      else repeatX = canvasAspect / imageAspect;
+    } else if (env.backgroundFit === "contain") {
+      if (canvasAspect > imageAspect) repeatX = canvasAspect / imageAspect;
+      else repeatY = imageAspect / canvasAspect;
+    }
+    // "stretch": repeatX/repeatY stay 1 — the image fills the quad as-is, distortion and all.
+  }
+
+  const scale = env.backgroundScale;
+  repeatX *= scale.x || 1;
+  repeatY *= scale.y || 1;
+
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.center.set(0.5, 0.5);
+  texture.rotation = env.backgroundRotation;
+  texture.repeat.set(repeatX, repeatY);
+  texture.offset.set((1 - repeatX) / 2 + env.backgroundOffset.x, (1 - repeatY) / 2 + env.backgroundOffset.y);
+  texture.needsUpdate = true;
+}
+
+const CustomPixelShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    resolution: { value: new THREE.Vector2(1, 1) },
+    pixelSize: { value: 6.0 },
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform vec2 resolution;
+    uniform float pixelSize;
+    varying vec2 vUv;
+    void main() {
+      vec2 dxy = pixelSize / resolution;
+      vec2 coord = dxy * floor(vUv / dxy);
+      gl_FragColor = texture2D(tDiffuse, coord);
+    }
+  `,
+};
+
 export function Viewport({
   graph,
   registry,
   renderNodeId,
-  epochMs,
+  epochMs = 0,
   outputMode = false,
-  selectedNodeId = null,
   onSelectNode,
+  selectedNodeId = null,
   onTransformChange,
+  onTransformStart,
   onCameraChange,
   previewCameraPose = null,
 }: ViewportProps) {
+  const [showUiOverlay, setShowUiOverlay] = useState(true);
+  const showUiOverlayRef = useRef(showUiOverlay);
+  showUiOverlayRef.current = showUiOverlay;
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const activeEl = document.activeElement;
+      const isInput =
+        activeEl &&
+        (activeEl.tagName === "INPUT" ||
+          activeEl.tagName === "TEXTAREA" ||
+          activeEl.tagName === "SELECT" ||
+          (activeEl as HTMLElement).isContentEditable);
+      if (isInput) return;
+
+      if (e.key === "Tab" || e.code === "Tab") {
+        e.preventDefault();
+        setShowUiOverlay((prev) => !prev);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   const hostRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef(graph);
   graphRef.current = graph;
@@ -172,12 +295,15 @@ export function Viewport({
   const renderNodeIdRef = useRef(renderNodeId);
   renderNodeIdRef.current = renderNodeId;
   const resetCameraRef = useRef<() => void>(() => {});
+  const resetSimulationRef = useRef<() => void>(() => {});
   const selectedNodeIdRef = useRef(selectedNodeId);
   selectedNodeIdRef.current = selectedNodeId;
   const onSelectNodeRef = useRef(onSelectNode);
   onSelectNodeRef.current = onSelectNode;
   const onTransformChangeRef = useRef(onTransformChange);
   onTransformChangeRef.current = onTransformChange;
+  const onTransformStartRef = useRef(onTransformStart);
+  onTransformStartRef.current = onTransformStart;
   const onCameraChangeRef = useRef(onCameraChange);
   onCameraChangeRef.current = onCameraChange;
   const previewCameraPoseRef = useRef(previewCameraPose);
@@ -198,20 +324,28 @@ export function Viewport({
     host.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0d1117);
+    const bgScene = new THREE.Scene();
+    bgScene.background = new THREE.Color(0x0d1117);
     scene.add(new THREE.AmbientLight(0xffffff, 0.4));
     const sun = new THREE.DirectionalLight(0xffffff, 1.2);
     sun.position.set(3, 5, 4);
     scene.add(sun);
 
+    // Editor UI Overlay Scene — holds grid, transform controls, light helpers outside of main postprocess pipeline
+    const editorUiScene = new THREE.Scene();
+
     // Grid & Origin Axes Helper — editor-only, never baked into the projected output
     if (!outputMode) {
-      scene.add(buildMainSceneGridAndAxes());
+      editorUiScene.add(buildMainSceneGridAndAxes());
     }
 
     const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
     camera.position.set(3, 3, 5);
     camera.lookAt(0, 0, 0);
+
+    const composer = new EffectComposer(renderer);
+    const renderPass = new RenderPass(scene, camera);
+    composer.addPass(renderPass);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -262,7 +396,7 @@ export function Viewport({
     let latestResults: EvalResult | null = null;
 
     if (transformControls) {
-      scene.add(transformControls.getHelper());
+      editorUiScene.add(transformControls.getHelper());
 
       // The textbook three.js idiom: disable orbit for the whole gesture the
       // instant a gizmo handle is grabbed, synchronously within the same
@@ -272,6 +406,7 @@ export function Viewport({
       // for the rest of the drag, since this only fires on state *changes*.
       transformControls.addEventListener("dragging-changed", (event) => {
         controls.enabled = !event.value;
+        if (event.value) onTransformStartRef.current?.();
         if (!event.value) suppressNextClick = true;
       });
 
@@ -290,16 +425,43 @@ export function Viewport({
 
         if (!attachedGizmoTarget || !onTransformChangeRef.current) return;
 
+        // Only the channel the gizmo is actually dragging gets written, and
+        // only if nothing is wired into that input. Writing all three every
+        // time was the cause of values changing on their own the moment a
+        // handle was touched:
+        //
+        //  - a rotation round-trips through a quaternion, and Euler triples
+        //    are not unique, so a hand-typed (0, 0, 180°) could come back as
+        //    an equivalent but different-looking triple after a *translate*
+        //    drag that never meant to touch rotation at all;
+        //  - `decompose` cannot recover a negative scale (it normalises the
+        //    sign away), so a mirrored object quietly lost its flip;
+        //  - a channel fed by a wire ignores its param — the param is only
+        //    the unconnected fallback — so writing it looked like the drag
+        //    did nothing while silently overwriting the stored fallback with
+        //    whatever the animation happened to be showing that frame.
+        const patch: TransformPatch = {};
+        const mode = transformModeRef.current;
+        const wired = new Set(
+          graphRef.current.connections
+            .filter((c) => c.toNode === attachedGizmoTarget!.transformNodeId)
+            .map((c) => c.toSocket),
+        );
+
         if (attachedGizmoTarget.kind === "absolute") {
           // A plain Transform node's location/rotation/scale directly
           // compose the object's final matrix — the gizmo's own dragged
           // world pose IS what belongs in its params.
-          const euler = new THREE.Euler().setFromQuaternion(object.quaternion);
-          onTransformChangeRef.current(attachedGizmoTarget.transformNodeId, {
-            location: object.position.clone(),
-            rotation: new THREE.Vector3(euler.x, euler.y, euler.z),
-            scale: object.scale.clone(),
-          });
+          if (mode === "translate" && !wired.has("location")) patch.location = object.position.clone();
+          if (mode === "rotate" && !wired.has("rotation")) {
+            const euler = new THREE.Euler().setFromQuaternion(object.quaternion);
+            patch.rotation = new THREE.Vector3(euler.x, euler.y, euler.z);
+          }
+          if (mode === "scale" && !wired.has("scale")) patch.scale = object.scale.clone();
+
+          if (Object.keys(patch).length > 0) {
+            onTransformChangeRef.current(attachedGizmoTarget.transformNodeId, patch);
+          }
           return;
         }
 
@@ -321,12 +483,17 @@ export function Viewport({
         const quaternion = new THREE.Quaternion();
         const scale = new THREE.Vector3();
         deltaMatrix.decompose(location, quaternion, scale);
-        const euler = new THREE.Euler().setFromQuaternion(quaternion);
-        onTransformChangeRef.current(attachedGizmoTarget.transformNodeId, {
-          location,
-          rotation: new THREE.Vector3(euler.x, euler.y, euler.z),
-          scale,
-        });
+
+        if (mode === "translate" && !wired.has("location")) patch.location = location;
+        if (mode === "rotate" && !wired.has("rotation")) {
+          const euler = new THREE.Euler().setFromQuaternion(quaternion);
+          patch.rotation = new THREE.Vector3(euler.x, euler.y, euler.z);
+        }
+        if (mode === "scale" && !wired.has("scale")) patch.scale = scale;
+
+        if (Object.keys(patch).length > 0) {
+          onTransformChangeRef.current(attachedGizmoTarget.transformNodeId, patch);
+        }
       });
     }
 
@@ -368,10 +535,14 @@ export function Viewport({
       renderer.domElement.addEventListener("pointerup", onCanvasPointerUp);
     }
 
+    const motionBlurEffect = createMotionBlur(host.clientWidth || 1, host.clientHeight || 1);
+
     function resize() {
       const { clientWidth, clientHeight } = host;
       if (clientWidth === 0 || clientHeight === 0) return;
       renderer.setSize(clientWidth, clientHeight);
+      composer.setSize(clientWidth, clientHeight);
+      motionBlurEffect.setSize(clientWidth, clientHeight);
       camera.aspect = clientWidth / clientHeight;
       camera.updateProjectionMatrix();
     }
@@ -383,8 +554,95 @@ export function Viewport({
     let currentObject: THREE.Object3D | null = null;
     const activeLights = new Map<string, THREE.Light>();
     const activeLightHelpers = new Map<string, THREE.Object3D>();
+    const passCache = new Map<string, { type: string; pass: any }>();
+
+    function disposePass(entry: { type: string; pass: any }) {
+      try {
+        if (typeof entry.pass.dispose === "function") {
+          entry.pass.dispose();
+        } else if (entry.pass.material && typeof entry.pass.material.dispose === "function") {
+          entry.pass.material.dispose();
+        }
+      } catch {
+        // Safe disposal fallback
+      }
+    }
+
+    // Bakes a blurred stand-in for a flat background image. three.js's own
+    // scene.backgroundBlurriness only kicks in for a CubeTexture or an
+    // EquirectangularReflectionMapping texture (gated inside
+    // WebGLBackground.js) — a plain flat Texture never gets that PMREM
+    // treatment, so "Bg Blur" silently did nothing for a fixed background
+    // image. This reproduces the same downsample-then-blur trick
+    // UnrealBloomPass already uses elsewhere in this file: render into a
+    // target far smaller than the viewport (the smaller the target, the
+    // stronger a fixed 9-tap kernel reads once it's stretched back up to
+    // fill the screen), ping-pong a couple of horizontal/vertical passes,
+    // and hand back that small blurred target's texture as the background.
+    // Cached and only re-baked when the source image or blur amount
+    // actually changes — this is a handful of tiny offscreen draws, not a
+    // per-frame cost. The param's useful range turned out to be [0, 0.01],
+    // not [0, 1] — see the ×100 rescale inside blurredBackgroundImage.
+    const blurQuad = new FullScreenQuad(new THREE.ShaderMaterial(HorizontalBlurShader));
+    const hBlurMaterial = blurQuad.material as THREE.ShaderMaterial;
+    const vBlurMaterial = new THREE.ShaderMaterial(VerticalBlurShader);
+    let blurTargetA: THREE.WebGLRenderTarget | null = null;
+    let blurTargetB: THREE.WebGLRenderTarget | null = null;
+    let bakedBlur: { source: THREE.Texture; strength: number; texture: THREE.Texture } | null = null;
+
+    function blurredBackgroundImage(source: THREE.Texture, blurriness: number): THREE.Texture {
+      if (blurriness <= 0) return source;
+      // The full-strength blur (what used to sit at blurriness=1) was already
+      // maxed out well before the slider got anywhere near there — ×100 so the
+      // whole useful range lives in [0, 0.01], matching what actually reads as
+      // "just barely too strong" through "as blurry as anyone wants" in practice.
+      const strength = Math.min(1, blurriness * 100);
+      if (bakedBlur && bakedBlur.source === source && bakedBlur.strength === strength) return bakedBlur.texture;
+
+      // Smaller target = cheaper AND blurrier — same lever bloom already pulls.
+      const size = Math.max(8, Math.round(256 * (1 - strength) + 8));
+      if (!blurTargetA || blurTargetA.width !== size) {
+        blurTargetA?.dispose();
+        blurTargetB?.dispose();
+        blurTargetA = new THREE.WebGLRenderTarget(size, size, { generateMipmaps: false });
+        blurTargetB = new THREE.WebGLRenderTarget(size, size, { generateMipmaps: false });
+      }
+
+      const iterations = 1 + Math.round(strength * 3);
+      let readTexture = source;
+      for (let i = 0; i < iterations; i++) {
+        hBlurMaterial.uniforms.tDiffuse.value = readTexture;
+        hBlurMaterial.uniforms.h.value = 1 / size;
+        renderer.setRenderTarget(blurTargetA);
+        blurQuad.material = hBlurMaterial;
+        blurQuad.render(renderer);
+
+        vBlurMaterial.uniforms.tDiffuse.value = blurTargetA!.texture;
+        vBlurMaterial.uniforms.v.value = 1 / size;
+        renderer.setRenderTarget(blurTargetB);
+        blurQuad.material = vBlurMaterial;
+        blurQuad.render(renderer);
+
+        readTexture = blurTargetB!.texture;
+      }
+      renderer.setRenderTarget(null);
+
+      bakedBlur = { source, strength, texture: readTexture };
+      return readTexture;
+    }
+
     let clock: ClockState = createClock(epochMs ?? Date.now());
     let frameId = 0;
+
+    // Restarts the deterministic clock at "now" and drops every cached GPU
+    // particle simulation (see particleRuntime.ts) — the next tick()
+    // rebuilds everything fresh from each node's *current* params, same as
+    // a first load. Only rewinds time and runtime state, not graph edits —
+    // matches "reset the animation," not "revert my changes."
+    resetSimulationRef.current = () => {
+      clock = createClock(Date.now());
+      resetAllParticleSimulations();
+    };
 
     // A copied-in projection matrix stays copied in until something rebuilds
     // it — switching the Camera node back to manual, or deleting it, would
@@ -413,6 +671,7 @@ export function Viewport({
           step: clock.step,
           nodeId: "",
           liveEditNodeId,
+          renderer,
         });
       } catch (err) {
         console.error("graph evaluation failed", err);
@@ -460,7 +719,7 @@ export function Viewport({
               helper.traverse((c) => {
                 c.userData.nodeId = nodeId;
               });
-              scene.add(helper);
+              editorUiScene.add(helper);
               activeLightHelpers.set(uuid, helper);
             }
           }
@@ -486,7 +745,7 @@ export function Viewport({
           activeLights.delete(uuid);
           const helper = activeLightHelpers.get(uuid);
           if (helper) {
-            scene.remove(helper);
+            editorUiScene.remove(helper);
             activeLightHelpers.delete(uuid);
           }
         }
@@ -500,7 +759,7 @@ export function Viewport({
       // node's presence or mode, since it's for building/inspecting the
       // scene, not for judging alignment — that judgment only means
       // anything against the actual projected output (see OutputWindow).
-      const cameraInstance = graphRef.current.nodes.find((n) => n.type === CAMERA_NODE.type);
+      const cameraInstance = graphRef.current.nodes.find((n: { type: string; id: string }) => n.type === CAMERA_NODE.type);
       const cameraResult = cameraInstance ? results.get(cameraInstance.id) : undefined;
       const calibrationMatrix =
         outputMode && cameraResult?.matrix instanceof THREE.Matrix4 ? cameraResult.matrix : null;
@@ -596,6 +855,25 @@ export function Viewport({
           }
           attachedGizmoTarget = gizmoTarget;
           transformControls.setMode(transformModeRef.current);
+
+          // object.ts drives these meshes by `matrix.copy(...)` with
+          // matrixAutoUpdate off, which never touches position/quaternion/
+          // scale — they sit at their defaults (origin, identity, 1) no
+          // matter where the graph actually puts the object. TransformControls
+          // reads exactly those on pointerdown (`_positionStart.copy(
+          // object.position)`) and then sets `position = offset +
+          // _positionStart`, so a drag started from the origin instead of the
+          // object's real pose: the mesh snapped to its untransformed self
+          // for the duration of the drag, then jumped back when the graph
+          // reclaimed the matrix on release.
+          //
+          // Refreshed every frame rather than once at attach, so an object
+          // being animated by the graph is still handed the pose it actually
+          // has the moment a drag begins. This block only runs while the
+          // gizmo is *not* dragging, so it can never fight the drag itself.
+          if (!targetObject.matrixAutoUpdate) {
+            targetObject.matrix.decompose(targetObject.position, targetObject.quaternion, targetObject.scale);
+          }
         } else if (attachedObjectNodeId !== null) {
           transformControls.detach();
           attachedObjectNodeId = null;
@@ -603,16 +881,286 @@ export function Viewport({
         }
       }
 
-      // 1. Render Main Scene
+      // Sync Environment & HDRI / Background Color
+      const renderResult = results.get(renderNodeIdRef.current);
+      let activeEnv: EnvironmentData | null = null;
+      if (renderResult?.environment && typeof renderResult.environment === "object") {
+        activeEnv = renderResult.environment as EnvironmentData;
+      } else {
+        for (const res of results.values()) {
+          if (res.environment && typeof res.environment === "object") {
+            activeEnv = res.environment as EnvironmentData;
+            break;
+          }
+        }
+      }
+
+      if (activeEnv) {
+        // scene.environment (reflections/lighting) is driven by the HDRI
+        // texture regardless of what's actually drawn behind the scene —
+        // a flat background image only replaces what's *visible*, same as
+        // the flat color it's standing in for.
+        scene.environment = activeEnv.texture ?? null;
+
+        if (activeEnv.showBackground && activeEnv.backgroundImage) {
+          // Blur the raw source first (its own blur bake ignores any
+          // offset/repeat/rotation, see blurredBackgroundImage's own
+          // comment), THEN apply the fit/pan/rotate transform to whichever
+          // texture — sharp or blurred — comes out of that.
+          const bgTexture = blurredBackgroundImage(activeEnv.backgroundImage, activeEnv.blurriness);
+          applyBackgroundImageTransform(bgTexture, activeEnv, host.clientWidth, host.clientHeight);
+          bgScene.background = bgTexture;
+          (bgScene as any).backgroundBlurriness = 0;
+          (scene as any).backgroundBlurriness = 0;
+        } else if (activeEnv.showBackground && activeEnv.texture) {
+          bgScene.background = activeEnv.texture;
+          (bgScene as any).backgroundBlurriness = activeEnv.blurriness;
+          (scene as any).backgroundBlurriness = activeEnv.blurriness;
+        } else {
+          bgScene.background = activeEnv.color;
+          (bgScene as any).backgroundBlurriness = 0;
+          (scene as any).backgroundBlurriness = 0;
+        }
+        if ("environmentIntensity" in scene) {
+          (scene as any).environmentIntensity = activeEnv.intensity;
+        }
+      } else {
+        scene.environment = null;
+        bgScene.background = new THREE.Color(0x0d1117);
+        (bgScene as any).backgroundBlurriness = 0;
+        (scene as any).backgroundBlurriness = 0;
+      }
+
+      // 1. Render Main Scene (with Post-Processing pipeline if active)
       const width = host.clientWidth;
       const height = host.clientHeight;
       renderer.setViewport(0, 0, width, height);
       renderer.setScissorTest(false);
-      renderer.clear();
-      renderer.render(scene, camera);
+
+      const postConfigs = Array.isArray(renderResult?.postprocess)
+        ? (renderResult.postprocess as PostProcessConfig[])
+        : [];
+
+      // Motion blur lives on the Render node itself rather than in the
+      // postprocess chain (it's a property of the output, not an effect a
+      // graph wires up), so it can switch the composer path on by itself
+      // even with no postprocess node connected at all.
+      const motionBlur = typeof renderResult?.motionBlur === "number" ? renderResult.motionBlur : 0;
+
+      if (postConfigs.length > 0 || motionBlur > 0) {
+        // 1a. Render pristine Background Layer (unaffected by Post-Processing!)
+        renderer.clearColor();
+        renderer.render(bgScene, camera);
+
+        // 1b. Main 3D scene has transparent background so postprocess ONLY applies to 3D objects!
+        scene.background = null;
+
+        // Velocity has to be measured off the same scene state the colour
+        // pass is about to draw, and into its own target, so it runs before
+        // the composer touches anything.
+        if (motionBlur > 0) {
+          motionBlurEffect.renderVelocity(renderer, scene, camera);
+        }
+
+        const activeNodeIds = new Set<string>();
+
+        // Rebuild composer pass order
+        composer.passes.length = 0;
+        composer.addPass(renderPass);
+        // EffectComposer never clears its own ping-pong buffers, so leaving
+        // this pass on `clear = false` drew each frame on top of whatever
+        // was still in that buffer two frames ago — uncontrolled ghosting.
+        // Clearing to *transparent* black (rather than just `clear = true`,
+        // which would use the renderer's own opaque clear alpha and bury the
+        // pristine background layer below) gives this pass a clean frame
+        // while keeping the alpha the final composite blends over that
+        // background with. It also leaves the motion-blur pass below as the
+        // only thing that accumulates, which is what makes its `damp`
+        // actually mean something.
+        renderPass.clearColor = new THREE.Color(0x000000);
+        renderPass.clearAlpha = 0;
+        renderPass.clear = true;
+        renderPass.clearDepth = true;
+
+        postConfigs.forEach((cfg) => {
+          if (!cfg || !cfg.type || !cfg.nodeId) return;
+          activeNodeIds.add(cfg.nodeId);
+
+          let cached = passCache.get(cfg.nodeId);
+
+          // If pass type changed or doesn't exist yet, instantiate it once
+          if (!cached || cached.type !== cfg.type) {
+            if (cached) disposePass(cached);
+
+            let pass: any = null;
+            switch (cfg.type) {
+              case "bloom":
+                pass = new UnrealBloomPass(new THREE.Vector2(width, height), 1.5, 0.4, 0.1);
+                break;
+              case "vignette":
+                pass = new ShaderPass(VignetteShader);
+                break;
+              case "rgb-shift":
+                pass = new ShaderPass(RGBShiftShader);
+                break;
+              case "dof":
+                pass = new BokehPass(scene, camera, { focus: 10.0, aperture: 0.025, maxblur: 0.01 });
+                break;
+              case "outline":
+                pass = new OutlinePass(new THREE.Vector2(width, height), scene, camera);
+                break;
+              case "film-grain":
+                pass = new FilmPass(0.35, false);
+                break;
+              case "glitch":
+                pass = new GlitchPass();
+                break;
+              case "pixelate":
+                pass = new ShaderPass(CustomPixelShader);
+                break;
+              case "kaleidoscope":
+                pass = new ShaderPass(KaleidoShader);
+                break;
+              case "color-correction":
+                pass = new ShaderPass(ColorCorrectionShader);
+                break;
+              case "antialias":
+                pass = new FXAAPass();
+                break;
+            }
+
+            if (pass) {
+              cached = { type: cfg.type, pass };
+              passCache.set(cfg.nodeId, cached);
+            }
+          }
+
+          if (!cached) return;
+          const pass = cached.pass;
+
+          // Update pass parameters dynamically on the persistent pass instance
+          switch (cfg.type) {
+            case "bloom": {
+              pass.strength = Number(cfg.params.strength) ?? 1.5;
+              pass.radius = Number(cfg.params.radius) ?? 0.4;
+              pass.threshold = Number(cfg.params.threshold) ?? 0.85;
+              if (pass.resolution) pass.resolution.set(width, height);
+              break;
+            }
+            case "vignette": {
+              if (pass.uniforms["offset"]) pass.uniforms["offset"].value = Number(cfg.params.offset) ?? 1.0;
+              if (pass.uniforms["darkness"]) pass.uniforms["darkness"].value = Number(cfg.params.darkness) ?? 1.5;
+              break;
+            }
+            case "rgb-shift": {
+              if (pass.uniforms["amount"]) pass.uniforms["amount"].value = Number(cfg.params.amount) ?? 0.005;
+              if (pass.uniforms["angle"]) pass.uniforms["angle"].value = Number(cfg.params.angle) ?? 0;
+              break;
+            }
+            case "dof": {
+              if (pass.uniforms["focus"]) pass.uniforms["focus"].value = Math.max(0.1, Number(cfg.params.focus) ?? 10.0);
+              if (pass.uniforms["aperture"]) pass.uniforms["aperture"].value = Math.max(0, Number(cfg.params.aperture) ?? 0.025);
+              if (pass.uniforms["maxblur"]) pass.uniforms["maxblur"].value = Math.max(0, Number(cfg.params.maxblur) ?? 0.01);
+              break;
+            }
+            case "outline": {
+              const edgeColor = cfg.params.edgeColor instanceof THREE.Color ? cfg.params.edgeColor : new THREE.Color(0xffffff);
+              pass.edgeStrength = Number(cfg.params.edgeStrength) ?? 3.0;
+              pass.edgeGlow = 0.5;
+              pass.edgeThickness = Number(cfg.params.edgeThickness) ?? 1.0;
+              pass.visibleEdgeColor.copy(edgeColor);
+              if (currentObject) {
+                const meshes: THREE.Mesh[] = [];
+                currentObject.traverse((c) => {
+                  if (c instanceof THREE.Mesh) meshes.push(c);
+                });
+                pass.selectedObjects = meshes;
+              }
+              break;
+            }
+            case "film-grain": {
+              if (pass.uniforms["nIntensity"]) pass.uniforms["nIntensity"].value = Number(cfg.params.noiseIntensity) ?? 0.35;
+              if (pass.uniforms["grayscale"]) pass.uniforms["grayscale"].value = Boolean(cfg.params.grayscale) ? 1 : 0;
+              break;
+            }
+            case "glitch": {
+              const active = Boolean(cfg.params.active ?? true);
+              pass.enabled = active;
+              pass.goWild = Boolean(cfg.params.wild);
+              break;
+            }
+            case "pixelate": {
+              if (pass.uniforms["resolution"]) pass.uniforms["resolution"].value.set(width, height);
+              if (pass.uniforms["pixelSize"]) pass.uniforms["pixelSize"].value = Math.max(1, Number(cfg.params.pixelSize) || 6);
+              break;
+            }
+            case "kaleidoscope": {
+              if (pass.uniforms["sides"]) pass.uniforms["sides"].value = Math.max(1, Number(cfg.params.sides) || 6);
+              if (pass.uniforms["angle"]) pass.uniforms["angle"].value = Number(cfg.params.angle) || 0;
+              break;
+            }
+            case "color-correction": {
+              const brightness = Number(cfg.params.brightness) || 0;
+              const contrast = Number(cfg.params.contrast) || 1;
+              const saturation = Number(cfg.params.saturation) || 1;
+              if (pass.uniforms["powRGB"]) pass.uniforms["powRGB"].value.set(contrast, contrast, contrast);
+              if (pass.uniforms["mulRGB"]) pass.uniforms["mulRGB"].value.set(saturation, saturation, saturation);
+              if (pass.uniforms["addRGB"]) pass.uniforms["addRGB"].value.set(brightness, brightness, brightness);
+              break;
+            }
+            case "antialias": {
+              pass.enabled = Boolean(cfg.params.enabled ?? true);
+              if (pass.material?.uniforms["resolution"]) {
+                pass.material.uniforms["resolution"].value.set(
+                  1 / (width * renderer.getPixelRatio()),
+                  1 / (height * renderer.getPixelRatio())
+                );
+              }
+              break;
+            }
+          }
+
+          composer.addPass(pass);
+        });
+
+        // Appended last, after every postprocess effect: the smear should be
+        // of the finished frame (bloom, grading and all), not of a raw one
+        // that later passes would then re-process.
+        if (motionBlur > 0) {
+          motionBlurEffect.setIntensity(motionBlur);
+          composer.addPass(motionBlurEffect.pass);
+        }
+
+        // Dispose pass instances for removed nodes
+        for (const [nodeId, entry] of passCache.entries()) {
+          if (!activeNodeIds.has(nodeId)) {
+            disposePass(entry);
+            passCache.delete(nodeId);
+          }
+        }
+
+        composer.render();
+      } else {
+        // Clear stale pass instances if postprocessing is disconnected
+        if (passCache.size > 0) {
+          passCache.forEach((entry) => disposePass(entry));
+          passCache.clear();
+        }
+
+        scene.background = bgScene.background;
+        (scene as any).backgroundBlurriness = (bgScene as any).backgroundBlurriness ?? 0;
+        renderer.clear();
+        renderer.render(scene, camera);
+      }
+
+      // 1b. Render Editor UI Overlay (Grid, Transform Controls, Light Helpers) - isolated from Postprocess
+      if (!outputMode && showUiOverlayRef.current) {
+        renderer.clearDepth();
+        renderer.render(editorUiScene, camera);
+      }
 
       // 2. Render Corner 3D Orientation Gizmo HUD (110x110 px in bottom-left)
-      if (gizmo) {
+      if (gizmo && !outputMode && showUiOverlayRef.current) {
         const gizmoSize = 110;
         renderer.clearDepth();
         renderer.setScissorTest(true);
@@ -637,6 +1185,14 @@ export function Viewport({
       }
       transformControls?.dispose();
       controls.dispose();
+      passCache.forEach((entry) => disposePass(entry));
+      passCache.clear();
+      motionBlurEffect.dispose();
+      blurQuad.dispose();
+      hBlurMaterial.dispose();
+      vBlurMaterial.dispose();
+      blurTargetA?.dispose();
+      blurTargetB?.dispose();
       renderer.dispose();
       if (host.contains(renderer.domElement)) {
         host.removeChild(renderer.domElement);
@@ -668,6 +1224,13 @@ export function Viewport({
             title="Réinitialiser la caméra 3D"
           >
             Reset Cam
+          </button>
+          <button
+            className="viewport-hud-button"
+            onClick={() => resetSimulationRef.current()}
+            title="Relancer la simulation de particules depuis l'état initial"
+          >
+            Reset Sim
           </button>
           {onSelectNode && (
             <div className="viewport-hud-gizmo-modes">

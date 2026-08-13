@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { STEP_SECONDS, createClock, targetStepCount, tickClock } from "./clock";
+import { STEP_SECONDS, createClock, stepsSince, targetStepCount, tickClock } from "./clock";
 
 describe("targetStepCount", () => {
   test("counts whole fixed steps since the epoch", () => {
@@ -43,5 +43,23 @@ describe("tickClock", () => {
 
     expect(a.step).toBe(b.step);
     expect(a.time).toBe(b.time);
+  });
+});
+
+describe("stepsSince", () => {
+  test("counts the shortfall between last-stepped and current step", () => {
+    expect(stepsSince(10, 13, 600)).toBe(3);
+  });
+
+  test("caps a long stall instead of catching up all at once", () => {
+    expect(stepsSince(0, 10_000, 600)).toBe(600);
+  });
+
+  test("is zero when nothing has advanced", () => {
+    expect(stepsSince(50, 50, 600)).toBe(0);
+  });
+
+  test("is never negative for a step count that went backwards", () => {
+    expect(stepsSince(50, 10, 600)).toBe(0);
   });
 });

@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readFile, readTextFile } from "@tauri-apps/plugin-fs";
 import * as THREE from "three";
 import { CATEGORY_COLOR, NodeCategory, UNKNOWN_CATEGORY_COLOR } from "../shared/graph/categories";
 import { ParamFieldDef } from "../shared/graph/types";
+import { ColorPickerInput } from "./ColorPickerInput";
 import { DragNumberInput } from "./DragNumberInput";
 import "./param-panel.css";
 
@@ -32,109 +32,6 @@ function selectField(field: ParamFieldDef & { kind: "select" }, value: unknown, 
   );
 }
 
-function parseColorToHex(v: unknown): string {
-  if (!v) return "#ffffff";
-  try {
-    if (v instanceof THREE.Color) {
-      return `#${v.getHexString()}`;
-    }
-    if (typeof v === "object" && v !== null && "r" in v && "g" in v && "b" in v) {
-      const { r, g, b } = v as { r: number; g: number; b: number };
-      return `#${new THREE.Color(r, g, b).getHexString()}`;
-    }
-    if (typeof v === "string") {
-      const clean = v.trim();
-      const hex = clean.startsWith("#") ? clean : `#${clean}`;
-      return `#${new THREE.Color(hex).getHexString()}`;
-    }
-    if (typeof v === "number") {
-      return `#${new THREE.Color(v).getHexString()}`;
-    }
-  } catch {
-    return "#ffffff";
-  }
-  return "#ffffff";
-}
-
-function ColorPickerInput({ value, onChange }: { value: unknown; onChange: (v: THREE.Color) => void }) {
-  const swatchRef = useRef<HTMLInputElement>(null);
-  const colorHex = parseColorToHex(value);
-
-  const [textValue, setTextValue] = useState(colorHex);
-
-  useEffect(() => {
-    setTextValue(colorHex);
-  }, [colorHex]);
-
-  const handleHexChange = (newHex: string) => {
-    setTextValue(newHex);
-    try {
-      const cleanHex = newHex.startsWith("#") ? newHex : `#${newHex}`;
-      const c = new THREE.Color(cleanHex);
-      onChange(c);
-    } catch {
-      // Invalid hex typing in progress
-    }
-  };
-
-  const openPicker = () => {
-    if (swatchRef.current) {
-      if ("showPicker" in swatchRef.current && typeof swatchRef.current.showPicker === "function") {
-        try {
-          swatchRef.current.showPicker();
-          return;
-        } catch {
-          // Fallback to click
-        }
-      }
-      swatchRef.current.click();
-    }
-  };
-
-  const presets = ["#ffffff", "#ef4444", "#f97316", "#eab308", "#22c55e", "#06b6d4", "#3b82f6", "#a855f7", "#000000"];
-
-  return (
-    <div className="param-color-picker-container" onMouseDown={(e) => e.stopPropagation()}>
-      <div className="param-color-main">
-        <div
-          className="param-color-swatch-box"
-          style={{ backgroundColor: colorHex }}
-          onClick={openPicker}
-          title="Click to pick color"
-        >
-          <input
-            ref={swatchRef}
-            type="color"
-            className="param-color-swatch-hidden"
-            value={colorHex}
-            onInput={(e) => handleHexChange((e.target as HTMLInputElement).value)}
-            onChange={(e) => handleHexChange((e.target as HTMLInputElement).value)}
-          />
-        </div>
-        <input
-          type="text"
-          className="param-color-hex-input"
-          value={textValue}
-          onChange={(e) => handleHexChange(e.target.value)}
-          onBlur={() => setTextValue(colorHex)}
-        />
-      </div>
-      <div className="param-color-presets">
-        {presets.map((preset) => (
-          <button
-            key={preset}
-            type="button"
-            className="param-color-preset-btn"
-            style={{ backgroundColor: preset }}
-            onClick={() => handleHexChange(preset)}
-            title={preset}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function fileField(nodeId: string, field: ParamFieldDef & { kind: "file" }, value: unknown, onChange: (v: unknown) => void) {
   const fileName = typeof value === "string" && value ? (value.split(/[\\/]/).pop() ?? value) : "Choose file…";
   return (
@@ -149,7 +46,7 @@ function fileField(nodeId: string, field: ParamFieldDef & { kind: "file" }, valu
         });
         if (!path || Array.isArray(path)) return;
         const ext = path.split(".").pop()?.toLowerCase() ?? "";
-        const isBinaryImage = ["png", "jpg", "jpeg", "webp", "bmp"].includes(ext);
+        const isBinaryImage = ["png", "jpg", "jpeg", "webp", "bmp", "hdr", "exr", "tif", "tiff"].includes(ext);
 
         if (isBinaryImage) {
           const bytes = await readFile(path);
@@ -166,16 +63,28 @@ function fileField(nodeId: string, field: ParamFieldDef & { kind: "file" }, valu
   );
 }
 
+const RAD_TO_DEG = 180 / Math.PI;
+
+/** Stored (radians) -> shown. Identity unless the field asked for degrees. */
+function toDisplayUnit(value: number, degrees?: boolean): number {
+  return degrees ? value * RAD_TO_DEG : value;
+}
+
+/** Shown -> stored (radians). Inverse of toDisplayUnit. */
+function toStoredUnit(value: number, degrees?: boolean): number {
+  return degrees ? value / RAD_TO_DEG : value;
+}
+
 function vectorField(field: ParamFieldDef & { kind: "vector" }, value: unknown, onChange: (v: unknown) => void) {
   const v = value instanceof THREE.Vector3 ? value : new THREE.Vector3();
   const axis = (key: "x" | "y" | "z") => (
     <DragNumberInput
       key={key}
-      value={v[key]}
+      value={toDisplayUnit(v[key], field.degrees)}
       step={field.step}
       onChange={(next) => {
         const updated = v.clone();
-        updated[key] = next;
+        updated[key] = toStoredUnit(next, field.degrees);
         onChange(updated);
       }}
     />
@@ -203,9 +112,9 @@ export function ParamPanel({ nodeId, label, category, fields, params, onChange }
           <label>{field.label}</label>
           {field.kind === "number" && (
             <DragNumberInput
-              value={Number(params[field.id]) || 0}
+              value={toDisplayUnit(Number(params[field.id]) || 0, field.degrees)}
               step={field.step}
-              onChange={(v) => onChange(field.id, v)}
+              onChange={(v) => onChange(field.id, toStoredUnit(v, field.degrees))}
             />
           )}
           {field.kind === "vector" && vectorField(field, params[field.id], (v) => onChange(field.id, v))}

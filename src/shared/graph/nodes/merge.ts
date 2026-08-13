@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { growingSockets } from "../dynamicInputs";
 import { NodeDefinition } from "../types";
+import { createNodeCache } from "../nodeCaches";
 
 const INPUT_PREFIX = "in";
 
@@ -9,7 +10,7 @@ const INPUT_PREFIX = "in";
  * needs to be the SAME THREE.Group across frames, not a fresh one every
  * evaluation, so the viewport can hold a stable reference to it.
  */
-const groupCache = new Map<string, THREE.Group>();
+const groupCache = createNodeCache<THREE.Group>();
 
 function getGroup(nodeId: string): THREE.Group {
   const existing = groupCache.get(nodeId);

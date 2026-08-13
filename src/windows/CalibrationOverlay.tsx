@@ -14,6 +14,13 @@ interface CalibrationOverlayProps {
   cameraNodeId: string;
   /** The Camera node's own params — the stored picks live here. */
   storedPicks: unknown;
+  /**
+   * The Camera node's `mode`. Dragging handles only moves the projection in
+   * "calibrated" — in "manual" the node returns its hand-set pose and throws
+   * the solve away — so the overlay has to say so rather than sit there
+   * reporting a healthy residual for a solve nothing is using.
+   */
+  mode?: unknown;
   onChange: (paramId: string, value: unknown) => void;
 }
 
@@ -40,7 +47,7 @@ function statusOf(error: number | null): { text: string; tone: "ok" | "warn" | "
  * job, so there is no second copy of the answer to keep in sync, and no
  * multi-write ordering to get wrong.
  */
-export function CalibrationOverlay({ graph, cameraNodeId, storedPicks, onChange }: CalibrationOverlayProps) {
+export function CalibrationOverlay({ graph, cameraNodeId, storedPicks, mode, onChange }: CalibrationOverlayProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const dragging = useRef<string | null>(null);
@@ -77,9 +84,25 @@ export function CalibrationOverlay({ graph, cameraNodeId, storedPicks, onChange 
     onChange("calibrationPicks", { ...picks, [id]: relative });
   };
 
+  const isCalibrated = mode === "calibrated";
+
   return (
     <div ref={containerRef} className="calibration-overlay">
-      <div className={`calibration-overlay-status calibration-overlay-status-${status.tone}`}>{status.text}</div>
+      {isCalibrated ? (
+        <div className={`calibration-overlay-status calibration-overlay-status-${status.tone}`}>{status.text}</div>
+      ) : (
+        // Without this the overlay happily reported "Solved (residual …)"
+        // while the Camera node was in manual mode and discarding that very
+        // solve — so the handles could be dragged perfectly onto the real
+        // corners and the projection would never move, with nothing on
+        // screen saying why.
+        <div className="calibration-overlay-status calibration-overlay-status-bad">
+          Camera is in <strong>manual</strong> mode — handles are ignored.{" "}
+          <button type="button" className="calibration-overlay-fix" onClick={() => onChange("mode", "calibrated")}>
+            Switch to calibrated
+          </button>
+        </div>
+      )}
       <CalibrationHandlesView points={points} picks={picks} width={size.width} height={size.height} showLabels />
       <svg className="calibration-overlay-svg" width={size.width} height={size.height}>
         {points.map((point) => {

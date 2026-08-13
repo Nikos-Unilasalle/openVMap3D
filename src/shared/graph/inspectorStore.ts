@@ -1,6 +1,7 @@
+import { createNodeCache } from "./nodeCaches";
 type Listener = () => void;
 
-const values = new Map<string, unknown>();
+const values = createNodeCache<unknown>();
 const listeners = new Set<Listener>();
 
 export function setInspectorValue(nodeId: string, value: unknown) {

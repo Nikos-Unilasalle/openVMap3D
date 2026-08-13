@@ -16,6 +16,8 @@ export interface TopBarProps {
   currentFilename: string;
   currentFilePath: string | null;
   onFilenameChange: (name: string, path: string | null) => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -24,6 +26,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   currentFilename,
   currentFilePath,
   onFilenameChange,
+  onUndo,
+  onRedo,
 }) => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastError, setToastError] = useState(false);
@@ -230,6 +234,24 @@ export const TopBar: React.FC<TopBarProps> = ({
             <line x1="10" y1="5" x2="14" y2="5" />
           </svg>
           Incremental Save
+        </button>
+
+        {/* UNDO */}
+        <button className="top-bar-button" onClick={onUndo} title="Annuler (Ctrl+Z / ⌘Z)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="1 4 1 10 7 10" />
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+          </svg>
+          Undo
+        </button>
+
+        {/* REDO */}
+        <button className="top-bar-button" onClick={onRedo} title="Rétablir (Ctrl+Shift+Z / ⌘⇧Z)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="23 4 23 10 17 10" />
+            <path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10" />
+          </svg>
+          Redo
         </button>
 
         {/* OUTPUT — fullscreen window on the second monitor (the video projector) */}

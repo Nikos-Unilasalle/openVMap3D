@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CAMERA_NODE } from "./shared/graph/nodes/camera";
 import { DEFAULT_REGISTRY } from "./shared/graph/nodes";
 import { findRenderNodeId } from "./shared/graph/nodes/render";
+import { cloneGraph } from "./shared/graph/cloneGraph";
+import { rehydrateGraphParams } from "./shared/graph/rehydrateParams";
 import { Connection, Graph, NodeInstance } from "./shared/graph/types";
 import { broadcastGraph, PreviewCameraPose, startBroadcasting } from "./shared/ipc";
 import { TransformPatch, Viewport } from "./shared/three/Viewport";
@@ -38,6 +40,11 @@ function buildSmokeTestGraph(): Graph {
     ],
   };
 }
+
+/** Undo depth. */
+const HISTORY_LIMIT = 50;
+/** Consecutive edits to the same control within this window collapse into one undo step. */
+const HISTORY_COALESCE_MS = 600;
 
 const MIN_PANE_PERCENT = 15;
 const MAX_PANE_PERCENT = 85;
@@ -128,8 +135,103 @@ function MainEditor() {
     broadcastGraph({ graph: graphRef.current, epochMs, calibratingNodeId, previewCamera: pose });
   };
 
+  const historyRef = useRef<{ past: Graph[]; future: Graph[] }>({ past: [], future: [] });
+  /**
+   * Which (node, param) a run of edits is currently touching, so one slider
+   * drag or one typed number collapses into a single undo step. Without it
+   * every wheel notch pushed its own snapshot and a couple of drags evicted
+   * the whole 50-entry history.
+   */
+  const coalesceRef = useRef<{ key: string; at: number } | null>(null);
+
+  /**
+   * Records the graph as it is *right now* as one undo step.
+   *
+   * Deliberately outside any `setGraph` updater: React invokes updaters twice
+   * under StrictMode, so pushing from inside recorded every edit twice and
+   * undo needed two presses per change in dev. Updaters have to stay pure.
+   */
+  const pushHistory = useCallback((coalesceKey?: string) => {
+    const now = Date.now();
+    const previous = coalesceRef.current;
+    coalesceRef.current = coalesceKey ? { key: coalesceKey, at: now } : null;
+
+    // Still dialling the same control — fold into the step already recorded.
+    if (coalesceKey && previous && previous.key === coalesceKey && now - previous.at < HISTORY_COALESCE_MS) return;
+
+    const snapshot = cloneGraph(graphRef.current);
+    const top = historyRef.current.past[historyRef.current.past.length - 1];
+    // Several edits can land in one event batch, before graphRef has caught
+    // up — without this they'd each store the same pre-batch graph.
+    if (top && JSON.stringify(top) === JSON.stringify(snapshot)) return;
+
+    historyRef.current.past.push(snapshot);
+    if (historyRef.current.past.length > HISTORY_LIMIT) historyRef.current.past.shift();
+    historyRef.current.future = [];
+  }, []);
+
+  const setGraphWithHistory = useCallback(
+    (nextGraphOrUpdater: Graph | ((prev: Graph) => Graph), coalesceKey?: string) => {
+      pushHistory(coalesceKey);
+      setGraph((prev) => (typeof nextGraphOrUpdater === "function" ? nextGraphOrUpdater(prev) : nextGraphOrUpdater));
+    },
+    [pushHistory],
+  );
+
+  const undo = useCallback(() => {
+    if (historyRef.current.past.length === 0) return;
+    const previous = historyRef.current.past.pop()!;
+    historyRef.current.future.unshift(cloneGraph(graphRef.current));
+    coalesceRef.current = null;
+    setGraph(previous);
+    setEditorKey((k) => k + 1);
+  }, []);
+
+  const redo = useCallback(() => {
+    if (historyRef.current.future.length === 0) return;
+    const next = historyRef.current.future.shift()!;
+    historyRef.current.past.push(cloneGraph(graphRef.current));
+    coalesceRef.current = null;
+    setGraph(next);
+    setEditorKey((k) => k + 1);
+  }, []);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const activeEl = document.activeElement;
+      const isInput =
+        activeEl &&
+        (activeEl.tagName === "INPUT" ||
+          activeEl.tagName === "TEXTAREA" ||
+          activeEl.tagName === "SELECT" ||
+          (activeEl as HTMLElement).isContentEditable);
+      if (isInput) return;
+
+      const isCmdOrCtrl = e.metaKey || e.ctrlKey;
+      const isShift = e.shiftKey;
+      const key = e.key.toLowerCase();
+
+      if (isCmdOrCtrl && key === "z") {
+        if (isShift) {
+          e.preventDefault();
+          redo();
+        } else {
+          e.preventDefault();
+          undo();
+        }
+      } else if (isCmdOrCtrl && key === "y") {
+        e.preventDefault();
+        redo();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [undo, redo]);
+
   const handleLoadGraph = (newGraph: Graph, filename?: string) => {
-    setGraph(newGraph);
+    historyRef.current = { past: [], future: [] };
+    setGraph(rehydrateGraphParams(newGraph, DEFAULT_REGISTRY));
     setSelectedNodeId(null);
     setEditorKey((k) => k + 1);
     if (filename) {
@@ -142,15 +244,8 @@ function MainEditor() {
     setCurrentFilePath(path);
   };
 
-  // Functional updater, not "read graph, compute, setGraph(new)": a caller
-  // that fires this more than once synchronously in one handler would
-  // otherwise have each call close over the same pre-update `graph` and
-  // overwrite its siblings instead of composing, so only the last param
-  // would ever stick. Same class of bug as the GraphEditor.tsx
-  // updater-purity fix earlier — setState-from-a-callback must not read a
-  // snapshot taken before its sibling calls in the same handler.
   const onParamChange = (paramId: string, value: unknown) => {
-    setGraph((prevGraph) => {
+    setGraphWithHistory((prevGraph) => {
       const instance = prevGraph.nodes.find((n) => n.id === selectedNodeId);
       if (!instance) return prevGraph;
       return {
@@ -159,7 +254,7 @@ function MainEditor() {
           n.id === instance.id ? { ...n, params: { ...n.params, [paramId]: value } } : n,
         ),
       };
-    });
+    }, `${selectedNodeId}:${paramId}`);
   };
 
   // Same functional-updater reasoning as onParamChange, but writing all
@@ -168,6 +263,32 @@ function MainEditor() {
   // three sequential setGraph calls would hit the exact stale-closure
   // overwrite bug that onParamChange's own comment documents, just via a
   // different call site.
+  /**
+   * Everything about the graph except where the nodes sit on the canvas.
+   *
+   * GraphEditor commits on every frame of a node drag, so without this a
+   * single drag across the canvas pushed dozens of undo steps and evicted the
+   * real history. Two commits sharing this signature differ only by position
+   * — one continuous move — so they collapse into one step, while a delete,
+   * a rewire or an added node changes it and starts a fresh one.
+   */
+  const structuralKey = useCallback(
+    (g: Graph) =>
+      JSON.stringify([g.nodes.map((n) => [n.id, n.type]), g.connections.map((c) => c.id)]),
+    [],
+  );
+
+  const onGraphChange = useCallback(
+    (next: Graph) => setGraphWithHistory(next, `structure:${structuralKey(next)}`),
+    [setGraphWithHistory, structuralKey],
+  );
+
+  // A gizmo drag writes every frame, so it records its undo step once when
+  // the drag *starts* instead. Before this it went through plain setGraph and
+  // was simply not undoable at all — Cmd+Z after moving an object skipped
+  // straight past it to some older edit.
+  const onTransformStart = useCallback(() => pushHistory(), [pushHistory]);
+
   const onTransformChange = (transformNodeId: string, patch: TransformPatch) => {
     setGraph((prevGraph) => ({
       ...prevGraph,
@@ -211,6 +332,8 @@ function MainEditor() {
         currentFilename={currentFilename}
         currentFilePath={currentFilePath}
         onFilenameChange={handleFilenameChange}
+        onUndo={undo}
+        onRedo={redo}
       />
       <div style={{ height: `${splitPercent}%`, minHeight: 0, position: "relative" }}>
         <Viewport
@@ -221,6 +344,7 @@ function MainEditor() {
           selectedNodeId={selectedNodeId}
           onSelectNode={setSelectedNodeId}
           onTransformChange={onTransformChange}
+          onTransformStart={onTransformStart}
           onCameraChange={onPreviewCameraChange}
         />
         {needsTransformHint && (
@@ -231,6 +355,7 @@ function MainEditor() {
             graph={graph}
             cameraNodeId={selectedInstance.id}
             storedPicks={selectedInstance.params.calibrationPicks}
+            mode={selectedInstance.params.mode ?? DEFAULT_REGISTRY.get(selectedInstance.type)?.defaultParams.mode}
             onChange={onParamChange}
           />
         )}
@@ -258,7 +383,7 @@ function MainEditor() {
           key={editorKey}
           graph={graph}
           registry={DEFAULT_REGISTRY}
-          onGraphChange={setGraph}
+          onGraphChange={onGraphChange}
           onSelectNode={setSelectedNodeId}
           selectedNodeId={selectedNodeId}
         />

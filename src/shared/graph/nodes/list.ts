@@ -318,3 +318,93 @@ export const SLICE_LIST_NODE: NodeDefinition = {
     return { list: sliced };
   },
 };
+
+/** Combine Vector Lists node — composes 3 scalar lists (X, Y, Z) into a list of THREE.Vector3 objects. */
+export const COMBINE_VECTOR_LISTS_NODE: NodeDefinition = {
+  type: "list/combine-vectors",
+  label: "Combine Vector Lists",
+  category: "list",
+  inputs: [
+    { id: "xList", label: "X List", type: "list" },
+    { id: "yList", label: "Y List", type: "list" },
+    { id: "zList", label: "Z List", type: "list" },
+  ],
+  outputs: [{ id: "vectorList", label: "Vector List", type: "list" }],
+  defaultParams: { xDefault: 0, yDefault: 0, zDefault: 0 },
+  paramFields: [
+    { id: "xDefault", label: "X Default", kind: "number", step: 0.1 },
+    { id: "yDefault", label: "Y Default", kind: "number", step: 0.1 },
+    { id: "zDefault", label: "Z Default", kind: "number", step: 0.1 },
+  ],
+  evaluate: (inputs, params) => {
+    const xList = Array.isArray(inputs.xList) ? inputs.xList : [];
+    const yList = Array.isArray(inputs.yList) ? inputs.yList : [];
+    const zList = Array.isArray(inputs.zList) ? inputs.zList : [];
+
+    const xDefault = Number(params.xDefault) || 0;
+    const yDefault = Number(params.yDefault) || 0;
+    const zDefault = Number(params.zDefault) || 0;
+
+    const count = Math.max(xList.length, yList.length, zList.length, 1);
+    const vectorList: THREE.Vector3[] = [];
+
+    for (let i = 0; i < count; i++) {
+      const x = i < xList.length ? Number(xList[i]) : xDefault;
+      const y = i < yList.length ? Number(yList[i]) : yDefault;
+      const z = i < zList.length ? Number(zList[i]) : zDefault;
+      vectorList.push(
+        new THREE.Vector3(
+          Number.isFinite(x) ? x : xDefault,
+          Number.isFinite(y) ? y : yDefault,
+          Number.isFinite(z) ? z : zDefault,
+        ),
+      );
+    }
+
+    return { vectorList };
+  },
+};
+
+/** Split Vector List node — decomposes a list of THREE.Vector3 objects into 3 scalar number lists (X, Y, Z). */
+export const SPLIT_VECTOR_LIST_NODE: NodeDefinition = {
+  type: "list/split-vectors",
+  label: "Decompose Vector List",
+  category: "list",
+  inputs: [{ id: "vectorList", label: "Vector List", type: "list" }],
+  outputs: [
+    { id: "xList", label: "X List", type: "list" },
+    { id: "yList", label: "Y List", type: "list" },
+    { id: "zList", label: "Z List", type: "list" },
+  ],
+  defaultParams: {},
+  evaluate: (inputs) => {
+    const rawList = Array.isArray(inputs.vectorList) ? inputs.vectorList : [];
+    const xList: number[] = [];
+    const yList: number[] = [];
+    const zList: number[] = [];
+
+    rawList.forEach((item) => {
+      if (item instanceof THREE.Vector3) {
+        xList.push(item.x);
+        yList.push(item.y);
+        zList.push(item.z);
+      } else if (typeof item === "number") {
+        xList.push(item);
+        yList.push(item);
+        zList.push(item);
+      } else if (typeof item === "object" && item !== null && "x" in item && "y" in item) {
+        const obj = item as { x: number; y: number; z?: number };
+        xList.push(Number(obj.x) || 0);
+        yList.push(Number(obj.y) || 0);
+        zList.push(Number(obj.z) || 0);
+      } else {
+        xList.push(0);
+        yList.push(0);
+        zList.push(0);
+      }
+    });
+
+    return { xList, yList, zList };
+  },
+};
+

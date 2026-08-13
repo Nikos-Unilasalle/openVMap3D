@@ -7,7 +7,7 @@ import { VECTOR_MATH_NODE } from "./vector";
 import { COMPARE_NODE, BOOLEAN_LOGIC_NODE, TRIGGER_NODE, TOGGLE_NODE, GATE_NODE, LOGIC_BRIDGE_NODE } from "./logic";
 import { OSCILLATOR_NODE, ENVELOPE_NODE } from "./oscillator";
 import { COLOR_COMPOSE_NODE, COLOR_DECOMPOSE_NODE, COLOR_MATH_NODE } from "./color";
-import { OBJECT_BAR_GRAPH_NODE, OBJECT_PLANE_NODE, OBJECT_SPHERE_NODE, OBJECT_TEXT_NODE } from "./object";
+import { OBJECT_BAR_GRAPH_NODE, OBJECT_BOX_NODE, OBJECT_DISC_NODE, OBJECT_PLANE_NODE, OBJECT_SPHERE_NODE, OBJECT_TEXT_NODE } from "./object";
 
 import { COLOR_TO_VECTOR_NODE, VALUE_TO_COLOR_NODE, VALUE_TO_TEXT_NODE, VALUE_TO_VECTOR_NODE, VECTOR_TO_COLOR_NODE } from "./converter";
 import { TEXT_CONSTANT_NODE } from "./text";
@@ -467,6 +467,44 @@ describe("RANDOM NODES", () => {
     expect(list.every((v) => typeof v === "number" && !isNaN(v))).toBe(true);
   });
 });
+
+describe("PRIMITIVES & MATERIAL PROPERTIES (DISC, SHADELESS)", () => {
+  test("OBJECT_DISC_NODE renders 2D CircleGeometry when depth is 0", () => {
+    const res = OBJECT_DISC_NODE.evaluate({ depth: 0 }, OBJECT_DISC_NODE.defaultParams, { ...CTX, nodeId: "disc-2d" });
+    const mesh = res.geometry as THREE.Mesh;
+    expect(mesh.geometry.type).toBe("CircleGeometry");
+    expect((mesh.material as THREE.MeshStandardMaterial).wireframe).toBe(false);
+  });
+
+  test("OBJECT_DISC_NODE renders 3D CylinderGeometry when depth > 0", () => {
+    const res = OBJECT_DISC_NODE.evaluate({ depth: 0.5 }, OBJECT_DISC_NODE.defaultParams, { ...CTX, nodeId: "disc-3d" });
+    const mesh = res.geometry as THREE.Mesh;
+    expect(mesh.geometry.type).toBe("CylinderGeometry");
+  });
+
+  test("OBJECT_BOX_NODE applies MeshBasicMaterial when shadeless is true", () => {
+    const res = OBJECT_BOX_NODE.evaluate({ shadeless: 1 }, OBJECT_BOX_NODE.defaultParams, { ...CTX, nodeId: "box-shadeless" });
+    const mesh = res.geometry as THREE.Mesh;
+    const mat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+    expect(mat.type).toBe("MeshBasicMaterial");
+  });
+
+  test("OBJECT_BOX_NODE applies texture map and UV scale when texture is provided", () => {
+    const texture = new THREE.Texture();
+    (texture as any).image = {};
+    const res = OBJECT_BOX_NODE.evaluate(
+      { texture, uvScale: new THREE.Vector3(2, 3, 1) },
+      OBJECT_BOX_NODE.defaultParams,
+      { ...CTX, nodeId: "box-tex" }
+    );
+    const mesh = res.geometry as THREE.Mesh;
+    const mat = (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material) as THREE.MeshStandardMaterial;
+    expect(mat.map).toBe(texture);
+    expect(mat.map?.repeat.x).toBe(2);
+    expect(mat.map?.repeat.y).toBe(3);
+  });
+});
+
 
 
 

@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
+import { createNodeCache, disposeObject3D } from "../nodeCaches";
 
 /**
  * GridHelper bakes size/divisions/color into its geometry and vertex
@@ -16,7 +17,7 @@ interface CachedGrid {
   colorHex: number;
 }
 
-const gridCache = new Map<string, CachedGrid>();
+const gridCache = createNodeCache<CachedGrid>((c) => disposeObject3D(c.grid));
 
 function getGrid(nodeId: string, size: number, divisions: number, color: THREE.Color): THREE.GridHelper {
   const colorHex = color.getHex();

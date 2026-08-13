@@ -37,3 +37,16 @@ export function tickClock(clock: ClockState, nowMs: number): ClockState {
   const step = targetStepCount(clock.epochMs, nowMs);
   return { epochMs: clock.epochMs, step, time: step * STEP_SECONDS };
 }
+
+/**
+ * Shared by any node that owns a stateful, step-driven simulation (physics,
+ * GPGPU particles) and needs to catch up its own cache from wherever it last
+ * left off to the graph's current `ctx.step` — same fast-forward-capped
+ * policy as OpenVMap's `physicsClock.ts`'s `stepsForFrame`, generalized past
+ * one specific engine. Capped so a long stall (a stopped output window
+ * rejoining, a debugger pause) advances visibly instead of hanging the frame
+ * running thousands of catch-up steps at once.
+ */
+export function stepsSince(lastStep: number, currentStep: number, cap: number): number {
+  return Math.min(Math.max(0, currentStep - lastStep), cap);
+}

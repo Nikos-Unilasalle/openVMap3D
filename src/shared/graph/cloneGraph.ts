@@ -1,0 +1,58 @@
+import * as THREE from "three";
+import { Graph, NodeInstance } from "./types";
+
+/**
+ * Deep-copies a graph while keeping its THREE instances *as instances*.
+ *
+ * The obvious `JSON.parse(JSON.stringify(graph))` does not: it flattens a
+ * THREE.Vector3 into a plain `{x, y, z}` and a THREE.Color into `{r, g, b}`.
+ * Every node's `evaluate` guards its params with `instanceof` before trusting
+ * them (see asVector3 in transform.ts and friends), so a flattened param
+ * silently reads as absent and falls back to the node's default. Undo/redo
+ * used that JSON round-trip for its snapshots, which is why stepping back
+ * quietly reset every vector and colour in the graph to defaults instead of
+ * restoring what was there.
+ *
+ * Same failure the IPC boundary has, but the cure differs: IPC genuinely
+ * hands over JSON and has to rebuild instances from the registry's
+ * defaultParams (rehydrateParams.ts). Here the originals are still in memory,
+ * so they can just be cloned — no registry, no guessing a param's intended
+ * type from its shape.
+ */
+export function cloneParamValue(value: unknown): unknown {
+  if (value instanceof THREE.Vector3) return value.clone();
+  if (value instanceof THREE.Color) return value.clone();
+  if (value instanceof THREE.Matrix4) return value.clone();
+  if (value instanceof THREE.Quaternion) return value.clone();
+  if (value instanceof THREE.Euler) return value.clone();
+  if (Array.isArray(value)) return value.map(cloneParamValue);
+  // Textures, meshes and other GPU resources are shared on purpose — a node's
+  // cached mesh must stay the same object across frames — so anything that
+  // isn't a plain object is passed through by reference rather than copied.
+  if (value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype) {
+    return cloneParams(value as Record<string, unknown>);
+  }
+  return value;
+}
+
+export function cloneParams(params: Record<string, unknown>): Record<string, unknown> {
+  const cloned: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(params)) cloned[key] = cloneParamValue(value);
+  return cloned;
+}
+
+function cloneNode(node: NodeInstance): NodeInstance {
+  return {
+    id: node.id,
+    type: node.type,
+    position: { x: node.position.x, y: node.position.y },
+    params: cloneParams(node.params),
+  };
+}
+
+export function cloneGraph(graph: Graph): Graph {
+  return {
+    nodes: graph.nodes.map(cloneNode),
+    connections: graph.connections.map((c) => ({ ...c })),
+  };
+}
