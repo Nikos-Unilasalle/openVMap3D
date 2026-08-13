@@ -18,6 +18,7 @@ import { GlitchPass } from "three/examples/jsm/postprocessing/GlitchPass.js";
 import { OutlinePass } from "three/examples/jsm/postprocessing/OutlinePass.js";
 import { BokehPass } from "three/examples/jsm/postprocessing/BokehPass.js";
 import { FXAAPass } from "three/examples/jsm/postprocessing/FXAAPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { createMotionBlur } from "./motionBlur";
 import { ColorCorrectionShader } from "three/examples/jsm/shaders/ColorCorrectionShader.js";
 import { KaleidoShader } from "three/examples/jsm/shaders/KaleidoShader.js";
@@ -412,7 +413,9 @@ export function Viewport({
 
     const composer = new EffectComposer(renderer);
     const renderPass = new RenderPass(scene, activeCamera);
+    const outputPass = new OutputPass();
     composer.addPass(renderPass);
+    composer.addPass(outputPass);
 
     const controls = new OrbitControls(activeCamera, renderer.domElement);
     controls.enableDamping = true;
@@ -1347,6 +1350,8 @@ export function Viewport({
           motionBlurEffect.setIntensity(motionBlur);
           composer.addPass(motionBlurEffect.pass);
         }
+
+        composer.addPass(outputPass);
 
         // Dispose pass instances for removed nodes
         for (const [nodeId, entry] of passCache.entries()) {
