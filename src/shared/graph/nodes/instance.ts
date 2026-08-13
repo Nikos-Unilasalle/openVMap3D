@@ -13,9 +13,13 @@ function getGroup(nodeId: string): THREE.Group {
 
 function asColor(v: unknown, fallback: THREE.Color): THREE.Color {
   if (v instanceof THREE.Color) return v;
+  if (typeof v === "object" && v !== null && "r" in v && "g" in v && "b" in v) {
+    const { r, g, b } = v as { r: number; g: number; b: number };
+    return new THREE.Color(r, g, b);
+  }
   if (typeof v === "string" || typeof v === "number") {
     try {
-      return new THREE.Color(v);
+      return new THREE.Color(v as any);
     } catch {
       return fallback;
     }

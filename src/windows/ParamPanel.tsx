@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readFile, readTextFile } from "@tauri-apps/plugin-fs";
 import * as THREE from "three";
@@ -32,17 +32,33 @@ function selectField(field: ParamFieldDef & { kind: "select" }, value: unknown, 
   );
 }
 
-function ColorPickerInput({ value, onChange }: { value: unknown; onChange: (v: THREE.Color) => void }) {
-  let colorHex = "#ffffff";
+function parseColorToHex(v: unknown): string {
+  if (!v) return "#ffffff";
   try {
-    if (value instanceof THREE.Color) {
-      colorHex = `#${value.getHexString()}`;
-    } else if (typeof value === "string" || typeof value === "number") {
-      colorHex = `#${new THREE.Color(value).getHexString()}`;
+    if (v instanceof THREE.Color) {
+      return `#${v.getHexString()}`;
+    }
+    if (typeof v === "object" && v !== null && "r" in v && "g" in v && "b" in v) {
+      const { r, g, b } = v as { r: number; g: number; b: number };
+      return `#${new THREE.Color(r, g, b).getHexString()}`;
+    }
+    if (typeof v === "string") {
+      const clean = v.trim();
+      const hex = clean.startsWith("#") ? clean : `#${clean}`;
+      return `#${new THREE.Color(hex).getHexString()}`;
+    }
+    if (typeof v === "number") {
+      return `#${new THREE.Color(v).getHexString()}`;
     }
   } catch {
-    colorHex = "#ffffff";
+    return "#ffffff";
   }
+  return "#ffffff";
+}
+
+function ColorPickerInput({ value, onChange }: { value: unknown; onChange: (v: THREE.Color) => void }) {
+  const swatchRef = useRef<HTMLInputElement>(null);
+  const colorHex = parseColorToHex(value);
 
   const [textValue, setTextValue] = useState(colorHex);
 
@@ -61,24 +77,40 @@ function ColorPickerInput({ value, onChange }: { value: unknown; onChange: (v: T
     }
   };
 
+  const openPicker = () => {
+    if (swatchRef.current) {
+      if ("showPicker" in swatchRef.current && typeof swatchRef.current.showPicker === "function") {
+        try {
+          swatchRef.current.showPicker();
+          return;
+        } catch {
+          // Fallback to click
+        }
+      }
+      swatchRef.current.click();
+    }
+  };
+
   const presets = ["#ffffff", "#ef4444", "#f97316", "#eab308", "#22c55e", "#06b6d4", "#3b82f6", "#a855f7", "#000000"];
 
   return (
     <div className="param-color-picker-container" onMouseDown={(e) => e.stopPropagation()}>
       <div className="param-color-main">
-        <input
-          type="color"
-          className="param-color-swatch"
-          value={colorHex}
-          onInput={(e) => {
-            const hex = (e.target as HTMLInputElement).value;
-            handleHexChange(hex);
-          }}
-          onChange={(e) => {
-            const hex = (e.target as HTMLInputElement).value;
-            handleHexChange(hex);
-          }}
-        />
+        <div
+          className="param-color-swatch-box"
+          style={{ backgroundColor: colorHex }}
+          onClick={openPicker}
+          title="Click to pick color"
+        >
+          <input
+            ref={swatchRef}
+            type="color"
+            className="param-color-swatch-hidden"
+            value={colorHex}
+            onInput={(e) => handleHexChange((e.target as HTMLInputElement).value)}
+            onChange={(e) => handleHexChange((e.target as HTMLInputElement).value)}
+          />
+        </div>
         <input
           type="text"
           className="param-color-hex-input"
