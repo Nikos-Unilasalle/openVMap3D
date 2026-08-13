@@ -74,8 +74,34 @@ function toStoredUnit(value: number, degrees?: boolean): number {
   return degrees ? value / RAD_TO_DEG : value;
 }
 
+export function parseVector3(value: unknown): THREE.Vector3 {
+  if (value instanceof THREE.Vector3) return value;
+  if (value && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    const x = Number(obj.x);
+    const y = Number(obj.y);
+    const z = Number(obj.z);
+    return new THREE.Vector3(
+      Number.isFinite(x) ? x : 0,
+      Number.isFinite(y) ? y : 0,
+      Number.isFinite(z) ? z : 0
+    );
+  }
+  if (Array.isArray(value)) {
+    const x = Number(value[0]);
+    const y = Number(value[1]);
+    const z = Number(value[2]);
+    return new THREE.Vector3(
+      Number.isFinite(x) ? x : 0,
+      Number.isFinite(y) ? y : 0,
+      Number.isFinite(z) ? z : 0
+    );
+  }
+  return new THREE.Vector3(0, 0, 0);
+}
+
 function vectorField(field: ParamFieldDef & { kind: "vector" }, value: unknown, onChange: (v: unknown) => void) {
-  const v = value instanceof THREE.Vector3 ? value : new THREE.Vector3();
+  const v = parseVector3(value);
   const axis = (key: "x" | "y" | "z") => (
     <DragNumberInput
       key={key}
@@ -163,7 +189,10 @@ export function ParamPanel({ nodeId, label, category, fields, params, onChange }
       {fields.length === 0 && <div className="param-panel-empty">No editable parameters.</div>}
 
       {groups.map(([groupName, groupFields]) => {
-        const isOpen = !!openGroups[groupName]; // Default is FALSE (closed)
+        const isOpen =
+          openGroups[groupName] !== undefined
+            ? openGroups[groupName]
+            : groupName.includes("Transform") || groupName === "General";
 
         return (
           <div className="param-group" key={groupName}>
