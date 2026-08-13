@@ -53,6 +53,12 @@
 .top-bar-logo-text {
   position: relative;
   z-index: 21;
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.4), 0 0 16px rgba(255, 255, 255, 0.2);
+}
+
+.top-bar-logo-v {
+  color: #F6874B;
+  text-shadow: 0 0 8px rgba(246, 135, 75, 0.8), 0 0 16px rgba(246, 135, 75, 0.5), 0 0 24px rgba(246, 135, 75, 0.3);
 }
 
 .top-bar-divider {

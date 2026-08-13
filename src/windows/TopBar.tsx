@@ -164,7 +164,9 @@ export const TopBar: React.FC<TopBarProps> = ({
       <div className="top-bar-left">
         <div className="top-bar-logo">
           <img src={logoUrl} alt="openVmap" className="top-bar-logo-img" />
-          <span className="top-bar-logo-text">openVmap</span>
+          <span className="top-bar-logo-text">
+            open<span className="top-bar-logo-v">V</span>map
+          </span>
         </div>
         <div className="top-bar-divider" />
       </div>
