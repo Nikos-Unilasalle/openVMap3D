@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readFile, readTextFile } from "@tauri-apps/plugin-fs";
 import * as THREE from "three";
+import { isTauri } from "../shared/graph/storage";
 import { CATEGORY_COLOR, NodeCategory, UNKNOWN_CATEGORY_COLOR } from "../shared/graph/categories";
 import { KeyframeStore, ParamFieldDef } from "../shared/graph/types";
 import { ColorPickerInput } from "./ColorPickerInput";
@@ -59,31 +60,84 @@ function fileField(nodeId: string, field: ParamFieldDef & { kind: "file" }, valu
       type="button"
       className="param-file-button"
       onClick={async () => {
-        const extensions = field.accept?.map((ext) => ext.replace(/^\./, "")) ?? [];
-        const path = await open({
-          multiple: false,
-          filters: extensions.length ? [{ name: "File", extensions }] : undefined,
-        });
-        if (!path || Array.isArray(path)) return;
-        const ext = path.split(".").pop()?.toLowerCase() ?? "";
-        // Images AND audio are binary formats — readTextFile would decode
-        // their bytes as UTF-8, corrupting anything that isn't valid text
-        // (which is most of a compressed image or audio file). Keep this
-        // list in sync with rehydrateFiles.ts's BINARY_EXTENSIONS, which
-        // re-reads these same files from disk on project load.
-        const isBinary = [
-          "png", "jpg", "jpeg", "webp", "bmp", "hdr", "exr", "tif", "tiff",
-          "mp3", "wav", "ogg", "flac", "m4a", "aac",
-        ].includes(ext);
+        const rawExtensions = field.accept?.map((ext) => ext.replace(/^\./, "")) ?? [];
+        const acceptAttr = field.accept?.map((ext) => (ext.startsWith(".") ? ext : `.${ext}`)).join(",");
 
-        if (isBinary) {
-          const bytes = await readFile(path);
-          field.onLoaded?.(nodeId, path, bytes);
-        } else {
-          const content = await readTextFile(path);
-          field.onLoaded?.(nodeId, path, content);
+        if (!isTauri()) {
+          const input = document.createElement("input");
+          input.type = "file";
+          if (acceptAttr) input.accept = acceptAttr;
+          input.onchange = async () => {
+            const file = input.files?.[0];
+            if (!file) return;
+            const path = file.name;
+            const ext = path.split(".").pop()?.toLowerCase() ?? "";
+            const isBinary = [
+              "png", "jpg", "jpeg", "webp", "bmp", "hdr", "exr", "tif", "tiff",
+              "mp3", "wav", "ogg", "flac", "m4a", "aac",
+            ].includes(ext);
+
+            if (isBinary) {
+              const buffer = await file.arrayBuffer();
+              const bytes = new Uint8Array(buffer);
+              field.onLoaded?.(nodeId, path, bytes);
+            } else {
+              const content = await file.text();
+              field.onLoaded?.(nodeId, path, content);
+            }
+            onChange(path);
+          };
+          input.click();
+          return;
         }
-        onChange(path);
+
+        try {
+          const path = await open({
+            multiple: false,
+            filters: rawExtensions.length ? [{ name: "File", extensions: rawExtensions }] : undefined,
+          });
+          if (!path || Array.isArray(path)) return;
+          const ext = path.split(".").pop()?.toLowerCase() ?? "";
+          const isBinary = [
+            "png", "jpg", "jpeg", "webp", "bmp", "hdr", "exr", "tif", "tiff",
+            "mp3", "wav", "ogg", "flac", "m4a", "aac",
+          ].includes(ext);
+
+          if (isBinary) {
+            const bytes = await readFile(path);
+            field.onLoaded?.(nodeId, path, bytes);
+          } else {
+            const content = await readTextFile(path);
+            field.onLoaded?.(nodeId, path, content);
+          }
+          onChange(path);
+        } catch (err) {
+          console.warn("Tauri dialog error, falling back to browser picker:", err);
+          const input = document.createElement("input");
+          input.type = "file";
+          if (acceptAttr) input.accept = acceptAttr;
+          input.onchange = async () => {
+            const file = input.files?.[0];
+            if (!file) return;
+            const path = file.name;
+            const ext = path.split(".").pop()?.toLowerCase() ?? "";
+            const isBinary = [
+              "png", "jpg", "jpeg", "webp", "bmp", "hdr", "exr", "tif", "tiff",
+              "mp3", "wav", "ogg", "flac", "m4a", "aac",
+            ].includes(ext);
+
+            if (isBinary) {
+              const buffer = await file.arrayBuffer();
+              const bytes = new Uint8Array(buffer);
+              field.onLoaded?.(nodeId, path, bytes);
+            } else {
+              const content = await file.text();
+              field.onLoaded?.(nodeId, path, content);
+            }
+            onChange(path);
+          };
+          input.click();
+        }
       }}
     >
       {fileName}
