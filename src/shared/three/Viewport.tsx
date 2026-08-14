@@ -282,12 +282,15 @@ export function Viewport({
       controls.update();
     };
 
+    let isAxisSnapped = false;
+
     /**
      * Snaps to an axis-aligned view, the way Blender's numpad views work.
      * Keeps the current orbit target and distance, so it reframes what you
      * were already looking at instead of jumping back to the origin.
      */
     setAxisViewRef.current = (axis, sign) => {
+      isAxisSnapped = true;
       const target = controls.target.clone();
       const distance = activeCamera.position.distanceTo(target) || 5;
       const direction = new THREE.Vector3(
@@ -305,6 +308,7 @@ export function Viewport({
       orthographicCamera.position.copy(target).addScaledVector(direction, distance);
       orthographicCamera.lookAt(target);
 
+      setIsOrthographic(true);
       controls.update();
     };
 
@@ -314,7 +318,16 @@ export function Viewport({
         quaternion: [activeCamera.quaternion.x, activeCamera.quaternion.y, activeCamera.quaternion.z, activeCamera.quaternion.w],
       });
     }
+
+    const handleOrbitStart = () => {
+      if (isAxisSnapped) {
+        isAxisSnapped = false;
+        setIsOrthographic(false);
+      }
+    };
+
     if (!outputMode) {
+      controls.addEventListener("start", handleOrbitStart);
       controls.addEventListener("change", emitCameraPose);
       emitCameraPose();
     }
@@ -1178,6 +1191,7 @@ export function Viewport({
       if (!outputMode) {
         renderer.domElement.removeEventListener("pointerdown", onCanvasPointerDown);
         renderer.domElement.removeEventListener("pointerup", onCanvasPointerUp);
+        controls.removeEventListener("start", handleOrbitStart);
         controls.removeEventListener("change", emitCameraPose);
         window.removeEventListener("keydown", onSnapKeyDown);
         window.removeEventListener("keyup", onSnapKeyUp);

@@ -1,11 +1,22 @@
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { DEFAULT_REGISTRY } from "./graph/nodes";
 import { rehydrateGraphParams } from "./graph/rehydrateParams";
 import { Graph } from "./graph/types";
 
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+export async function maximizeMainWindow(): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    const appWindow = getCurrentWindow();
+    await appWindow.maximize();
+  } catch (err) {
+    console.warn("Could not maximize window:", err);
+  }
 }
 
 export interface MonitorInfo {

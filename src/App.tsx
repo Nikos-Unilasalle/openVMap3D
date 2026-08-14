@@ -9,7 +9,7 @@ import { disposeNodeCaches } from "./shared/graph/nodeCaches";
 import { rehydrateGraphParams } from "./shared/graph/rehydrateParams";
 import { paramPanelValues } from "./shared/graph/paramPanelValues";
 import { Connection, Graph, Keyframe, KeyframeStore, NodeInstance } from "./shared/graph/types";
-import { broadcastGraph, PreviewCameraPose, startBroadcasting } from "./shared/ipc";
+import { broadcastGraph, maximizeMainWindow, PreviewCameraPose, startBroadcasting } from "./shared/ipc";
 import { TransformPatch } from "./shared/three/Viewport";
 import { SplitViewport } from "./shared/three/SplitViewport";
 import "./shared/three/viewport.css";
@@ -163,6 +163,10 @@ function MainEditor() {
   const [isPlaying, setIsPlaying] = useState(true);
   const [currentFrame, setCurrentFrame] = useState(0);
   const [evaluatedResults, setEvaluatedResults] = useState<Map<string, Record<string, unknown>> | null>(null);
+
+  useEffect(() => {
+    void maximizeMainWindow();
+  }, []);
 
   useEffect(() => {
     if (keyframesEnabled && totalFrames > 0) {

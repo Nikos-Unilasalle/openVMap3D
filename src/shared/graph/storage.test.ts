@@ -40,7 +40,7 @@ describe("storage utilities", () => {
   });
 
   describe("serializeGraph & deserializeGraph", () => {
-    it("round-trips a valid graph", () => {
+    it("round-trips a valid graph including keyframes and markers", () => {
       const graph: Graph = {
         nodes: [
           { id: "1", type: "time", position: { x: 0, y: 0 }, params: {} },
@@ -49,6 +49,12 @@ describe("storage utilities", () => {
         connections: [
           { id: "1.sec->2.geom", fromNode: "1", fromSocket: "seconds", toNode: "2", toSocket: "geometry" },
         ],
+        keyframes: {
+          node1: {
+            radius: [{ frame: 0, value: 1 }, { frame: 30, value: 5 }],
+          },
+        },
+        markers: [12, 45, 90],
       };
 
       const json = serializeGraph(graph);

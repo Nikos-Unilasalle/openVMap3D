@@ -56,6 +56,8 @@ export function serializeGraph(graph: Graph): string {
       toNode: c.toNode,
       toSocket: c.toSocket,
     })),
+    keyframes: graph.keyframes ? JSON.parse(JSON.stringify(graph.keyframes)) : {},
+    markers: Array.isArray(graph.markers) ? [...graph.markers] : [],
   };
   return JSON.stringify(cleanGraph, null, 2);
 }
@@ -87,7 +89,12 @@ export function deserializeGraph(jsonString: string): Graph {
     }
   }
 
-  return { nodes: data.nodes, connections: data.connections };
+  return {
+    nodes: data.nodes,
+    connections: data.connections,
+    keyframes: data.keyframes && typeof data.keyframes === "object" ? data.keyframes : {},
+    markers: Array.isArray(data.markers) ? data.markers : [],
+  };
 }
 
 export function isTauri(): boolean {

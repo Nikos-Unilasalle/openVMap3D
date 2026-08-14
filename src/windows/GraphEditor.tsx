@@ -768,6 +768,15 @@ function GraphEditorContent({ graph, registry, onGraphChange, onSelectNode, sele
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [addNode, copySelected, duplicateSelected, pasteClipboard]);
 
+  const { fitView } = useReactFlow();
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fitView({ padding: 0.25, duration: 400 });
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [fitView]);
+
   const paletteNodes = useMemo(() => [...registry.values()], [registry]);
 
   return (
@@ -796,6 +805,7 @@ function GraphEditorContent({ graph, registry, onGraphChange, onSelectNode, sele
           selectionKeyCode={["Shift", "Meta", "Control"]}
           panOnDrag={[1, 2]}
           fitView
+          fitViewOptions={{ padding: 0.25 }}
           colorMode="dark"
         >
           <Background color="#5b6572" gap={20} />
