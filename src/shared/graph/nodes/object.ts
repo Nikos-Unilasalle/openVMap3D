@@ -349,7 +349,7 @@ function boxMesh(nodeId: string): THREE.Mesh {
 export const OBJECT_BOX_NODE: NodeDefinition = {
   type: "object/box",
   label: "Box",
-  category: "structure",
+  category: "object",
   inputs: [...COMMON_PRIMITIVE_INPUTS],
   outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
   defaultParams: { ...COMMON_DEFAULT_PARAMS },
@@ -389,7 +389,7 @@ function planeMesh(nodeId: string): THREE.Mesh {
 export const OBJECT_PLANE_NODE: NodeDefinition = {
   type: "object/plane",
   label: "Plane",
-  category: "structure",
+  category: "object",
   inputs: [...COMMON_PRIMITIVE_INPUTS],
   outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
   defaultParams: { ...COMMON_DEFAULT_PARAMS },
@@ -429,7 +429,7 @@ function sphereMesh(nodeId: string): THREE.Mesh {
 export const OBJECT_SPHERE_NODE: NodeDefinition = {
   type: "object/sphere",
   label: "Sphere",
-  category: "structure",
+  category: "object",
   inputs: [...COMMON_PRIMITIVE_INPUTS],
   outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
   defaultParams: { ...COMMON_DEFAULT_PARAMS },
@@ -465,19 +465,42 @@ function discMesh(nodeId: string): THREE.Mesh {
   return mesh;
 }
 
-/** 2D Disc / 3D Extruded Cylinder primitive with texture mapping (default depth = 0). */
+/** 2D Disc / Ring / Arc / 3D Extruded geometry primitive with UV texture mapping and opacity. */
 export const OBJECT_DISC_NODE: NodeDefinition = {
   type: "object/disc",
   label: "Disc",
-  category: "structure",
+  category: "object",
   inputs: [
+    { id: "radius", label: "Radius", type: "value" },
+    { id: "innerRadius", label: "Inner Radius", type: "value" },
+    { id: "startAngle", label: "Start Angle", type: "value" },
+    { id: "arcAngle", label: "Arc Angle", type: "value" },
     { id: "depth", label: "Depth", type: "value" },
     ...COMMON_PRIMITIVE_INPUTS,
   ],
   outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
-  defaultParams: { depth: 0, ...COMMON_DEFAULT_PARAMS },
-  paramFields: buildPrimitiveDynamicParamFields([{ id: "depth", label: "Depth / Relief", kind: "number", step: 0.05 }])(),
-  dynamicParamFields: buildPrimitiveDynamicParamFields([{ id: "depth", label: "Depth / Relief", kind: "number", step: 0.05 }]),
+  defaultParams: {
+    radius: 0.5,
+    innerRadius: 0,
+    startAngle: 0,
+    arcAngle: Math.PI * 2,
+    depth: 0,
+    ...COMMON_DEFAULT_PARAMS,
+  },
+  paramFields: buildPrimitiveDynamicParamFields([
+    { id: "radius", label: "Radius", kind: "number", step: 0.05 },
+    { id: "innerRadius", label: "Inner Radius (Hole)", kind: "number", step: 0.05 },
+    { id: "startAngle", label: "Start Angle (°)", kind: "number", step: 1, degrees: true },
+    { id: "arcAngle", label: "Arc Angle (°)", kind: "number", step: 1, degrees: true },
+    { id: "depth", label: "Depth / Relief", kind: "number", step: 0.05 },
+  ])(),
+  dynamicParamFields: buildPrimitiveDynamicParamFields([
+    { id: "radius", label: "Radius", kind: "number", step: 0.05 },
+    { id: "innerRadius", label: "Inner Radius (Hole)", kind: "number", step: 0.05 },
+    { id: "startAngle", label: "Start Angle (°)", kind: "number", step: 1, degrees: true },
+    { id: "arcAngle", label: "Arc Angle (°)", kind: "number", step: 1, degrees: true },
+    { id: "depth", label: "Depth / Relief", kind: "number", step: 0.05 },
+  ]),
   evaluate: (inputs, params, ctx) => {
     const mesh = discMesh(ctx.nodeId);
 
@@ -486,21 +509,59 @@ export const OBJECT_DISC_NODE: NodeDefinition = {
       mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
     }
 
+    const radius = Math.max(0.001, numberInput(inputs.radius, params.radius, 0.5));
+    const innerRadius = Math.max(0, Math.min(radius - 0.0001, numberInput(inputs.innerRadius, params.innerRadius, 0)));
+    const startAngle = numberInput(inputs.startAngle, params.startAngle, 0);
+    const arcAngle = Math.max(0, Math.min(Math.PI * 2, numberInput(inputs.arcAngle, params.arcAngle, Math.PI * 2)));
     const depth = Math.max(0, numberInput(inputs.depth, params.depth, 0));
-    const lastDepth = (mesh as any)._lastDepth;
 
-    if (lastDepth !== depth) {
+    const key = `${radius}_${innerRadius}_${startAngle}_${arcAngle}_${depth}`;
+    const lastKey = (mesh as any)._lastDiscKey;
+
+    if (lastKey !== key) {
       mesh.geometry.dispose();
-      if (depth > 0) {
-        // 3D Cylinder extruded along Z axis
-        const cylGeom = new THREE.CylinderGeometry(0.5, 0.5, depth, 32);
-        cylGeom.rotateX(Math.PI / 2);
-        mesh.geometry = cylGeom;
+      if (depth === 0) {
+        if (innerRadius === 0 && startAngle === 0 && arcAngle >= Math.PI * 2 - 1e-4) {
+          mesh.geometry = new THREE.CircleGeometry(radius, 64);
+        } else {
+          mesh.geometry = new THREE.RingGeometry(innerRadius, radius, 64, 1, startAngle, arcAngle);
+        }
       } else {
-        // 2D Circle disc on Z=0 plane
-        mesh.geometry = new THREE.CircleGeometry(0.5, 32);
+        if (innerRadius === 0 && startAngle === 0 && arcAngle >= Math.PI * 2 - 1e-4) {
+          const cylGeom = new THREE.CylinderGeometry(radius, radius, depth, 64);
+          cylGeom.rotateX(Math.PI / 2);
+          mesh.geometry = cylGeom;
+        } else {
+          const shape = new THREE.Shape();
+          const endAngle = startAngle + arcAngle;
+          const isFullCircle = arcAngle >= Math.PI * 2 - 1e-4;
+
+          if (innerRadius === 0 && isFullCircle) {
+            shape.absarc(0, 0, radius, 0, Math.PI * 2, false);
+          } else if (innerRadius > 0 && isFullCircle) {
+            shape.absarc(0, 0, radius, 0, Math.PI * 2, false);
+            const holePath = new THREE.Path();
+            holePath.absarc(0, 0, innerRadius, 0, Math.PI * 2, true);
+            shape.holes.push(holePath);
+          } else {
+            shape.absarc(0, 0, radius, startAngle, endAngle, false);
+            if (innerRadius > 0) {
+              shape.absarc(0, 0, innerRadius, endAngle, startAngle, true);
+            } else {
+              shape.lineTo(0, 0);
+            }
+          }
+
+          const extrudeGeom = new THREE.ExtrudeGeometry(shape, {
+            depth,
+            bevelEnabled: false,
+            curveSegments: 64,
+          });
+          extrudeGeom.translate(0, 0, -depth / 2);
+          mesh.geometry = extrudeGeom;
+        }
       }
-      (mesh as any)._lastDepth = depth;
+      (mesh as any)._lastDiscKey = key;
     }
 
     const matParams = extractMaterialParams(inputs, params);
@@ -530,7 +591,7 @@ function cylinderMesh(nodeId: string): THREE.Mesh {
 export const OBJECT_CYLINDER_NODE: NodeDefinition = {
   type: "object/cylinder",
   label: "Cylinder",
-  category: "structure",
+  category: "object",
   inputs: [...COMMON_PRIMITIVE_INPUTS],
   outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
   defaultParams: { ...COMMON_DEFAULT_PARAMS },
@@ -570,7 +631,7 @@ function coneMesh(nodeId: string): THREE.Mesh {
 export const OBJECT_CONE_NODE: NodeDefinition = {
   type: "object/cone",
   label: "Cone",
-  category: "structure",
+  category: "object",
   inputs: [...COMMON_PRIMITIVE_INPUTS],
   outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
   defaultParams: { ...COMMON_DEFAULT_PARAMS },
@@ -641,7 +702,7 @@ function textMesh(nodeId: string): TextMeshState {
 export const OBJECT_TEXT_NODE: NodeDefinition = {
   type: "object/text",
   label: "Text",
-  category: "structure",
+  category: "object",
   inputs: [
     { id: "text", label: "Text", type: "text" },
     { id: "font", label: "Font", type: "text" },
@@ -786,7 +847,7 @@ function getOrCreateLabelState(parentState: BarGraphState, index: number): Label
 export const OBJECT_BAR_GRAPH_NODE: NodeDefinition = {
   type: "object/bar_graph",
   label: "Bar Graph",
-  category: "structure",
+  category: "object",
   inputs: [
     { id: "values", label: "Values (List)", type: "any" },
     { id: "colors", label: "Colors (List)", type: "any" },

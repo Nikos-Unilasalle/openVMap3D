@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
 
-/** Get List Item node — retrieves an element from a list at the specified index. */
+/** Get List Item node — retrieves an element from a list at the specified index, with dynamic typing supporting any element type (Geometry, Vector, Matrix, Color, Value, Text). */
 export const GET_LIST_ITEM_NODE: NodeDefinition = {
   type: "list/get-item",
   label: "Get List Item",
@@ -11,9 +11,17 @@ export const GET_LIST_ITEM_NODE: NodeDefinition = {
     { id: "index", label: "Index", type: "value" },
   ],
   outputs: [
-    { id: "item", label: "Item", type: "value" },
+    { id: "item", label: "Item", type: "any" },
     { id: "val", label: "Value", type: "value" },
   ],
+  dynamicOutputs: (_connections, connectionTypes) => {
+    const listConn = connectionTypes?.find((c) => c.connection.toSocket === "list");
+    const sourceType = listConn?.sourceSocketType;
+    return [
+      { id: "item", label: "Item", type: sourceType && sourceType !== "list" ? sourceType : "any" },
+      { id: "val", label: "Value", type: "value" },
+    ];
+  },
   defaultParams: { index: 0 },
   paramFields: [{ id: "index", label: "Index", kind: "number" }],
   evaluate: (inputs, params) => {
@@ -25,7 +33,7 @@ export const GET_LIST_ITEM_NODE: NodeDefinition = {
     // Wrap around index defensively using modulo
     const safeIndex = ((index % list.length) + list.length) % list.length;
     const raw = list[safeIndex];
-    const val = Number(raw) || 0;
+    const val = typeof raw === "number" ? raw : Number(raw) || 0;
 
     return { item: raw, val };
   },

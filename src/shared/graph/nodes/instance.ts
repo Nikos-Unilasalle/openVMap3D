@@ -61,7 +61,7 @@ function getInstances(source: THREE.Object3D): THREE.Object3D[] {
 export const SET_INSTANCE_COLOR_NODE: NodeDefinition = {
   type: "structure/instance-color",
   label: "Set Instance Color",
-  category: "structure",
+  category: "instance",
   inputs: [
     { id: "geometry", label: "Geometry", type: "geometry" },
     { id: "colors", label: "Colors", type: "list" },
@@ -126,7 +126,7 @@ function resolveScalarOrListItem(inputVal: unknown, index: number, fallback: num
 export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
   type: "structure/instance-transform",
   label: "Set Instance Transform",
-  category: "structure",
+  category: "instance",
   inputs: [
     { id: "geometry", label: "Geometry", type: "geometry" },
     { id: "positions", label: "Positions (Vector List)", type: "list" },
@@ -272,7 +272,7 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
 export const GET_INSTANCE_NODE: NodeDefinition = {
   type: "structure/get-instance",
   label: "Get Instance",
-  category: "structure",
+  category: "instance",
   inputs: [
     { id: "geometry", label: "Geometry", type: "geometry" },
     { id: "index", label: "Index", type: "value" },
@@ -311,7 +311,7 @@ export const GET_INSTANCE_NODE: NodeDefinition = {
 export const GEOMETRY_TRANSFORM_NODE: NodeDefinition = {
   type: "structure/geometry-transform",
   label: "Geometry Transform",
-  category: "structure",
+  category: "instance",
   inputs: [
     { id: "geometry", label: "Geometry", type: "geometry" },
     { id: "matrix", label: "Matrix", type: "matrix" },
@@ -421,3 +421,25 @@ export const GEOMETRY_TRANSFORM_NODE: NodeDefinition = {
     return { geometry: group };
   },
 };
+
+/**
+ * Instances to List node — decomposes a Group or Array geometry into a List of individual 3D instances.
+ */
+export const INSTANCES_TO_LIST_NODE: NodeDefinition = {
+  type: "structure/instances-to-list",
+  label: "Instances to List",
+  category: "converter",
+  inputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
+  outputs: [
+    { id: "list", label: "List", type: "list" },
+    { id: "count", label: "Count", type: "value" },
+  ],
+  defaultParams: {},
+  evaluate: (inputs) => {
+    const source = inputs.geometry instanceof THREE.Object3D ? inputs.geometry : null;
+    if (!source) return { list: [], count: 0 };
+    const instances = getInstances(source);
+    return { list: instances, count: instances.length };
+  },
+};
+

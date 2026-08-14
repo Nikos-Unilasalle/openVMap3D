@@ -12,7 +12,9 @@ export function NodePalette({ nodes, onAddNode }: NodePaletteProps) {
   return (
     <div className="node-palette">
       {CATEGORY_ORDER.map((category) => {
-        const inCategory = nodes.filter((def) => def.category === category);
+        const inCategory = nodes
+          .filter((def) => def.category === category)
+          .sort((a, b) => a.label.localeCompare(b.label));
         if (inCategory.length === 0) return null;
         const color = CATEGORY_COLOR[category];
         return (

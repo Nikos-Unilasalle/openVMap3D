@@ -96,3 +96,87 @@ export const DISTANCE_NODE: NodeDefinition = {
     };
   },
 };
+
+function collectCandidateObjects(input: unknown): THREE.Object3D[] {
+  const result: THREE.Object3D[] = [];
+
+  function helper(item: unknown) {
+    if (!item) return;
+    if (Array.isArray(item)) {
+      item.forEach(helper);
+    } else if (item instanceof THREE.Group && item.children.length > 0) {
+      item.children.forEach(helper);
+    } else if (item instanceof THREE.Object3D) {
+      result.push(item);
+    }
+  }
+
+  helper(input);
+  return result;
+}
+
+/**
+ * Proximity Object Node: Finds the nearest 3D Object (or Vector) from a list or group of candidate objects
+ * relative to a Target object or position. Automatically unrolls instances inside Groups (e.g. Array node).
+ */
+export const PROXIMITY_OBJECT_NODE: NodeDefinition = {
+  type: "object/proximity",
+  label: "Proximity Object",
+  category: "structure",
+  inputs: [
+    { id: "target", label: "Target", type: "geometry" },
+    { id: "candidates", label: "Candidates", type: "list" },
+  ],
+  outputs: [
+    { id: "object", label: "Nearest Object", type: "geometry" },
+    { id: "distance", label: "Distance", type: "value" },
+    { id: "index", label: "Index", type: "value" },
+    { id: "vector", label: "Position", type: "vector" },
+  ],
+  defaultParams: {
+    ignoreSelf: true,
+  },
+  paramFields: [
+    { id: "ignoreSelf", label: "Ignore Self if in list", kind: "boolean" },
+  ],
+  evaluate: (inputs, params) => {
+    const targetObj = inputs.target;
+    const targetPos = extractPosition(targetObj, new THREE.Vector3());
+
+    const candidateObjects = collectCandidateObjects(inputs.candidates);
+    const ignoreSelf = params.ignoreSelf !== false;
+
+    let minDistanceSq = Infinity;
+    let nearestObj: THREE.Object3D | null = null;
+    let nearestIndex = -1;
+    let nearestPos = new THREE.Vector3();
+
+    for (let i = 0; i < candidateObjects.length; i++) {
+      const candidate = candidateObjects[i];
+
+      if (ignoreSelf && targetObj instanceof THREE.Object3D && candidate === targetObj) {
+        continue;
+      }
+
+      const candPos = extractPosition(candidate, new THREE.Vector3());
+      const distSq = targetPos.distanceToSquared(candPos);
+
+      if (distSq < minDistanceSq) {
+        minDistanceSq = distSq;
+        nearestObj = candidate;
+        nearestIndex = i;
+        nearestPos = candPos;
+      }
+    }
+
+    const distance = Number.isFinite(minDistanceSq) ? Math.sqrt(minDistanceSq) : 0;
+
+    return {
+      object: nearestObj ?? (targetObj instanceof THREE.Object3D ? targetObj : new THREE.Object3D()),
+      distance,
+      index: nearestIndex,
+      vector: nearestPos,
+    };
+  },
+};
+

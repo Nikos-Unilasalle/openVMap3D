@@ -216,6 +216,19 @@ describe("LOGIC NODES", () => {
     ]);
     expect(dynamicOutputs.find((s) => s.id === "out")?.type).toBe("matrix");
   });
+
+  test("GET_LIST_ITEM_NODE returns polymorphic items (Object3D, Vector3, etc.) with dynamic typing", () => {
+    const mesh = new THREE.Mesh();
+    const resMesh = GET_LIST_ITEM_NODE.evaluate({ list: [mesh], index: 0 }, { index: 0 }, CTX);
+    expect(resMesh.item).toBe(mesh);
+
+    const vec = new THREE.Vector3(1, 2, 3);
+    const resVec = GET_LIST_ITEM_NODE.evaluate({ list: [vec], index: 0 }, { index: 0 }, CTX);
+    expect(resVec.item).toBe(vec);
+
+    const dynamicOutputs = GET_LIST_ITEM_NODE.dynamicOutputs!([], []);
+    expect(dynamicOutputs.find((s) => s.id === "item")?.type).toBe("any");
+  });
 });
 
 describe("OSCILLATOR & ENVELOPE NODES", () => {
@@ -480,6 +493,19 @@ describe("PRIMITIVES & MATERIAL PROPERTIES (DISC, SHADELESS)", () => {
     const res = OBJECT_DISC_NODE.evaluate({ depth: 0.5 }, OBJECT_DISC_NODE.defaultParams, { ...CTX, nodeId: "disc-3d" });
     const mesh = res.geometry as THREE.Mesh;
     expect(mesh.geometry.type).toBe("CylinderGeometry");
+  });
+
+  test("OBJECT_DISC_NODE renders 2D RingGeometry when innerRadius > 0 or arcAngle < 2pi", () => {
+    const resHole = OBJECT_DISC_NODE.evaluate({ innerRadius: 0.2 }, OBJECT_DISC_NODE.defaultParams, { ...CTX, nodeId: "disc-ring" });
+    expect((resHole.geometry as THREE.Mesh).geometry.type).toBe("RingGeometry");
+
+    const resArc = OBJECT_DISC_NODE.evaluate({ arcAngle: Math.PI }, OBJECT_DISC_NODE.defaultParams, { ...CTX, nodeId: "disc-arc" });
+    expect((resArc.geometry as THREE.Mesh).geometry.type).toBe("RingGeometry");
+  });
+
+  test("OBJECT_DISC_NODE renders 3D ExtrudeGeometry when depth > 0 and innerRadius > 0 or arcAngle < 2pi", () => {
+    const resExtrude = OBJECT_DISC_NODE.evaluate({ depth: 0.5, innerRadius: 0.2 }, OBJECT_DISC_NODE.defaultParams, { ...CTX, nodeId: "disc-extrude" });
+    expect((resExtrude.geometry as THREE.Mesh).geometry.type).toBe("ExtrudeGeometry");
   });
 
   test("OBJECT_BOX_NODE applies MeshBasicMaterial when shadeless is true", () => {

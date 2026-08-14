@@ -19,7 +19,7 @@ function getGroup(nodeId: string): THREE.Group {
 export const ARRAY_NODE: NodeDefinition = {
   type: "structure/array",
   label: "Array",
-  category: "structure",
+  category: "instance",
   inputs: [
     { id: "geometry", label: "Geometry", type: "geometry" },
     { id: "count", label: "Count", type: "value" },

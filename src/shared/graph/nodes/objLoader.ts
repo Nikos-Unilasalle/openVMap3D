@@ -61,7 +61,7 @@ function asColor(v: unknown, fallback: THREE.Color): THREE.Color {
 export const OBJECT_OBJ_NODE: NodeDefinition = {
   type: "object/obj",
   label: "OBJ Model",
-  category: "structure",
+  category: "object",
   inputs: [
     { id: "diffuse", label: "Diffuse Map", type: "texture" },
     { id: "normal", label: "Normal Map", type: "texture" },

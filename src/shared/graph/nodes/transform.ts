@@ -207,4 +207,54 @@ export const TRANSFORM_VECTOR_NODE: NodeDefinition = {
   },
 };
 
+/**
+ * Pivot Transform node — transforms an existing base Matrix4 (or identity)
+ * by applying rotation, scale, and location offset relative to an arbitrary Pivot Point.
+ */
+export const PIVOT_TRANSFORM_NODE: NodeDefinition = {
+  type: "transform/pivot",
+  label: "Pivot Transform",
+  category: "transform",
+  inputs: [
+    { id: "matrix", label: "Matrix", type: "matrix" },
+    { id: "pivot", label: "Pivot", type: "vector" },
+    { id: "location", label: "Location", type: "vector" },
+    { id: "rotation", label: "Rotation", type: "vector" },
+    { id: "scale", label: "Scale", type: "vector" },
+  ],
+  outputs: [{ id: "matrix", label: "Matrix", type: "matrix" }],
+  defaultParams: {
+    pivot: ZERO.clone(),
+    location: ZERO.clone(),
+    rotation: ZERO.clone(),
+    scale: ONE.clone(),
+  },
+  paramFields: [
+    { id: "pivot", label: "Pivot Point", kind: "vector" },
+    { id: "location", label: "Location Offset", kind: "vector" },
+    { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true },
+    { id: "scale", label: "Scale Multiplier", kind: "vector" },
+  ],
+  evaluate: (inputs) => {
+    const baseMatrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
+    const pivot = asVector3(inputs.pivot, ZERO);
+    const location = asVector3(inputs.location, ZERO);
+    const rotation = asVector3(inputs.rotation, ZERO);
+    const scale = asVector3(inputs.scale, ONE);
+
+    const mPivotInv = new THREE.Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z);
+    const mRotScale = composeTransform(ZERO, rotation, scale);
+    const mPivotLoc = new THREE.Matrix4().makeTranslation(pivot.x + location.x, pivot.y + location.y, pivot.z + location.z);
+
+    const deltaMatrix = new THREE.Matrix4()
+      .multiply(mPivotLoc)
+      .multiply(mRotScale)
+      .multiply(mPivotInv);
+
+    const matrix = new THREE.Matrix4().multiplyMatrices(baseMatrix, deltaMatrix);
+    return { matrix };
+  },
+};
+
+
 

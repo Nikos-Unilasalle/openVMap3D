@@ -1,6 +1,9 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { composeNativeMatrix, composeTransform } from "./transform";
+import { PIVOT_TRANSFORM_NODE, composeNativeMatrix, composeTransform } from "./transform";
+import { EvalContext } from "../types";
+
+const CTX: EvalContext = { time: 0, step: 0, nodeId: "test" };
 
 function decompose(m: THREE.Matrix4) {
   const position = new THREE.Vector3();
@@ -44,14 +47,12 @@ describe("composeNativeMatrix", () => {
   });
 
   it("a wired delta modifies the base without cancelling it — a translation delta moves relative to the base's own local axes", () => {
-    // Base: rotated 90° around Y, so its local +X axis points along world -Z.
     const base = composeNativeMatrix(
       undefined,
       new THREE.Vector3(0, 0, 0),
       new THREE.Vector3(0, Math.PI / 2, 0),
       new THREE.Vector3(1, 1, 1),
     );
-    // A delta that just translates 1 unit along local +X.
     const delta = new THREE.Matrix4().makeTranslation(1, 0, 0);
 
     const result = composeNativeMatrix(
@@ -61,12 +62,10 @@ describe("composeNativeMatrix", () => {
       new THREE.Vector3(1, 1, 1),
     );
 
-    // The delta's translation is expressed in the base's local frame — with
-    // the base rotated 90° around Y, local +X maps to world -Z, not world +X.
     const { position } = decompose(result);
     expect(position.x).toBeCloseTo(0, 5);
     expect(position.z).toBeCloseTo(-1, 5);
-    void base; // establishes the rotation this expectation depends on, kept for readability
+    void base;
   });
 
   it("base × delta round-trips: recovering the base by inverting a known delta out of the composed result", () => {
@@ -98,5 +97,36 @@ describe("composeNativeMatrix", () => {
   it("falls back to identity location/rotation and unit scale when params are missing", () => {
     const result = composeNativeMatrix(undefined, undefined, undefined, undefined);
     expect(result.toArray()).toEqual(new THREE.Matrix4().toArray());
+  });
+});
+
+describe("PIVOT_TRANSFORM_NODE", () => {
+  it("rotates around an arbitrary pivot point", () => {
+    const pivot = new THREE.Vector3(0, 2, 0);
+    const rotation = new THREE.Vector3(0, 0, Math.PI / 2); // 90° rotation on Z
+    const result = PIVOT_TRANSFORM_NODE.evaluate(
+      { pivot, rotation },
+      PIVOT_TRANSFORM_NODE.defaultParams,
+      CTX,
+    );
+
+    const m = result.matrix as THREE.Matrix4;
+
+    // Transform a point originally at (3, 2, 0) — relative offset (3, 0, 0) from pivot (0, 2, 0)
+    const testVec = new THREE.Vector3(3, 2, 0).applyMatrix4(m);
+
+    // Rotating (3, 0) by +90° gives (0, 3). Adding pivot (0, 2) gives (0, 5, 0).
+    expect(testVec.x).toBeCloseTo(0, 5);
+    expect(testVec.y).toBeCloseTo(5, 5);
+    expect(testVec.z).toBeCloseTo(0, 5);
+  });
+
+  it("handles empty inputs safely without throwing or returning NaN", () => {
+    const result = PIVOT_TRANSFORM_NODE.evaluate({}, PIVOT_TRANSFORM_NODE.defaultParams, CTX);
+    expect(result.matrix).toBeInstanceOf(THREE.Matrix4);
+    const elements = (result.matrix as THREE.Matrix4).elements;
+    for (const el of elements) {
+      expect(Number.isFinite(el)).toBe(true);
+    }
   });
 });
