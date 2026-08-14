@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, test } from "vitest";
 import { EvalContext } from "../types";
-import { MAP_RANGE_NODE, VALUE_MATH_NODE } from "./valueMath";
+import { CLAMP_NODE, MAP_RANGE_NODE, VALUE_MATH_NODE } from "./valueMath";
 import { TRANSFORM_NODE, DECOMPOSE_MATRIX_NODE, PARENT_NODE, LOOK_AT_NODE, MATRIX_TRANSFORM_NODE, TRANSFORM_VECTOR_NODE } from "./transform";
 import { VECTOR_MATH_NODE } from "./vector";
 import { COMPARE_NODE, BOOLEAN_LOGIC_NODE, TRIGGER_NODE, TOGGLE_NODE, GATE_NODE, LOGIC_BRIDGE_NODE } from "./logic";
@@ -16,12 +16,6 @@ import { INSPECTOR_NODE } from "./inspector";
 import { AUDIO_PEAK_DETECTOR_NODE, AUDIO_PLAYER_NODE, AUDIO_SPECTRUM_NODE, AUDIO_SYNTH_NODE, MICROPHONE_INPUT_NODE } from "./sound";
 import { RANDOM_LIST_NODE, RANDOM_MATRIX_NODE, RANDOM_VALUE_NODE, RANDOM_VECTOR_NODE } from "./random";
 
-
-
-
-
-
-
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "test" };
 
 describe("VALUE_MATH_NODE", () => {
@@ -34,12 +28,31 @@ describe("VALUE_MATH_NODE", () => {
     expect(VALUE_MATH_NODE.evaluate({ a: 4, b: 5 }, params, CTX).out).toBe(20);
   });
 
+  test("clamps values in Value Math using clamp operation", () => {
+    const params = { ...VALUE_MATH_NODE.defaultParams, op: "clamp" };
+    expect(VALUE_MATH_NODE.evaluate({ a: 2.5, b: 1 }, params, CTX).out).toBe(1);
+    expect(VALUE_MATH_NODE.evaluate({ a: -0.5, b: 1 }, params, CTX).out).toBe(0);
+    expect(VALUE_MATH_NODE.evaluate({ a: 0.5, b: 1 }, params, CTX).out).toBe(0.5);
+  });
+
   test("divide by zero is 0, not Infinity or NaN — a live signal hitting this must not poison downstream nodes", () => {
     const params = { ...VALUE_MATH_NODE.defaultParams, op: "divide" };
     const result = VALUE_MATH_NODE.evaluate({ a: 5, b: 0 }, params, CTX).out;
 
     expect(result).toBe(0);
     expect(Number.isFinite(result)).toBe(true);
+  });
+});
+
+describe("CLAMP_NODE", () => {
+  test("clamps value between min and max limits", () => {
+    expect(CLAMP_NODE.evaluate({ value: 5 }, { min: 0, max: 10 }, CTX).out).toBe(5);
+    expect(CLAMP_NODE.evaluate({ value: 15 }, { min: 0, max: 10 }, CTX).out).toBe(10);
+    expect(CLAMP_NODE.evaluate({ value: -5 }, { min: 0, max: 10 }, CTX).out).toBe(0);
+  });
+
+  test("handles inverted min and max parameters gracefully", () => {
+    expect(CLAMP_NODE.evaluate({ value: 15 }, { min: 10, max: 0 }, CTX).out).toBe(10);
   });
 });
 
@@ -350,6 +363,38 @@ describe("OBJECT PRIMITIVES", () => {
     expect(labelsGroup.children.length).toBe(4);
   });
 
+  test("primitives output their own pose as a Matrix4", () => {
+    // Arrange
+    const params = { ...OBJECT_BOX_NODE.defaultParams, location: new THREE.Vector3(2, 3, 4) };
+
+    // Act
+    const res = OBJECT_BOX_NODE.evaluate({}, params, CTX);
+
+    // Assert
+    const matrix = res.matrix as THREE.Matrix4;
+    expect(matrix).toBeInstanceOf(THREE.Matrix4);
+    const pos = new THREE.Vector3().setFromMatrixPosition(matrix);
+    expect(pos.x).toBeCloseTo(2);
+    expect(pos.y).toBeCloseTo(3);
+    expect(pos.z).toBeCloseTo(4);
+  });
+
+  test("primitives hand out a copy of their matrix, not the live one", () => {
+    const res = OBJECT_BOX_NODE.evaluate({}, OBJECT_BOX_NODE.defaultParams, CTX);
+    const mesh = res.geometry as THREE.Mesh;
+
+    (res.matrix as THREE.Matrix4).setPosition(99, 99, 99);
+
+    expect(new THREE.Vector3().setFromMatrixPosition(mesh.matrix).x).toBe(0);
+  });
+
+  test("a wired matrix comes back out on the matrix output", () => {
+    const wired = new THREE.Matrix4().makeTranslation(7, 0, 0);
+
+    const res = OBJECT_SPHERE_NODE.evaluate({ matrix: wired }, OBJECT_SPHERE_NODE.defaultParams, CTX);
+
+    expect(new THREE.Vector3().setFromMatrixPosition(res.matrix as THREE.Matrix4).x).toBeCloseTo(7);
+  });
 });
 
 describe("LIST NODES", () => {

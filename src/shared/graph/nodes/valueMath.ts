@@ -7,6 +7,7 @@ const OPS: Record<string, (a: number, b: number) => number> = {
   divide: (a, b) => (b === 0 ? 0 : a / b),
   min: Math.min,
   max: Math.max,
+  clamp: (a, b) => Math.min(Math.max(a, 0), b > 0 ? b : 1),
   mod: (a, b) => (b === 0 ? 0 : ((a % b) + b) % b),
   power: Math.pow,
 };
@@ -32,6 +33,39 @@ export const VALUE_MATH_NODE: NodeDefinition = {
     const a = inputs.a !== undefined ? Number(inputs.a) : (Number(params.a) || 0);
     const b = inputs.b !== undefined ? Number(inputs.b) : (Number(params.b) || 0);
     return { out: op(isNaN(a) ? 0 : a, isNaN(b) ? 0 : b) };
+  },
+};
+
+/** Clamp node — restricts an incoming scalar value between Min and Max limits. */
+export const CLAMP_NODE: NodeDefinition = {
+  type: "value/clamp",
+  label: "Clamp",
+  category: "math",
+  inputs: [
+    { id: "value", label: "Value", type: "value" },
+    { id: "min", label: "Min", type: "value" },
+    { id: "max", label: "Max", type: "value" },
+  ],
+  outputs: [{ id: "out", label: "Out", type: "value" }],
+  defaultParams: { value: 0, min: 0, max: 1 },
+  paramFields: [
+    { id: "value", label: "Value (fallback)", kind: "number" },
+    { id: "min", label: "Min Limit", kind: "number" },
+    { id: "max", label: "Max Limit", kind: "number" },
+  ],
+  evaluate: (inputs, params) => {
+    const val = inputs.value !== undefined ? Number(inputs.value) : (Number(params.value) || 0);
+    const minVal = inputs.min !== undefined ? Number(inputs.min) : (params.min !== undefined ? Number(params.min) : 0);
+    const maxVal = inputs.max !== undefined ? Number(inputs.max) : (params.max !== undefined ? Number(params.max) : 1);
+
+    const safeVal = isNaN(val) ? 0 : val;
+    const safeMin = isNaN(minVal) ? 0 : minVal;
+    const safeMax = isNaN(maxVal) ? 1 : maxVal;
+
+    const lower = Math.min(safeMin, safeMax);
+    const upper = Math.max(safeMin, safeMax);
+
+    return { out: Math.min(upper, Math.max(lower, safeVal)) };
   },
 };
 

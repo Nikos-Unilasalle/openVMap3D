@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { NodeDefinition } from "../types";
 import { createNodeCache } from "../nodeCaches";
 import { composeNativeMatrix } from "./transform";
+import { COMMON_PRIMITIVE_OUTPUTS, primitiveOutputs } from "./object";
 
 interface TextureNodeState {
   texture?: THREE.Texture;
@@ -128,7 +129,7 @@ export const TEXTURE_PLANE_NODE: NodeDefinition = {
     { id: "uvScale", label: "UV Scale", type: "vector" },
     { id: "uvOffset", label: "UV Offset", type: "vector" },
   ],
-  outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
+  outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: {
     location: new THREE.Vector3(0, 0, 0),
     rotation: new THREE.Vector3(0, 0, 0),
@@ -257,7 +258,7 @@ export const TEXTURE_PLANE_NODE: NodeDefinition = {
     }
     mat.needsUpdate = true;
 
-    return { geometry: mesh };
+    return primitiveOutputs(mesh);
   },
 };
 

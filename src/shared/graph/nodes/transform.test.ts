@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { PIVOT_TRANSFORM_NODE, composeNativeMatrix, composeTransform } from "./transform";
+import { LOOK_AT_NODE, PIVOT_TRANSFORM_NODE, composeNativeMatrix, composeTransform } from "./transform";
 import { EvalContext } from "../types";
 
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "test" };
@@ -128,5 +128,28 @@ describe("PIVOT_TRANSFORM_NODE", () => {
     for (const el of elements) {
       expect(Number.isFinite(el)).toBe(true);
     }
+  });
+});
+
+describe("LOOK_AT_NODE", () => {
+  it("accepts Object3D geometry as input and returns transformed geometry and orientation matrix", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    box.position.set(0, 0, 10);
+
+    const targetObj = new THREE.Mesh();
+    targetObj.position.set(0, 0, 0);
+
+    const res = LOOK_AT_NODE.evaluate(
+      { geometry: box, target: targetObj },
+      LOOK_AT_NODE.defaultParams,
+      CTX,
+    );
+
+    expect(res.geometry).toBeInstanceOf(THREE.Group);
+    expect(res.matrix).toBeInstanceOf(THREE.Matrix4);
+    const mat = res.matrix as THREE.Matrix4;
+    const pos = new THREE.Vector3();
+    mat.decompose(pos, new THREE.Quaternion(), new THREE.Vector3());
+    expect(pos.z).toBeCloseTo(10);
   });
 });

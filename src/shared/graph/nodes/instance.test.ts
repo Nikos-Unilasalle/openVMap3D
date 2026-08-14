@@ -188,6 +188,137 @@ describe("INSTANCE MANIPULATION NODES", () => {
     expect(pos0.y).toBe(1);
     expect(scale0.y).toBe(0.5);
   });
+
+  it("SET_INSTANCE_TRANSFORM_NODE transforms only the instance named by the Index input", () => {
+    // Arrange — a linear array of 3 boxes at x = 0, 2, 4.
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const arrayRes = ARRAY_NODE.evaluate({ geometry: box }, { count: 3, spacing: 2 }, CTX);
+
+    // Act — lift the middle one.
+    const res = SET_INSTANCE_TRANSFORM_NODE.evaluate(
+      { geometry: arrayRes.geometry, index: 1 },
+      { posY: 5 },
+      CTX
+    );
+
+    // Assert — instance 1 sits in a wrapper carrying the offset, the others
+    // come through with their original array matrix untouched.
+    const group = res.geometry as THREE.Group;
+    expect(group.children.length).toBe(3);
+
+    const positionOf = (child: THREE.Object3D) => {
+      const pos = new THREE.Vector3();
+      child.matrix.decompose(pos, new THREE.Quaternion(), new THREE.Vector3());
+      return pos;
+    };
+
+    expect(positionOf(group.children[1]).y).toBeCloseTo(5);
+    expect(positionOf(group.children[0]).x).toBeCloseTo(0);
+    expect(positionOf(group.children[0]).y).toBeCloseTo(0);
+    expect(positionOf(group.children[2]).x).toBeCloseTo(4);
+    expect(positionOf(group.children[2]).y).toBeCloseTo(0);
+  });
+
+  it("SET_INSTANCE_COLOR_NODE colors only the instance named by the Index input", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0xffffff }));
+    const arrayRes = ARRAY_NODE.evaluate({ geometry: box }, { count: 3, spacing: 2 }, CTX);
+
+    const res = SET_INSTANCE_COLOR_NODE.evaluate(
+      { geometry: arrayRes.geometry, color: new THREE.Color(0xff0000), index: 2 },
+      {},
+      CTX
+    );
+
+    const group = res.geometry as THREE.Group;
+    const colorOf = (i: number) => {
+      const mesh = (group.children[i] as THREE.Group).children[0] as THREE.Mesh;
+      return (mesh.material as THREE.MeshStandardMaterial).color;
+    };
+
+    expect(colorOf(2).r).toBe(1);
+    expect(colorOf(2).g).toBe(0);
+    expect(colorOf(0).g).toBe(1);
+    expect(colorOf(1).g).toBe(1);
+  });
+
+  it("SET_INSTANCE_TRANSFORM_NODE targets every instance when Index is -1 or unwired", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const arrayRes = ARRAY_NODE.evaluate({ geometry: box }, { count: 3, spacing: 2 }, CTX);
+
+    const res = SET_INSTANCE_TRANSFORM_NODE.evaluate(
+      { geometry: arrayRes.geometry },
+      { ...SET_INSTANCE_TRANSFORM_NODE.defaultParams, posY: 5 },
+      CTX
+    );
+
+    const group = res.geometry as THREE.Group;
+    group.children.forEach((child) => {
+      const pos = new THREE.Vector3();
+      child.matrix.decompose(pos, new THREE.Quaternion(), new THREE.Vector3());
+      expect(pos.y).toBeCloseTo(5);
+    });
+  });
+
+  it("SET_INSTANCE_TRANSFORM_NODE leaves the pack untouched when Index is past the last instance", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const arrayRes = ARRAY_NODE.evaluate({ geometry: box }, { count: 3, spacing: 2 }, CTX);
+
+    const res = SET_INSTANCE_TRANSFORM_NODE.evaluate(
+      { geometry: arrayRes.geometry, index: 7 },
+      { posY: 5 },
+      CTX
+    );
+
+    const group = res.geometry as THREE.Group;
+    expect(group.children.length).toBe(3);
+    group.children.forEach((child) => {
+      const pos = new THREE.Vector3();
+      child.matrix.decompose(pos, new THREE.Quaternion(), new THREE.Vector3());
+      expect(pos.y).toBeCloseTo(0);
+    });
+  });
+
+  it("SET_INSTANCE_TRANSFORM_NODE accepts single scalar inputs when Index is provided", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const arrayRes = ARRAY_NODE.evaluate({ geometry: box }, { count: 4, spacing: 2 }, CTX);
+
+    const res = SET_INSTANCE_TRANSFORM_NODE.evaluate(
+      { geometry: arrayRes.geometry, index: 1, scaleX: 0.2, scaleY: 0.5 },
+      {},
+      CTX
+    );
+
+    const group = res.geometry as THREE.Group;
+    expect(group.children.length).toBe(4);
+
+    const scaleOf = (child: THREE.Object3D) => {
+      const scale = new THREE.Vector3();
+      child.matrix.decompose(new THREE.Vector3(), new THREE.Quaternion(), scale);
+      return scale;
+    };
+
+    expect(scaleOf(group.children[1]).x).toBeCloseTo(0.2);
+    expect(scaleOf(group.children[1]).y).toBeCloseTo(0.5);
+    expect(scaleOf(group.children[0]).x).toBeCloseTo(1);
+    expect(scaleOf(group.children[2]).x).toBeCloseTo(1);
+  });
+
+  it("SET_INSTANCE_TRANSFORM_NODE accepts a single Matrix4 on matrix input", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const arrayRes = ARRAY_NODE.evaluate({ geometry: box }, { count: 3, spacing: 2 }, CTX);
+    const customMat = new THREE.Matrix4().makeTranslation(0, 10, 0);
+
+    const res = SET_INSTANCE_TRANSFORM_NODE.evaluate(
+      { geometry: arrayRes.geometry, index: 2, matrix: customMat },
+      { mode: "absolute" },
+      CTX
+    );
+
+    const group = res.geometry as THREE.Group;
+    const pos = new THREE.Vector3();
+    group.children[2].matrix.decompose(pos, new THREE.Quaternion(), new THREE.Vector3());
+    expect(pos.y).toBeCloseTo(10);
+  });
 });
 
 describe("COMBINE & SPLIT VECTOR LIST NODES", () => {

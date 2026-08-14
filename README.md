@@ -94,6 +94,9 @@ graph LR
 OpenVMap3D contient **plus de 60 nodes spécialisées** réparties en 10 catégories :
 
 ### 🏗️ Structure & Géométrie
+
+> Tous les nodes objets sortent leur géométrie **et** leur pose locale sur une sortie `Matrix` — à brancher directement dans `Distance`, `Proximity Object`, `Pivot` ou `Look At`.
+
 | Node | Description |
 | :--- | :--- |
 | `Box` | Cube / Parallélépipède 3D paramétrable avec opacité et textures. |
@@ -107,8 +110,8 @@ OpenVMap3D contient **plus de 60 nodes spécialisées** réparties en 10 catégo
 | `OBJ Model` | Chargeur de fichier modèle 3D au format `.obj`. |
 | `Array` | Duplicateur d'instances en mode Linear (1D), Circular (2D), Grid (2D) ou 3D Grid (Volume). |
 | `Merge` | Fusionne plusieurs sous-graphes géométriques en un seul assemblage. |
-| `Set Instance Transform` | Applique des transformations relatives/absolues (position, rotation, échelle, matrice) sur des instances. |
-| `Set Instance Color` | Applique des couleurs individuelles sur une collection d'instances à partir d'une liste. |
+| `Set Instance Transform` | Applique des transformations relatives/absolues (position, rotation, échelle, matrice) sur des instances. Entrée `Index` pour ne cibler qu'une seule instance (`-1` = toutes). |
+| `Set Instance Color` | Applique des couleurs individuelles sur une collection d'instances à partir d'une liste. Entrée `Index` pour ne cibler qu'une seule instance (`-1` = toutes). |
 | `Get Instance` | Extrait une instance spécifique d'un groupe d'instances par son index. |
 | `Geometry Transform` | Applique une transformation directe sur une géométrie 3D sans passer par la scène. |
 
@@ -156,6 +159,8 @@ OpenVMap3D contient **plus de 60 nodes spécialisées** réparties en 10 catégo
 | `Map Range` | Remappage linéaire ou clamped d'une plage de valeurs $[min_1, max_1] \to [min_2, max_2]$. |
 | `Vector Math` | Addition, soustraction, produit vectoriel, produit scalaire, normalisation. |
 | `Vector Compose / Decompose` | Assemblage et séparation des composantes $(x, y, z)$. |
+| `Distance` | Distance euclidienne 3D entre deux vecteurs, objets, matrices ou listes. |
+| `Proximity Object` | Instance la plus proche d'une cible dans une liste ou un pack d'instances (objet, distance, index, position). |
 | `Color Math` | Mélange, addition et multiplication de couleurs RGBA. |
 | `Boolean Logic` | Opérateurs booléens AND, OR, NOT, XOR. |
 | `Compare` | Comparateurs $(<, \le, >, \ge, ==, \neq)$. |

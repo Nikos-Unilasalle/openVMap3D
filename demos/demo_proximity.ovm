@@ -1,0 +1,552 @@
+{
+  "nodes": [
+    {
+      "id": "time",
+      "type": "time",
+      "position": {
+        "x": -1823,
+        "y": 0
+      },
+      "params": {}
+    },
+    {
+      "id": "speed",
+      "type": "value/math",
+      "position": {
+        "x": -1592,
+        "y": 54
+      },
+      "params": {
+        "op": "divide",
+        "a": 0,
+        "b": 1.1
+      }
+    },
+    {
+      "id": "spin",
+      "type": "vector/compose",
+      "position": {
+        "x": -1371,
+        "y": 10
+      },
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "id": "spin_matrix",
+      "type": "transform/matrix-transform",
+      "position": {
+        "x": -1173,
+        "y": -56
+      },
+      "params": {
+        "location": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      }
+    },
+    {
+      "id": "orbit",
+      "type": "transform/pivot",
+      "position": {
+        "x": -1178,
+        "y": 83
+      },
+      "params": {
+        "pivot": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "location": {
+          "x": 2.7,
+          "y": 0,
+          "z": 0
+        }
+      }
+    },
+    {
+      "id": "sphere",
+      "type": "object/sphere",
+      "position": {
+        "x": -957,
+        "y": -53
+      },
+      "params": {
+        "color": 8056644,
+        "emissive": "#7f1d1d",
+        "emissiveIntensity": 0,
+        "shadeless": 1
+      }
+    },
+    {
+      "id": "box",
+      "type": "object/box",
+      "position": {
+        "x": -1179,
+        "y": 322
+      },
+      "params": {
+        "color": 15485081,
+        "scale": {
+          "x": 0.1,
+          "y": 0.45,
+          "z": 1.8
+        },
+        "shadeless": 1
+      }
+    },
+    {
+      "id": "ring",
+      "type": "structure/array",
+      "position": {
+        "x": -934,
+        "y": 334
+      },
+      "params": {
+        "mode": "circular",
+        "count": 16,
+        "radius": 4,
+        "plane": "XZ",
+        "totalAngle": 360,
+        "orient": true
+      }
+    },
+    {
+      "id": "ring_list",
+      "type": "structure/instances-to-list",
+      "position": {
+        "x": -670,
+        "y": 312
+      },
+      "params": {}
+    },
+    {
+      "id": "distances",
+      "type": "math/distance",
+      "position": {
+        "x": -406,
+        "y": 298
+      },
+      "params": {}
+    },
+    {
+      "id": "wave",
+      "type": "list/math",
+      "position": {
+        "x": -79,
+        "y": 312
+      },
+      "params": {
+        "op": "multiply",
+        "factor": 0.4,
+        "offset": -0.5
+      }
+    },
+    {
+      "id": "nearest",
+      "type": "object/proximity",
+      "position": {
+        "x": 33,
+        "y": 761
+      },
+      "params": {
+        "ignoreSelf": true
+      }
+    },
+    {
+      "id": "ring_wave",
+      "type": "structure/instance-transform",
+      "position": {
+        "x": 165,
+        "y": 233
+      },
+      "params": {
+        "mode": "relative",
+        "index": -1
+      }
+    },
+    {
+      "id": "lift_nearest",
+      "type": "structure/instance-transform",
+      "position": {
+        "x": 507,
+        "y": 180
+      },
+      "params": {
+        "mode": "relative",
+        "posY": 0,
+        "rotY": 0
+      }
+    },
+    {
+      "id": "paint_nearest",
+      "type": "structure/instance-color",
+      "position": {
+        "x": 862,
+        "y": 332
+      },
+      "params": {
+        "color": 440020
+      }
+    },
+    {
+      "id": "merge",
+      "type": "structure/merge",
+      "position": {
+        "x": 1308,
+        "y": 118
+      },
+      "params": {}
+    },
+    {
+      "id": "output",
+      "type": "render",
+      "position": {
+        "x": 1528,
+        "y": 118
+      },
+      "params": {}
+    },
+    {
+      "id": "a7cc024d-41dc-481c-9b15-19f61e95579a",
+      "type": "list/math",
+      "position": {
+        "x": -78,
+        "y": 449
+      },
+      "params": {
+        "op": "clamp",
+        "factor": 2,
+        "offset": 0
+      }
+    },
+    {
+      "id": "a33db684-ef37-4c3e-93bb-eeed8de99b4f",
+      "type": "transform/pivot",
+      "position": {
+        "x": -1439,
+        "y": 364
+      },
+      "params": {
+        "pivot": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "location": {
+          "x": 0,
+          "y": 0.5,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      }
+    },
+    {
+      "id": "0e67733c-96d5-498b-a19d-85e687136552",
+      "type": "postprocess/bloom",
+      "position": {
+        "x": 1243,
+        "y": 341
+      },
+      "params": {
+        "strength": 0.06,
+        "radius": 0.4,
+        "threshold": 0.6
+      }
+    },
+    {
+      "id": "25e285a1-eae3-48ca-bfac-fb440e480158",
+      "type": "vector/compose",
+      "position": {
+        "x": 622,
+        "y": 658
+      },
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 1
+      }
+    },
+    {
+      "id": "e0b503d6-0ecf-49ec-8720-4929cdc34950",
+      "type": "object/cone",
+      "position": {
+        "x": 626,
+        "y": 821
+      },
+      "params": {
+        "location": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": -1.5707963267948966,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "texturePath": "",
+        "normalMapPath": "",
+        "uvScaleX": 1,
+        "uvScaleY": 1,
+        "uvOffsetX": 0,
+        "uvOffsetY": 0,
+        "color": 16347926,
+        "emissive": 0,
+        "emissiveIntensity": 1,
+        "shadeless": 1,
+        "roughness": 0.4,
+        "metalness": 0.1,
+        "wireframe": 0,
+        "wireframeLinewidth": 1,
+        "opacity": 1
+      }
+    },
+    {
+      "id": "196b1e0e-e25c-4810-95b4-955756321967",
+      "type": "transform/look-at",
+      "position": {
+        "x": 903,
+        "y": 602
+      },
+      "params": {
+        "eye": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "target": {
+          "x": 0,
+          "y": 0,
+          "z": -1
+        },
+        "up": {
+          "x": 0,
+          "y": 1,
+          "z": 0
+        }
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "time.seconds->speed.a",
+      "fromNode": "time",
+      "fromSocket": "seconds",
+      "toNode": "speed",
+      "toSocket": "a"
+    },
+    {
+      "id": "speed.out->spin.y",
+      "fromNode": "speed",
+      "fromSocket": "out",
+      "toNode": "spin",
+      "toSocket": "y"
+    },
+    {
+      "id": "spin.out->spin_matrix.rotation",
+      "fromNode": "spin",
+      "fromSocket": "out",
+      "toNode": "spin_matrix",
+      "toSocket": "rotation"
+    },
+    {
+      "id": "spin_matrix.matrix->orbit.matrix",
+      "fromNode": "spin_matrix",
+      "fromSocket": "matrix",
+      "toNode": "orbit",
+      "toSocket": "matrix"
+    },
+    {
+      "id": "orbit.matrix->sphere.matrix",
+      "fromNode": "orbit",
+      "fromSocket": "matrix",
+      "toNode": "sphere",
+      "toSocket": "matrix"
+    },
+    {
+      "id": "box.geometry->ring.geometry",
+      "fromNode": "box",
+      "fromSocket": "geometry",
+      "toNode": "ring",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "ring.geometry->ring_list.geometry",
+      "fromNode": "ring",
+      "fromSocket": "geometry",
+      "toNode": "ring_list",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "sphere.matrix->distances.a",
+      "fromNode": "sphere",
+      "fromSocket": "matrix",
+      "toNode": "distances",
+      "toSocket": "a"
+    },
+    {
+      "id": "ring_list.list->distances.b",
+      "fromNode": "ring_list",
+      "fromSocket": "list",
+      "toNode": "distances",
+      "toSocket": "b"
+    },
+    {
+      "id": "distances.list->wave.list",
+      "fromNode": "distances",
+      "fromSocket": "list",
+      "toNode": "wave",
+      "toSocket": "list"
+    },
+    {
+      "id": "sphere.matrix->nearest.target",
+      "fromNode": "sphere",
+      "fromSocket": "matrix",
+      "toNode": "nearest",
+      "toSocket": "target"
+    },
+    {
+      "id": "ring_list.list->nearest.candidates",
+      "fromNode": "ring_list",
+      "fromSocket": "list",
+      "toNode": "nearest",
+      "toSocket": "candidates"
+    },
+    {
+      "id": "ring.geometry->ring_wave.geometry",
+      "fromNode": "ring",
+      "fromSocket": "geometry",
+      "toNode": "ring_wave",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "ring_wave.geometry->lift_nearest.geometry",
+      "fromNode": "ring_wave",
+      "fromSocket": "geometry",
+      "toNode": "lift_nearest",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "nearest.index->lift_nearest.index",
+      "fromNode": "nearest",
+      "fromSocket": "index",
+      "toNode": "lift_nearest",
+      "toSocket": "index"
+    },
+    {
+      "id": "nearest.index->paint_nearest.index",
+      "fromNode": "nearest",
+      "fromSocket": "index",
+      "toNode": "paint_nearest",
+      "toSocket": "index"
+    },
+    {
+      "id": "sphere.geometry->merge.in1",
+      "fromNode": "sphere",
+      "fromSocket": "geometry",
+      "toNode": "merge",
+      "toSocket": "in1"
+    },
+    {
+      "id": "paint_nearest.geometry->merge.in2",
+      "fromNode": "paint_nearest",
+      "fromSocket": "geometry",
+      "toNode": "merge",
+      "toSocket": "in2"
+    },
+    {
+      "id": "merge.geometry->output.geometry",
+      "fromNode": "merge",
+      "fromSocket": "geometry",
+      "toNode": "output",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "wave.list->a7cc024d-41dc-481c-9b15-19f61e95579a.list",
+      "fromNode": "wave",
+      "fromSocket": "list",
+      "toNode": "a7cc024d-41dc-481c-9b15-19f61e95579a",
+      "toSocket": "list"
+    },
+    {
+      "id": "a33db684-ef37-4c3e-93bb-eeed8de99b4f.matrix->box.matrix",
+      "fromNode": "a33db684-ef37-4c3e-93bb-eeed8de99b4f",
+      "fromSocket": "matrix",
+      "toNode": "box",
+      "toSocket": "matrix"
+    },
+    {
+      "id": "a7cc024d-41dc-481c-9b15-19f61e95579a.list->ring_wave.scaleY",
+      "fromNode": "a7cc024d-41dc-481c-9b15-19f61e95579a",
+      "fromSocket": "list",
+      "toNode": "ring_wave",
+      "toSocket": "scaleY"
+    },
+    {
+      "id": "0e67733c-96d5-498b-a19d-85e687136552.effect->output.postprocess",
+      "fromNode": "0e67733c-96d5-498b-a19d-85e687136552",
+      "fromSocket": "effect",
+      "toNode": "output",
+      "toSocket": "postprocess"
+    },
+    {
+      "id": "lift_nearest.geometry->paint_nearest.geometry",
+      "fromNode": "lift_nearest",
+      "fromSocket": "geometry",
+      "toNode": "paint_nearest",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "e0b503d6-0ecf-49ec-8720-4929cdc34950.geometry->196b1e0e-e25c-4810-95b4-955756321967.geometry",
+      "fromNode": "e0b503d6-0ecf-49ec-8720-4929cdc34950",
+      "fromSocket": "geometry",
+      "toNode": "196b1e0e-e25c-4810-95b4-955756321967",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "sphere.geometry->196b1e0e-e25c-4810-95b4-955756321967.target",
+      "fromNode": "sphere",
+      "fromSocket": "geometry",
+      "toNode": "196b1e0e-e25c-4810-95b4-955756321967",
+      "toSocket": "target"
+    },
+    {
+      "id": "196b1e0e-e25c-4810-95b4-955756321967.geometry->merge.in3",
+      "fromNode": "196b1e0e-e25c-4810-95b4-955756321967",
+      "fromSocket": "geometry",
+      "toNode": "merge",
+      "toSocket": "in3"
+    }
+  ]
+}

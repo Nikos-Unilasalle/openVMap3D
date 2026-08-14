@@ -4,6 +4,7 @@ import { NodeDefinition } from "../types";
 import { toBoolean } from "../sockets";
 import { createNodeCache } from "../nodeCaches";
 import { composeNativeMatrix } from "./transform";
+import { COMMON_PRIMITIVE_OUTPUTS, primitiveOutputs } from "./object";
 
 interface ObjState {
   group: THREE.Group;
@@ -76,7 +77,7 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
     { id: "wireframeLinewidth", label: "Wireframe Width", type: "value" },
     { id: "opacity", label: "Opacity", type: "value" },
   ],
-  outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
+  outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: {
     location: new THREE.Vector3(0, 0, 0),
     rotation: new THREE.Vector3(0, 0, 0),
@@ -300,6 +301,6 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
       }
     });
 
-    return { geometry: group };
+    return primitiveOutputs(group);
   },
 };

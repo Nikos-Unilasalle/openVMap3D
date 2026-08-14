@@ -123,33 +123,87 @@ export const PARENT_NODE: NodeDefinition = {
   },
 };
 
+export function extractPositionFromInput(val: unknown, fallback: THREE.Vector3): THREE.Vector3 {
+  if (val instanceof THREE.Vector3) return val.clone();
+  if (val instanceof THREE.Object3D) {
+    val.updateMatrixWorld(true);
+    let target: THREE.Object3D = val;
+    while (target instanceof THREE.Group && target.children.length > 0) {
+      target = target.children[0];
+      target.updateMatrixWorld(true);
+    }
+    const pos = new THREE.Vector3();
+    target.getWorldPosition(pos);
+    return pos;
+  }
+  return asVector3(val, fallback);
+}
+
+const groupCache = new Map<string, THREE.Group>();
+function getGroup(nodeId: string): THREE.Group {
+  let group = groupCache.get(nodeId);
+  if (!group) {
+    group = new THREE.Group();
+    groupCache.set(nodeId, group);
+  }
+  return group;
+}
+
+function cloneObject(source: THREE.Object3D): THREE.Object3D {
+  const clone = source.clone(true);
+  clone.matrixAutoUpdate = source.matrixAutoUpdate;
+  clone.matrix.copy(source.matrix);
+  clone.matrixWorldNeedsUpdate = true;
+  return clone;
+}
+
 const DEFAULT_TARGET = new THREE.Vector3(0, 0, -1);
 const DEFAULT_UP = new THREE.Vector3(0, 1, 0);
 
-/** Look At node — constructs a matrix orienting Eye towards Target with an Up vector. */
+/** Look At node — transforms an incoming Geometry (or Eye position) to orient towards Target with an Up vector. */
 export const LOOK_AT_NODE: NodeDefinition = {
   type: "transform/look-at",
   label: "Look At",
   category: "transform",
   inputs: [
-    { id: "eye", label: "Eye", type: "vector" },
-    { id: "target", label: "Target", type: "vector" },
+    { id: "geometry", label: "Geometry", type: "geometry" },
+    { id: "target", label: "Target", type: "any" },
     { id: "up", label: "Up", type: "vector" },
+    { id: "eye", label: "Eye / Pos", type: "any" },
   ],
-  outputs: [{ id: "matrix", label: "Matrix", type: "matrix" }],
+  outputs: [
+    { id: "geometry", label: "Geometry", type: "geometry" },
+    { id: "matrix", label: "Matrix", type: "matrix" },
+  ],
   defaultParams: { eye: ZERO.clone(), target: DEFAULT_TARGET.clone(), up: DEFAULT_UP.clone() },
   paramFields: [
     { id: "eye", label: "Eye (fallback)", kind: "vector" },
     { id: "target", label: "Target (fallback)", kind: "vector" },
     { id: "up", label: "Up (fallback)", kind: "vector" },
   ],
-  evaluate: (inputs) => {
-    const eye = asVector3(inputs.eye, ZERO);
-    const target = asVector3(inputs.target, DEFAULT_TARGET);
-    const up = asVector3(inputs.up, DEFAULT_UP);
+  evaluate: (inputs, params, ctx) => {
+    const group = getGroup(ctx.nodeId);
+    group.clear();
+
+    const source = inputs.geometry instanceof THREE.Object3D ? inputs.geometry : null;
+    const defaultEye = source ? extractPositionFromInput(source, ZERO) : ZERO;
+    const eye = extractPositionFromInput(inputs.eye, source ? defaultEye : asVector3(params?.eye, ZERO));
+    const target = extractPositionFromInput(inputs.target, asVector3(params?.target, DEFAULT_TARGET));
+    const up = asVector3(inputs.up, asVector3(params?.up, DEFAULT_UP));
 
     const matrix = new THREE.Matrix4().lookAt(eye, target, up);
-    return { matrix };
+    matrix.setPosition(eye);
+
+    if (source) {
+      const clone = cloneObject(source);
+      const wrapper = new THREE.Group();
+      wrapper.matrixAutoUpdate = false;
+      wrapper.matrix.copy(matrix);
+      wrapper.add(clone);
+      group.add(wrapper);
+    }
+
+    return { geometry: group, matrix };
   },
 };
 

@@ -219,6 +219,28 @@ const COMMON_PRIMITIVE_INPUTS = [
   { id: "opacity", label: "Opacity", type: "value" as const },
 ];
 
+export const COMMON_PRIMITIVE_OUTPUTS = [
+  { id: "geometry", label: "Geometry", type: "geometry" as const },
+  { id: "matrix", label: "Matrix", type: "matrix" as const },
+];
+
+/**
+ * Geometry plus the object's own pose. The geometry socket carries a live
+ * THREE object, and reading a position back out of it means walking a parent
+ * chain whose cached `matrixWorld` is stale during evaluation — the Matrix4 is
+ * the direct handle downstream nodes (Distance, Proximity, Pivot, Look At…)
+ * need. It is the object's *local* pose, exactly what this node applied, not
+ * its world transform: whatever an Array or Set Instance Transform does to a
+ * copy of it later is not part of this node's own state.
+ *
+ * Cloned, so a downstream node mutating the matrix cannot move the object
+ * behind its back.
+ */
+export function primitiveOutputs(object: THREE.Object3D): Record<string, unknown> {
+  if (object.matrixAutoUpdate) object.updateMatrix();
+  return { geometry: object, matrix: object.matrix.clone() };
+}
+
 const COMMON_MATERIAL_PARAM_FIELDS: ParamFieldDef[] = [
   { id: "color", label: "Color (fallback)", kind: "color", group: "Material" },
   { id: "emissive", label: "Emissive (Glow)", kind: "color", group: "Material" },
@@ -351,7 +373,7 @@ export const OBJECT_BOX_NODE: NodeDefinition = {
   label: "Box",
   category: "object",
   inputs: [...COMMON_PRIMITIVE_INPUTS],
-  outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
+  outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: { ...COMMON_DEFAULT_PARAMS },
   paramFields: buildPrimitiveDynamicParamFields()(),
   dynamicParamFields: buildPrimitiveDynamicParamFields(),
@@ -367,7 +389,7 @@ export const OBJECT_BOX_NODE: NodeDefinition = {
     const texParams = extractTextureParams(inputs, params, ctx.nodeId);
     applyMaterialParams(mesh, matParams, THREE.FrontSide, texParams);
 
-    return { geometry: mesh };
+    return primitiveOutputs(mesh);
   },
 };
 
@@ -391,7 +413,7 @@ export const OBJECT_PLANE_NODE: NodeDefinition = {
   label: "Plane",
   category: "object",
   inputs: [...COMMON_PRIMITIVE_INPUTS],
-  outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
+  outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: { ...COMMON_DEFAULT_PARAMS },
   paramFields: buildPrimitiveDynamicParamFields()(),
   dynamicParamFields: buildPrimitiveDynamicParamFields(),
@@ -407,7 +429,7 @@ export const OBJECT_PLANE_NODE: NodeDefinition = {
     const texParams = extractTextureParams(inputs, params, ctx.nodeId);
     applyMaterialParams(mesh, matParams, THREE.DoubleSide, texParams);
 
-    return { geometry: mesh };
+    return primitiveOutputs(mesh);
   },
 };
 
@@ -431,7 +453,7 @@ export const OBJECT_SPHERE_NODE: NodeDefinition = {
   label: "Sphere",
   category: "object",
   inputs: [...COMMON_PRIMITIVE_INPUTS],
-  outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
+  outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: { ...COMMON_DEFAULT_PARAMS },
   paramFields: buildPrimitiveDynamicParamFields()(),
   dynamicParamFields: buildPrimitiveDynamicParamFields(),
@@ -447,7 +469,7 @@ export const OBJECT_SPHERE_NODE: NodeDefinition = {
     const texParams = extractTextureParams(inputs, params, ctx.nodeId);
     applyMaterialParams(mesh, matParams, THREE.FrontSide, texParams);
 
-    return { geometry: mesh };
+    return primitiveOutputs(mesh);
   },
 };
 
@@ -478,7 +500,7 @@ export const OBJECT_DISC_NODE: NodeDefinition = {
     { id: "depth", label: "Depth", type: "value" },
     ...COMMON_PRIMITIVE_INPUTS,
   ],
-  outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
+  outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: {
     radius: 0.5,
     innerRadius: 0,
@@ -569,7 +591,7 @@ export const OBJECT_DISC_NODE: NodeDefinition = {
     const defaultSide: THREE.Side = depth > 0 ? THREE.FrontSide : THREE.DoubleSide;
     applyMaterialParams(mesh, matParams, defaultSide, texParams);
 
-    return { geometry: mesh };
+    return primitiveOutputs(mesh);
   },
 };
 
@@ -593,7 +615,7 @@ export const OBJECT_CYLINDER_NODE: NodeDefinition = {
   label: "Cylinder",
   category: "object",
   inputs: [...COMMON_PRIMITIVE_INPUTS],
-  outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
+  outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: { ...COMMON_DEFAULT_PARAMS },
   paramFields: buildPrimitiveDynamicParamFields()(),
   dynamicParamFields: buildPrimitiveDynamicParamFields(),
@@ -609,7 +631,7 @@ export const OBJECT_CYLINDER_NODE: NodeDefinition = {
     const texParams = extractTextureParams(inputs, params, ctx.nodeId);
     applyMaterialParams(mesh, matParams, THREE.FrontSide, texParams);
 
-    return { geometry: mesh };
+    return primitiveOutputs(mesh);
   },
 };
 
@@ -633,7 +655,7 @@ export const OBJECT_CONE_NODE: NodeDefinition = {
   label: "Cone",
   category: "object",
   inputs: [...COMMON_PRIMITIVE_INPUTS],
-  outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
+  outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: { ...COMMON_DEFAULT_PARAMS },
   paramFields: buildPrimitiveDynamicParamFields()(),
   dynamicParamFields: buildPrimitiveDynamicParamFields(),
@@ -649,7 +671,7 @@ export const OBJECT_CONE_NODE: NodeDefinition = {
     const texParams = extractTextureParams(inputs, params, ctx.nodeId);
     applyMaterialParams(mesh, matParams, THREE.FrontSide, texParams);
 
-    return { geometry: mesh };
+    return primitiveOutputs(mesh);
   },
 };
 
@@ -710,7 +732,7 @@ export const OBJECT_TEXT_NODE: NodeDefinition = {
     { id: "depth", label: "Depth", type: "value" },
     ...COMMON_PRIMITIVE_INPUTS,
   ],
-  outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
+  outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: {
     text: "OpenVMap3D",
     font: "sans-serif",
@@ -779,7 +801,7 @@ export const OBJECT_TEXT_NODE: NodeDefinition = {
     const texParams = extractTextureParams(inputs, params, ctx.nodeId);
     applyMaterialParams(mesh, matParams, THREE.FrontSide, texParams);
 
-    return { geometry: mesh };
+    return primitiveOutputs(mesh);
   },
 };
 
@@ -861,7 +883,7 @@ export const OBJECT_BAR_GRAPH_NODE: NodeDefinition = {
     { id: "labelDecimals", label: "Decimals", type: "value" },
     ...COMMON_PRIMITIVE_INPUTS,
   ],
-  outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
+  outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: {
     count: 5,
     spacing: 0.2,
@@ -1044,7 +1066,7 @@ export const OBJECT_BAR_GRAPH_NODE: NodeDefinition = {
       }
     }
 
-    return { geometry: group };
+    return primitiveOutputs(group);
   },
 };
 

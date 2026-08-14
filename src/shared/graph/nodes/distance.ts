@@ -1,11 +1,53 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
 
+/**
+ * World matrix computed by walking the parent chain and multiplying local
+ * matrices, instead of reading the cached `matrixWorld`.
+ *
+ * three only refreshes `matrixWorld` when `matrixWorldNeedsUpdate` is set, and
+ * the instancing nodes (Array, Set Instance Transform, …) write `object.matrix`
+ * directly on wrapper Groups with `matrixAutoUpdate = false` without raising
+ * that flag. The renderer papers over it — `scene.updateMatrixWorld(true)`
+ * forces the whole tree — but during graph evaluation, which runs *before* that
+ * pass, every cached `matrixWorld` is stale (identity for a freshly built
+ * wrapper). Reading it there made every instance report position (0,0,0), so
+ * the nearest one was always index 0. Recomputing from local matrices is exact
+ * and cheap for the shallow hierarchies these nodes build.
+ */
+function worldMatrixOf(obj: THREE.Object3D): THREE.Matrix4 {
+  const chain: THREE.Object3D[] = [];
+  for (let cur: THREE.Object3D | null = obj; cur; cur = cur.parent) chain.push(cur);
+
+  const world = new THREE.Matrix4();
+  for (let i = chain.length - 1; i >= 0; i--) {
+    const node = chain[i];
+    if (node.matrixAutoUpdate) node.updateMatrix();
+    world.multiply(node.matrix);
+  }
+  return world;
+}
+
 function extractPosition(val: unknown, fallback: THREE.Vector3): THREE.Vector3 {
-  if (val instanceof THREE.Vector3) return val;
-  if (val instanceof THREE.Object3D) return val.position;
+  if (val instanceof THREE.Vector3) return val.clone();
+  if (val instanceof THREE.Matrix4) return new THREE.Vector3().setFromMatrixPosition(val);
+  if (val instanceof THREE.Object3D) {
+    const world = worldMatrixOf(val);
+
+    // An instance is usually a transform wrapper around the real payload —
+    // descend to the first leaf so the position is the object's, not the
+    // (often identity) wrapper's.
+    let target: THREE.Object3D = val;
+    while (target instanceof THREE.Group && target.children.length > 0) {
+      target = target.children[0];
+      if (target.matrixAutoUpdate) target.updateMatrix();
+      world.multiply(target.matrix);
+    }
+
+    return new THREE.Vector3().setFromMatrixPosition(world);
+  }
   if (val && typeof val === "object" && "position" in val && (val as any).position instanceof THREE.Vector3) {
-    return (val as any).position;
+    return ((val as any).position as THREE.Vector3).clone();
   }
   return fallback;
 }
@@ -18,9 +60,12 @@ export const DISTANCE_NODE: NodeDefinition = {
   type: "math/distance",
   label: "Distance",
   category: "math",
+  // `any` rather than `vector`: a position is just as often an object, its
+  // matrix, or a list of either, and the editor only lets a wire cross socket
+  // types through `any`. extractPosition sorts out what actually arrived.
   inputs: [
-    { id: "a", label: "A", type: "vector" },
-    { id: "b", label: "B", type: "vector" },
+    { id: "a", label: "A (Vector / Object / Matrix)", type: "any" },
+    { id: "b", label: "B (Vector / Object / Matrix)", type: "any" },
   ],
   outputs: [
     { id: "distance", label: "Distance", type: "value" },
@@ -97,22 +142,45 @@ export const DISTANCE_NODE: NodeDefinition = {
   },
 };
 
+/**
+ * One candidate per list item, or per child when a whole geometry pack (Group)
+ * is wired straight in — never per leaf mesh. An instance is a wrapper around
+ * an arbitrarily deep subtree, so flattening down to meshes would make `index`
+ * count meshes instead of instances and drift from the index every other node
+ * (Get Instance, list nodes) uses.
+ */
 function collectCandidateObjects(input: unknown): THREE.Object3D[] {
   const result: THREE.Object3D[] = [];
 
-  function helper(item: unknown) {
+  function pushItem(item: unknown) {
     if (!item) return;
     if (Array.isArray(item)) {
-      item.forEach(helper);
-    } else if (item instanceof THREE.Group && item.children.length > 0) {
-      item.children.forEach(helper);
+      item.forEach(pushItem);
     } else if (item instanceof THREE.Object3D) {
       result.push(item);
     }
   }
 
-  helper(input);
+  if (Array.isArray(input)) {
+    pushItem(input);
+  } else if (input instanceof THREE.Group && input.children.length > 0) {
+    input.children.forEach(pushItem);
+  } else {
+    pushItem(input);
+  }
+
   return result;
+}
+
+/**
+ * True when the two objects are the same, or one sits inside the other — the
+ * target reaches the Proximity node as its own object while the candidate list
+ * carries clones nested in wrappers, so identity alone would miss "self".
+ */
+function isSameOrNested(a: THREE.Object3D, b: THREE.Object3D): boolean {
+  for (let cur: THREE.Object3D | null = a; cur; cur = cur.parent) if (cur === b) return true;
+  for (let cur: THREE.Object3D | null = b; cur; cur = cur.parent) if (cur === a) return true;
+  return false;
 }
 
 /**
@@ -124,7 +192,7 @@ export const PROXIMITY_OBJECT_NODE: NodeDefinition = {
   label: "Proximity Object",
   category: "structure",
   inputs: [
-    { id: "target", label: "Target", type: "geometry" },
+    { id: "target", label: "Target (Object / Vector / Matrix)", type: "any" },
     { id: "candidates", label: "Candidates", type: "any" },
   ],
   outputs: [
@@ -154,7 +222,7 @@ export const PROXIMITY_OBJECT_NODE: NodeDefinition = {
     for (let i = 0; i < candidateObjects.length; i++) {
       const candidate = candidateObjects[i];
 
-      if (ignoreSelf && targetObj instanceof THREE.Object3D && candidate === targetObj) {
+      if (ignoreSelf && targetObj instanceof THREE.Object3D && isSameOrNested(candidate, targetObj)) {
         continue;
       }
 

@@ -55,6 +55,43 @@ function getInstances(source: THREE.Object3D): THREE.Object3D[] {
 }
 
 /**
+ * Instances carry their transform in `matrix` with `matrixAutoUpdate` off (the
+ * Array node writes it directly), which a plain `clone()` would leave for the
+ * next `updateMatrixWorld` to overwrite from position/quaternion/scale.
+ */
+function cloneInstance(instance: THREE.Object3D): THREE.Object3D {
+  const clone = instance.clone(true);
+  clone.matrixAutoUpdate = instance.matrixAutoUpdate;
+  clone.matrix.copy(instance.matrix);
+  clone.matrixWorldNeedsUpdate = true;
+  return clone;
+}
+
+/** Index value that targets every instance rather than a single one. */
+const ALL_INSTANCES = -1;
+
+/**
+ * Which instance a Set Instance node writes to. The default (-1) keeps the
+ * node's original behaviour — every instance — so an index is opt-in: wire the
+ * Proximity node's `index` in to touch only the nearest instance, and leave it
+ * alone to drive the whole pack. An index past the end of the pack targets
+ * nothing, rather than wrapping around, so a stale index can't silently modify
+ * an unrelated instance.
+ */
+function resolveTargetIndex(input: unknown, param: unknown): number {
+  const raw = input !== undefined ? Number(input) : Number(param);
+  return Number.isFinite(raw) ? Math.floor(raw) : ALL_INSTANCES;
+}
+
+function isTargeted(index: number, targetIndex: number): boolean {
+  return targetIndex < 0 || index === targetIndex;
+}
+
+const INSTANCE_INDEX_INPUT = { id: "index", label: "Index (-1 = All)", type: "value" } as const;
+
+const INSTANCE_INDEX_FIELD = { id: "index", label: "Index (-1 = All)", kind: "number", step: 1 } as const;
+
+/**
  * Set Instance Color node — applies individual colors to each object/instance in a geometry pack.
  * Colors are driven by a List of colors (e.g. from Color Palette or Random List).
  */
@@ -66,10 +103,14 @@ export const SET_INSTANCE_COLOR_NODE: NodeDefinition = {
     { id: "geometry", label: "Geometry", type: "geometry" },
     { id: "colors", label: "Colors", type: "list" },
     { id: "color", label: "Default Color", type: "color" },
+    INSTANCE_INDEX_INPUT,
   ],
   outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
-  defaultParams: { color: new THREE.Color(0xffffff) },
-  paramFields: [{ id: "color", label: "Default Color", kind: "color" }],
+  defaultParams: { color: new THREE.Color(0xffffff), index: ALL_INSTANCES },
+  paramFields: [
+    { id: "color", label: "Default Color", kind: "color" },
+    INSTANCE_INDEX_FIELD,
+  ],
   evaluate: (inputs, params, ctx) => {
     const group = getGroup(ctx.nodeId);
     group.clear();
@@ -80,15 +121,22 @@ export const SET_INSTANCE_COLOR_NODE: NodeDefinition = {
     const instances = getInstances(source);
     const colorsList = Array.isArray(inputs.colors) ? inputs.colors : [];
     const defaultColor = asColor(inputs.color, asColor(params.color, new THREE.Color(0xffffff)));
+    const targetIndex = resolveTargetIndex(inputs.index, params.index);
 
     instances.forEach((instance, i) => {
-      const clone = instance.clone(true);
-      clone.matrixAutoUpdate = instance.matrixAutoUpdate;
-      clone.matrix.copy(instance.matrix);
-      clone.matrixWorldNeedsUpdate = true;
+      const clone = cloneInstance(instance);
+
+      if (!isTargeted(i, targetIndex)) {
+        group.add(clone);
+        return;
+      }
+
+      const colorItem = targetIndex >= 0
+        ? (colorsList.length === 1 ? colorsList[0] : colorsList[targetIndex % (colorsList.length || 1)])
+        : colorsList[i % (colorsList.length || 1)];
 
       const targetColor = colorsList.length > 0
-        ? asColor(colorsList[i % colorsList.length], defaultColor)
+        ? asColor(colorItem, defaultColor)
         : defaultColor;
 
       // Apply color to all meshes and lights inside this instance
@@ -111,9 +159,16 @@ export const SET_INSTANCE_COLOR_NODE: NodeDefinition = {
   },
 };
 
-function resolveScalarOrListItem(inputVal: unknown, index: number, fallback: number): number {
+function resolveScalarOrListItem(
+  inputVal: unknown,
+  instanceIndex: number,
+  targetIndex: number,
+  fallback: number
+): number {
   if (Array.isArray(inputVal)) {
-    return listValueAt(inputVal, index, fallback);
+    if (inputVal.length === 0) return fallback;
+    const idx = targetIndex >= 0 ? (inputVal.length === 1 ? 0 : targetIndex % inputVal.length) : instanceIndex;
+    return listValueAt(inputVal, idx, fallback);
   }
   if (inputVal !== undefined && inputVal !== null) {
     const num = Number(inputVal);
@@ -132,6 +187,8 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
   category: "instance",
   inputs: [
     { id: "geometry", label: "Geometry", type: "geometry" },
+    { id: "matrix", label: "Matrix", type: "matrix" },
+    { id: "matrices", label: "Matrices (List)", type: "any" },
     { id: "positions", label: "Positions (Vector List)", type: "list" },
     { id: "posX", label: "Pos X", type: "any" },
     { id: "posY", label: "Pos Y", type: "any" },
@@ -144,11 +201,12 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
     { id: "scaleX", label: "Scale X", type: "any" },
     { id: "scaleY", label: "Scale Y", type: "any" },
     { id: "scaleZ", label: "Scale Z", type: "any" },
-    { id: "matrices", label: "Matrices (List)", type: "list" },
+    INSTANCE_INDEX_INPUT,
   ],
   outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
   defaultParams: {
     mode: "relative",
+    index: ALL_INSTANCES,
     posX: 0,
     posY: 0,
     posZ: 0,
@@ -160,6 +218,7 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
     scaleZ: 1,
   },
   paramFields: [
+    { ...INSTANCE_INDEX_FIELD, group: "Transform Defaults" },
     { id: "mode", label: "Transform Mode", kind: "select", options: ["relative", "absolute"], group: "Transform Defaults" },
     { id: "posX", label: "Pos X", kind: "number", step: 0.1, group: "Transform Defaults" },
     { id: "posY", label: "Pos Y", kind: "number", step: 0.1, group: "Transform Defaults" },
@@ -182,7 +241,12 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
     const positionsList = Array.isArray(inputs.positions) ? inputs.positions : [];
     const rotationsList = Array.isArray(inputs.rotations) ? inputs.rotations : [];
     const scalesList = Array.isArray(inputs.scales) ? inputs.scales : [];
-    const matricesList = Array.isArray(inputs.matrices) ? inputs.matrices : [];
+    
+    const singleMatrix = (inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : null)
+      ?? (inputs.matrices instanceof THREE.Matrix4 ? inputs.matrices : null);
+    const matricesList = Array.isArray(inputs.matrices)
+      ? inputs.matrices
+      : (singleMatrix ? [singleMatrix] : []);
 
     const mode = String(params.mode || "relative");
 
@@ -198,15 +262,23 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
     const paramSY = params.scaleY !== undefined ? Number(params.scaleY) : 1;
     const paramSZ = params.scaleZ !== undefined ? Number(params.scaleZ) : 1;
 
+    const targetIndex = resolveTargetIndex(inputs.index, params.index);
+
     instances.forEach((instance, i) => {
-      const clone = instance.clone(true);
-      clone.matrixAutoUpdate = instance.matrixAutoUpdate;
-      clone.matrix.copy(instance.matrix);
-      clone.matrixWorldNeedsUpdate = true;
+      const clone = cloneInstance(instance);
+
+      if (!isTargeted(i, targetIndex)) {
+        group.add(clone);
+        return;
+      }
+
+      const matItem = targetIndex >= 0 && matricesList.length > 0
+        ? (matricesList.length === 1 ? matricesList[0] : matricesList[targetIndex % matricesList.length])
+        : matricesList[i];
 
       // Check matrix override
-      if (matricesList[i] instanceof THREE.Matrix4) {
-        const mat = matricesList[i] as THREE.Matrix4;
+      if (matItem instanceof THREE.Matrix4) {
+        const mat = matItem as THREE.Matrix4;
         if (mode === "absolute") {
           clone.matrixAutoUpdate = false;
           clone.matrix.copy(mat);
@@ -216,36 +288,45 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
         }
       } else {
         // Base vectors from vector list or origin/identity
-        const basePos = positionsList[i] !== undefined
-          ? asVector(positionsList[i], new THREE.Vector3(0, 0, 0))
+        const posItem = targetIndex >= 0 && positionsList.length > 0
+          ? (positionsList.length === 1 ? positionsList[0] : positionsList[targetIndex % positionsList.length])
+          : positionsList[i];
+        const basePos = posItem !== undefined
+          ? asVector(posItem, new THREE.Vector3(0, 0, 0))
           : new THREE.Vector3(0, 0, 0);
 
         const posOffset = new THREE.Vector3(
-          resolveScalarOrListItem(inputs.posX, i, basePos.x + paramPX),
-          resolveScalarOrListItem(inputs.posY, i, basePos.y + paramPY),
-          resolveScalarOrListItem(inputs.posZ, i, basePos.z + paramPZ),
+          resolveScalarOrListItem(inputs.posX, i, targetIndex, basePos.x + paramPX),
+          resolveScalarOrListItem(inputs.posY, i, targetIndex, basePos.y + paramPY),
+          resolveScalarOrListItem(inputs.posZ, i, targetIndex, basePos.z + paramPZ),
         );
 
         // Rotation offset (Euler angles in degrees)
-        const baseRot = rotationsList[i] !== undefined
-          ? asVector(rotationsList[i], new THREE.Vector3(0, 0, 0))
+        const rotItem = targetIndex >= 0 && rotationsList.length > 0
+          ? (rotationsList.length === 1 ? rotationsList[0] : rotationsList[targetIndex % rotationsList.length])
+          : rotationsList[i];
+        const baseRot = rotItem !== undefined
+          ? asVector(rotItem, new THREE.Vector3(0, 0, 0))
           : new THREE.Vector3(0, 0, 0);
 
         const rotOffset = new THREE.Vector3(
-          resolveScalarOrListItem(inputs.rotX, i, baseRot.x + paramRX),
-          resolveScalarOrListItem(inputs.rotY, i, baseRot.y + paramRY),
-          resolveScalarOrListItem(inputs.rotZ, i, baseRot.z + paramRZ),
+          resolveScalarOrListItem(inputs.rotX, i, targetIndex, baseRot.x + paramRX),
+          resolveScalarOrListItem(inputs.rotY, i, targetIndex, baseRot.y + paramRY),
+          resolveScalarOrListItem(inputs.rotZ, i, targetIndex, baseRot.z + paramRZ),
         );
 
         // Scale
-        const baseScale = scalesList[i] !== undefined
-          ? asVector(scalesList[i], new THREE.Vector3(1, 1, 1))
+        const scaleItem = targetIndex >= 0 && scalesList.length > 0
+          ? (scalesList.length === 1 ? scalesList[0] : scalesList[targetIndex % scalesList.length])
+          : scalesList[i];
+        const baseScale = scaleItem !== undefined
+          ? asVector(scaleItem, new THREE.Vector3(1, 1, 1))
           : new THREE.Vector3(1, 1, 1);
 
         const scaleVal = new THREE.Vector3(
-          resolveScalarOrListItem(inputs.scaleX, i, baseScale.x * paramSX),
-          resolveScalarOrListItem(inputs.scaleY, i, baseScale.y * paramSY),
-          resolveScalarOrListItem(inputs.scaleZ, i, baseScale.z * paramSZ),
+          resolveScalarOrListItem(inputs.scaleX, i, targetIndex, baseScale.x * paramSX),
+          resolveScalarOrListItem(inputs.scaleY, i, targetIndex, baseScale.y * paramSY),
+          resolveScalarOrListItem(inputs.scaleZ, i, targetIndex, baseScale.z * paramSZ),
         );
 
         const deltaMat = new THREE.Matrix4();
@@ -304,11 +385,7 @@ export const GET_INSTANCE_NODE: NodeDefinition = {
 
     const selectedInstance = instances[index];
     if (selectedInstance) {
-      const clone = selectedInstance.clone(true);
-      clone.matrixAutoUpdate = selectedInstance.matrixAutoUpdate;
-      clone.matrix.copy(selectedInstance.matrix);
-      clone.matrixWorldNeedsUpdate = true;
-      group.add(clone);
+      group.add(cloneInstance(selectedInstance));
     }
 
     return { geometry: group, count };
@@ -376,10 +453,7 @@ export const GEOMETRY_TRANSFORM_NODE: NodeDefinition = {
     const source = inputs.geometry instanceof THREE.Object3D ? inputs.geometry : null;
     if (!source) return { geometry: group };
 
-    const clone = source.clone(true);
-    clone.matrixAutoUpdate = source.matrixAutoUpdate;
-    clone.matrix.copy(source.matrix);
-    clone.matrixWorldNeedsUpdate = true;
+    const clone = cloneInstance(source);
 
     let transformMat: THREE.Matrix4;
 

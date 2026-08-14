@@ -26,7 +26,7 @@ export const POSTPROCESS_BLOOM_NODE: NodeDefinition = {
     { id: "threshold", label: "Threshold", type: "value" },
   ],
   outputs: [{ id: "effect", label: "Post-Process", type: "postprocess" }],
-  defaultParams: { strength: 1.5, radius: 0.4, threshold: 0.1 },
+  defaultParams: { strength: 1.5, radius: 0.4, threshold: 0.85 },
   paramFields: [
     { id: "strength", label: "Strength", kind: "number", step: 0.1 },
     { id: "radius", label: "Radius", kind: "number", step: 0.05 },
@@ -35,7 +35,7 @@ export const POSTPROCESS_BLOOM_NODE: NodeDefinition = {
   evaluate: (inputs, params, ctx) => {
     const strength = Math.max(0, numberInput(inputs.strength, params.strength, 1.5));
     const radius = Math.max(0, numberInput(inputs.radius, params.radius, 0.4));
-    const threshold = Math.max(0, Math.min(1, numberInput(inputs.threshold, params.threshold, 0.1)));
+    const threshold = Math.max(0, Math.min(1, numberInput(inputs.threshold, params.threshold, 0.85)));
 
     const effectList = accumulateEffect(inputs, {
       type: "bloom",

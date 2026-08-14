@@ -91,6 +91,7 @@ const LIST_OPS = [
   "divide",
   "power",
   "abs",
+  "clamp",
   "remap_01",
   "reverse",
   "sort_asc",
@@ -151,6 +152,11 @@ export const LIST_MATH_NODE: NodeDefinition = {
         return { list: numbers.map((n) => Math.pow(n, factor)) };
       case "abs":
         return { list: numbers.map((n) => Math.abs(n)) };
+      case "clamp": {
+        const lower = Math.min(offset, factor);
+        const upper = Math.max(offset, factor);
+        return { list: numbers.map((n) => Math.min(upper, Math.max(lower, n))) };
+      }
       case "multiply":
       default:
         return { list: numbers.map((n) => n * factor + offset) };
