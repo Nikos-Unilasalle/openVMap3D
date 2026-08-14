@@ -1186,22 +1186,12 @@ export function Viewport({
         currentObject = rawOutput;
       }
 
-      // Sync standalone unconsumed object geometries (such as Empty objects) into scene so they render and raycast in 3D
-      const consumedGeometryNodeIds = new Set(
-        graphRef.current.connections
-          .filter((c) => c.fromSocket === "geometry" || c.fromSocket === "out")
-          .map((c) => c.fromNode)
-      );
-
-      for (const [nodeId, res] of results.entries()) {
+      // Sync standalone object geometries (such as Empty objects) into scene so they render and raycast in 3D
+      for (const [, res] of results.entries()) {
         if (res && res.geometry instanceof THREE.Object3D) {
           const geomObj = res.geometry as THREE.Object3D;
-          if (!consumedGeometryNodeIds.has(nodeId) && geomObj !== currentObject) {
-            if (geomObj.parent !== scene) {
-              scene.add(geomObj);
-            }
-          } else if (consumedGeometryNodeIds.has(nodeId) && geomObj.parent === scene) {
-            scene.remove(geomObj);
+          if (!geomObj.parent && geomObj !== currentObject) {
+            scene.add(geomObj);
           }
         }
       }

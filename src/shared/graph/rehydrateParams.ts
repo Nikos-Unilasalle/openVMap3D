@@ -33,26 +33,16 @@ export function rehydrateGraphParams(graph: Graph, registry: NodeRegistry): Grap
       for (const key of Object.keys(instance.params)) {
         const defaultValue = def.defaultParams[key];
         const value = instance.params[key];
+        if (!value || typeof value !== "object") continue;
+
         if (defaultValue instanceof THREE.Vector3 && !(value instanceof THREE.Vector3)) {
-          if (typeof value === "object" && value !== null) {
-            const v = value as { x?: unknown; y?: unknown; z?: unknown };
-            params[key] = new THREE.Vector3(Number(v.x) || 0, Number(v.y) || 0, Number(v.z) || 0);
-            changed = true;
-          }
+          const v = value as { x?: unknown; y?: unknown; z?: unknown };
+          params[key] = new THREE.Vector3(Number(v.x) || 0, Number(v.y) || 0, Number(v.z) || 0);
+          changed = true;
         } else if (defaultValue instanceof THREE.Color && !(value instanceof THREE.Color)) {
-          if (typeof value === "number" || typeof value === "string") {
-            try {
-              params[key] = new THREE.Color(value as any);
-              changed = true;
-            } catch {
-              params[key] = defaultValue.clone();
-              changed = true;
-            }
-          } else if (typeof value === "object" && value !== null) {
-            const c = value as { r?: unknown; g?: unknown; b?: unknown };
-            params[key] = new THREE.Color(Number(c.r) || 0, Number(c.g) || 0, Number(c.b) || 0);
-            changed = true;
-          }
+          const c = value as { r?: unknown; g?: unknown; b?: unknown };
+          params[key] = new THREE.Color(Number(c.r) || 0, Number(c.g) || 0, Number(c.b) || 0);
+          changed = true;
         }
       }
 
