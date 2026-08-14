@@ -54,72 +54,58 @@ function selectField(field: ParamFieldDef & { kind: "select" }, value: unknown, 
 }
 
 function fileField(nodeId: string, field: ParamFieldDef & { kind: "file" }, value: unknown, onChange: (v: unknown) => void) {
-  const fileName = typeof value === "string" && value ? (value.split(/[\\/]/).pop() ?? value) : "Choose file…";
+  const hasFile = typeof value === "string" && value.length > 0;
+  const fileName = hasFile ? (value.split(/[\\/]/).pop() ?? value) : "Choose file…";
+
+  const handleClear = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    field.onLoaded?.(nodeId, "", "");
+    onChange("");
+  };
+
   return (
-    <button
-      type="button"
-      className="param-file-button"
-      onClick={async () => {
-        const rawExtensions = field.accept?.map((ext) => ext.replace(/^\./, "")) ?? [];
-        const acceptAttr = field.accept?.map((ext) => (ext.startsWith(".") ? ext : `.${ext}`)).join(",");
+    <div className="param-file-container">
+      <button
+        type="button"
+        className="param-file-button"
+        onClick={async () => {
+          const rawExtensions = field.accept?.map((ext) => ext.replace(/^\./, "")) ?? [];
+          const acceptAttr = field.accept?.map((ext) => (ext.startsWith(".") ? ext : `.${ext}`)).join(",");
 
-        if (!isTauri()) {
-          const input = document.createElement("input");
-          input.type = "file";
-          if (acceptAttr) input.accept = acceptAttr;
-          input.onchange = async () => {
-            const file = input.files?.[0];
-            if (!file) return;
-            const path = file.name;
-            const ext = path.split(".").pop()?.toLowerCase() ?? "";
-            const isBinary = [
-              "png", "jpg", "jpeg", "webp", "bmp", "hdr", "exr", "tif", "tiff",
-              "mp3", "wav", "ogg", "flac", "m4a", "aac",
-            ].includes(ext);
+          if (!isTauri()) {
+            const input = document.createElement("input");
+            input.type = "file";
+            if (acceptAttr) input.accept = acceptAttr;
+            input.onchange = async () => {
+              const file = input.files?.[0];
+              if (!file) return;
+              const path = file.name;
+              const ext = path.split(".").pop()?.toLowerCase() ?? "";
+              const isBinary = [
+                "png", "jpg", "jpeg", "webp", "bmp", "hdr", "exr", "tif", "tiff",
+                "mp3", "wav", "ogg", "flac", "m4a", "aac",
+              ].includes(ext);
 
-            if (isBinary) {
-              const buffer = await file.arrayBuffer();
-              const bytes = new Uint8Array(buffer);
-              field.onLoaded?.(nodeId, path, bytes);
-            } else {
-              const content = await file.text();
-              field.onLoaded?.(nodeId, path, content);
-            }
-            onChange(path);
-          };
-          input.click();
-          return;
-        }
-
-        try {
-          const path = await open({
-            multiple: false,
-            filters: rawExtensions.length ? [{ name: "File", extensions: rawExtensions }] : undefined,
-          });
-          if (!path || Array.isArray(path)) return;
-          const ext = path.split(".").pop()?.toLowerCase() ?? "";
-          const isBinary = [
-            "png", "jpg", "jpeg", "webp", "bmp", "hdr", "exr", "tif", "tiff",
-            "mp3", "wav", "ogg", "flac", "m4a", "aac",
-          ].includes(ext);
-
-          if (isBinary) {
-            const bytes = await readFile(path);
-            field.onLoaded?.(nodeId, path, bytes);
-          } else {
-            const content = await readTextFile(path);
-            field.onLoaded?.(nodeId, path, content);
+              if (isBinary) {
+                const buffer = await file.arrayBuffer();
+                const bytes = new Uint8Array(buffer);
+                field.onLoaded?.(nodeId, path, bytes);
+              } else {
+                const content = await file.text();
+                field.onLoaded?.(nodeId, path, content);
+              }
+              onChange(path);
+            };
+            input.click();
+            return;
           }
-          onChange(path);
-        } catch (err) {
-          console.warn("Tauri dialog error, falling back to browser picker:", err);
-          const input = document.createElement("input");
-          input.type = "file";
-          if (acceptAttr) input.accept = acceptAttr;
-          input.onchange = async () => {
-            const file = input.files?.[0];
-            if (!file) return;
-            const path = file.name;
+
+          try {
+            const path = await open({
+              multiple: false,
+              filters: rawExtensions.length ? [{ name: "File", extensions: rawExtensions }] : undefined,
+            });
+            if (!path || Array.isArray(path)) return;
             const ext = path.split(".").pop()?.toLowerCase() ?? "";
             const isBinary = [
               "png", "jpg", "jpeg", "webp", "bmp", "hdr", "exr", "tif", "tiff",
@@ -127,21 +113,58 @@ function fileField(nodeId: string, field: ParamFieldDef & { kind: "file" }, valu
             ].includes(ext);
 
             if (isBinary) {
-              const buffer = await file.arrayBuffer();
-              const bytes = new Uint8Array(buffer);
+              const bytes = await readFile(path);
               field.onLoaded?.(nodeId, path, bytes);
             } else {
-              const content = await file.text();
+              const content = await readTextFile(path);
               field.onLoaded?.(nodeId, path, content);
             }
             onChange(path);
-          };
-          input.click();
-        }
-      }}
-    >
-      {fileName}
-    </button>
+          } catch (err) {
+            console.warn("Tauri dialog error, falling back to browser picker:", err);
+            const input = document.createElement("input");
+            input.type = "file";
+            if (acceptAttr) input.accept = acceptAttr;
+            input.onchange = async () => {
+              const file = input.files?.[0];
+              if (!file) return;
+              const path = file.name;
+              const ext = path.split(".").pop()?.toLowerCase() ?? "";
+              const isBinary = [
+                "png", "jpg", "jpeg", "webp", "bmp", "hdr", "exr", "tif", "tiff",
+                "mp3", "wav", "ogg", "flac", "m4a", "aac",
+              ].includes(ext);
+
+              if (isBinary) {
+                const buffer = await file.arrayBuffer();
+                const bytes = new Uint8Array(buffer);
+                field.onLoaded?.(nodeId, path, bytes);
+              } else {
+                const content = await file.text();
+                field.onLoaded?.(nodeId, path, content);
+              }
+              onChange(path);
+            };
+            input.click();
+          }
+        }}
+      >
+        {fileName}
+      </button>
+      {hasFile && (
+        <button
+          type="button"
+          className="param-file-clear-button"
+          onClick={handleClear}
+          title="Remove file / texture"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      )}
+    </div>
   );
 }
 

@@ -153,8 +153,16 @@
   user-select: text;
 }
 
-.param-file-button {
+.param-file-container {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   max-width: 190px;
+}
+
+.param-file-button {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -171,6 +179,28 @@
 
 .param-file-button:hover {
   background: rgba(255, 255, 255, 0.14);
+}
+
+.param-file-clear-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 4px;
+  color: #f87171;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.param-file-clear-button:hover {
+  background: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.5);
 }
 
 .param-text-input {

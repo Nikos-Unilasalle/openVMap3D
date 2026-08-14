@@ -133,6 +133,19 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
       accept: [".png", ".jpg", ".jpeg", ".webp"],
       onLoaded: (nodeId, path, content) => {
         const state = getOrCreateObjState(nodeId);
+        if (!path) {
+          if (state.textureMap) {
+            state.textureMap.dispose();
+            state.textureMap = undefined;
+          }
+          state.lastTexturePath = undefined;
+          state.group.traverse((c) => {
+            if (c instanceof THREE.Mesh && c.material) {
+              c.material.needsUpdate = true;
+            }
+          });
+          return;
+        }
         state.lastTexturePath = path;
         try {
           const blob = content instanceof Uint8Array ? new Blob([content]) : new Blob([content]);
@@ -160,6 +173,19 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
       accept: [".png", ".jpg", ".jpeg", ".webp"],
       onLoaded: (nodeId, path, content) => {
         const state = getOrCreateObjState(nodeId);
+        if (!path) {
+          if (state.normalMap) {
+            state.normalMap.dispose();
+            state.normalMap = undefined;
+          }
+          state.lastNormalPath = undefined;
+          state.group.traverse((c) => {
+            if (c instanceof THREE.Mesh && c.material) {
+              c.material.needsUpdate = true;
+            }
+          });
+          return;
+        }
         state.lastNormalPath = path;
         try {
           const blob = content instanceof Uint8Array ? new Blob([content]) : new Blob([content]);
