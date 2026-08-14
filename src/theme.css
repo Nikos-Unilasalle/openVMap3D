@@ -46,3 +46,7 @@
   --canvas-text: #eef2f6;
   --canvas-text-muted: #aab4c0;
 }
+
+body, input, button, select, textarea {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}

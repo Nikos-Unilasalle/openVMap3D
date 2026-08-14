@@ -22,7 +22,7 @@ import { DEFAULT_PICKS } from "../shared/graph/calibration/picks";
 import { findCompatibleSocket, segmentIntersectsRect } from "../shared/graph/insertOnWire";
 import { disposeNodeCaches } from "../shared/graph/nodeCaches";
 import { SOCKET_COLOR } from "../shared/graph/sockets";
-import { Connection, Graph, NodeInstance, NodeRegistry } from "../shared/graph/types";
+import { Connection, Graph, KeyframeStore, NodeInstance, NodeRegistry } from "../shared/graph/types";
 import { GraphNode, GraphNodeData } from "./GraphNode";
 import { NodePalette } from "./NodePalette";
 import { NodeSearchModal } from "./NodeSearchModal";
@@ -136,7 +136,13 @@ function refreshDynamicSockets(
   });
 }
 
-function toGraph(baseNodes: NodeInstance[], flowNodes: Node<GraphNodeData>[], flowEdges: Edge[]): Graph {
+function toGraph(
+  baseNodes: NodeInstance[],
+  flowNodes: Node<GraphNodeData>[],
+  flowEdges: Edge[],
+  existingKeyframes?: KeyframeStore,
+  existingMarkers?: number[],
+): Graph {
   const flowNodeIds = new Set(flowNodes.map((f) => f.id));
   const nodes = baseNodes
     .filter((n) => flowNodeIds.has(n.id))
@@ -153,7 +159,17 @@ function toGraph(baseNodes: NodeInstance[], flowNodes: Node<GraphNodeData>[], fl
       toNode: e.target,
       toSocket: e.targetHandle ?? "",
     }));
-  return { nodes, connections };
+
+  const keyframes: KeyframeStore = {};
+  if (existingKeyframes) {
+    for (const nodeId of Object.keys(existingKeyframes)) {
+      if (flowNodeIds.has(nodeId)) {
+        keyframes[nodeId] = existingKeyframes[nodeId];
+      }
+    }
+  }
+
+  return { nodes, connections, keyframes, markers: existingMarkers ?? [] };
 }
 
 interface GraphEditorProps {
@@ -230,9 +246,9 @@ function GraphEditorContent({ graph, registry, onGraphChange, onSelectNode, sele
 
   const commit = useCallback(
     (nextNodes: Node<GraphNodeData>[], nextEdges: Edge[]) => {
-      onGraphChange?.(toGraph(graph.nodes, nextNodes, nextEdges));
+      onGraphChange?.(toGraph(graph.nodes, nextNodes, nextEdges, graph.keyframes, graph.markers));
     },
-    [graph.nodes, onGraphChange],
+    [graph.nodes, graph.keyframes, graph.markers, onGraphChange],
   );
 
   const onNodesChange = useCallback(
@@ -278,9 +294,9 @@ function GraphEditorContent({ graph, registry, onGraphChange, onSelectNode, sele
       const refreshedNodes = refreshDynamicSockets(nextNodes, nextEdges, updatedGraphNodes, registry);
       setNodes(refreshedNodes);
       setEdges(nextEdges);
-      onGraphChange?.(toGraph(updatedGraphNodes, refreshedNodes, nextEdges));
+      onGraphChange?.(toGraph(updatedGraphNodes, refreshedNodes, nextEdges, graph.keyframes, graph.markers));
     },
-    [edges, graph.nodes, nodes, onGraphChange, registry, setEdges, setNodes],
+    [edges, graph.nodes, graph.keyframes, graph.markers, nodes, onGraphChange, registry, setEdges, setNodes],
   );
 
   const onEdgesDelete = useCallback(
@@ -451,7 +467,12 @@ function GraphEditorContent({ graph, registry, onGraphChange, onSelectNode, sele
     [commit, edges, graph.nodes, nodes, registry, setEdges, setNodes],
   );
 
-  const onNodeClick = useCallback((_: unknown, node: Node<GraphNodeData>) => onSelectNode(node.id), [onSelectNode]);
+  const onNodeClick = useCallback(
+    (_: React.MouseEvent, node: Node<GraphNodeData>) => {
+      onSelectNode(node.id);
+    },
+    [onSelectNode],
+  );
   const onPaneClick = useCallback(() => onSelectNode(null), [onSelectNode]);
 
   const addNode = useCallback(
@@ -591,7 +612,7 @@ function GraphEditorContent({ graph, registry, onGraphChange, onSelectNode, sele
 
       setNodes(finalNodes);
       setEdges(nextEdges);
-      onGraphChange?.(toGraph([...graph.nodes, ...newInstances], finalNodes, nextEdges));
+      onGraphChange?.(toGraph([...graph.nodes, ...newInstances], finalNodes, nextEdges, graph.keyframes, graph.markers));
     },
     [graph, nodes, edges, pendingWireConnection, onGraphChange, registry, setNodes, setEdges],
   );
@@ -674,6 +695,8 @@ function GraphEditorContent({ graph, registry, onGraphChange, onSelectNode, sele
     const nextGraph: Graph = {
       nodes: [...graph.nodes, ...newInstances],
       connections: [...graph.connections, ...newConnections],
+      keyframes: graph.keyframes,
+      markers: graph.markers,
     };
 
     setNodes(nextFlowNodes);
@@ -709,7 +732,7 @@ function GraphEditorContent({ graph, registry, onGraphChange, onSelectNode, sele
       const isShift = e.shiftKey;
       const code = e.code;
 
-      if (code === "Space" || e.key === " ") {
+      if (isCmdOrCtrl && (code === "Space" || e.key === " ")) {
         e.preventDefault();
         setSearchModalOpen(true);
       } else if (isCmdOrCtrl && isShift && code === "KeyM") {
@@ -769,6 +792,8 @@ function GraphEditorContent({ graph, registry, onGraphChange, onSelectNode, sele
           onPaneClick={onPaneClick}
           selectionOnDrag
           selectionMode={SelectionMode.Partial}
+          multiSelectionKeyCode={["Shift", "Meta", "Control"]}
+          selectionKeyCode={["Shift", "Meta", "Control"]}
           panOnDrag={[1, 2]}
           fitView
           colorMode="dark"

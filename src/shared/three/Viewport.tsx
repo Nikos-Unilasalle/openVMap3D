@@ -70,6 +70,9 @@ interface ViewportProps {
   previewCameraPose?: PreviewCameraPose | null;
   isSplitView?: boolean;
   onToggleSplitView?: () => void;
+  currentFrame?: number;
+  onEvaluatedResults?: (results: Map<string, Record<string, unknown>>) => void;
+  isPlaying?: boolean;
 }
 
 /** Create text canvas sprite for corner 3D axes labels ("X", "Y", "Z") */
@@ -313,10 +316,20 @@ export function Viewport({
   previewCameraPose = null,
   isSplitView = false,
   onToggleSplitView,
+  currentFrame = -1,
+  onEvaluatedResults,
+  isPlaying = true,
 }: ViewportProps) {
   const [showUiOverlay, setShowUiOverlay] = useState(true);
   const showUiOverlayRef = useRef(showUiOverlay);
   showUiOverlayRef.current = showUiOverlay;
+
+  const currentFrameRef = useRef(currentFrame);
+  currentFrameRef.current = currentFrame;
+  const onEvaluatedResultsRef = useRef(onEvaluatedResults);
+  onEvaluatedResultsRef.current = onEvaluatedResults;
+  const isPlayingRef = useRef(isPlaying);
+  isPlayingRef.current = isPlaying;
 
   const [showEnvInEditor, setShowEnvInEditor] = useState(false);
   const showEnvInEditorRef = useRef(showEnvInEditor);
@@ -921,7 +934,11 @@ export function Viewport({
     }
 
     function tick() {
-      clock = tickClock(clock, Date.now());
+      if (isPlayingRef.current) {
+        clock = tickClock(clock, Date.now());
+      } else {
+        clock = { ...clock, step: 0 };
+      }
 
       // Suppress the graph-driven matrix overwrite for exactly the mesh the
       // gizmo is dragging this frame (see EvalContext.liveEditNodeId and
@@ -938,6 +955,8 @@ export function Viewport({
           nodeId: "",
           liveEditNodeId,
           renderer,
+          currentFrame: currentFrameRef.current,
+          keyframes: graphRef.current.keyframes,
         });
       } catch (err) {
         console.error("graph evaluation failed", err);
@@ -945,6 +964,7 @@ export function Viewport({
         return;
       }
       latestResults = results;
+      onEvaluatedResultsRef.current?.(results);
 
       // Evaluate and sync ALL 3D Lights & Light Helpers in the scene (standalone or array instances)
       const detectedLights = new Map<string, { light: THREE.Light; nodeId: string }>();

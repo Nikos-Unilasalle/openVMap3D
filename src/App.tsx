@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import * as THREE from "three";
 import { CAMERA_NODE } from "./shared/graph/nodes/camera";
 import { DEFAULT_REGISTRY } from "./shared/graph/nodes";
 import { findRenderNodeId } from "./shared/graph/nodes/render";
 import { cloneGraph } from "./shared/graph/cloneGraph";
 import { rehydrateGraphParams } from "./shared/graph/rehydrateParams";
-import { Connection, Graph, NodeInstance } from "./shared/graph/types";
+import { Connection, Graph, Keyframe, NodeInstance } from "./shared/graph/types";
 import { broadcastGraph, PreviewCameraPose, startBroadcasting } from "./shared/ipc";
 import { TransformPatch } from "./shared/three/Viewport";
 import { SplitViewport } from "./shared/three/SplitViewport";
@@ -13,7 +14,8 @@ import { GIZMO_SELECTABLE_TYPES, resolveGizmoTarget } from "./shared/graph/trans
 import { CalibrationOverlay } from "./windows/CalibrationOverlay";
 import { GraphEditor } from "./windows/GraphEditor";
 import { OutputWindow } from "./windows/OutputWindow";
-import { ParamPanel } from "./windows/ParamPanel";
+import { parseVector3, ParamPanel } from "./windows/ParamPanel";
+import { TimelineBar } from "./windows/TimelineBar";
 import { TopBar } from "./windows/TopBar";
 
 function node(id: string, type: string, position: { x: number; y: number }, params: Record<string, unknown> = {}): NodeInstance {
@@ -72,6 +74,96 @@ function MainEditor() {
   const [editorKey, setEditorKey] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const draggingSplit = useRef(false);
+
+  const renderNodeInstance = graph.nodes.find((n) => n.type === "render");
+  const rawFrameCount = Number(renderNodeInstance?.params?.frameCount);
+  const totalFrames = renderNodeInstance
+    ? Number.isFinite(rawFrameCount) && rawFrameCount > 0
+      ? Math.round(rawFrameCount)
+      : 120
+    : 0;
+  const keyframesEnabled = !!renderNodeInstance;
+
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [currentFrame, setCurrentFrame] = useState(0);
+  const [evaluatedResults, setEvaluatedResults] = useState<Map<string, Record<string, unknown>> | null>(null);
+
+  useEffect(() => {
+    if (keyframesEnabled && totalFrames > 0) {
+      setCurrentFrame((prev) => Math.max(0, Math.min(totalFrames - 1, prev)));
+    }
+  }, [totalFrames, keyframesEnabled]);
+
+  useEffect(() => {
+    if (!keyframesEnabled || !isPlaying || totalFrames <= 0) return;
+    const interval = setInterval(() => {
+      setCurrentFrame((prev) => (prev + 1) % totalFrames);
+    }, 1000 / 60);
+    return () => clearInterval(interval);
+  }, [keyframesEnabled, isPlaying, totalFrames]);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const activeEl = document.activeElement;
+      const isInput =
+        activeEl &&
+        (activeEl.tagName === "INPUT" ||
+          activeEl.tagName === "TEXTAREA" ||
+          activeEl.tagName === "SELECT" ||
+          (activeEl as HTMLElement).isContentEditable);
+
+      const isCmdOrCtrl = e.metaKey || e.ctrlKey;
+      const code = e.code;
+
+      if (!isInput && (code === "Space" || e.key === " ") && !isCmdOrCtrl) {
+        e.preventDefault();
+        if (keyframesEnabled) {
+          setIsPlaying((prev) => !prev);
+        }
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [keyframesEnabled]);
+
+  const onToggleKeyframe = useCallback(
+    (nodeId: string, paramKey: string, frame: number, currentValue: any) => {
+      setGraph((prevGraph) => {
+        const currentKeyframes = prevGraph.keyframes || {};
+        const nodeKeyframes = currentKeyframes[nodeId] || {};
+        const paramList = nodeKeyframes[paramKey] || [];
+
+        const existingIndex = paramList.findIndex((k) => k.frame === frame);
+        let nextList: Keyframe[];
+
+        if (existingIndex >= 0) {
+          nextList = paramList.filter((_, idx) => idx !== existingIndex);
+        } else {
+          const valCopy = currentValue !== undefined ? JSON.parse(JSON.stringify(currentValue)) : 0;
+          const newKeyframe: Keyframe = { frame, value: valCopy };
+          nextList = [...paramList, newKeyframe].sort((a, b) => a.frame - b.frame);
+        }
+
+        const nextNodeKeyframes = { ...nodeKeyframes };
+        if (nextList.length > 0) {
+          nextNodeKeyframes[paramKey] = nextList;
+        } else {
+          delete nextNodeKeyframes[paramKey];
+        }
+
+        const nextKeyframeStore = { ...currentKeyframes, [nodeId]: nextNodeKeyframes };
+        if (Object.keys(nextNodeKeyframes).length === 0) {
+          delete nextKeyframeStore[nodeId];
+        }
+
+        return {
+          ...prevGraph,
+          keyframes: nextKeyframeStore,
+        };
+      });
+    },
+    [],
+  );
 
   // One epoch per session, not per edit — clock.ts's Time node just needs
   // both windows agreeing on a shared "when did frame 0 happen," there's no
@@ -256,11 +348,63 @@ function MainEditor() {
         paramId === "active" &&
         (value === true || value === 1);
 
+      let nextKeyframes = prevGraph.keyframes;
+      if (keyframesEnabled && currentFrame >= 0 && nextKeyframes && nodeIdToUpdate) {
+        const nodeKeys = nextKeyframes[nodeIdToUpdate];
+        if (nodeKeys) {
+          let updatedNodeKeys = { ...nodeKeys };
+          let modified = false;
+
+          const updateOrInsertKeyframe = (key: string, val: number) => {
+            const list = updatedNodeKeys[key] || [];
+            const idx = list.findIndex((k) => k.frame === currentFrame);
+            let newList: Keyframe[];
+            if (idx >= 0) {
+              newList = [...list];
+              newList[idx] = { frame: currentFrame, value: val };
+            } else {
+              newList = [...list, { frame: currentFrame, value: val }].sort((a, b) => a.frame - b.frame);
+            }
+            updatedNodeKeys[key] = newList;
+            modified = true;
+          };
+
+          if (updatedNodeKeys[paramId] && updatedNodeKeys[paramId].length > 0) {
+            const valNum = Number(value);
+            updateOrInsertKeyframe(paramId, Number.isFinite(valNum) ? valNum : 0);
+          }
+
+          if (value instanceof THREE.Vector3 || (typeof value === "object" && value !== null && ("x" in value || "y" in value || "z" in value))) {
+            const vec = parseVector3(value);
+            for (const comp of ["x", "y", "z"] as const) {
+              const fullKey = `${paramId}.${comp}`;
+              if (updatedNodeKeys[fullKey] && updatedNodeKeys[fullKey].length > 0) {
+                updateOrInsertKeyframe(fullKey, vec[comp]);
+              }
+            }
+          }
+
+          if (modified) {
+            nextKeyframes = { ...nextKeyframes, [nodeIdToUpdate]: updatedNodeKeys };
+          }
+        }
+      }
+
+      const nextParams = { ...instance.params };
+      if (value instanceof THREE.Vector3) {
+        nextParams[paramId] = value.clone();
+      } else if (typeof value === "object" && value !== null) {
+        nextParams[paramId] = JSON.parse(JSON.stringify(value));
+      } else {
+        nextParams[paramId] = value;
+      }
+
       return {
         ...prevGraph,
+        keyframes: nextKeyframes,
         nodes: prevGraph.nodes.map((n) => {
           if (n.id === instance.id) {
-            return { ...n, params: { ...n.params, [paramId]: value } };
+            return { ...n, params: nextParams };
           }
           if (isActivatingCamera && n.type === CAMERA_NODE.type) {
             return { ...n, params: { ...n.params, active: false } };
@@ -293,7 +437,15 @@ function MainEditor() {
   );
 
   const onGraphChange = useCallback(
-    (next: Graph) => setGraphWithHistory(next, `structure:${structuralKey(next)}`),
+    (next: Graph) =>
+      setGraphWithHistory(
+        (prev) => ({
+          ...next,
+          keyframes: next.keyframes ?? prev.keyframes ?? {},
+          markers: next.markers ?? prev.markers ?? [],
+        }),
+        `structure:${structuralKey(next)}`,
+      ),
     [setGraphWithHistory, structuralKey],
   );
 
@@ -335,6 +487,41 @@ function MainEditor() {
     };
   }, []);
 
+  const selectedEvaluated = selectedNodeId && evaluatedResults ? evaluatedResults.get(selectedNodeId) : null;
+
+  const selectedKeyframeFrames = selectedNodeId && graph.keyframes?.[selectedNodeId]
+    ? Array.from(
+        new Set(
+          Object.values(graph.keyframes[selectedNodeId])
+            .flat()
+            .map((k) => k.frame)
+        )
+      ).sort((a, b) => a - b)
+    : [];
+
+  const onToggleMarker = useCallback((frame: number) => {
+    setGraphWithHistory((prevGraph) => {
+      const currentMarkers = prevGraph.markers || [];
+      const idx = currentMarkers.indexOf(frame);
+      let nextMarkers: number[];
+      if (idx >= 0) {
+        nextMarkers = currentMarkers.filter((m) => m !== frame);
+      } else {
+        nextMarkers = [...currentMarkers, frame].sort((a, b) => a - b);
+      }
+      return { ...prevGraph, markers: nextMarkers };
+    }, `marker:toggle:${frame}`);
+  }, [setGraphWithHistory]);
+
+  const onMoveMarker = useCallback((oldFrame: number, newFrame: number) => {
+    setGraphWithHistory((prevGraph) => {
+      const currentMarkers = prevGraph.markers || [];
+      const filtered = currentMarkers.filter((m) => m !== oldFrame && m !== newFrame);
+      const nextMarkers = [...filtered, newFrame].sort((a, b) => a - b);
+      return { ...prevGraph, markers: nextMarkers };
+    }, `marker:move:${oldFrame}->${newFrame}`);
+  }, [setGraphWithHistory]);
+
   return (
     <div
       ref={containerRef}
@@ -360,6 +547,9 @@ function MainEditor() {
           onTransformChange={onTransformChange}
           onTransformStart={onTransformStart}
           onCameraChange={onPreviewCameraChange}
+          currentFrame={keyframesEnabled ? currentFrame : -1}
+          onEvaluatedResults={setEvaluatedResults}
+          isPlaying={isPlaying}
         />
         {needsTransformHint && (
           <div className="viewport-hint">Wire a Transform node into this object's Matrix to move it</div>
@@ -385,14 +575,32 @@ function MainEditor() {
                 ? selectedDef.dynamicParamFields(selectedInstance)
                 : (selectedDef.paramFields ?? [])
             }
-            params={{ ...selectedDef.defaultParams, ...selectedInstance.params }}
+            params={{
+              ...selectedDef.defaultParams,
+              ...selectedInstance.params,
+              ...((selectedEvaluated?.__evaluatedInputs as Record<string, unknown>) ?? {}),
+              ...(selectedEvaluated ?? {}),
+            }}
+            keyframes={graph.keyframes}
+            currentFrame={keyframesEnabled ? currentFrame : -1}
+            keyframesEnabled={keyframesEnabled}
             onChange={onParamChange}
+            onToggleKeyframe={onToggleKeyframe}
           />
         )}
       </div>
-      <div
-        onMouseDown={onSplitHandleMouseDown}
-        style={{ height: 6, flexShrink: 0, cursor: "row-resize", background: "#2c333f" }}
+      <TimelineBar
+        currentFrame={currentFrame}
+        totalFrames={totalFrames}
+        isPlaying={isPlaying}
+        keyframesEnabled={keyframesEnabled}
+        selectedKeyframeFrames={selectedKeyframeFrames}
+        markers={graph.markers ?? []}
+        onToggleMarker={onToggleMarker}
+        onMoveMarker={onMoveMarker}
+        onFrameChange={setCurrentFrame}
+        onTogglePlay={() => setIsPlaying((p) => !p)}
+        onSplitHandleMouseDown={onSplitHandleMouseDown}
       />
       <div style={{ flex: 1, minHeight: 0 }}>
         <GraphEditor

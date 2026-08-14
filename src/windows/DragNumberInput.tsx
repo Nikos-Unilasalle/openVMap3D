@@ -5,20 +5,25 @@ function formatValue(v: number): string {
   return String(Math.round(v * 1000) / 1000);
 }
 
+export type KeyframeStatus = "none" | "exact" | "interpolated";
+
 interface DragNumberInputProps {
   value: number;
   onChange: (value: number) => void;
-  /** Value change per tick of scroll wheel. Defaults to 0.1. */
   step?: number;
+  status?: KeyframeStatus;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
 }
 
-/**
- * Numeric parameter input:
- * - Simple mouse wheel scroll up/down to adjust value by `step` (default 0.1).
- * - Hold Shift while scrolling to increment/decrement by 1.
- * - Single click drops into direct text-edit mode.
- */
-export function DragNumberInput({ value, onChange, step = 0.1 }: DragNumberInputProps) {
+export function DragNumberInput({
+  value,
+  onChange,
+  step = 0.1,
+  status = "none",
+  onMouseEnter,
+  onMouseLeave,
+}: DragNumberInputProps) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState("");
 
@@ -32,15 +37,29 @@ export function DragNumberInput({ value, onChange, step = 0.1 }: DragNumberInput
     e.preventDefault();
     e.stopPropagation();
 
-    // Scroll up (deltaY < 0) increases value; scroll down (deltaY > 0) decreases
     const delta = e.deltaY < 0 ? 1 : -1;
-
-    // Holding Shift forces integer step of 1, normal scroll uses step (default 0.1)
     const currentStep = e.shiftKey ? 1 : (step || 0.1);
 
     const newValue = Math.round((value + delta * currentStep) * 1000) / 1000;
     onChange(newValue);
   };
+
+  let boxStyle: React.CSSProperties = {};
+  if (status === "exact") {
+    boxStyle = {
+      backgroundColor: "#76C560",
+      color: "#0f172a",
+      fontWeight: "700",
+      borderColor: "#5aa746",
+    };
+  } else if (status === "interpolated") {
+    boxStyle = {
+      backgroundColor: "#EDA446",
+      color: "#0f172a",
+      fontWeight: "700",
+      borderColor: "#d48b32",
+    };
+  }
 
   if (editing) {
     return (
@@ -49,6 +68,7 @@ export function DragNumberInput({ value, onChange, step = 0.1 }: DragNumberInput
         type="text"
         inputMode="decimal"
         autoFocus
+        style={boxStyle}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onFocus={(e) => e.target.select()}
@@ -57,6 +77,8 @@ export function DragNumberInput({ value, onChange, step = 0.1 }: DragNumberInput
           if (e.key === "Enter") commitEdit(text);
           if (e.key === "Escape") setEditing(false);
         }}
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
       />
     );
   }
@@ -64,11 +86,14 @@ export function DragNumberInput({ value, onChange, step = 0.1 }: DragNumberInput
   return (
     <div
       className="drag-number"
+      style={boxStyle}
       onClick={() => {
         setText(formatValue(value));
         setEditing(true);
       }}
       onWheel={handleWheel}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
       title="Scroll wheel to adjust (Shift + Scroll for ±1)"
     >
       {formatValue(value)}

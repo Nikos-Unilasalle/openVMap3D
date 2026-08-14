@@ -160,7 +160,7 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   return (
     <header className="top-bar">
-      {/* Left branding */}
+      {/* Left section: Logo + File Operations */}
       <div className="top-bar-left">
         <div className="top-bar-logo">
           <img src={logoUrl} alt="openVmap" className="top-bar-logo-img" />
@@ -169,10 +169,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           </span>
         </div>
         <div className="top-bar-divider" />
-      </div>
 
-      {/* Center action buttons */}
-      <div className="top-bar-center">
         {/* NEW */}
         <button className="top-bar-button top-bar-button-new" onClick={handleNewGraph} title="Nouveau projet vide">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -226,7 +223,10 @@ export const TopBar: React.FC<TopBarProps> = ({
           </svg>
           Incremental Save
         </button>
+      </div>
 
+      {/* Center section: Undo & Redo */}
+      <div className="top-bar-center">
         {/* UNDO */}
         <button className="top-bar-button" onClick={onUndo} title="Annuler (Ctrl+Z / ⌘Z)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -244,8 +244,17 @@ export const TopBar: React.FC<TopBarProps> = ({
           </svg>
           Redo
         </button>
+      </div>
 
-        {/* OUTPUT — fullscreen window on the second monitor (the video projector) */}
+      {/* Right area: Toast + Output + Filename */}
+      <div className="top-bar-right">
+        {toastMessage && (
+          <div className={`top-bar-toast${toastError ? " top-bar-toast-error" : ""}`}>
+            {toastError ? "⚠ " : "✓ "}{toastMessage}
+          </div>
+        )}
+
+        {/* OUTPUT — fullscreen window on the second monitor */}
         <button
           className={`top-bar-button top-bar-button-output${isOutputOpen ? " top-bar-button-output-active" : ""}`}
           onClick={handleToggleOutput}
@@ -258,15 +267,6 @@ export const TopBar: React.FC<TopBarProps> = ({
           </svg>
           {isOutputOpen ? "Close Output" : "Output"}
         </button>
-      </div>
-
-      {/* Right area */}
-      <div className="top-bar-right">
-        {toastMessage && (
-          <div className={`top-bar-toast${toastError ? " top-bar-toast-error" : ""}`}>
-            {toastError ? "⚠ " : "✓ "}{toastMessage}
-          </div>
-        )}
 
         {isEditingFilename ? (
           <input

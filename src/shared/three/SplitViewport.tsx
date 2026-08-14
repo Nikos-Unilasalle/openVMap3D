@@ -14,6 +14,9 @@ interface SplitViewportProps {
   onTransformStart?: () => void;
   onCameraChange?: (pose: PreviewCameraPose) => void;
   previewCameraPose?: PreviewCameraPose | null;
+  currentFrame?: number;
+  onEvaluatedResults?: (results: Map<string, Record<string, unknown>>) => void;
+  isPlaying?: boolean;
 }
 
 export function SplitViewport({
@@ -27,6 +30,9 @@ export function SplitViewport({
   onTransformStart,
   onCameraChange,
   previewCameraPose = null,
+  currentFrame,
+  onEvaluatedResults,
+  isPlaying,
 }: SplitViewportProps) {
   const [isSplit, setIsSplit] = useState(false);
   const [splitPercent, setSplitPercent] = useState(50);
@@ -72,6 +78,9 @@ export function SplitViewport({
           previewCameraPose={previewCameraPose}
           isSplitView={false}
           onToggleSplitView={() => setIsSplit(true)}
+          currentFrame={currentFrame}
+          onEvaluatedResults={onEvaluatedResults}
+          isPlaying={isPlaying}
         />
       </div>
     );
@@ -104,6 +113,8 @@ export function SplitViewport({
           previewCameraPose={previewCameraPose}
           isSplitView={true}
           onToggleSplitView={() => setIsSplit(false)}
+          currentFrame={currentFrame}
+          isPlaying={isPlaying}
         />
       </div>
 
@@ -131,6 +142,8 @@ export function SplitViewport({
           epochMs={epochMs}
           outputMode={true}
           previewCameraPose={previewCameraPose}
+          currentFrame={currentFrame}
+          isPlaying={isPlaying}
         />
       </div>
     </div>

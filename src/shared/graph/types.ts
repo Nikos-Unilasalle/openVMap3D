@@ -41,6 +41,10 @@ export interface EvalContext {
    * rather than throwing.
    */
   renderer?: THREE.WebGLRenderer;
+  /** Active animation current frame index. */
+  currentFrame?: number;
+  /** Active keyframe store. */
+  keyframes?: KeyframeStore;
 }
 
 /**
@@ -163,11 +167,21 @@ export interface Connection {
   toSocket: string;
 }
 
+export interface Keyframe {
+  frame: number;
+  value: any;
+}
+
+/** Keyframes store keyed by nodeId -> paramKey -> array of Keyframe sorted by frame ascending. */
+export type KeyframeStore = Record<string, Record<string, Keyframe[]>>;
+
 export interface Graph {
   nodes: NodeInstance[];
   connections: Connection[];
+  keyframes?: KeyframeStore;
+  markers?: number[];
 }
 
 export function emptyGraph(): Graph {
-  return { nodes: [], connections: [] };
+  return { nodes: [], connections: [], keyframes: {}, markers: [] };
 }

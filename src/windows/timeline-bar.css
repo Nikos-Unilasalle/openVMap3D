@@ -1,0 +1,214 @@
+/* Timeline Bar & Divider matching user's exact UI geometry */
+
+.timeline-bar-container {
+  width: 100%;
+  height: 3px;
+  background-color: #000000;
+  position: relative;
+  display: flex;
+  align-items: center;
+  user-select: none;
+  z-index: 20;
+  box-sizing: border-box;
+}
+
+/* 3px black line acts as resize handle */
+.timeline-split-resize-handle {
+  width: 100%;
+  height: 9px;
+  cursor: row-resize;
+  background: transparent;
+  position: absolute;
+  top: -3px;
+  left: 0;
+  z-index: 25;
+}
+
+.timeline-bar-inner {
+  width: 100%;
+  height: 3px;
+  display: flex;
+  align-items: center;
+  position: relative;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* Play/Pause button directly touching the left edge, protruding on both sides */
+.timeline-play-btn {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #ffffff;
+  border-radius: 0 4px 4px 0;
+  width: 22px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  z-index: 30;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+}
+
+.timeline-play-btn:hover:not(.disabled) {
+  background: #38bdf8;
+  color: #0f172a;
+  border-color: #38bdf8;
+}
+
+.timeline-play-btn.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Scrubbing Track Line: 20px tall hit region for easy grabbing, visual line 1px centered */
+.timeline-track {
+  position: absolute;
+  left: 28px;
+  right: 42px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 20px;
+  display: flex;
+  align-items: center;
+  cursor: ew-resize;
+  z-index: 26;
+}
+
+.timeline-track.disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.timeline-track-bg {
+  width: 100%;
+  height: 1px;
+  background: #1e293b;
+}
+
+.timeline-track-fill {
+  position: absolute;
+  left: 0;
+  height: 1px;
+  background: #38bdf8;
+  pointer-events: none;
+}
+
+/* Green keyframe ticks (min 1px width) for selected node on timeline track */
+.timeline-keyframe-marker {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 9px;
+  background-color: #76C560;
+  box-shadow: 0 0 4px rgba(118, 197, 96, 0.9);
+  pointer-events: none;
+  z-index: 27;
+}
+
+/* Visual marker (horizontal bar under 1px blue track line, 1 frame wide, 1px height, flat style without shadow) */
+.timeline-visual-marker {
+  position: absolute;
+  top: calc(50% + 2px);
+  transform: translateX(-50%);
+  height: 1px;
+  background-color: #cbd5e1;
+  border-radius: 0;
+  box-shadow: none;
+  pointer-events: auto;
+  cursor: grab;
+  z-index: 26;
+}
+
+.timeline-visual-marker::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  min-width: 12px;
+  height: 12px;
+  background: transparent;
+}
+
+.timeline-visual-marker:hover,
+.timeline-visual-marker.hovered {
+  background-color: #ffffff;
+}
+
+.timeline-visual-marker:active,
+.timeline-visual-marker.dragging {
+  cursor: grabbing;
+  background-color: #ffffff;
+}
+
+/* 1px narrow white playhead cursor visually, with 24px wide invisible grab hit box */
+.timeline-playhead-cursor {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 1px;
+  height: 15px;
+  background: #ffffff;
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.9);
+  pointer-events: auto;
+  cursor: ew-resize;
+  z-index: 28;
+}
+
+.timeline-playhead-cursor::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  cursor: ew-resize;
+}
+
+/* Hover Frame Badge Tooltip with gray text */
+.timeline-hover-badge {
+  position: absolute;
+  bottom: 16px;
+  transform: translateX(-50%);
+  background: #ffffff;
+  color: #475569;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 35;
+}
+
+/* Total Frame Count Badge directly touching the right edge, gray text */
+.timeline-total-badge {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  background: #ffffff;
+  color: #475569;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px 0 0 10px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+  z-index: 30;
+  line-height: 1;
+}

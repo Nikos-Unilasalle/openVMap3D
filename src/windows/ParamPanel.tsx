@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readFile, readTextFile } from "@tauri-apps/plugin-fs";
 import * as THREE from "three";
 import { CATEGORY_COLOR, NodeCategory, UNKNOWN_CATEGORY_COLOR } from "../shared/graph/categories";
-import { ParamFieldDef } from "../shared/graph/types";
+import { KeyframeStore, ParamFieldDef } from "../shared/graph/types";
 import { ColorPickerInput } from "./ColorPickerInput";
 import { DragNumberInput } from "./DragNumberInput";
 import "./param-panel.css";
@@ -14,7 +14,26 @@ interface ParamPanelProps {
   category?: NodeCategory;
   fields: ParamFieldDef[];
   params: Record<string, unknown>;
+  keyframes?: KeyframeStore;
+  currentFrame?: number;
+  keyframesEnabled?: boolean;
   onChange: (paramId: string, value: unknown) => void;
+  onToggleKeyframe?: (nodeId: string, paramKey: string, frame: number, currentValue: any) => void;
+}
+
+export type KeyframeStatus = "none" | "exact" | "interpolated";
+
+export function getKeyframeStatus(
+  keyframes: KeyframeStore | undefined,
+  nodeId: string,
+  paramKey: string,
+  currentFrame: number | undefined,
+): KeyframeStatus {
+  if (!keyframes || currentFrame === undefined || currentFrame < 0) return "none";
+  const list = keyframes[nodeId]?.[paramKey];
+  if (!list || list.length === 0) return "none";
+  if (list.some((k) => k.frame === currentFrame)) return "exact";
+  return "interpolated";
 }
 
 function booleanField(value: unknown, onChange: (v: unknown) => void) {
@@ -75,7 +94,7 @@ function toStoredUnit(value: number, degrees?: boolean): number {
 }
 
 export function parseVector3(value: unknown): THREE.Vector3 {
-  if (value instanceof THREE.Vector3) return value;
+  if (value instanceof THREE.Vector3) return value.clone();
   if (value && typeof value === "object") {
     const obj = value as Record<string, unknown>;
     const x = Number(obj.x);
@@ -100,25 +119,39 @@ export function parseVector3(value: unknown): THREE.Vector3 {
   return new THREE.Vector3(0, 0, 0);
 }
 
-function vectorField(field: ParamFieldDef & { kind: "vector" }, value: unknown, onChange: (v: unknown) => void) {
+function vectorField(
+  field: ParamFieldDef & { kind: "vector" },
+  value: unknown,
+  onChange: (v: unknown) => void,
+  nodeId: string,
+  keyframes: KeyframeStore | undefined,
+  currentFrame: number | undefined,
+  keyframesEnabled: boolean,
+  onHoverKey: (key: string | null) => void,
+) {
   const v = parseVector3(value);
-  const axis = (key: "x" | "y" | "z") => (
-    <DragNumberInput
-      key={key}
-      value={toDisplayUnit(v[key], field.degrees)}
-      step={field.step}
-      onChange={(next) => {
-        const updated = v.clone();
-        updated[key] = toStoredUnit(next, field.degrees);
-        onChange(updated);
-      }}
-    />
-  );
+  const axes: ("x" | "y" | "z")[] = ["x", "y", "z"];
   return (
     <div className="param-vector">
-      {axis("x")}
-      {axis("y")}
-      {axis("z")}
+      {axes.map((axisKey) => {
+        const fullKey = `${field.id}.${axisKey}`;
+        const status = keyframesEnabled ? getKeyframeStatus(keyframes, nodeId, fullKey, currentFrame) : "none";
+        return (
+          <DragNumberInput
+            key={axisKey}
+            value={toDisplayUnit(v[axisKey], field.degrees)}
+            step={field.step}
+            status={status}
+            onMouseEnter={() => onHoverKey(fullKey)}
+            onMouseLeave={() => onHoverKey(null)}
+            onChange={(next) => {
+              const updated = v.clone();
+              updated[axisKey] = toStoredUnit(next, field.degrees);
+              onChange(updated);
+            }}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -158,17 +191,51 @@ function getGroupName(field: ParamFieldDef): string {
   return "General";
 }
 
-export function ParamPanel({ nodeId, label, category, fields, params, onChange }: ParamPanelProps) {
+export function ParamPanel({
+  nodeId,
+  label,
+  category,
+  fields,
+  params,
+  keyframes,
+  currentFrame,
+  keyframesEnabled = true,
+  onChange,
+  onToggleKeyframe,
+}: ParamPanelProps) {
   const categoryColor = category ? CATEGORY_COLOR[category] : UNKNOWN_CATEGORY_COLOR;
-
-  // Track which collapsible groups are open. Default = OPEN for Transform, closed for others.
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ Transform: true });
+  const [hoveredParamKey, setHoveredParamKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (!keyframesEnabled || !hoveredParamKey || currentFrame === undefined || currentFrame < 0 || !onToggleKeyframe) return;
+      if (e.key === "k" || e.key === "K") {
+        const activeEl = document.activeElement;
+        if (activeEl instanceof HTMLElement) {
+          activeEl.blur();
+        }
+        e.preventDefault();
+
+        let valToStore: any;
+        if (hoveredParamKey.includes(".")) {
+          const [baseKey, comp] = hoveredParamKey.split(".");
+          const baseVal = parseVector3(params[baseKey]);
+          valToStore = (baseVal as any)[comp] ?? 0;
+        } else {
+          valToStore = params[hoveredParamKey];
+        }
+        onToggleKeyframe(nodeId, hoveredParamKey, currentFrame, valToStore);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [keyframesEnabled, hoveredParamKey, currentFrame, nodeId, params, onToggleKeyframe]);
 
   const toggleGroup = (groupName: string) => {
     setOpenGroups((prev) => ({ ...prev, [groupName]: !prev[groupName] }));
   };
 
-  // Group fields into ordered buckets
   const groupsMap: Map<string, ParamFieldDef[]> = new Map();
   for (const field of fields) {
     const groupName = getGroupName(field);
@@ -212,9 +279,13 @@ export function ParamPanel({ nodeId, label, category, fields, params, onChange }
                 {groupFields.map((field) => {
                   const useKey = "use" + field.id.toUpperCase();
                   const hasUseToggle = field.kind === "number" && params[useKey] !== undefined;
+                  const status = keyframesEnabled ? getKeyframeStatus(keyframes, nodeId, field.id, currentFrame) : "none";
 
                   return (
-                    <div className="param-row" key={field.id}>
+                    <div
+                      className="param-row"
+                      key={field.id}
+                    >
                       <label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                         {field.label}
                         {hasUseToggle && (
@@ -231,10 +302,23 @@ export function ParamPanel({ nodeId, label, category, fields, params, onChange }
                         <DragNumberInput
                           value={toDisplayUnit(Number(params[field.id]) || 0, field.degrees)}
                           step={field.step}
+                          status={status}
+                          onMouseEnter={() => setHoveredParamKey(field.id)}
+                          onMouseLeave={() => setHoveredParamKey((prev) => (prev === field.id ? null : prev))}
                           onChange={(v) => onChange(field.id, toStoredUnit(v, field.degrees))}
                         />
                       )}
-                      {field.kind === "vector" && vectorField(field, params[field.id], (v) => onChange(field.id, v))}
+                      {field.kind === "vector" &&
+                        vectorField(
+                          field,
+                          params[field.id],
+                          (v) => onChange(field.id, v),
+                          nodeId,
+                          keyframes,
+                          currentFrame,
+                          keyframesEnabled,
+                          setHoveredParamKey,
+                        )}
                       {field.kind === "boolean" && booleanField(params[field.id], (v) => onChange(field.id, v))}
                       {field.kind === "select" && selectField(field, params[field.id], (v) => onChange(field.id, v))}
                       {field.kind === "color" && (

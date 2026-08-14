@@ -26,12 +26,14 @@ export const RENDER_NODE: NodeDefinition = {
     { id: "postprocess", label: "Post-Process", type: "postprocess" },
   ],
   defaultParams: {
+    frameCount: 120,
     motionBlur: 0,
     resolutionPreset: "16:9 (1920x1080)",
     width: 1920,
     height: 1080,
   },
   paramFields: [
+    { id: "frameCount", label: "Frame Count", kind: "number", step: 1 },
     {
       id: "resolutionPreset",
       label: "Aspect / Resolution",
@@ -63,6 +65,7 @@ export const RENDER_NODE: NodeDefinition = {
     else if (preset === "21:9 (2560x1080)") { width = 2560; height = 1080; }
 
     const aspect = width / height;
+    const frameCount = Math.max(0, Number(params.frameCount) ?? 120);
 
     return {
       geometry: inputs.geometry,
@@ -72,6 +75,7 @@ export const RENDER_NODE: NodeDefinition = {
       width,
       height,
       aspect,
+      frameCount,
     };
   },
 };

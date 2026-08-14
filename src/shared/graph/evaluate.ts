@@ -1,10 +1,123 @@
-import { Connection, EvalContext, Graph, NodeRegistry } from "./types";
+import * as THREE from "three";
+import { Connection, EvalContext, Graph, Keyframe, KeyframeStore, NodeRegistry } from "./types";
 
 export interface TopoResult {
   /** Node ids in dependency order — safe to evaluate front to back. */
   order: string[];
   /** Node ids that could not be ordered because they sit in a connection cycle. */
   cyclic: string[];
+}
+
+/**
+ * Non-linear sinusoidal easing interpolation between two keyframe values.
+ * t = (frame - f1) / (f2 - f1)
+ * ease = (1 - cos(pi * t)) / 2
+ */
+export function interpolateValue(v1: any, v2: any, t: number): any {
+  const ease = (1 - Math.cos(Math.PI * Math.min(1, Math.max(0, t)))) / 2;
+
+  if (typeof v1 === "number" && typeof v2 === "number") {
+    return v1 + (v2 - v1) * ease;
+  }
+
+  if (v1 instanceof THREE.Vector3 || (typeof v1 === "object" && v1 !== null && "x" in v1)) {
+    const vec1 = v1 instanceof THREE.Vector3 ? v1 : new THREE.Vector3(v1.x ?? 0, v1.y ?? 0, v1.z ?? 0);
+    const vec2 = v2 instanceof THREE.Vector3 ? v2 : new THREE.Vector3(v2.x ?? 0, v2.y ?? 0, v2.z ?? 0);
+    return new THREE.Vector3().lerpVectors(vec1, vec2, ease);
+  }
+
+  if (v1 instanceof THREE.Color || (typeof v1 === "object" && v1 !== null && "r" in v1 && "g" in v1 && "b" in v1)) {
+    const c1 = v1 instanceof THREE.Color ? v1 : new THREE.Color(v1.r ?? 1, v1.g ?? 1, v1.b ?? 1);
+    const c2 = v2 instanceof THREE.Color ? v2 : new THREE.Color(v2.r ?? 1, v2.g ?? 1, v2.b ?? 1);
+    return new THREE.Color().lerpColors(c1, c2, ease);
+  }
+
+  return ease >= 0.5 ? v2 : v1;
+}
+
+function parseVector3(value: unknown): THREE.Vector3 {
+  if (value instanceof THREE.Vector3) return value;
+  if (value && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    const x = Number(obj.x);
+    const y = Number(obj.y);
+    const z = Number(obj.z);
+    return new THREE.Vector3(
+      Number.isFinite(x) ? x : 0,
+      Number.isFinite(y) ? y : 0,
+      Number.isFinite(z) ? z : 0,
+    );
+  }
+  if (Array.isArray(value)) {
+    const x = Number(value[0]);
+    const y = Number(value[1]);
+    const z = Number(value[2]);
+    return new THREE.Vector3(
+      Number.isFinite(x) ? x : 0,
+      Number.isFinite(y) ? y : 0,
+      Number.isFinite(z) ? z : 0,
+    );
+  }
+  return new THREE.Vector3(0, 0, 0);
+}
+
+function evaluateKeyframeList(list: Keyframe[], currentFrame: number, fallback: any): any {
+  if (list.length === 0) return fallback;
+  if (list.length === 1) return list[0].value;
+  if (currentFrame <= list[0].frame) return list[0].value;
+  if (currentFrame >= list[list.length - 1].frame) return list[list.length - 1].value;
+
+  for (let i = 0; i < list.length - 1; i++) {
+    const k1 = list[i];
+    const k2 = list[i + 1];
+    if (currentFrame >= k1.frame && currentFrame <= k2.frame) {
+      if (k1.frame === k2.frame) return k1.value;
+      const t = (currentFrame - k1.frame) / (k2.frame - k1.frame);
+      return interpolateValue(k1.value, k2.value, t);
+    }
+  }
+
+  return fallback;
+}
+
+export function evaluateKeyframeValue(
+  keyframes: KeyframeStore | undefined,
+  nodeId: string,
+  paramKey: string,
+  currentFrame: number,
+  fallbackValue: any,
+): any {
+  if (!keyframes || currentFrame === undefined || currentFrame < 0) return fallbackValue;
+  const nodeKeyframes = keyframes[nodeId];
+  if (!nodeKeyframes) return fallbackValue;
+
+  const directList = nodeKeyframes[paramKey];
+  if (directList && directList.length > 0) {
+    return evaluateKeyframeList(directList, currentFrame, fallbackValue);
+  }
+
+  const xList = nodeKeyframes[`${paramKey}.x`];
+  const yList = nodeKeyframes[`${paramKey}.y`];
+  const zList = nodeKeyframes[`${paramKey}.z`];
+
+  if (xList || yList || zList) {
+    const baseVec = parseVector3(fallbackValue);
+    const resultVec = baseVec.clone();
+
+    if (xList && xList.length > 0) {
+      resultVec.x = evaluateKeyframeList(xList, currentFrame, baseVec.x);
+    }
+    if (yList && yList.length > 0) {
+      resultVec.y = evaluateKeyframeList(yList, currentFrame, baseVec.y);
+    }
+    if (zList && zList.length > 0) {
+      resultVec.z = evaluateKeyframeList(zList, currentFrame, baseVec.z);
+    }
+
+    return resultVec;
+  }
+
+  return fallbackValue;
 }
 
 /**
@@ -90,15 +203,28 @@ export function evaluateGraph(graph: Graph, registry: NodeRegistry, ctx: EvalCon
     const inputs: Record<string, unknown> = {};
     for (const socket of socketDefs) {
       const conn = connectionInto(graph.connections, nodeId, socket.id);
-      // Unconnected fallback must come from the *merged* params, not raw
-      // instance.params — a freshly placed node (params: {}) has nothing of
-      // its own yet, and every unconnected input silently read as undefined
-      // instead of its declared defaultParams value.
-      inputs[socket.id] = conn ? results.get(conn.fromNode)?.[conn.fromSocket] : params[socket.id];
+      if (conn) {
+        // Priority rule: Node connection l'emporte toujours sur les keyframes!
+        inputs[socket.id] = results.get(conn.fromNode)?.[conn.fromSocket];
+      } else {
+        // Unconnected socket: evaluate keyframe interpolation if keyframes exist
+        const fallback = params[socket.id];
+        inputs[socket.id] = evaluateKeyframeValue(
+          ctx.keyframes || graph.keyframes,
+          nodeId,
+          socket.id,
+          ctx.currentFrame ?? -1,
+          fallback,
+        );
+      }
     }
 
     try {
-      results.set(nodeId, def.evaluate(inputs, params, { ...ctx, nodeId }));
+      const outputs = def.evaluate(inputs, params, { ...ctx, nodeId }) || {};
+      results.set(nodeId, {
+        ...outputs,
+        __evaluatedInputs: inputs,
+      });
     } catch (err) {
       console.error(`node ${nodeId} (${instance.type}) failed to evaluate`, err);
       results.set(nodeId, {});
