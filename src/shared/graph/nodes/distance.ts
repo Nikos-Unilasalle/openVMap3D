@@ -171,8 +171,19 @@ export const PROXIMITY_OBJECT_NODE: NodeDefinition = {
 
     const distance = Number.isFinite(minDistanceSq) ? Math.sqrt(minDistanceSq) : 0;
 
+    let outputObj: THREE.Object3D;
+    if (nearestObj) {
+      const clone = nearestObj.clone(true);
+      clone.matrixAutoUpdate = nearestObj.matrixAutoUpdate;
+      clone.matrix.copy(nearestObj.matrix);
+      clone.matrixWorldNeedsUpdate = true;
+      outputObj = clone;
+    } else {
+      outputObj = targetObj instanceof THREE.Object3D ? targetObj : new THREE.Object3D();
+    }
+
     return {
-      object: nearestObj ?? (targetObj instanceof THREE.Object3D ? targetObj : new THREE.Object3D()),
+      object: outputObj,
       distance,
       index: nearestIndex,
       vector: nearestPos,

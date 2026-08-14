@@ -83,6 +83,9 @@ export const SET_INSTANCE_COLOR_NODE: NodeDefinition = {
 
     instances.forEach((instance, i) => {
       const clone = instance.clone(true);
+      clone.matrixAutoUpdate = instance.matrixAutoUpdate;
+      clone.matrix.copy(instance.matrix);
+      clone.matrixWorldNeedsUpdate = true;
 
       const targetColor = colorsList.length > 0
         ? asColor(colorsList[i % colorsList.length], defaultColor)
@@ -197,6 +200,9 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
 
     instances.forEach((instance, i) => {
       const clone = instance.clone(true);
+      clone.matrixAutoUpdate = instance.matrixAutoUpdate;
+      clone.matrix.copy(instance.matrix);
+      clone.matrixWorldNeedsUpdate = true;
 
       // Check matrix override
       if (matricesList[i] instanceof THREE.Matrix4) {
@@ -298,7 +304,11 @@ export const GET_INSTANCE_NODE: NodeDefinition = {
 
     const selectedInstance = instances[index];
     if (selectedInstance) {
-      group.add(selectedInstance.clone(true));
+      const clone = selectedInstance.clone(true);
+      clone.matrixAutoUpdate = selectedInstance.matrixAutoUpdate;
+      clone.matrix.copy(selectedInstance.matrix);
+      clone.matrixWorldNeedsUpdate = true;
+      group.add(clone);
     }
 
     return { geometry: group, count };
@@ -367,6 +377,9 @@ export const GEOMETRY_TRANSFORM_NODE: NodeDefinition = {
     if (!source) return { geometry: group };
 
     const clone = source.clone(true);
+    clone.matrixAutoUpdate = source.matrixAutoUpdate;
+    clone.matrix.copy(source.matrix);
+    clone.matrixWorldNeedsUpdate = true;
 
     let transformMat: THREE.Matrix4;
 
