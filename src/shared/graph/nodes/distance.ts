@@ -125,7 +125,7 @@ export const PROXIMITY_OBJECT_NODE: NodeDefinition = {
   category: "structure",
   inputs: [
     { id: "target", label: "Target", type: "geometry" },
-    { id: "candidates", label: "Candidates", type: "list" },
+    { id: "candidates", label: "Candidates", type: "any" },
   ],
   outputs: [
     { id: "object", label: "Nearest Object", type: "geometry" },
