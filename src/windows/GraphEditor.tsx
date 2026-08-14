@@ -541,12 +541,57 @@ function GraphEditorContent({ graph, registry, onGraphChange, onSelectNode, sele
         setPendingWireConnection(null);
       }
 
-      const unrefreshedNodes = [...nodes, flowNode];
-      const finalNodes = refreshDynamicSockets(unrefreshedNodes, nextEdges, [...graph.nodes, instance], registry);
+      const newInstances: NodeInstance[] = [instance];
+      const newFlowNodes: Node<GraphNodeData>[] = [flowNode];
+
+      // Auto-couple Directional and Spot Lights with an Empty target object
+      if ((type === "light/directional" || type === "light/spot") && !pendingWireConnection) {
+        const emptyDef = registry.get("object/empty");
+        if (emptyDef) {
+          const emptyId = crypto.randomUUID();
+          const emptyPos = { x: position.x - 260, y: position.y };
+          const emptyInstance: NodeInstance = {
+            id: emptyId,
+            type: "object/empty",
+            params: cloneDefaultParams(emptyDef.defaultParams || {}),
+            position: emptyPos,
+          };
+          const emptyFlowNode: Node<GraphNodeData> = {
+            id: emptyId,
+            type: "graphNode",
+            position: emptyPos,
+            data: {
+              nodeId: emptyId,
+              nodeType: "object/empty",
+              label: "Target (Empty)",
+              category: emptyDef.category,
+              inputs: emptyDef.inputs,
+              outputs: emptyDef.outputs,
+            },
+          };
+          const targetEdge: Edge = {
+            id: `${emptyId}.geometry->${id}.target`,
+            source: emptyId,
+            sourceHandle: "geometry",
+            target: id,
+            targetHandle: "target",
+            style: {
+              stroke: SOCKET_COLOR.geometry || "#22c55e",
+              strokeWidth: EDGE_STROKE_WIDTH,
+            },
+          };
+          newInstances.push(emptyInstance);
+          newFlowNodes.push(emptyFlowNode);
+          nextEdges.push(targetEdge);
+        }
+      }
+
+      const unrefreshedNodes = [...nodes, ...newFlowNodes];
+      const finalNodes = refreshDynamicSockets(unrefreshedNodes, nextEdges, [...graph.nodes, ...newInstances], registry);
 
       setNodes(finalNodes);
       setEdges(nextEdges);
-      onGraphChange?.(toGraph([...graph.nodes, instance], finalNodes, nextEdges));
+      onGraphChange?.(toGraph([...graph.nodes, ...newInstances], finalNodes, nextEdges));
     },
     [graph, nodes, edges, pendingWireConnection, onGraphChange, registry, setNodes, setEdges],
   );

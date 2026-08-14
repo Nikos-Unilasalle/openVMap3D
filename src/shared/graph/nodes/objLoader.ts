@@ -74,7 +74,6 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
     { id: "roughness", label: "Roughness", type: "value" },
     { id: "metalness", label: "Metalness", type: "value" },
     { id: "wireframe", label: "Wireframe", type: "value" },
-    { id: "wireframeLinewidth", label: "Wireframe Width", type: "value" },
     { id: "opacity", label: "Opacity", type: "value" },
   ],
   outputs: [...COMMON_PRIMITIVE_OUTPUTS],
@@ -94,7 +93,6 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
     roughness: 0.5,
     metalness: 0.1,
     wireframe: 0,
-    wireframeLinewidth: 1.0,
     opacity: 1.0,
   },
   dynamicParamFields: () => [
@@ -193,7 +191,6 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
     { id: "roughness", label: "Roughness", kind: "number", step: 0.05 },
     { id: "metalness", label: "Metalness", kind: "number", step: 0.05 },
     { id: "wireframe", label: "Wireframe", kind: "boolean" },
-    { id: "wireframeLinewidth", label: "Wireframe Width", kind: "number", step: 0.5 },
     { id: "opacity", label: "Opacity", kind: "number", step: 0.05 },
   ],
   evaluate: (inputs, params, ctx) => {
@@ -209,7 +206,6 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
     const color = asColor(inputs.color, asColor(params.color, new THREE.Color(0xffffff)));
     const shadeless = toBoolean(inputs.shadeless !== undefined ? inputs.shadeless : params.shadeless ?? 0);
     const wireframe = toBoolean(inputs.wireframe !== undefined ? inputs.wireframe : params.wireframe ?? 0);
-    const wireframeLinewidth = Math.max(1, Number(inputs.wireframeLinewidth ?? inputs.wireframeWidth) || Number(params.wireframeLinewidth ?? params.wireframeWidth) || 1.0);
     const opacity = Math.min(1, Math.max(0, inputs.opacity !== undefined ? Number(inputs.opacity) : Number(params.opacity) ?? 1.0));
     const isTransparent = opacity < 0.999;
 
@@ -248,7 +244,6 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
           const mat = child.material as THREE.MeshBasicMaterial;
           mat.color.copy(color);
           mat.wireframe = wireframe;
-          mat.wireframeLinewidth = wireframeLinewidth;
           mat.transparent = isTransparent;
           mat.opacity = opacity;
 
@@ -273,7 +268,6 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
           mat.roughness = roughness;
           mat.metalness = metalness;
           mat.wireframe = wireframe;
-          mat.wireframeLinewidth = wireframeLinewidth;
           mat.transparent = isTransparent;
           mat.opacity = opacity;
 

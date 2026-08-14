@@ -11,9 +11,10 @@ import {
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "light-1" };
 
 describe("LIGHT NODES", () => {
-  it("LIGHT_DIRECTIONAL_NODE evaluates directional light with shadows", () => {
+  it("LIGHT_DIRECTIONAL_NODE evaluates directional light and updates target position", () => {
+    const targetVec = new THREE.Vector3(1, 2, 3);
     const res = LIGHT_DIRECTIONAL_NODE.evaluate(
-      { intensity: 2.0, castShadow: 1 },
+      { intensity: 2.0, castShadow: 1, target: targetVec },
       { intensity: 1.5 },
       { ...CTX, nodeId: "dir-1" }
     );
@@ -21,6 +22,9 @@ describe("LIGHT NODES", () => {
     expect(light).toBeInstanceOf(THREE.DirectionalLight);
     expect(light.intensity).toBe(2.0);
     expect(light.castShadow).toBe(true);
+    expect(light.target.position.x).toBeCloseTo(1);
+    expect(light.target.position.y).toBeCloseTo(2);
+    expect(light.target.position.z).toBeCloseTo(3);
   });
 
   it("LIGHT_POINT_NODE evaluates point light", () => {

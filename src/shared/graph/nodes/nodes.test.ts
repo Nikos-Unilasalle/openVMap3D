@@ -7,7 +7,7 @@ import { VECTOR_COMPOSE_NODE, VECTOR_MATH_NODE } from "./vector";
 import { COMPARE_NODE, BOOLEAN_LOGIC_NODE, TRIGGER_NODE, TOGGLE_NODE, GATE_NODE, LOGIC_BRIDGE_NODE } from "./logic";
 import { OSCILLATOR_NODE, ENVELOPE_NODE } from "./oscillator";
 import { COLOR_COMPOSE_NODE, COLOR_DECOMPOSE_NODE, COLOR_MATH_NODE } from "./color";
-import { OBJECT_BAR_GRAPH_NODE, OBJECT_BOX_NODE, OBJECT_DISC_NODE, OBJECT_PLANE_NODE, OBJECT_SPHERE_NODE, OBJECT_TEXT_NODE } from "./object";
+import { OBJECT_BAR_GRAPH_NODE, OBJECT_BOX_NODE, OBJECT_DISC_NODE, OBJECT_EMPTY_NODE, OBJECT_PLANE_NODE, OBJECT_SPHERE_NODE, OBJECT_TEXT_NODE } from "./object";
 
 import { COLOR_TO_VECTOR_NODE, VALUE_TO_COLOR_NODE, VALUE_TO_TEXT_NODE, VALUE_TO_VECTOR_NODE, VECTOR_TO_COLOR_NODE } from "./converter";
 import { TEXT_CONSTANT_NODE } from "./text";
@@ -67,6 +67,21 @@ describe("VECTOR_COMPOSE_NODE", () => {
     expect(xDisabled.x).toBe(-1);
     expect(xDisabled.y).toBe(20);
     expect(xDisabled.z).toBe(30);
+  });
+});
+
+describe("OBJECT_EMPTY_NODE", () => {
+  test("creates empty group with helper and outputs location and matrix", () => {
+    const res = OBJECT_EMPTY_NODE.evaluate(
+      {},
+      { location: new THREE.Vector3(2, 3, 4) },
+      CTX
+    );
+    expect(res.geometry).toBeInstanceOf(THREE.Group);
+    expect(res.matrix).toBeInstanceOf(THREE.Matrix4);
+    expect((res.location as THREE.Vector3).x).toBeCloseTo(2);
+    expect((res.location as THREE.Vector3).y).toBeCloseTo(3);
+    expect((res.location as THREE.Vector3).z).toBeCloseTo(4);
   });
 });
 

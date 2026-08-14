@@ -1,9 +1,9 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
-import { createNodeCache } from "../nodeCaches";
-import { composeNativeMatrix } from "./transform";
+import { createNodeCache, disposeObject3D } from "../nodeCaches";
+import { asVector3, composeNativeMatrix, extractPositionFromInput } from "./transform";
 
-const lightCache = createNodeCache<THREE.Light>((l) => l.dispose?.());
+const lightCache = createNodeCache<THREE.Object3D>(disposeObject3D);
 
 function asColor(v: unknown, fallback: THREE.Color): THREE.Color {
   if (v instanceof THREE.Color) return v;
@@ -29,14 +29,14 @@ export const LIGHT_DIRECTIONAL_NODE: NodeDefinition = {
   inputs: [
     { id: "color", label: "Color", type: "color" },
     { id: "intensity", label: "Intensity", type: "value" },
+    { id: "target", label: "Target", type: "geometry" },
     { id: "matrix", label: "Matrix", type: "matrix" },
     { id: "castShadow", label: "Shadows", type: "value" },
   ],
   outputs: [{ id: "light", label: "Light", type: "geometry" }],
   defaultParams: {
-    // Was a runtime `if (!inputs.matrix) matrix.setPosition(5,10,7)` fallback
-    // — the native-transform default now *is* that "nothing wired in yet" case.
     location: new THREE.Vector3(5, 10, 7),
+    target: new THREE.Vector3(0, 0, 0),
     rotation: new THREE.Vector3(0, 0, 0),
     scale: new THREE.Vector3(1, 1, 1),
     color: new THREE.Color(0xffffff),
@@ -45,6 +45,7 @@ export const LIGHT_DIRECTIONAL_NODE: NodeDefinition = {
   },
   paramFields: [
     { id: "location", label: "Location", kind: "vector" },
+    { id: "target", label: "Target (fallback)", kind: "vector" },
     { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true },
     { id: "scale", label: "Scale", kind: "vector" },
     { id: "color", label: "Color", kind: "color" },
@@ -53,6 +54,7 @@ export const LIGHT_DIRECTIONAL_NODE: NodeDefinition = {
   ],
   evaluate: (inputs, params, ctx) => {
     let light = lightCache.get(ctx.nodeId) as THREE.DirectionalLight | undefined;
+
     if (!light) {
       light = new THREE.DirectionalLight(0xffffff, 1.5);
       light.shadow.mapSize.width = 2048;
@@ -66,6 +68,7 @@ export const LIGHT_DIRECTIONAL_NODE: NodeDefinition = {
       light.shadow.camera.bottom = -d;
       light.shadow.bias = -0.0005;
       light.userData.nodeId = ctx.nodeId;
+
       lightCache.set(ctx.nodeId, light);
     }
 
@@ -79,8 +82,19 @@ export const LIGHT_DIRECTIONAL_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       light.matrixAutoUpdate = false;
-      light.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      const mat = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale);
+      light.matrix.copy(mat);
+      mat.decompose(light.position, light.quaternion, light.scale);
     }
+
+    const defaultTarget = asVector3(params?.target, new THREE.Vector3(0, 0, 0));
+    const targetPos = inputs.target !== undefined
+      ? extractPositionFromInput(inputs.target, defaultTarget)
+      : defaultTarget;
+
+    light.target.position.copy(targetPos);
+    light.target.updateMatrixWorld(true);
+    light.updateMatrixWorld(true);
 
     return { light };
   },
@@ -162,12 +176,14 @@ export const LIGHT_SPOT_NODE: NodeDefinition = {
     { id: "intensity", label: "Intensity", type: "value" },
     { id: "angle", label: "Angle (°)", type: "value" },
     { id: "penumbra", label: "Penumbra", type: "value" },
+    { id: "target", label: "Target", type: "geometry" },
     { id: "matrix", label: "Matrix", type: "matrix" },
     { id: "castShadow", label: "Shadows", type: "value" },
   ],
   outputs: [{ id: "light", label: "Light", type: "geometry" }],
   defaultParams: {
     location: new THREE.Vector3(0, 6, 4),
+    target: new THREE.Vector3(0, 0, 0),
     rotation: new THREE.Vector3(0, 0, 0),
     scale: new THREE.Vector3(1, 1, 1),
     color: new THREE.Color(0xffffff),
@@ -178,6 +194,7 @@ export const LIGHT_SPOT_NODE: NodeDefinition = {
   },
   paramFields: [
     { id: "location", label: "Location", kind: "vector" },
+    { id: "target", label: "Target (fallback)", kind: "vector" },
     { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true },
     { id: "scale", label: "Scale", kind: "vector" },
     { id: "color", label: "Color", kind: "color" },
@@ -188,12 +205,16 @@ export const LIGHT_SPOT_NODE: NodeDefinition = {
   ],
   evaluate: (inputs, params, ctx) => {
     let light = lightCache.get(ctx.nodeId) as THREE.SpotLight | undefined;
+
     if (!light) {
-      light = new THREE.SpotLight(0xffffff, 3.0);
-      light.shadow.mapSize.width = 1024;
-      light.shadow.mapSize.height = 1024;
+      light = new THREE.SpotLight(0xffffff, 3.0, 0, (45 * Math.PI) / 180, 0.3);
+      light.shadow.mapSize.width = 2048;
+      light.shadow.mapSize.height = 2048;
+      light.shadow.camera.near = 0.5;
+      light.shadow.camera.far = 50;
       light.shadow.bias = -0.0005;
       light.userData.nodeId = ctx.nodeId;
+
       lightCache.set(ctx.nodeId, light);
     }
 
@@ -211,8 +232,19 @@ export const LIGHT_SPOT_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       light.matrixAutoUpdate = false;
-      light.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      const mat = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale);
+      light.matrix.copy(mat);
+      mat.decompose(light.position, light.quaternion, light.scale);
     }
+
+    const defaultTarget = asVector3(params?.target, new THREE.Vector3(0, 0, 0));
+    const targetPos = inputs.target !== undefined
+      ? extractPositionFromInput(inputs.target, defaultTarget)
+      : defaultTarget;
+
+    light.target.position.copy(targetPos);
+    light.target.updateMatrixWorld(true);
+    light.updateMatrixWorld(true);
 
     return { light };
   },

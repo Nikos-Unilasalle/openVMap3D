@@ -98,7 +98,6 @@ export interface MaterialParams {
   roughness: number;
   metalness: number;
   wireframe: boolean;
-  wireframeLinewidth: number;
   opacity: number;
 }
 
@@ -110,10 +109,9 @@ export function extractMaterialParams(inputs: Record<string, unknown>, params: R
   const roughness = numberInput(inputs.roughness, params.roughness, 0.4);
   const metalness = numberInput(inputs.metalness, params.metalness, 0.1);
   const wireframe = toBoolean(inputs.wireframe !== undefined ? inputs.wireframe : params.wireframe ?? 0);
-  const wireframeLinewidth = Math.max(1, numberInput(inputs.wireframeLinewidth ?? inputs.wireframeWidth, params.wireframeLinewidth ?? params.wireframeWidth, 1.0));
   const opacity = Math.min(1, Math.max(0, numberInput(inputs.opacity, params.opacity, 1.0)));
 
-  return { color, emissive, emissiveIntensity, shadeless, roughness, metalness, wireframe, wireframeLinewidth, opacity };
+  return { color, emissive, emissiveIntensity, shadeless, roughness, metalness, wireframe, opacity };
 }
 
 export function applyMaterialParams(
@@ -136,7 +134,6 @@ export function applyMaterialParams(
     const mat = mesh.material as THREE.MeshBasicMaterial;
     mat.color.copy(matParams.color);
     mat.wireframe = matParams.wireframe;
-    mat.wireframeLinewidth = matParams.wireframeLinewidth;
     mat.transparent = isTransparent;
     mat.opacity = matParams.opacity;
     mat.side = defaultSide;
@@ -170,7 +167,6 @@ export function applyMaterialParams(
     mat.roughness = matParams.roughness;
     mat.metalness = matParams.metalness;
     mat.wireframe = matParams.wireframe;
-    mat.wireframeLinewidth = matParams.wireframeLinewidth;
     mat.transparent = isTransparent;
     mat.opacity = matParams.opacity;
     mat.side = defaultSide;
@@ -215,7 +211,6 @@ const COMMON_PRIMITIVE_INPUTS = [
   { id: "roughness", label: "Roughness", type: "value" as const },
   { id: "metalness", label: "Metalness", type: "value" as const },
   { id: "wireframe", label: "Wireframe", type: "value" as const },
-  { id: "wireframeLinewidth", label: "Wireframe Width", type: "value" as const },
   { id: "opacity", label: "Opacity", type: "value" as const },
 ];
 
@@ -249,7 +244,6 @@ const COMMON_MATERIAL_PARAM_FIELDS: ParamFieldDef[] = [
   { id: "roughness", label: "Roughness", kind: "number", step: 0.05, group: "Material" },
   { id: "metalness", label: "Metalness", kind: "number", step: 0.05, group: "Material" },
   { id: "wireframe", label: "Wireframe", kind: "boolean", group: "Material" },
-  { id: "wireframeLinewidth", label: "Wireframe Width", kind: "number", step: 0.5, group: "Material" },
   { id: "opacity", label: "Opacity", kind: "number", step: 0.05, group: "Material" },
 ];
 
@@ -347,7 +341,6 @@ const COMMON_DEFAULT_PARAMS = {
   roughness: 0.4,
   metalness: 0.1,
   wireframe: 0,
-  wireframeLinewidth: 1.0,
   opacity: 1.0,
 };
 
@@ -1071,3 +1064,79 @@ export const OBJECT_BAR_GRAPH_NODE: NodeDefinition = {
 };
 
 const labelGap = 0.2;
+
+const emptyGroupCache = createNodeCache<THREE.Group>(disposeObject3D);
+
+/** Empty object node — null transform anchor helper in 3D viewport, invisible in final camera render. */
+export const OBJECT_EMPTY_NODE: NodeDefinition = {
+  type: "object/empty",
+  label: "Empty",
+  category: "object",
+  inputs: [
+    { id: "matrix", label: "Matrix", type: "matrix" },
+  ],
+  outputs: [
+    { id: "geometry", label: "Geometry", type: "geometry" },
+    { id: "matrix", label: "Matrix", type: "matrix" },
+    { id: "location", label: "Location", type: "vector" },
+  ],
+  defaultParams: {
+    location: new THREE.Vector3(0, 0, 0),
+    rotation: new THREE.Vector3(0, 0, 0),
+    scale: new THREE.Vector3(1, 1, 1),
+  },
+  paramFields: [
+    { id: "location", label: "Location", kind: "vector" },
+    { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true },
+    { id: "scale", label: "Scale", kind: "vector" },
+  ],
+  evaluate: (inputs, params, ctx) => {
+    let group = emptyGroupCache.get(ctx.nodeId);
+    if (!group) {
+      group = new THREE.Group();
+
+      const pickGeo = new THREE.SphereGeometry(0.5, 8, 8);
+      const pickMat = new THREE.MeshBasicMaterial({ visible: false });
+      const pickMesh = new THREE.Mesh(pickGeo, pickMat);
+      group.add(pickMesh);
+
+      const axes = new THREE.AxesHelper(0.8);
+      axes.userData.isHelper = true;
+      group.add(axes);
+
+      const points = [
+        new THREE.Vector3(-0.4, 0, 0), new THREE.Vector3(0.4, 0, 0),
+        new THREE.Vector3(0, -0.4, 0), new THREE.Vector3(0, 0.4, 0),
+        new THREE.Vector3(0, 0, -0.4), new THREE.Vector3(0, 0, 0.4),
+      ];
+      const geom = new THREE.BufferGeometry().setFromPoints(points);
+      const mat = new THREE.LineBasicMaterial({ color: 0xffcc00, opacity: 0.9, transparent: true });
+      const crosshair = new THREE.LineSegments(geom, mat);
+      crosshair.userData.isHelper = true;
+      group.add(crosshair);
+
+      group.userData.nodeId = ctx.nodeId;
+      group.userData.isEmpty = true;
+      group.traverse((c) => {
+        c.userData.nodeId = ctx.nodeId;
+      });
+      emptyGroupCache.set(ctx.nodeId, group);
+    }
+
+    if (ctx.nodeId !== ctx.liveEditNodeId) {
+      group.matrixAutoUpdate = false;
+      group.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+    }
+
+    const pos = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    const scl = new THREE.Vector3();
+    group.matrix.decompose(pos, quat, scl);
+
+    return {
+      geometry: group,
+      matrix: group.matrix.clone(),
+      location: pos,
+    };
+  },
+};

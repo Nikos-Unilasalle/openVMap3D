@@ -756,10 +756,32 @@ export function Viewport({
         -((e.clientY - rect.top) / rect.height) * 2 + 1,
       );
       raycaster.setFromCamera(ndc, camera);
+      raycaster.params.Line = { threshold: 0.3 };
+      raycaster.params.Points = { threshold: 0.3 };
+
       const hit = raycaster
-        ? raycaster.intersectObjects(scene.children, true).find((i) => i.object.userData.nodeId)
+        ? raycaster.intersectObjects(scene.children, true).find((i) => {
+            let curr: THREE.Object3D | null = i.object;
+            while (curr) {
+              if (curr.userData?.nodeId) return true;
+              curr = curr.parent;
+            }
+            return false;
+          })
         : undefined;
-      onSelectNodeRef.current((hit?.object.userData.nodeId as string) ?? null);
+
+      let hitNodeId: string | null = null;
+      if (hit) {
+        let curr: THREE.Object3D | null = hit.object;
+        while (curr) {
+          if (curr.userData?.nodeId) {
+            hitNodeId = curr.userData.nodeId;
+            break;
+          }
+          curr = curr.parent;
+        }
+      }
+      onSelectNodeRef.current(hitNodeId);
     }
 
     if (!outputMode) {
@@ -946,6 +968,9 @@ export function Viewport({
           if (!light.parent) {
             scene.add(light);
           }
+          if ((light as THREE.DirectionalLight | THREE.SpotLight).target && !(light as THREE.DirectionalLight | THREE.SpotLight).target.parent) {
+            scene.add((light as THREE.DirectionalLight | THREE.SpotLight).target);
+          }
           activeLights.set(uuid, light);
 
           if (!outputMode) {
@@ -985,6 +1010,10 @@ export function Viewport({
         if (!activeLightUUIDs.has(uuid)) {
           if (light.parent === scene) {
             scene.remove(light);
+          }
+          const targetObj = (light as THREE.DirectionalLight | THREE.SpotLight).target;
+          if (targetObj && targetObj.parent === scene) {
+            scene.remove(targetObj);
           }
           activeLights.delete(uuid);
           const helper = activeLightHelpers.get(uuid);
@@ -1137,7 +1166,17 @@ export function Viewport({
         currentObject = rawOutput;
       }
 
-      // Move/rotate/scale gizmo: attach to selected mesh or Light
+      // Sync standalone object geometries (such as Empty objects) into scene so they render and raycast in 3D
+      for (const [, res] of results.entries()) {
+        if (res && res.geometry instanceof THREE.Object3D) {
+          const geomObj = res.geometry as THREE.Object3D;
+          if (!geomObj.parent && geomObj !== currentObject) {
+            scene.add(geomObj);
+          }
+        }
+      }
+
+      // Move/rotate/scale gizmo: attach to selected mesh, Empty, or Light
       if (transformControls && !transformControls.dragging) {
         let targetObject: THREE.Object3D | null = null;
         if (selectedNodeIdRef.current) {
@@ -1145,6 +1184,15 @@ export function Viewport({
             currentObject.traverse((obj) => {
               if (!targetObject && obj.userData.nodeId === selectedNodeIdRef.current) targetObject = obj;
             });
+          }
+          if (!targetObject) {
+            scene.traverse((obj) => {
+              if (!targetObject && obj.userData.nodeId === selectedNodeIdRef.current) targetObject = obj;
+            });
+          }
+          if (!targetObject) {
+            const res = results.get(selectedNodeIdRef.current);
+            if (res?.geometry instanceof THREE.Object3D) targetObject = res.geometry;
           }
           if (!targetObject) {
             const light = activeLights.get(selectedNodeIdRef.current);
@@ -1241,6 +1289,13 @@ export function Viewport({
         (bgScene as any).backgroundBlurriness = 0;
         (scene as any).backgroundBlurriness = 0;
       }
+
+      // Toggle helper visibility (AxesHelper / Empty crosshairs / Light target helpers)
+      scene.traverse((obj) => {
+        if (obj.userData?.isHelper || obj instanceof THREE.AxesHelper || obj instanceof THREE.CameraHelper) {
+          obj.visible = !outputMode;
+        }
+      });
 
       // 1. Render Main Scene (with Post-Processing pipeline if active)
       const width = host.clientWidth;

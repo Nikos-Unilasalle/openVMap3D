@@ -115,6 +115,7 @@ describe("GIZMO_SELECTABLE_TYPES", () => {
       "object/bar_graph",
       "object/obj",
       "object/text",
+      "object/empty",
       "texture/plane",
       "light/directional",
       "light/point",
