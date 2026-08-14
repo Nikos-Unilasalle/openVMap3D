@@ -2,10 +2,11 @@ import * as THREE from "three";
 import { projectionMatrixFromCalibration, ProjectorCalibration } from "../calibration/dlt";
 import { DEFAULT_PICKS, isCalibrationPicks, isReferencePointArray, solveFromPicks } from "../calibration/picks";
 import { NodeDefinition } from "../types";
+import { toBoolean } from "../sockets";
 
 const ZERO = new THREE.Vector3(0, 0, 0);
 const ONE = new THREE.Vector3(1, 1, 1);
-const DEFAULT_LOCATION = new THREE.Vector3(3, 3, 5);
+const DEFAULT_LOCATION = new THREE.Vector3(0, 0, 5);
 const DEFAULT_FOV = 50;
 
 /** Relative image units, so the frustum is built against a 1x1 image — see picks.ts on why no resolution is stored. */
@@ -26,6 +27,66 @@ function asVector3(v: unknown, fallback: THREE.Vector3): THREE.Vector3 {
     }
   }
   return fallback;
+}
+
+const groupCache = new Map<string, THREE.Group>();
+function getGroup(nodeId: string): THREE.Group {
+  let group = groupCache.get(nodeId);
+  if (!group) {
+    group = new THREE.Group();
+    groupCache.set(nodeId, group);
+  }
+  return group;
+}
+
+/**
+ * Body box + frustum lines only — no pose here. The pose lives on the group
+ * this content gets added into (see evaluate below), the same way every
+ * object.ts primitive puts its own composed matrix directly on the mesh it
+ * hands back rather than on a wrapper around it. An earlier version wrapped
+ * this in its own positioned Group and returned the *outer*, always-identity
+ * cache group as `geometry` — rendering looked right (three.js composes
+ * transforms down the whole chain regardless of which node carries them),
+ * but anything reading the returned object's own matrix directly — the
+ * viewport's gizmo attach, in particular — found identity every time and
+ * either grabbed nothing or dragged an invisible object stuck at the origin.
+ */
+function buildCameraHelperGeometry(fov: number, isActive: boolean): THREE.Group {
+  const group = new THREE.Group();
+
+  // Camera Body Box
+  const bodyGeo = new THREE.BoxGeometry(0.3, 0.2, 0.4);
+  const color = isActive ? 0x3b82f6 : 0x64748b;
+  const mat = new THREE.MeshBasicMaterial({ color, wireframe: true });
+  const body = new THREE.Mesh(bodyGeo, mat);
+  body.position.set(0, 0, 0.2);
+  group.add(body);
+
+  // Camera Frustum Pyramid lines
+  const radFov = THREE.MathUtils.degToRad(fov || 50);
+  const aspect = 16 / 9;
+  const dist = 1.2;
+  const h = Math.tan(radFov / 2) * dist;
+  const w = h * aspect;
+
+  const points = [
+    new THREE.Vector3(0, 0, 0), new THREE.Vector3(-w, h, -dist),
+    new THREE.Vector3(0, 0, 0), new THREE.Vector3(w, h, -dist),
+    new THREE.Vector3(0, 0, 0), new THREE.Vector3(w, -h, -dist),
+    new THREE.Vector3(0, 0, 0), new THREE.Vector3(-w, -h, -dist),
+    // Rect boundary at dist
+    new THREE.Vector3(-w, h, -dist), new THREE.Vector3(w, h, -dist),
+    new THREE.Vector3(w, h, -dist), new THREE.Vector3(w, -h, -dist),
+    new THREE.Vector3(w, -h, -dist), new THREE.Vector3(-w, -h, -dist),
+    new THREE.Vector3(-w, -h, -dist), new THREE.Vector3(-w, h, -dist),
+  ];
+
+  const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
+  const lineMat = new THREE.LineBasicMaterial({ color: isActive ? 0x60a5fa : 0x94a3b8 });
+  const frustum = new THREE.LineSegments(lineGeo, lineMat);
+  group.add(frustum);
+
+  return group;
 }
 
 function manualPose(inputs: Record<string, unknown>) {
@@ -49,71 +110,92 @@ function verticalFovDegrees(calibration: ProjectorCalibration): number {
 }
 
 /**
- * The scene's render camera, in either of two modes.
- *
- * **Manual** — scrub Location/Rotation/FOV by hand while watching the live
- * projector output. Fine for a rough look, hopeless for matching a real room.
- *
- * **Calibrated** — the real method (BIBLE.md's Calibration section, and what
- * every projection-mapping tool does): wire in a Room Corner node, project
- * its wireframe, and drag each corner handle onto the matching physical
- * corner of the room. Each handle carries a *known* 3D coordinate, so the
- * DLT solve recovers the projector's full state — position, orientation,
- * focal lengths, and the off-centre principal point that is its lens shift.
- *
- * The earlier vanishing-point attempt lived here too, and is worth naming so
- * it isn't retried: tracing lines recovers rotation and focal length but
- * never position, so the scene never landed in the room at all. See dlt.ts.
- *
- * Calibrated mode falls back to the manual pose whenever the solve cannot
- * run — too few handles placed, no Room Corner wired in, a degenerate
- * configuration — rather than emitting a broken camera.
+ * The scene's render camera, in either of two modes (Manual or Calibrated).
+ * Can be driven as a regular 3D object, transformed by Matrix nodes, or activated/deactivated.
  */
 export const CAMERA_NODE: NodeDefinition = {
   type: "calibration/camera",
   label: "Camera",
   category: "calibration",
   inputs: [
+    { id: "geometry", label: "Geometry", type: "geometry" },
+    { id: "matrix", label: "Matrix", type: "matrix" },
     { id: "location", label: "Location", type: "vector" },
     { id: "rotation", label: "Rotation", type: "vector" },
     { id: "fov", label: "FOV", type: "value" },
+    { id: "active", label: "Active", type: "value" },
     { id: "refPoints", label: "Ref Points", type: "list" },
   ],
   outputs: [
+    { id: "geometry", label: "Geometry", type: "geometry" },
     { id: "matrix", label: "Matrix", type: "matrix" },
     { id: "fov", label: "FOV", type: "value" },
     { id: "projection", label: "Projection", type: "matrix" },
     { id: "error", label: "Error", type: "value" },
+    { id: "active", label: "Active", type: "value" },
   ],
   defaultParams: {
     location: DEFAULT_LOCATION.clone(),
     rotation: ZERO.clone(),
     fov: DEFAULT_FOV,
+    active: true,
     mode: "manual",
     calibrationPicks: { ...DEFAULT_PICKS },
   },
   paramFields: [
+    { id: "active", label: "Active", kind: "boolean" },
     { id: "mode", label: "Mode", kind: "select", options: ["manual", "calibrated"] },
     { id: "location", label: "Location", kind: "vector" },
     { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true },
     { id: "fov", label: "FOV (deg)", kind: "number" },
   ],
-  evaluate: (inputs, params) => {
-    if (params.mode !== "calibrated") return manualPose(inputs);
+  evaluate: (inputs, params, ctx) => {
+    const rawActive = inputs.active !== undefined ? inputs.active : params.active;
+    const isActive = toBoolean(rawActive ?? true);
 
-    const points = inputs.refPoints;
-    const picks = params.calibrationPicks;
-    if (!isReferencePointArray(points) || !isCalibrationPicks(picks)) return manualPose(inputs);
+    let pose: { matrix: THREE.Matrix4; fov: number; projection: THREE.Matrix4 | null; error: number };
 
-    const calibration = solveFromPicks(points, picks);
-    if (!calibration) return manualPose(inputs);
+    if (params.mode === "calibrated") {
+      const points = inputs.refPoints;
+      const picks = params.calibrationPicks;
+      if (isReferencePointArray(points) && isCalibrationPicks(picks)) {
+        const calibration = solveFromPicks(points, picks);
+        if (calibration) {
+          pose = {
+            matrix: new THREE.Matrix4().compose(calibration.position, calibration.quaternion, ONE),
+            fov: verticalFovDegrees(calibration),
+            projection: projectionMatrixFromCalibration(calibration, RELATIVE_WIDTH, RELATIVE_HEIGHT, NEAR, FAR),
+            error: calibration.reprojectionError,
+          };
+        } else {
+          pose = manualPose(inputs);
+        }
+      } else {
+        pose = manualPose(inputs);
+      }
+    } else {
+      pose = manualPose(inputs);
+    }
 
-    const quaternion = calibration.quaternion;
+    if (inputs.matrix instanceof THREE.Matrix4) {
+      pose.matrix = inputs.matrix.clone();
+    }
+
+    const group = getGroup(ctx.nodeId);
+    group.clear();
+    group.matrixAutoUpdate = false;
+    group.matrix.copy(pose.matrix);
+    group.userData.nodeId = ctx.nodeId;
+    const helperContent = buildCameraHelperGeometry(pose.fov, isActive);
+    helperContent.traverse((child) => {
+      child.userData.nodeId = ctx.nodeId;
+    });
+    group.add(helperContent);
+
     return {
-      matrix: new THREE.Matrix4().compose(calibration.position, quaternion, ONE),
-      fov: verticalFovDegrees(calibration),
-      projection: projectionMatrixFromCalibration(calibration, RELATIVE_WIDTH, RELATIVE_HEIGHT, NEAR, FAR),
-      error: calibration.reprojectionError,
+      ...pose,
+      geometry: group,
+      active: isActive ? 1 : 0,
     };
   },
 };

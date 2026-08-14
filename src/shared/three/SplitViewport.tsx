@@ -1,0 +1,138 @@
+import React, { useState, useRef, useCallback } from "react";
+import { TransformPatch, Viewport } from "./Viewport";
+import { Graph, NodeRegistry } from "../graph/types";
+import type { PreviewCameraPose } from "../ipc";
+
+interface SplitViewportProps {
+  graph: Graph;
+  registry: NodeRegistry;
+  renderNodeId: string;
+  epochMs?: number;
+  selectedNodeId?: string | null;
+  onSelectNode?: (nodeId: string | null) => void;
+  onTransformChange?: (transformNodeId: string, patch: TransformPatch) => void;
+  onTransformStart?: () => void;
+  onCameraChange?: (pose: PreviewCameraPose) => void;
+  previewCameraPose?: PreviewCameraPose | null;
+}
+
+export function SplitViewport({
+  graph,
+  registry,
+  renderNodeId,
+  epochMs = 0,
+  selectedNodeId = null,
+  onSelectNode,
+  onTransformChange,
+  onTransformStart,
+  onCameraChange,
+  previewCameraPose = null,
+}: SplitViewportProps) {
+  const [isSplit, setIsSplit] = useState(false);
+  const [splitPercent, setSplitPercent] = useState(50);
+  const isDraggingRef = useRef(false);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingRef.current = true;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      if (!isDraggingRef.current) return;
+      const container = document.getElementById("split-viewport-container");
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const relativeX = moveEvent.clientX - rect.left;
+      const newPercent = Math.max(20, Math.min(80, (relativeX / rect.width) * 100));
+      setSplitPercent(newPercent);
+    };
+
+    const onMouseUp = () => {
+      isDraggingRef.current = false;
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  }, []);
+
+  if (!isSplit) {
+    return (
+      <div id="split-viewport-container" style={{ width: "100%", height: "100%", position: "relative" }}>
+        <Viewport
+          graph={graph}
+          registry={registry}
+          renderNodeId={renderNodeId}
+          epochMs={epochMs}
+          selectedNodeId={selectedNodeId}
+          onSelectNode={onSelectNode}
+          onTransformChange={onTransformChange}
+          onTransformStart={onTransformStart}
+          onCameraChange={onCameraChange}
+          previewCameraPose={previewCameraPose}
+          isSplitView={false}
+          onToggleSplitView={() => setIsSplit(true)}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      id="split-viewport-container"
+      style={{
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        position: "relative",
+        overflow: "hidden",
+        backgroundColor: "#090d16",
+      }}
+    >
+      {/* Left Pane: Editor Free View */}
+      <div style={{ width: `${splitPercent}%`, height: "100%", position: "relative", minWidth: 0 }}>
+        <Viewport
+          graph={graph}
+          registry={registry}
+          renderNodeId={renderNodeId}
+          epochMs={epochMs}
+          selectedNodeId={selectedNodeId}
+          onSelectNode={onSelectNode}
+          onTransformChange={onTransformChange}
+          onTransformStart={onTransformStart}
+          onCameraChange={onCameraChange}
+          previewCameraPose={previewCameraPose}
+          isSplitView={true}
+          onToggleSplitView={() => setIsSplit(false)}
+        />
+      </div>
+
+      {/* Draggable Splitter */}
+      <div
+        onMouseDown={handleMouseDown}
+        style={{
+          width: "6px",
+          height: "100%",
+          cursor: "col-resize",
+          backgroundColor: "#1e293b",
+          borderLeft: "1px solid #334155",
+          borderRight: "1px solid #334155",
+          zIndex: 20,
+          flexShrink: 0,
+        }}
+      />
+
+      {/* Right Pane: Active Camera View / Output Preview */}
+      <div style={{ width: `${100 - splitPercent}%`, height: "100%", position: "relative", minWidth: 0 }}>
+        <Viewport
+          graph={graph}
+          registry={registry}
+          renderNodeId={renderNodeId}
+          epochMs={epochMs}
+          outputMode={true}
+          previewCameraPose={previewCameraPose}
+        />
+      </div>
+    </div>
+  );
+}

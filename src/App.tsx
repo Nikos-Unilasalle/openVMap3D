@@ -6,7 +6,8 @@ import { cloneGraph } from "./shared/graph/cloneGraph";
 import { rehydrateGraphParams } from "./shared/graph/rehydrateParams";
 import { Connection, Graph, NodeInstance } from "./shared/graph/types";
 import { broadcastGraph, PreviewCameraPose, startBroadcasting } from "./shared/ipc";
-import { TransformPatch, Viewport } from "./shared/three/Viewport";
+import { TransformPatch } from "./shared/three/Viewport";
+import { SplitViewport } from "./shared/three/SplitViewport";
 import "./shared/three/viewport.css";
 import { GIZMO_SELECTABLE_TYPES, resolveGizmoTarget } from "./shared/graph/transformLookup";
 import { CalibrationOverlay } from "./windows/CalibrationOverlay";
@@ -244,17 +245,30 @@ function MainEditor() {
     setCurrentFilePath(path);
   };
 
-  const onParamChange = (paramId: string, value: unknown) => {
+  const onParamChange = (paramId: string, value: unknown, targetNodeId?: string) => {
+    const nodeIdToUpdate = targetNodeId ?? selectedNodeId;
     setGraphWithHistory((prevGraph) => {
-      const instance = prevGraph.nodes.find((n) => n.id === selectedNodeId);
+      const instance = prevGraph.nodes.find((n) => n.id === nodeIdToUpdate);
       if (!instance) return prevGraph;
+
+      const isActivatingCamera =
+        instance.type === CAMERA_NODE.type &&
+        paramId === "active" &&
+        (value === true || value === 1);
+
       return {
         ...prevGraph,
-        nodes: prevGraph.nodes.map((n) =>
-          n.id === instance.id ? { ...n, params: { ...n.params, [paramId]: value } } : n,
-        ),
+        nodes: prevGraph.nodes.map((n) => {
+          if (n.id === instance.id) {
+            return { ...n, params: { ...n.params, [paramId]: value } };
+          }
+          if (isActivatingCamera && n.type === CAMERA_NODE.type) {
+            return { ...n, params: { ...n.params, active: false } };
+          }
+          return n;
+        }),
       };
-    }, `${selectedNodeId}:${paramId}`);
+    }, `${nodeIdToUpdate}:${paramId}`);
   };
 
   // Same functional-updater reasoning as onParamChange, but writing all
@@ -336,7 +350,7 @@ function MainEditor() {
         onRedo={redo}
       />
       <div style={{ height: `${splitPercent}%`, minHeight: 0, position: "relative" }}>
-        <Viewport
+        <SplitViewport
           graph={graph}
           registry={DEFAULT_REGISTRY}
           renderNodeId={findRenderNodeId(graph) ?? ""}
@@ -350,15 +364,17 @@ function MainEditor() {
         {needsTransformHint && (
           <div className="viewport-hint">Wire a Transform node into this object's Matrix to move it</div>
         )}
-        {selectedInstance && selectedInstance.type === CAMERA_NODE.type && (
-          <CalibrationOverlay
-            graph={graph}
-            cameraNodeId={selectedInstance.id}
-            storedPicks={selectedInstance.params.calibrationPicks}
-            mode={selectedInstance.params.mode ?? DEFAULT_REGISTRY.get(selectedInstance.type)?.defaultParams.mode}
-            onChange={onParamChange}
-          />
-        )}
+        {selectedInstance &&
+          selectedInstance.type === CAMERA_NODE.type &&
+          selectedInstance.params.mode === "calibrated" && (
+            <CalibrationOverlay
+              graph={graph}
+              cameraNodeId={selectedInstance.id}
+              storedPicks={selectedInstance.params.calibrationPicks}
+              mode={selectedInstance.params.mode ?? DEFAULT_REGISTRY.get(selectedInstance.type)?.defaultParams.mode}
+              onChange={onParamChange}
+            />
+          )}
         {selectedInstance && selectedDef && (
           <ParamPanel
             nodeId={selectedInstance.id}

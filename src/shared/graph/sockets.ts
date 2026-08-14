@@ -64,9 +64,11 @@ export const SOCKET_COLOR: Record<SocketType, string> = {
   any: "#e2e8f0",
 };
 
-/** Booleans travel as 0/1 on a `value` socket — see the module doc above. */
 export function toBoolean(v: unknown): boolean {
-  return typeof v === "number" && v !== 0;
+  if (typeof v === "boolean") return v;
+  if (typeof v === "number") return v !== 0;
+  if (typeof v === "string") return v !== "" && v !== "0" && v !== "false";
+  return Boolean(v);
 }
 
 export function fromBoolean(b: boolean): number {

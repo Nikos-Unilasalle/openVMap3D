@@ -25,18 +25,55 @@ export const RENDER_NODE: NodeDefinition = {
     { id: "environment", label: "Environment", type: "any" },
     { id: "postprocess", label: "Post-Process", type: "postprocess" },
   ],
-  defaultParams: { motionBlur: 0 },
-  paramFields: [{ id: "motionBlur", label: "Motion Blur", kind: "number", step: 0.05 }],
-  // `motionBlur` is returned but deliberately has no output socket: it's a
-  // setting for whoever draws this Render node (see Viewport.tsx), not a
-  // value another node would wire onward. The Viewport reads the whole
-  // outputs record, so returning it is enough.
-  evaluate: (inputs, params) => ({
-    geometry: inputs.geometry,
-    environment: inputs.environment,
-    postprocess: inputs.postprocess,
-    motionBlur: Math.max(0, Math.min(1, numberInput(inputs.motionBlur, params.motionBlur, 0))),
-  }),
+  defaultParams: {
+    motionBlur: 0,
+    resolutionPreset: "16:9 (1920x1080)",
+    width: 1920,
+    height: 1080,
+  },
+  paramFields: [
+    {
+      id: "resolutionPreset",
+      label: "Aspect / Resolution",
+      kind: "select",
+      options: [
+        "16:9 (1920x1080)",
+        "16:10 (1920x1200)",
+        "4:3 (1440x1080)",
+        "1:1 (1080x1080)",
+        "9:16 (1080x1920)",
+        "21:9 (2560x1080)",
+        "Custom",
+      ],
+    },
+    { id: "width", label: "Width (px)", kind: "number", step: 1 },
+    { id: "height", label: "Height (px)", kind: "number", step: 1 },
+    { id: "motionBlur", label: "Motion Blur", kind: "number", step: 0.05 },
+  ],
+  evaluate: (inputs, params) => {
+    let width = Math.max(1, Number(params.width) || 1920);
+    let height = Math.max(1, Number(params.height) || 1080);
+
+    const preset = String(params.resolutionPreset ?? "16:9 (1920x1080)");
+    if (preset === "16:9 (1920x1080)") { width = 1920; height = 1080; }
+    else if (preset === "16:10 (1920x1200)") { width = 1920; height = 1200; }
+    else if (preset === "4:3 (1440x1080)") { width = 1440; height = 1080; }
+    else if (preset === "1:1 (1080x1080)") { width = 1080; height = 1080; }
+    else if (preset === "9:16 (1080x1920)") { width = 1080; height = 1920; }
+    else if (preset === "21:9 (2560x1080)") { width = 2560; height = 1080; }
+
+    const aspect = width / height;
+
+    return {
+      geometry: inputs.geometry,
+      environment: inputs.environment,
+      postprocess: inputs.postprocess,
+      motionBlur: Math.max(0, Math.min(1, numberInput(inputs.motionBlur, params.motionBlur, 0))),
+      width,
+      height,
+      aspect,
+    };
+  },
 };
 
 /** First `render`-type node in the graph — what a Viewport draws when it isn't told a specific node id to use. Multiple Render nodes: first one wins, arbitrary order, not an error. */

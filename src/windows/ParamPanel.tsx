@@ -209,33 +209,49 @@ export function ParamPanel({ nodeId, label, category, fields, params, onChange }
 
             {isOpen && (
               <div className="param-group-body">
-                {groupFields.map((field) => (
-                  <div className="param-row" key={field.id}>
-                    <label>{field.label}</label>
-                    {field.kind === "number" && (
-                      <DragNumberInput
-                        value={toDisplayUnit(Number(params[field.id]) || 0, field.degrees)}
-                        step={field.step}
-                        onChange={(v) => onChange(field.id, toStoredUnit(v, field.degrees))}
-                      />
-                    )}
-                    {field.kind === "vector" && vectorField(field, params[field.id], (v) => onChange(field.id, v))}
-                    {field.kind === "boolean" && booleanField(params[field.id], (v) => onChange(field.id, v))}
-                    {field.kind === "select" && selectField(field, params[field.id], (v) => onChange(field.id, v))}
-                    {field.kind === "color" && (
-                      <ColorPickerInput value={params[field.id]} onChange={(v) => onChange(field.id, v)} />
-                    )}
-                    {field.kind === "text" && (
-                      <input
-                        type="text"
-                        className="param-text-input"
-                        value={String(params[field.id] ?? "")}
-                        onChange={(e) => onChange(field.id, e.target.value)}
-                      />
-                    )}
-                    {field.kind === "file" && fileField(nodeId, field, params[field.id], (v) => onChange(field.id, v))}
-                  </div>
-                ))}
+                {groupFields.map((field) => {
+                  const useKey = "use" + field.id.toUpperCase();
+                  const hasUseToggle = field.kind === "number" && params[useKey] !== undefined;
+
+                  return (
+                    <div className="param-row" key={field.id}>
+                      <label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        {field.label}
+                        {hasUseToggle && (
+                          <input
+                            type="checkbox"
+                            checked={!!params[useKey]}
+                            onChange={(e) => onChange(useKey, e.target.checked ? 1 : 0)}
+                            title={`Enable ${field.label} axis`}
+                            style={{ cursor: "pointer", accentColor: "#38bdf8", marginLeft: "2px" }}
+                          />
+                        )}
+                      </label>
+                      {field.kind === "number" && (
+                        <DragNumberInput
+                          value={toDisplayUnit(Number(params[field.id]) || 0, field.degrees)}
+                          step={field.step}
+                          onChange={(v) => onChange(field.id, toStoredUnit(v, field.degrees))}
+                        />
+                      )}
+                      {field.kind === "vector" && vectorField(field, params[field.id], (v) => onChange(field.id, v))}
+                      {field.kind === "boolean" && booleanField(params[field.id], (v) => onChange(field.id, v))}
+                      {field.kind === "select" && selectField(field, params[field.id], (v) => onChange(field.id, v))}
+                      {field.kind === "color" && (
+                        <ColorPickerInput value={params[field.id]} onChange={(v) => onChange(field.id, v)} />
+                      )}
+                      {field.kind === "text" && (
+                        <input
+                          type="text"
+                          className="param-text-input"
+                          value={String(params[field.id] ?? "")}
+                          onChange={(e) => onChange(field.id, e.target.value)}
+                        />
+                      )}
+                      {field.kind === "file" && fileField(nodeId, field, params[field.id], (v) => onChange(field.id, v))}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

@@ -26,10 +26,37 @@ export function asVector3(v: unknown, fallback: THREE.Vector3): THREE.Vector3 {
   return fallback;
 }
 
+export function resolveLocationVector(v: THREE.Vector3): THREE.Vector3 {
+  return new THREE.Vector3(
+    v.x === -1 ? 0 : v.x,
+    v.y === -1 ? 0 : v.y,
+    v.z === -1 ? 0 : v.z,
+  );
+}
+
+export function resolveRotationVector(v: THREE.Vector3): THREE.Vector3 {
+  return new THREE.Vector3(
+    v.x === -1 ? 0 : v.x,
+    v.y === -1 ? 0 : v.y,
+    v.z === -1 ? 0 : v.z,
+  );
+}
+
+export function resolveScaleVector(v: THREE.Vector3): THREE.Vector3 {
+  return new THREE.Vector3(
+    v.x === -1 ? 1 : v.x,
+    v.y === -1 ? 1 : v.y,
+    v.z === -1 ? 1 : v.z,
+  );
+}
+
 /** location/rotation(Euler, radians)/scale -> a single composed Matrix4 — the LSR-to-matrix convention every transform-producing node in this file shares. */
 export function composeTransform(location: THREE.Vector3, rotation: THREE.Vector3, scale: THREE.Vector3): THREE.Matrix4 {
-  const quaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(rotation.x, rotation.y, rotation.z));
-  return new THREE.Matrix4().compose(location, quaternion, scale);
+  const loc = resolveLocationVector(location);
+  const rot = resolveRotationVector(rotation);
+  const scl = resolveScaleVector(scale);
+  const quaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(rot.x, rot.y, rot.z));
+  return new THREE.Matrix4().compose(loc, quaternion, scl);
 }
 
 /**

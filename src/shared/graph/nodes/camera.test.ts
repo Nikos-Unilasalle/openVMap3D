@@ -56,8 +56,8 @@ describe("CAMERA_NODE manual mode", () => {
     const result = CAMERA_NODE.evaluate({}, CAMERA_NODE.defaultParams, CTX);
     const position = new THREE.Vector3().setFromMatrixPosition(result.matrix as THREE.Matrix4);
 
-    expect(position.x).toBeCloseTo(3);
-    expect(position.y).toBeCloseTo(3);
+    expect(position.x).toBeCloseTo(0);
+    expect(position.y).toBeCloseTo(0);
     expect(position.z).toBeCloseTo(5);
     expect(result.fov).toBe(50);
   });
@@ -65,6 +65,46 @@ describe("CAMERA_NODE manual mode", () => {
   test("emits no projection matrix in manual mode, so the viewport uses plain fov", () => {
     const result = CAMERA_NODE.evaluate({}, CAMERA_NODE.defaultParams, CTX);
     expect(result.projection).toBeNull();
+  });
+
+  test("evaluates active state and emits geometry 3D helper group", () => {
+    const activeRes = CAMERA_NODE.evaluate({ active: 1 }, CAMERA_NODE.defaultParams, CTX);
+    expect(activeRes.active).toBe(1);
+    expect(activeRes.geometry).toBeInstanceOf(THREE.Group);
+
+    const inactiveRes = CAMERA_NODE.evaluate({ active: 0 }, CAMERA_NODE.defaultParams, CTX);
+    expect(inactiveRes.active).toBe(0);
+    expect(inactiveRes.geometry).toBeInstanceOf(THREE.Group);
+  });
+
+  test("the returned geometry itself carries the camera's pose, not an identity wrapper around it", () => {
+    // The viewport's gizmo attaches directly to whatever `geometry` comes
+    // back and reads its own `matrix`/`matrixAutoUpdate` to place the
+    // handle and seed the drag — see Viewport.tsx's
+    // `!targetObject.matrixAutoUpdate` decompose-on-attach block. If the
+    // pose lived one level deeper (a positioned wrapper nested inside an
+    // identity-transform outer group), the gizmo would read identity off
+    // the outer group and either not appear or sit pinned at the origin
+    // regardless of where the camera actually is.
+    const location = new THREE.Vector3(4, 1, -2);
+    const result = CAMERA_NODE.evaluate({ location, rotation: new THREE.Vector3(0, 0, 0) }, CAMERA_NODE.defaultParams, CTX);
+    const group = result.geometry as THREE.Group;
+
+    expect(group.matrixAutoUpdate).toBe(false);
+    const pos = new THREE.Vector3().setFromMatrixPosition(group.matrix);
+    expect(pos.x).toBeCloseTo(4);
+    expect(pos.y).toBeCloseTo(1);
+    expect(pos.z).toBeCloseTo(-2);
+  });
+
+  test("accepts external matrix input to override camera pose", () => {
+    const customMat = new THREE.Matrix4().makeTranslation(10, 20, 30);
+    const res = CAMERA_NODE.evaluate({ matrix: customMat }, CAMERA_NODE.defaultParams, CTX);
+    const pos = new THREE.Vector3().setFromMatrixPosition(res.matrix as THREE.Matrix4);
+
+    expect(pos.x).toBeCloseTo(10);
+    expect(pos.y).toBeCloseTo(20);
+    expect(pos.z).toBeCloseTo(30);
   });
 });
 
@@ -121,7 +161,7 @@ describe("CAMERA_NODE calibrated mode", () => {
 
     // Assert — degrades to the manual pose rather than emitting a broken one
     const position = new THREE.Vector3().setFromMatrixPosition(result.matrix as THREE.Matrix4);
-    expect(position.x).toBeCloseTo(3);
+    expect(position.x).toBeCloseTo(0);
     expect(result.projection).toBeNull();
   });
 

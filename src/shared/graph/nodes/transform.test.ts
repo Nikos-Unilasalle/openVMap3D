@@ -32,6 +32,23 @@ describe("composeTransform", () => {
     const m = composeTransform(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, 1, 1));
     expect(m.toArray()).toEqual(new THREE.Matrix4().toArray());
   });
+
+  it("interprets -1 on any axis as no transformation (0 for location/rotation, 1 for scale)", () => {
+    const loc = new THREE.Vector3(-1, 5, -1);
+    const rot = new THREE.Vector3(1.2, -1, -1);
+    const scl = new THREE.Vector3(2, -1, -1);
+
+    const m = composeTransform(loc, rot, scl);
+    const { position, scale } = decompose(m);
+
+    expect(position.x).toBeCloseTo(0);
+    expect(position.y).toBeCloseTo(5);
+    expect(position.z).toBeCloseTo(0);
+
+    expect(scale.x).toBeCloseTo(2);
+    expect(scale.y).toBeCloseTo(1);
+    expect(scale.z).toBeCloseTo(1);
+  });
 });
 
 describe("composeNativeMatrix", () => {

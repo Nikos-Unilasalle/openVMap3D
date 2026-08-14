@@ -12,15 +12,27 @@ export const VECTOR_COMPOSE_NODE: NodeDefinition = {
     { id: "z", label: "Z", type: "value" },
   ],
   outputs: [{ id: "out", label: "Out", type: "vector" }],
-  defaultParams: { x: 0, y: 0, z: 0 },
+  defaultParams: { x: 0, y: 0, z: 0, useX: true, useY: true, useZ: true },
   paramFields: [
-    { id: "x", label: "X (fallback)", kind: "number" },
-    { id: "y", label: "Y (fallback)", kind: "number" },
-    { id: "z", label: "Z (fallback)", kind: "number" },
+    { id: "x", label: "X", kind: "number" },
+    { id: "y", label: "Y", kind: "number" },
+    { id: "z", label: "Z", kind: "number" },
   ],
-  evaluate: (inputs) => ({
-    out: new THREE.Vector3(Number(inputs.x) || 0, Number(inputs.y) || 0, Number(inputs.z) || 0),
-  }),
+  evaluate: (inputs, params) => {
+    const useX = params.useX !== undefined ? Boolean(params.useX) : true;
+    const useY = params.useY !== undefined ? Boolean(params.useY) : true;
+    const useZ = params.useZ !== undefined ? Boolean(params.useZ) : true;
+
+    const valX = inputs.x !== undefined ? Number(inputs.x) : (Number(params.x) || 0);
+    const valY = inputs.y !== undefined ? Number(inputs.y) : (Number(params.y) || 0);
+    const valZ = inputs.z !== undefined ? Number(inputs.z) : (Number(params.z) || 0);
+
+    const x = useX ? (Number.isFinite(valX) ? valX : 0) : -1;
+    const y = useY ? (Number.isFinite(valY) ? valY : 0) : -1;
+    const z = useZ ? (Number.isFinite(valZ) ? valZ : 0) : -1;
+
+    return { out: new THREE.Vector3(x, y, z) };
+  },
 };
 
 /** Inverse of Compose — a Vector's own axes as three separate Values. */

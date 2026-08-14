@@ -68,6 +68,8 @@ interface ViewportProps {
   onCameraChange?: (pose: PreviewCameraPose) => void;
   /** Output-only: the editor's last-broadcast orbit pose. Applied only when there's no Camera node driving the camera (see the calibrationMatrix branch in tick()) — a Camera node's calibrated lock always wins. */
   previewCameraPose?: PreviewCameraPose | null;
+  isSplitView?: boolean;
+  onToggleSplitView?: () => void;
 }
 
 /** Create text canvas sprite for corner 3D axes labels ("X", "Y", "Z") */
@@ -309,10 +311,16 @@ export function Viewport({
   onTransformStart,
   onCameraChange,
   previewCameraPose = null,
+  isSplitView = false,
+  onToggleSplitView,
 }: ViewportProps) {
   const [showUiOverlay, setShowUiOverlay] = useState(true);
   const showUiOverlayRef = useRef(showUiOverlay);
   showUiOverlayRef.current = showUiOverlay;
+
+  const [showEnvInEditor, setShowEnvInEditor] = useState(false);
+  const showEnvInEditorRef = useRef(showEnvInEditor);
+  showEnvInEditorRef.current = showEnvInEditor;
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -987,6 +995,19 @@ export function Viewport({
         }
       }
 
+      // Sync Camera 3D Helpers in editorUiScene (editor view only)
+      const activeCameraHelpers = new Map<string, THREE.Object3D>();
+      for (const [nodeId, res] of results.entries()) {
+        const node = graphRef.current.nodes.find((n) => n.id === nodeId);
+        if (node?.type === CAMERA_NODE.type && res.geometry instanceof THREE.Object3D) {
+          const camGroup = res.geometry as THREE.Object3D;
+          activeCameraHelpers.set(nodeId, camGroup);
+          if (!outputMode && !editorUiScene.children.includes(camGroup)) {
+            editorUiScene.add(camGroup);
+          }
+        }
+      }
+
       // A Camera node drives the camera directly from its Location/Rotation/
       // FOV (or its DLT solve) — but only in the *output* window. That is
       // the one view that has to show exactly what the real projector will
@@ -995,10 +1016,21 @@ export function Viewport({
       // node's presence or mode, since it's for building/inspecting the
       // scene, not for judging alignment — that judgment only means
       // anything against the actual projected output (see OutputWindow).
-      const cameraInstance = graphRef.current.nodes.find((n: { type: string; id: string }) => n.type === CAMERA_NODE.type);
-      const cameraResult = cameraInstance ? results.get(cameraInstance.id) : undefined;
+      const cameraNodes = graphRef.current.nodes.filter((n: { type: string; id: string }) => n.type === CAMERA_NODE.type);
+      let activeCameraResult: Record<string, unknown> | undefined;
+      for (const node of cameraNodes) {
+        const res = results.get(node.id);
+        if (res && res.active !== 0 && res.active !== false) {
+          activeCameraResult = res;
+          break;
+        }
+      }
+      if (!activeCameraResult && cameraNodes.length > 0) {
+        activeCameraResult = results.get(cameraNodes[0].id);
+      }
+      const cameraResult = activeCameraResult;
       const calibrationMatrix =
-        outputMode && cameraResult?.matrix instanceof THREE.Matrix4 ? cameraResult.matrix : null;
+        outputMode && cameraResult?.matrix instanceof THREE.Matrix4 ? cameraResult.matrix as THREE.Matrix4 : null;
 
       if (calibrationMatrix) {
         controls.enabled = false;
@@ -1062,12 +1094,47 @@ export function Viewport({
         gizmo.gizmoCamera.lookAt(0, 0, 0);
       }
 
-      const output = results.get(renderNodeIdRef.current)?.geometry;
-      const nextObject = output instanceof THREE.Object3D ? output : null;
-      if (nextObject !== currentObject) {
+      let output = results.get(renderNodeIdRef.current)?.geometry;
+      if (!output) {
+        for (const res of results.values()) {
+          if (res && res.geometry instanceof THREE.Object3D) {
+            output = res.geometry;
+            break;
+          }
+        }
+      }
+      const rawOutput = output instanceof THREE.Object3D ? output : null;
+
+      if (outputMode) {
+        // Split View's right pane (and the separate Output Window) run
+        // their own tick() loop against the *same* graph, but every
+        // object/instance/merge node hands back one THREE.Object3D cached
+        // per node id at module scope (see nodeCaches.ts) — there is only
+        // ever one such object for the whole process, not one per Viewport.
+        // three.js gives an Object3D exactly one parent, so the instant a
+        // second Viewport's scene.add() runs on it, it's silently ripped out
+        // of whichever scene had it first. Before Split View existed only
+        // one Viewport ever called scene.add() on these objects, so this
+        // never fired; with two Viewports racing their own rAF loops, the
+        // editor pane's own scene.add() this frame gets undone by the
+        // output pane's scene.add() the next, leaving the editor empty
+        // until `rawOutput`'s identity happens to change again.
+        //
+        // This pane has no TransformControls (outputMode skips that whole
+        // block below) needing a *stable* object identity to attach to
+        // across frames, so it's free to hold its own disposable clone
+        // instead of fighting over the shared original. Object3D.clone(true)
+        // deep-copies the hierarchy but shares geometry/material by
+        // reference — cheap, and nothing GPU-owned needs disposing when the
+        // old clone is dropped.
+        const clone = rawOutput?.clone(true) ?? null;
         if (currentObject) scene.remove(currentObject);
-        if (nextObject) scene.add(nextObject);
-        currentObject = nextObject;
+        if (clone) scene.add(clone);
+        currentObject = clone;
+      } else if (rawOutput !== currentObject) {
+        if (currentObject) scene.remove(currentObject);
+        if (rawOutput) scene.add(rawOutput);
+        currentObject = rawOutput;
       }
 
       // Move/rotate/scale gizmo: attach to selected mesh or Light
@@ -1082,6 +1149,10 @@ export function Viewport({
           if (!targetObject) {
             const light = activeLights.get(selectedNodeIdRef.current);
             if (light) targetObject = light;
+          }
+          if (!targetObject) {
+            const camHelper = activeCameraHelpers.get(selectedNodeIdRef.current);
+            if (camHelper) targetObject = camHelper;
           }
         }
         const gizmoTarget = targetObject ? resolveGizmoTarget(graphRef.current, selectedNodeIdRef.current!) : null;
@@ -1133,7 +1204,9 @@ export function Viewport({
         }
       }
 
-      if (activeEnv) {
+      const applyEnv = outputMode || showEnvInEditorRef.current;
+
+      if (activeEnv && applyEnv) {
         // scene.environment (reflections/lighting) is driven by the HDRI
         // texture regardless of what's actually drawn behind the scene —
         // a flat background image only replaces what's *visible*, same as
@@ -1172,8 +1245,42 @@ export function Viewport({
       // 1. Render Main Scene (with Post-Processing pipeline if active)
       const width = host.clientWidth;
       const height = host.clientHeight;
-      renderer.setViewport(0, 0, width, height);
-      renderer.setScissorTest(false);
+
+      let viewX = 0;
+      let viewY = 0;
+      let viewWidth = width;
+      let viewHeight = height;
+
+      const targetAspect = typeof renderResult?.aspect === "number" && renderResult.aspect > 0 ? (renderResult.aspect as number) : null;
+
+      if (outputMode && targetAspect && targetAspect > 0) {
+        const containerAspect = width / height;
+        if (containerAspect > targetAspect) {
+          viewHeight = height;
+          viewWidth = height * targetAspect;
+          viewX = (width - viewWidth) / 2;
+        } else {
+          viewWidth = width;
+          viewHeight = width / targetAspect;
+          viewY = (height - viewHeight) / 2;
+        }
+        if (camera instanceof THREE.PerspectiveCamera) {
+          if (camera.aspect !== targetAspect) {
+            camera.aspect = targetAspect;
+            camera.updateProjectionMatrix();
+          }
+        }
+      } else if (camera instanceof THREE.PerspectiveCamera && !projectionOverridden) {
+        const aspect = width / height;
+        if (camera.aspect !== aspect) {
+          camera.aspect = aspect;
+          camera.updateProjectionMatrix();
+        }
+      }
+
+      renderer.setViewport(viewX, viewY, viewWidth, viewHeight);
+      renderer.setScissor(viewX, viewY, viewWidth, viewHeight);
+      renderer.setScissorTest(outputMode && targetAspect !== null);
 
       const postConfigs = Array.isArray(renderResult?.postprocess)
         ? (renderResult.postprocess as PostProcessConfig[])
@@ -1444,8 +1551,8 @@ export function Viewport({
             onClick={() => setIsOrthographic((prev) => !prev)}
             title={
               isOrthographic
-                ? "Vue Orthographique (clic pour passer en Perspective)"
-                : "Vue Perspective (clic pour passer en Orthographique)"
+                ? "Orthographic View (click to switch to Perspective)"
+                : "Perspective View (click to switch to Orthographic)"
             }
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1464,6 +1571,18 @@ export function Viewport({
             </svg>
             {isOrthographic ? "Ortho" : "Persp"}
           </button>
+          <button
+            type="button"
+            className={`viewport-hud-button ${showEnvInEditor ? "viewport-hud-button-active" : ""}`}
+            style={{
+              color: showEnvInEditor ? "#38bdf8" : "#cbd5e1",
+              fontWeight: 600,
+            }}
+            onClick={() => setShowEnvInEditor((prev) => !prev)}
+            title="Toggle Environment (HDRI/Background) in Editor Viewport"
+          >
+            Env
+          </button>
           <div className="viewport-hud-legend">
             {(
               [
@@ -1476,7 +1595,7 @@ export function Viewport({
                 key={axis}
                 type="button"
                 className={`viewport-hud-axis viewport-hud-axis-${axis}`}
-                title={`Vue ${views[0]} / ${views[1]} (clic pour basculer)`}
+                title={`View ${views[0]} / ${views[1]} (click to toggle)`}
                 onClick={() => {
                   const sign = axisSideRef.current[axis];
                   setAxisViewRef.current(axis, sign);
@@ -1491,17 +1610,27 @@ export function Viewport({
           <button
             className="viewport-hud-button"
             onClick={() => resetCameraRef.current()}
-            title="Réinitialiser la caméra 3D"
+            title="Reset 3D Camera"
           >
             Reset Cam
           </button>
-          <button
-            className="viewport-hud-button"
-            onClick={() => resetSimulationRef.current()}
-            title="Relancer la simulation de particules depuis l'état initial"
-          >
-            Reset Sim
-          </button>
+          {onToggleSplitView && (
+            <button
+              type="button"
+              className={`viewport-hud-button ${isSplitView ? "viewport-hud-button-active" : ""}`}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                color: isSplitView ? "#38bdf8" : "#cbd5e1",
+                fontWeight: 600,
+              }}
+              onClick={onToggleSplitView}
+              title={isSplitView ? "Close Split View" : "Open Split View"}
+            >
+              {isSplitView ? "Single View" : "Split View"}
+            </button>
+          )}
           {onSelectNode && (
             <div className="viewport-hud-gizmo-modes">
               {(["translate", "rotate", "scale"] as const).map((mode) => (

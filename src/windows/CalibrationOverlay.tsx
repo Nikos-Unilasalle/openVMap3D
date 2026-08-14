@@ -64,11 +64,13 @@ export function CalibrationOverlay({ graph, cameraNodeId, storedPicks, mode, onC
   const points = findReferencePointsForCamera(graph, cameraNodeId);
   const picks: CalibrationPicks = isCalibrationPicks(storedPicks) ? storedPicks : DEFAULT_PICKS;
 
+  if (mode !== "calibrated") return null;
+
   if (!points) {
     return (
       <div ref={containerRef} className="calibration-overlay">
         <div className="calibration-overlay-warning">
-          Wire a Room Corner node into the Camera's Ref Points to calibrate
+          Mode Calibré : Branchez une node Room Corner sur Ref Points pour afficher la grille de calage.
         </div>
       </div>
     );
