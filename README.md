@@ -28,14 +28,27 @@ Contrairement aux outils traditionnels basés sur une approche impérative ou de
 
 ---
 
-## ✨ Fonctionnalités Clés
+### 🎬 Animation, Timeline & Keyframing Temps Réel
+* **Système de Keyframes Granulaire** : Survoler une valeur et appuyer sur <kbd>k</kbd> pour enregistrer ou supprimer une keyframe sur n'importe quel paramètre ou axe individuel ($X$, $Y$, $Z$).
+* **Ligne de Lecture & Timeline-Bar** : Barre de séparation dynamique entre l'éditeur et le canva avec tête de lecture 1px, boutons Play/Pause (touche <kbd>Espace</kbd>) et durée de boucle personnalisable via la node `Render`.
+* **Indicateurs & Marqueurs Visuels** :
+  - **Graduations de keyframes vertes** (`#76C560`) indiquant les frames clés du node sélectionné.
+  - **Surlignage d'état des cases** (Vert `#76C560` pour frame exacte, Jaune-Orange `#EDA446` pour frame interpolée).
+  - **Marqueurs visuels neutres 1px (touche <kbd>m</kbd>)** sous le rail de lecture, ajustables par glisser-déplacer en temps réel.
+* **Mise à jour Réactive 60 FPS** : Actualisation en direct des valeurs affichées dans le panneau de paramètres lorsque l'animation s'exécute.
+* **Priorité des Wires sur Keyframes** : Les entrées connectées par câble prévalent systématiquement à 100% sur l'interpolation des keyframes.
 
-### 🎨 Moteur Rendu 3D & Éclairage PBR Temps Réel
+### 🎨 Moteur Rendu 3D, Éclairage PBR & Target "Empty"
 * **Primitives 3D Génératives** : `Box`, `Plane`, `Sphere`, `Disc`, `Cylinder`, `Cone`, `Text 3D Extrudé` (typographies vectorielles), `Bar Graph` dynamique.
+* **Objets Cibles "Empty" (Blender-like)** : Lumières `Directional` et `Spotlight` couplées automatiquement à un nouvel objet `Empty` pour orienter et cibler l'éclairage dans l'espace 3D avec gizmos indépendants.
 * **Importateur de Modèles 3D** : Chargement natif des fichiers `.obj` complexes avec gestion multi-matériaux et transparence.
 * **Éclairage Réaliste & Ombre** : Support natif des lumières `Directional`, `Point`, `Spot` et `Ambient` avec cartes d'ombres GPU dynamiques.
 * **Environnement HDRI / EXR 32-bit** : Éclairage d'environnement PBR basé sur des cartes HDRI (`.hdr`) et OpenEXR (`.exr`) 32 bits flottants avec contrôle de flou d'arrière-plan (`backgroundBlurriness`).
 * **Opacité & Transparence Universelles** : Réglage d'opacité `Opacity` ($0.0 \to 1.0$) sur l'intégralité des objets 3D et primitives avec gestion de la transparence alpha GPU.
+
+### 🔲 Sélection Multiple & Manipulation de Canva
+* **Multi-Sélection <kbd>Shift</kbd> + Clic** : Cliquez ou glissez un rectangle de sélection sur le canva pour sélectionner plusieurs nodes à la fois.
+* **Opérations Groupées** : Déplacement synchrone, duplication (<kbd>Cmd</kbd>+<kbd>D</kbd>), copier/coller (<kbd>Cmd</kbd>+<kbd>C</kbd> / <kbd>Cmd</kbd>+<kbd>V</kbd>) et suppression (<kbd>Suppr</kbd>) appliqués simultanément à l'ensemble du groupe.
 
 ### 🔁 Instanciation & Matrice de Duplication (Array)
 * **Distributions N-Dimensionnelles** :
@@ -220,13 +233,17 @@ Le processus de calibration vidéo-mapping d'OpenVMap3D repose sur la méthode *
 
 | Raccourci | Action |
 | :--- | :--- |
+| <kbd>Espace</kbd> | **Play / Pause** de l'animation temps réel. |
+| <kbd>Cmd</kbd> + <kbd>Espace</kbd> / <kbd>Ctrl</kbd> + <kbd>Espace</kbd> | Ouvre la **Recherche Rapide de Nodes** au curseur. |
+| <kbd>k</kbd> | **Ajouter / Supprimer une Keyframe** sur la valeur ou l'axe $(X, Y, Z)$ survolé dans le panneau à la frame en cours. |
+| <kbd>m</kbd> | **Ajouter / Supprimer un Marqueur visuel** 1px sous la ligne de lecture lorsque la souris survole la timeline. |
+| <kbd>Shift</kbd> + Clic / Glisser | **Sélection Multiple** de nodes dans le canva (ou tracé d'un cadre de sélection). |
 | <kbd>Tab</kbd> | Masque / Affiche l'interface 3D de travail (Grille au sol, Axes, Gizmos de transformation, Repères de lumière). |
 | <kbd>Cmd</kbd> + <kbd>Z</kbd> / <kbd>Ctrl</kbd> + <kbd>Z</kbd> | **Annuler (Undo)** la dernière modification du graphe (historique 50 étapes). |
 | <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd> / <kbd>Ctrl</kbd> + <kbd>Y</kbd> | **Rétablir (Redo)** la modification annulée. |
-| <kbd>Shift</kbd> + <kbd>A</kbd> ou <kbd>Espace</kbd> | Ouvre le **Recherche Rapide de Nodes** pour ajouter une node au curseur. |
 | <kbd>Suppr</kbd> / <kbd>Backspace</kbd> | Supprime les nodes ou liaisons sélectionnées. |
-| <kbd>Cmd</kbd> + <kbd>C</kbd> / <kbd>Cmd</kbd> + <kbd>V</kbd> | Copier / Coller les nodes sélectionnées. |
-| <kbd>Cmd</kbd> + <kbd>D</kbd> | Dupliquer les nodes sélectionnées. |
+| <kbd>Cmd</kbd> + <kbd>C</kbd> / <kbd>Cmd</kbd> + <kbd>V</kbd> | Copier / Coller la sélection de nodes avec leurs connexions internes. |
+| <kbd>Cmd</kbd> + <kbd>D</kbd> | Dupliquer la sélection de nodes. |
 
 ---
 
