@@ -105,7 +105,8 @@ function manualPose(inputs: Record<string, unknown>, params: Record<string, unkn
   const location = asVector3(inputs.location, DEFAULT_LOCATION);
   const fov = Number(inputs.fov) || DEFAULT_FOV;
 
-  const useTarget = inputs.target !== undefined || toBoolean(params.useTarget ?? false);
+  const isTargetWired = inputs.target !== undefined && inputs.target !== params.target;
+  const useTarget = toBoolean(params.useTarget ?? false) || isTargetWired;
   if (useTarget) {
     const target = extractPositionFromInput(inputs.target, asVector3(params.target, ZERO));
     const up = asVector3(params.up, DEFAULT_UP);

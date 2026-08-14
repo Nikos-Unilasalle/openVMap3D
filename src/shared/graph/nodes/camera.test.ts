@@ -213,9 +213,10 @@ describe("CAMERA_NODE target (embedded look-at)", () => {
 
   test("no Target wired and Use Target off leaves the manual Euler pose untouched", () => {
     const rotation = new THREE.Vector3(0, Math.PI / 2, 0);
+    // Evaluate with inputs.target set to defaultParams.target (simulating evaluateGraph's unconnected fallback)
     const result = CAMERA_NODE.evaluate(
-      { location: new THREE.Vector3(0, 0, 0), rotation },
-      CAMERA_NODE.defaultParams,
+      { location: new THREE.Vector3(0, 0, 0), rotation, target: CAMERA_NODE.defaultParams.target },
+      { ...CAMERA_NODE.defaultParams, useTarget: false },
       CTX,
     );
 
