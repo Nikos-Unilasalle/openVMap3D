@@ -167,4 +167,21 @@ describe("evaluateGraph", () => {
     expect(result.has("a")).toBe(true);
     expect(result.has("b")).toBe(true);
   });
+
+  test("evaluates all demo .ovm files cleanly with DEFAULT_REGISTRY", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const { DEFAULT_REGISTRY } = await import("./nodes");
+    const { rehydrateGraphParams } = await import("./rehydrateParams");
+
+    const demosDir = path.join(__dirname, "../../../demos");
+    const files = fs.readdirSync(demosDir).filter((f) => f.endsWith(".ovm"));
+
+    for (const file of files) {
+      const demoJson = JSON.parse(fs.readFileSync(path.join(demosDir, file), "utf-8")) as Graph;
+      const rehydrated = rehydrateGraphParams(demoJson, DEFAULT_REGISTRY);
+      const result = evaluateGraph(rehydrated, DEFAULT_REGISTRY, CTX);
+      expect(result.size).toBeGreaterThan(0);
+    }
+  });
 });
