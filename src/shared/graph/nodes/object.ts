@@ -198,7 +198,7 @@ export function applyMaterialParams(
   }
 }
 
-const COMMON_PRIMITIVE_INPUTS = [
+export const COMMON_PRIMITIVE_INPUTS = [
   { id: "texture", label: "Texture Map", type: "texture" as const },
   { id: "normal", label: "Normal Map", type: "texture" as const },
   { id: "matrix", label: "Matrix", type: "matrix" as const },
@@ -259,7 +259,7 @@ const NATIVE_TRANSFORM_PARAM_FIELDS: ParamFieldDef[] = [
   { id: "scale", label: "Scale", kind: "vector", group: "Transform" },
 ];
 
-function buildPrimitiveDynamicParamFields(extraFields: ParamFieldDef[] = []): () => ParamFieldDef[] {
+export function buildPrimitiveDynamicParamFields(extraFields: ParamFieldDef[] = []): () => ParamFieldDef[] {
   return () => [
     ...NATIVE_TRANSFORM_PARAM_FIELDS,
     ...extraFields,
@@ -324,7 +324,7 @@ function buildPrimitiveDynamicParamFields(extraFields: ParamFieldDef[] = []): ()
   ];
 }
 
-const COMMON_DEFAULT_PARAMS = {
+export const COMMON_DEFAULT_PARAMS = {
   location: new THREE.Vector3(0, 0, 0),
   rotation: new THREE.Vector3(0, 0, 0),
   scale: new THREE.Vector3(1, 1, 1),
@@ -824,6 +824,7 @@ function barGraphState(nodeId: string): BarGraphState {
   if (existing) return existing;
 
   const group = new THREE.Group();
+  group.userData.nodeId = nodeId;
   const barsGroup = new THREE.Group();
   const labelsGroup = new THREE.Group();
   group.add(barsGroup);
@@ -864,8 +865,8 @@ export const OBJECT_BAR_GRAPH_NODE: NodeDefinition = {
   label: "Bar Graph",
   category: "object",
   inputs: [
-    { id: "values", label: "Values (List)", type: "any" },
-    { id: "colors", label: "Colors (List)", type: "any" },
+    { id: "values", label: "Values (List)", type: "list" },
+    { id: "colors", label: "Colors (List)", type: "list" },
     { id: "count", label: "Bar Count", type: "value" },
     { id: "spacing", label: "Spacing", type: "value" },
     { id: "barWidth", label: "Bar Width", type: "value" },
@@ -940,7 +941,7 @@ export const OBJECT_BAR_GRAPH_NODE: NodeDefinition = {
     const barDepth = Math.max(0.01, numberInput(inputs.barDepth, params.barDepth, 0.8));
     const alignment = String(params.alignment ?? "center");
     const showLabels = toBoolean(inputs.showLabels !== undefined ? inputs.showLabels : params.showLabels ?? 0);
-    const labelPosition = String(params.labelPosition ?? "above");
+    const labelPosition = String(inputs.labelPosition ?? params.labelPosition ?? "above");
     const labelDecimals = Math.max(0, Math.min(6, numberInput(inputs.labelDecimals, params.labelDecimals, 1)));
 
     const stepWidth = barWidth + spacing;
@@ -968,9 +969,10 @@ export const OBJECT_BAR_GRAPH_NODE: NodeDefinition = {
       state.barsGroup.add(mesh);
     }
     while (state.barsGroup.children.length > count) {
-      const child = state.barsGroup.children.pop();
-      if (child instanceof THREE.Mesh) {
-        if (child.material) child.material.dispose();
+      const child = state.barsGroup.children[state.barsGroup.children.length - 1];
+      state.barsGroup.remove(child);
+      if (child instanceof THREE.Mesh && child.material) {
+        (child.material as THREE.Material).dispose();
       }
     }
 

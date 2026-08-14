@@ -71,6 +71,24 @@ function cloneInstance(instance: THREE.Object3D): THREE.Object3D {
 const ALL_INSTANCES = -1;
 
 /**
+ * Which frame a relative transform is applied in — the difference between
+ * `final = delta × placement` and `final = placement × delta`.
+ *
+ * - "shared": the delta acts in the pack's own space, *before* each
+ *   instance's placement. Every instance therefore turns about the pack's
+ *   origin — the source object's pivot — so a rotation swings the whole
+ *   arrangement around like a carousel and a translation moves it bodily.
+ * - "individual": the delta acts in each instance's own space, *after* its
+ *   placement, so each one spins about its own origin and stays where the
+ *   Array put it. Offsets are read in the instance's own axes too, which is
+ *   what makes "push every instance along its own normal" expressible.
+ *
+ * Both are useful and neither is a special case of the other, hence a
+ * switch rather than a fix.
+ */
+const PIVOT_OPTIONS = ["shared", "individual"];
+
+/**
  * Which instance a Set Instance node writes to. The default (-1) keeps the
  * node's original behaviour — every instance — so an index is opt-in: wire the
  * Proximity node's `index` in to touch only the nearest instance, and leave it
@@ -206,6 +224,10 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
   outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
   defaultParams: {
     mode: "relative",
+    // "shared" is the original behaviour and stays the default so existing
+    // .ovm files keep composing exactly as they did — a saved graph has no
+    // `pivot` key and so falls back to here. See the note by PIVOT_OPTIONS.
+    pivot: "shared",
     index: ALL_INSTANCES,
     posX: 0,
     posY: 0,
@@ -220,6 +242,7 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
   paramFields: [
     { ...INSTANCE_INDEX_FIELD, group: "Transform Defaults" },
     { id: "mode", label: "Transform Mode", kind: "select", options: ["relative", "absolute"], group: "Transform Defaults" },
+    { id: "pivot", label: "Pivot", kind: "select", options: PIVOT_OPTIONS, group: "Transform Defaults" },
     { id: "posX", label: "Pos X", kind: "number", step: 0.1, group: "Transform Defaults" },
     { id: "posY", label: "Pos Y", kind: "number", step: 0.1, group: "Transform Defaults" },
     { id: "posZ", label: "Pos Z", kind: "number", step: 0.1, group: "Transform Defaults" },
@@ -249,6 +272,7 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
       : (singleMatrix ? [singleMatrix] : []);
 
     const mode = String(params.mode || "relative");
+    const usesIndividualPivot = String(params.pivot || "shared") === "individual";
 
     const paramPX = Number(params.posX) || 0;
     const paramPY = Number(params.posY) || 0;
@@ -284,7 +308,13 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
           clone.matrix.copy(mat);
         } else {
           clone.matrixAutoUpdate = false;
-          clone.matrix.multiplyMatrices(mat, clone.matrix);
+          // Same left/right choice as the vector path below — see PIVOT_OPTIONS.
+          const placement = clone.matrix.clone();
+          if (usesIndividualPivot) {
+            clone.matrix.multiplyMatrices(placement, mat);
+          } else {
+            clone.matrix.multiplyMatrices(mat, placement);
+          }
         }
       } else {
         // Base vectors from vector list or origin/identity
@@ -336,6 +366,19 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
           (rotOffset.z * Math.PI) / 180
         );
         deltaMat.compose(posOffset, new THREE.Quaternion().setFromEuler(euler), scaleVal);
+
+        if (usesIndividualPivot) {
+          // Fold the delta into the instance's own matrix, on the right:
+          // `placement × delta` puts it in the instance's local frame, so a
+          // rotation turns it about its own origin instead of swinging it
+          // around the pack's. No wrapper needed — and not merely an
+          // optimisation, since a wrapper is by definition a parent and so
+          // could only ever express the "shared" order.
+          clone.matrixAutoUpdate = false;
+          clone.matrix.multiply(deltaMat);
+          group.add(clone);
+          return;
+        }
 
         const wrapper = new THREE.Group();
         wrapper.matrixAutoUpdate = false;

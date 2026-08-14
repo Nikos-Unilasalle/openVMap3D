@@ -343,3 +343,63 @@ describe("COMBINE & SPLIT VECTOR LIST NODES", () => {
     expect(res.zList).toEqual([3, 6]);
   });
 });
+
+describe("SET_INSTANCE_TRANSFORM_NODE pivot", () => {
+  /** World position of instance `i` in the node's output pack. */
+  function worldPositionOf(group: THREE.Object3D, i: number): THREE.Vector3 {
+    group.updateMatrixWorld(true);
+    const entry = group.children[i];
+    // "shared" wraps the clone in a delta group; "individual" folds the
+    // delta into the clone itself. Either way the leaf is what's drawn.
+    const leaf = entry.children.length > 0 && !(entry as THREE.Mesh).isMesh ? entry.children[0] : entry;
+    return new THREE.Vector3().setFromMatrixPosition(leaf.matrixWorld);
+  }
+
+  function arrayOfThree() {
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial());
+    return ARRAY_NODE.evaluate(
+      { geometry: plane },
+      { mode: "linear", axis: "X", count: 3, spacing: 10 },
+      { ...CTX, nodeId: "arr-pivot" },
+    ).geometry as THREE.Object3D;
+  }
+
+  it("individual pivot spins each instance in place, leaving its position untouched", () => {
+    const source = arrayOfThree();
+    const before = [0, 1, 2].map((i) => worldPositionOf(source, i));
+
+    const res = SET_INSTANCE_TRANSFORM_NODE.evaluate(
+      { geometry: source },
+      { ...SET_INSTANCE_TRANSFORM_NODE.defaultParams, pivot: "individual", rotY: 90 },
+      { ...CTX, nodeId: "set-individual" },
+    );
+    const after = [0, 1, 2].map((i) => worldPositionOf(res.geometry as THREE.Object3D, i));
+
+    for (let i = 0; i < 3; i++) {
+      expect(after[i].x).toBeCloseTo(before[i].x);
+      expect(after[i].z).toBeCloseTo(before[i].z);
+    }
+  });
+
+  it("shared pivot swings the whole pack about the source's origin", () => {
+    const source = arrayOfThree();
+    const before = [0, 1, 2].map((i) => worldPositionOf(source, i));
+    // The array runs along X, so a 90° turn about Y should carry the
+    // off-centre instances onto Z.
+    expect(Math.abs(before[2].x)).toBeGreaterThan(1);
+
+    const res = SET_INSTANCE_TRANSFORM_NODE.evaluate(
+      { geometry: source },
+      { ...SET_INSTANCE_TRANSFORM_NODE.defaultParams, pivot: "shared", rotY: 90 },
+      { ...CTX, nodeId: "set-shared" },
+    );
+    const after = [0, 1, 2].map((i) => worldPositionOf(res.geometry as THREE.Object3D, i));
+
+    expect(after[2].x).toBeCloseTo(0);
+    expect(Math.abs(after[2].z)).toBeCloseTo(Math.abs(before[2].x));
+  });
+
+  it("defaults to shared, so graphs saved before the option existed are unchanged", () => {
+    expect(SET_INSTANCE_TRANSFORM_NODE.defaultParams.pivot).toBe("shared");
+  });
+});

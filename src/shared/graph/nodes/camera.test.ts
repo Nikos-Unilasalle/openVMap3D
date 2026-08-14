@@ -108,6 +108,150 @@ describe("CAMERA_NODE manual mode", () => {
   });
 });
 
+describe("CAMERA_NODE gizmo live-edit", () => {
+  test("leaves its matrix alone while the gizmo is dragging it", () => {
+    // Without this guard the graph reclaimed the camera's matrix on every
+    // frame of a drag, so the dragged pose was overwritten before the
+    // viewport could read it back into location/rotation — the params never
+    // moved, and a keyframe taken afterwards captured the stale value.
+    const ctx = { ...CTX, nodeId: "cam-drag" };
+    CAMERA_NODE.evaluate({ location: new THREE.Vector3(0, 0, 5) }, CAMERA_NODE.defaultParams, ctx);
+
+    const group = CAMERA_NODE.evaluate(
+      { location: new THREE.Vector3(0, 0, 5) },
+      CAMERA_NODE.defaultParams,
+      ctx,
+    ).geometry as THREE.Group;
+
+    // Stand in for TransformControls having just moved it.
+    group.matrix.copy(new THREE.Matrix4().makeTranslation(7, 3, 1));
+
+    const dragged = CAMERA_NODE.evaluate(
+      { location: new THREE.Vector3(0, 0, 5) },
+      CAMERA_NODE.defaultParams,
+      { ...ctx, liveEditNodeId: "cam-drag" },
+    );
+
+    const position = new THREE.Vector3().setFromMatrixPosition((dragged.geometry as THREE.Group).matrix);
+    expect(position.x).toBeCloseTo(7);
+    expect(position.y).toBeCloseTo(3);
+
+    // And the reported matrix follows the live pose, so downstream nodes and
+    // the gizmo write-back both see what is actually on screen.
+    const reported = new THREE.Vector3().setFromMatrixPosition(dragged.matrix as THREE.Matrix4);
+    expect(reported.x).toBeCloseTo(7);
+  });
+
+  test("resumes following its params once the drag ends", () => {
+    const ctx = { ...CTX, nodeId: "cam-drag-end" };
+    const group = CAMERA_NODE.evaluate({}, CAMERA_NODE.defaultParams, ctx).geometry as THREE.Group;
+    group.matrix.copy(new THREE.Matrix4().makeTranslation(7, 3, 1));
+
+    const after = CAMERA_NODE.evaluate({ location: new THREE.Vector3(1, 2, 3) }, CAMERA_NODE.defaultParams, ctx);
+    const position = new THREE.Vector3().setFromMatrixPosition((after.geometry as THREE.Group).matrix);
+
+    expect(position.x).toBeCloseTo(1);
+    expect(position.z).toBeCloseTo(3);
+  });
+});
+
+/** Where the camera's own -Z axis points once posed, in world space. */
+function forwardAxis(matrix: THREE.Matrix4): THREE.Vector3 {
+  const quaternion = new THREE.Quaternion().setFromRotationMatrix(matrix);
+  return new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion).normalize();
+}
+
+describe("CAMERA_NODE target (embedded look-at)", () => {
+  test("a wired Target position aims the camera at it, keeping its own location", () => {
+    const location = new THREE.Vector3(0, 0, 5);
+    const target = new THREE.Vector3(0, 0, 0);
+
+    const result = CAMERA_NODE.evaluate({ location, target }, CAMERA_NODE.defaultParams, CTX);
+    const matrix = result.matrix as THREE.Matrix4;
+
+    const position = new THREE.Vector3().setFromMatrixPosition(matrix);
+    expect(position.z).toBeCloseTo(5);
+
+    const forward = forwardAxis(matrix);
+    expect(forward.x).toBeCloseTo(0);
+    expect(forward.y).toBeCloseTo(0);
+    expect(forward.z).toBeCloseTo(-1);
+  });
+
+  test("an Object3D wired into Target is tracked by its world position, like a light's target", () => {
+    const anchor = new THREE.Object3D();
+    anchor.position.set(3, 0, 0);
+    anchor.updateMatrixWorld(true);
+
+    const result = CAMERA_NODE.evaluate(
+      { location: new THREE.Vector3(0, 0, 0), target: anchor },
+      CAMERA_NODE.defaultParams,
+      CTX,
+    );
+
+    const forward = forwardAxis(result.matrix as THREE.Matrix4);
+    expect(forward.x).toBeCloseTo(1);
+    expect(forward.y).toBeCloseTo(0);
+    expect(forward.z).toBeCloseTo(0);
+  });
+
+  test("a wired Target overrides the rotation input rather than composing with it", () => {
+    const withRotation = CAMERA_NODE.evaluate(
+      {
+        location: new THREE.Vector3(0, 0, 5),
+        rotation: new THREE.Vector3(0, Math.PI / 2, 0),
+        target: new THREE.Vector3(0, 0, 0),
+      },
+      CAMERA_NODE.defaultParams,
+      CTX,
+    );
+
+    const forward = forwardAxis(withRotation.matrix as THREE.Matrix4);
+    expect(forward.z).toBeCloseTo(-1);
+    expect(forward.x).toBeCloseTo(0);
+  });
+
+  test("no Target wired and Use Target off leaves the manual Euler pose untouched", () => {
+    const rotation = new THREE.Vector3(0, Math.PI / 2, 0);
+    const result = CAMERA_NODE.evaluate(
+      { location: new THREE.Vector3(0, 0, 0), rotation },
+      CAMERA_NODE.defaultParams,
+      CTX,
+    );
+
+    // Yaw of +90° swings the -Z forward axis round to -X.
+    const forward = forwardAxis(result.matrix as THREE.Matrix4);
+    expect(forward.x).toBeCloseTo(-1);
+    expect(forward.z).toBeCloseTo(0);
+  });
+
+  test("Use Target aims at the fallback target param with nothing wired", () => {
+    const result = CAMERA_NODE.evaluate(
+      { location: new THREE.Vector3(0, 5, 0) },
+      { ...CAMERA_NODE.defaultParams, useTarget: true, target: new THREE.Vector3(0, 0, 0) },
+      CTX,
+    );
+
+    const forward = forwardAxis(result.matrix as THREE.Matrix4);
+    expect(forward.y).toBeCloseTo(-1);
+  });
+
+  test("a target coincident with the camera falls back instead of producing a NaN matrix", () => {
+    const location = new THREE.Vector3(2, 2, 2);
+    const result = CAMERA_NODE.evaluate(
+      { location, target: location.clone() },
+      CAMERA_NODE.defaultParams,
+      CTX,
+    );
+
+    const matrix = result.matrix as THREE.Matrix4;
+    expect(matrix.elements.every((n) => Number.isFinite(n))).toBe(true);
+
+    const position = new THREE.Vector3().setFromMatrixPosition(matrix);
+    expect(position.x).toBeCloseTo(2);
+  });
+});
+
 describe("CAMERA_NODE calibrated mode", () => {
   test("recovers the projector's real position from the operator's picks", () => {
     // Arrange

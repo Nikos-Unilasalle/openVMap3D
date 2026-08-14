@@ -5,44 +5,51 @@ import { TransformControls } from "three/examples/jsm/controls/TransformControls
 import { ClockState, createClock, tickClock } from "../graph/clock";
 import { EvalResult, evaluateGraph } from "../graph/evaluate";
 import { CAMERA_NODE } from "../graph/nodes/camera";
+import { OBJECT_EMPTY_NODE } from "../graph/nodes/object";
 import { resetAllParticleSimulations } from "../graph/particleRuntime";
 import { GizmoTarget, resolveGizmoTarget } from "../graph/transformLookup";
+import { createSceneMembership, isSelfOrDescendantOf } from "./sceneMembership";
+import { createPostProcessChain } from "./postProcessChain";
+import { computeGizmoWriteback, TransformGizmoMode, TransformPatch } from "./gizmoWriteback";
+
+// Re-exported so call sites (App.tsx, SplitViewport) keep importing these
+// from the component they belong to, not from its internals.
+export type { TransformGizmoMode, TransformPatch };
+import { createBackgroundBlur } from "./backgroundBlur";
+import { applyEnvironment, resolveActiveEnvironment } from "./environmentSync";
+import {
+  buildMainSceneGridAndAxes,
+  createGizmoScene,
+  createViewportBackground,
+  GIZMO_ACTIVE_COLOR,
+  GIZMO_X_COLOR,
+  GIZMO_Y_COLOR,
+  GIZMO_Z_COLOR,
+} from "./viewportScenery";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
-import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
-import { VignetteShader } from "three/examples/jsm/shaders/VignetteShader.js";
-import { RGBShiftShader } from "three/examples/jsm/shaders/RGBShiftShader.js";
-import { FilmPass } from "three/examples/jsm/postprocessing/FilmPass.js";
-import { GlitchPass } from "three/examples/jsm/postprocessing/GlitchPass.js";
-import { OutlinePass } from "three/examples/jsm/postprocessing/OutlinePass.js";
-import { BokehPass } from "three/examples/jsm/postprocessing/BokehPass.js";
-import { FXAAPass } from "three/examples/jsm/postprocessing/FXAAPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { createMotionBlur } from "./motionBlur";
-import { ColorCorrectionShader } from "three/examples/jsm/shaders/ColorCorrectionShader.js";
-import { KaleidoShader } from "three/examples/jsm/shaders/KaleidoShader.js";
-import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
-import { HorizontalBlurShader } from "three/examples/jsm/shaders/HorizontalBlurShader.js";
-import { VerticalBlurShader } from "three/examples/jsm/shaders/VerticalBlurShader.js";
-import { EnvironmentData } from "../graph/nodes/environment";
 import { PostProcessConfig } from "../graph/nodes/postprocessing";
 import { Graph, NodeRegistry } from "../graph/types";
 import type { PreviewCameraPose } from "../ipc";
 import "./viewport.css";
 
-export type TransformGizmoMode = "translate" | "rotate" | "scale";
 
 /**
  * Partial on purpose: a gizmo drag writes only the channel it is actually
  * dragging, and only when that channel isn't driven by a wire — see the
  * `objectChange` handler for why writing all three corrupted hand-set values.
  */
-export interface TransformPatch {
-  location?: THREE.Vector3;
-  rotation?: THREE.Vector3;
-  scale?: THREE.Vector3;
-}
+/**
+ * Membership key for the Render node's output (see sceneMembership.ts).
+ * Every other key in that map is a node id; this one is deliberately not a
+ * legal one, since the render output isn't owned by any single node — it's
+ * whatever object the graph currently resolves to, and in the output window
+ * it's a per-frame clone rather than the node's own object.
+ */
+const RENDER_OUTPUT_KEY = "__render_output__";
+
 
 interface ViewportProps {
   graph: Graph;
@@ -75,232 +82,7 @@ interface ViewportProps {
   isPlaying?: boolean;
 }
 
-/** Create text canvas sprite for corner 3D axes labels ("X", "Y", "Z") */
-function createTextSprite(text: string, color: string): THREE.Sprite {
-  const canvas = document.createElement("canvas");
-  canvas.width = 64;
-  canvas.height = 64;
-  const ctx = canvas.getContext("2d");
-  if (ctx) {
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(32, 32, 26, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "#ffffff";
-    ctx.stroke();
 
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 26px sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(text, 32, 32);
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  const spriteMaterial = new THREE.SpriteMaterial({ map: texture, depthTest: false });
-  const sprite = new THREE.Sprite(spriteMaterial);
-  sprite.scale.set(0.32, 0.32, 1);
-  return sprite;
-}
-
-/** Build 3D Axes Triad Gizmo for Corner HUD */
-function createGizmoScene(): { gizmoScene: THREE.Scene; gizmoCamera: THREE.PerspectiveCamera } {
-  const gizmoScene = new THREE.Scene();
-  const gizmoCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 10);
-  gizmoCamera.position.set(0, 0, 3);
-  gizmoCamera.lookAt(0, 0, 0);
-
-  const axisLength = 1.0;
-  const axes = [
-    { dir: new THREE.Vector3(1, 0, 0), color: 0xf43f5e, hexColor: "#f43f5e", label: "X" },
-    { dir: new THREE.Vector3(0, 1, 0), color: 0x22c55e, hexColor: "#22c55e", label: "Y" },
-    { dir: new THREE.Vector3(0, 0, 1), color: 0x38bdf8, hexColor: "#38bdf8", label: "Z" },
-  ];
-
-  axes.forEach(({ dir, color, hexColor, label }) => {
-    // Axis line
-    const points = [new THREE.Vector3(0, 0, 0), dir.clone().multiplyScalar(axisLength)];
-    const geom = new THREE.BufferGeometry().setFromPoints(points);
-    const mat = new THREE.LineBasicMaterial({ color, linewidth: 3 });
-    gizmoScene.add(new THREE.Line(geom, mat));
-
-    // Label Sprite
-    const sprite = createTextSprite(label, hexColor);
-    sprite.position.copy(dir.clone().multiplyScalar(axisLength + 0.2));
-    gizmoScene.add(sprite);
-  });
-
-  // Center origin dot
-  const dotGeom = new THREE.SphereGeometry(0.08, 16, 16);
-  const dotMat = new THREE.MeshBasicMaterial({ color: 0xe2e8f0 });
-  gizmoScene.add(new THREE.Mesh(dotGeom, dotMat));
-
-  return { gizmoScene, gizmoCamera };
-}
-
-/**
- * Viewport palette, modelled on Blender's own 3D view rather than the near
- * black the rest of the app started from: a soft blue-grey gradient reads as
- * *space* around the scene, and it gives dark geometry something to sit
- * against instead of vanishing into the background.
- */
-const VIEWPORT_BG_TOP = "#39424f";
-const VIEWPORT_BG_BOTTOM = "#59636f";
-const GRID_LINE = 0x6a7482;
-const GRID_LINE_MAJOR = 0x7c8794;
-/** Muted enough to read as reference lines, not as scene content — same reason Blender desaturates its own. */
-const AXIS_X_COLOR = 0xa8555f;
-const AXIS_Z_COLOR = 0x4d7fa6;
-
-/**
- * TransformControls' own gizmo defaults to pure #f00/#0f0/#00f — harsh
- * against everything else in this file already being softened toward
- * Blender's own muted palette. Same treatment, same reasoning as the axis
- * lines above, via TransformControls.setColors() (its own public API for
- * this — no need to reach into gizmo internals).
- */
-const GIZMO_X_COLOR = 0xe0757f;
-const GIZMO_Y_COLOR = 0x8fcf8a;
-const GIZMO_Z_COLOR = 0x6fa8dc;
-/** The axis actively being dragged, or hovered. */
-const GIZMO_ACTIVE_COLOR = 0xf0c674;
-
-/**
- * Blender's vertical viewport gradient, as a 2px-wide canvas texture. Assigned
- * to `scene.background`, three.js stretches it flat across the frame (the
- * equirect wrapping only applies to textures explicitly mapped that way).
- */
-function createViewportBackground(): THREE.Texture {
-  const canvas = document.createElement("canvas");
-  canvas.width = 2;
-  canvas.height = 256;
-  const ctx = canvas.getContext("2d")!;
-  const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  gradient.addColorStop(0, VIEWPORT_BG_TOP);
-  gradient.addColorStop(1, VIEWPORT_BG_BOTTOM);
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
-
-/** Build main 3D Scene Grid & Origin Axes Helper */
-function buildMainSceneGridAndAxes(): THREE.Group {
-  const group = new THREE.Group();
-
-  // Ground Grid (XZ Plane)
-  const gridHelper = new THREE.GridHelper(20, 20, GRID_LINE_MAJOR, GRID_LINE);
-  gridHelper.position.y = -0.001; // Avoid z-fighting with objects at y=0
-  group.add(gridHelper);
-
-  // The two in-plane axes drawn the length of the grid, Blender-style: a
-  // coloured line running the whole floor tells you which way X and Z go far
-  // more legibly than a short arrow at the origin does, and it stays readable
-  // when the camera is right down on the ground plane.
-  const half = 10;
-  for (const [axis, color] of [
-    [new THREE.Vector3(1, 0, 0), AXIS_X_COLOR],
-    [new THREE.Vector3(0, 0, 1), AXIS_Z_COLOR],
-  ] as const) {
-    const line = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints([
-        axis.clone().multiplyScalar(-half),
-        axis.clone().multiplyScalar(half),
-      ]),
-      new THREE.LineBasicMaterial({ color }),
-    );
-    line.position.y = 0.001;
-    group.add(line);
-  }
-
-  // Only "up" gets an arrow now. X and Z are the two floor lines above, and
-  // stacking a second, brighter set of markers on the same axes at the origin
-  // just cluttered it — the corner orientation gizmo already names all three.
-  const upArrow = new THREE.ArrowHelper(
-    new THREE.Vector3(0, 1, 0),
-    new THREE.Vector3(0, 0, 0),
-    1.2,
-    0x6f9e57,
-    0.24,
-    0.1,
-  );
-  group.add(upArrow);
-
-  return group;
-}
-
-/**
- * Fits `texture` (a flat background image) into a `viewportW`×`viewportH`
- * canvas per `fit`, then applies the user's extra scale/offset/rotation on
- * top — same "texture.offset/repeat/rotation drive the sample" mechanism
- * texture.ts already uses for uvScale/uvOffset, just computed here because
- * only Viewport.tsx knows the actual canvas size (environment.ts's evaluate
- * has no canvas to measure against).
- *
- * "contain" has no true letterbox (a flat background texture always fills
- * the screen quad) — the padding reads as stretched edge pixels via
- * ClampToEdgeWrapping instead of a solid color bar. Acceptable trade for a
- * VJ tool; a real letterbox would need a dedicated background shader pass.
- */
-function applyBackgroundImageTransform(texture: THREE.Texture, env: EnvironmentData, viewportW: number, viewportH: number): void {
-  const img = texture.image as { width?: number; height?: number } | undefined;
-  let repeatX = 1;
-  let repeatY = 1;
-
-  if (img?.width && img?.height && viewportW > 0 && viewportH > 0) {
-    const canvasAspect = viewportW / viewportH;
-    const imageAspect = img.width / img.height;
-    if (env.backgroundFit === "cover") {
-      if (canvasAspect > imageAspect) repeatY = imageAspect / canvasAspect;
-      else repeatX = canvasAspect / imageAspect;
-    } else if (env.backgroundFit === "contain") {
-      if (canvasAspect > imageAspect) repeatX = canvasAspect / imageAspect;
-      else repeatY = imageAspect / canvasAspect;
-    }
-    // "stretch": repeatX/repeatY stay 1 — the image fills the quad as-is, distortion and all.
-  }
-
-  const scale = env.backgroundScale;
-  repeatX *= scale.x || 1;
-  repeatY *= scale.y || 1;
-
-  texture.wrapS = THREE.ClampToEdgeWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.center.set(0.5, 0.5);
-  texture.rotation = env.backgroundRotation;
-  texture.repeat.set(repeatX, repeatY);
-  texture.offset.set((1 - repeatX) / 2 + env.backgroundOffset.x, (1 - repeatY) / 2 + env.backgroundOffset.y);
-  texture.needsUpdate = true;
-}
-
-const CustomPixelShader = {
-  uniforms: {
-    tDiffuse: { value: null },
-    resolution: { value: new THREE.Vector2(1, 1) },
-    pixelSize: { value: 6.0 },
-  },
-  vertexShader: `
-    varying vec2 vUv;
-    void main() {
-      vUv = uv;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `,
-  fragmentShader: `
-    uniform sampler2D tDiffuse;
-    uniform vec2 resolution;
-    uniform float pixelSize;
-    varying vec2 vUv;
-    void main() {
-      vec2 dxy = pixelSize / resolution;
-      vec2 coord = dxy * floor(vUv / dxy);
-      gl_FragColor = texture2D(tDiffuse, coord);
-    }
-  `,
-};
 
 export function Viewport({
   graph,
@@ -335,6 +117,11 @@ export function Viewport({
   const showEnvInEditorRef = useRef(showEnvInEditor);
   showEnvInEditorRef.current = showEnvInEditor;
 
+  const onToggleSplitViewRef = useRef(onToggleSplitView);
+  onToggleSplitViewRef.current = onToggleSplitView;
+  const snapSelectedCameraToEditorRef = useRef<() => void>(() => {});
+  const cameraGuideRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       const activeEl = document.activeElement;
@@ -348,7 +135,11 @@ export function Viewport({
 
       if (e.key === "Tab" || e.code === "Tab") {
         e.preventDefault();
-        setShowUiOverlay((prev) => !prev);
+        if (e.shiftKey) {
+          onToggleSplitViewRef.current?.();
+        } else {
+          setShowUiOverlay((prev) => !prev);
+        }
       }
     }
 
@@ -385,6 +176,8 @@ export function Viewport({
   transformModeRef.current = transformMode;
 
   const [isOrthographic, setIsOrthographic] = useState(false);
+  const isOrthographicRef = useRef(isOrthographic);
+  isOrthographicRef.current = isOrthographic;
   const toggleCameraModeRef = useRef<(isOrtho: boolean) => void>(() => {});
 
   useEffect(() => {
@@ -634,107 +427,33 @@ export function Viewport({
 
         if (!attachedGizmoTarget || !onTransformChangeRef.current) return;
 
-        // Only the channel the gizmo is actually dragging gets written, and
-        // only if nothing is wired into that input. Writing all three every
-        // time was the cause of values changing on their own the moment a
-        // handle was touched:
-        //
-        //  - a rotation round-trips through a quaternion, and Euler triples
-        //    are not unique, so a hand-typed (0, 0, 180°) could come back as
-        //    an equivalent but different-looking triple after a *translate*
-        //    drag that never meant to touch rotation at all;
-        //  - `decompose` cannot recover a negative scale (it normalises the
-        //    sign away), so a mirrored object quietly lost its flip;
-        //  - a channel fed by a wire ignores its param — the param is only
-        //    the unconnected fallback — so writing it looked like the drag
-        //    did nothing while silently overwriting the stored fallback with
-        //    whatever the animation happened to be showing that frame.
-        const patch: TransformPatch = {};
-        const mode = transformModeRef.current;
         // Which node id actually owns the params a drag writes into — the
         // upstream Transform/MatrixTransform for "absolute"/"offset", or the
         // object itself for "native" (see transformLookup.ts).
         const targetNodeId =
           attachedGizmoTarget.kind === "native" ? attachedGizmoTarget.objectNodeId : attachedGizmoTarget.transformNodeId;
-        const wired = new Set(
-          graphRef.current.connections.filter((c) => c.toNode === targetNodeId).map((c) => c.toSocket),
-        );
 
-        if (attachedGizmoTarget.kind === "absolute") {
-          // A plain Transform node's location/rotation/scale directly
-          // compose the object's final matrix — the gizmo's own dragged
-          // world pose IS what belongs in its params.
-          if (mode === "translate" && !wired.has("location")) patch.location = object.position.clone();
-          if (mode === "rotate" && !wired.has("rotation")) {
-            const euler = new THREE.Euler().setFromQuaternion(object.quaternion);
-            patch.rotation = new THREE.Vector3(euler.x, euler.y, euler.z);
-          }
-          if (mode === "scale" && !wired.has("scale")) patch.scale = object.scale.clone();
+        // What sits upstream of the pose being solved for: the base an
+        // "offset" delta is applied on top of, or the delta a "native" base
+        // is composed with. Null when nothing is wired, which each node's own
+        // evaluate treats as identity.
+        const upstreamNodeId =
+          attachedGizmoTarget.kind === "offset"
+            ? attachedGizmoTarget.baseSourceNodeId
+            : attachedGizmoTarget.kind === "native"
+              ? attachedGizmoTarget.deltaSourceNodeId
+              : null;
+        const upstreamResult = upstreamNodeId ? latestResults?.get(upstreamNodeId)?.matrix : undefined;
 
-          if (Object.keys(patch).length > 0) {
-            onTransformChangeRef.current(targetNodeId, patch);
-          }
-          return;
-        }
-
-        if (attachedGizmoTarget.kind === "offset") {
-          // A Matrix Transform node's location/rotation/scale are a *local
-          // delta* on top of whatever its own `matrix` input currently
-          // resolves to (final = base * delta, see transform.ts's
-          // MATRIX_TRANSFORM_NODE). Writing the gizmo's absolute world pose
-          // straight in would double-count that base — solving
-          // `delta = inverse(base) * final` is what the offset written back
-          // has to be instead. No base wired in -> identity, matching
-          // MATRIX_TRANSFORM_NODE's own evaluate fallback.
-          const baseResult = attachedGizmoTarget.baseSourceNodeId
-            ? latestResults?.get(attachedGizmoTarget.baseSourceNodeId)?.matrix
-            : undefined;
-          const baseMatrix = baseResult instanceof THREE.Matrix4 ? baseResult : new THREE.Matrix4();
-          const deltaMatrix = baseMatrix.clone().invert().multiply(object.matrix);
-
-          const location = new THREE.Vector3();
-          const quaternion = new THREE.Quaternion();
-          const scale = new THREE.Vector3();
-          deltaMatrix.decompose(location, quaternion, scale);
-
-          if (mode === "translate" && !wired.has("location")) patch.location = location;
-          if (mode === "rotate" && !wired.has("rotation")) {
-            const euler = new THREE.Euler().setFromQuaternion(quaternion);
-            patch.rotation = new THREE.Vector3(euler.x, euler.y, euler.z);
-          }
-          if (mode === "scale" && !wired.has("scale")) patch.scale = scale;
-
-          if (Object.keys(patch).length > 0) {
-            onTransformChangeRef.current(targetNodeId, patch);
-          }
-          return;
-        }
-
-        // "native" — the object's own location/rotation/scale ARE the base;
-        // whatever's wired into its `matrix` input is the delta (see
-        // composeNativeMatrix in transform.ts: final = base * delta). The
-        // inverse of "offset"'s problem: there the base is fixed and delta
-        // gets solved for; here the delta is fixed (from
-        // deltaSourceNodeId's current result) and the base does —
-        // `base = final * delta⁻¹`. No delta wired in -> identity, matching
-        // composeNativeMatrix's own fallback.
-        const deltaResult = attachedGizmoTarget.deltaSourceNodeId
-          ? latestResults?.get(attachedGizmoTarget.deltaSourceNodeId)?.matrix
-          : undefined;
-        const deltaMatrix = deltaResult instanceof THREE.Matrix4 ? deltaResult : new THREE.Matrix4();
-        const baseMatrix = object.matrix.clone().multiply(deltaMatrix.clone().invert());
-
-        const location = new THREE.Vector3();
-        const quaternion = new THREE.Quaternion();
-        const scale = new THREE.Vector3();
-        baseMatrix.decompose(location, quaternion, scale);
-
-        if (mode === "translate" && !wired.has("location")) patch.location = location;
-        if (mode === "rotate" && !wired.has("rotation")) {
-          const euler = new THREE.Euler().setFromQuaternion(quaternion);
-          patch.rotation = new THREE.Vector3(euler.x, euler.y, euler.z);
-        }
-        if (mode === "scale" && !wired.has("scale")) patch.scale = scale;
+        const patch = computeGizmoWriteback({
+          target: attachedGizmoTarget,
+          mode: transformModeRef.current,
+          object,
+          upstreamMatrix: upstreamResult instanceof THREE.Matrix4 ? upstreamResult : null,
+          wiredSockets: new Set(
+            graphRef.current.connections.filter((c) => c.toNode === targetNodeId).map((c) => c.toSocket),
+          ),
+        });
 
         if (Object.keys(patch).length > 0) {
           onTransformChangeRef.current(targetNodeId, patch);
@@ -833,82 +552,35 @@ export function Viewport({
     let currentObject: THREE.Object3D | null = null;
     const activeLights = new Map<string, THREE.Light>();
     const activeLightHelpers = new Map<string, THREE.Object3D>();
-    const passCache = new Map<string, { type: string; pass: any }>();
+    // Everything this viewport puts into a scene goes through one of these,
+    // so nothing can be added without also being removable — see
+    // sceneMembership.ts. `sceneContents` holds the render output plus any
+    // standalone Empty anchors; `editorHelpers` holds the editor-only camera
+    // helpers (never shown in the output window).
+    const sceneContents = createSceneMembership(scene);
+    const editorHelpers = createSceneMembership(editorUiScene);
 
-    function disposePass(entry: { type: string; pass: any }) {
-      try {
-        if (typeof entry.pass.dispose === "function") {
-          entry.pass.dispose();
-        } else if (entry.pass.material && typeof entry.pass.material.dispose === "function") {
-          entry.pass.material.dispose();
-        }
-      } catch {
-        // Safe disposal fallback
-      }
-    }
+    // A parking scene for gizmo targets that belong to no scene at all.
+    //
+    // TransformControls requires its attached object to be in a scene graph:
+    // its pointerdown path calls `object.parent.updateMatrixWorld()` with no
+    // null check, and its own updateMatrixWorld() logs "The attached 3D
+    // object must be a part of the scene graph." A node whose geometry is
+    // consumed by a *cloning* node (Array, Look At — see array.ts, which
+    // clones its source rather than reparenting it) is exactly that case:
+    // the clones are what get drawn, and the node's own object sits
+    // parentless. Attaching to it gave a gizmo that drew but threw on the
+    // first click, so it read as visible but dead.
+    //
+    // This scene is never rendered — it exists only to give such an object a
+    // valid parent and a matrixWorld that tracks its matrix, without drawing
+    // it a second time (which is the duplicate-render bug in the other
+    // direction) and without touching `visible`, which the cloning nodes
+    // copy onto their clones.
+    const gizmoAnchorScene = new THREE.Scene();
+    const postChain = createPostProcessChain({ renderer, composer, renderPass, outputPass, motionBlurEffect });
 
-    // Bakes a blurred stand-in for a flat background image. three.js's own
-    // scene.backgroundBlurriness only kicks in for a CubeTexture or an
-    // EquirectangularReflectionMapping texture (gated inside
-    // WebGLBackground.js) — a plain flat Texture never gets that PMREM
-    // treatment, so "Bg Blur" silently did nothing for a fixed background
-    // image. This reproduces the same downsample-then-blur trick
-    // UnrealBloomPass already uses elsewhere in this file: render into a
-    // target far smaller than the viewport (the smaller the target, the
-    // stronger a fixed 9-tap kernel reads once it's stretched back up to
-    // fill the screen), ping-pong a couple of horizontal/vertical passes,
-    // and hand back that small blurred target's texture as the background.
-    // Cached and only re-baked when the source image or blur amount
-    // actually changes — this is a handful of tiny offscreen draws, not a
-    // per-frame cost. The param's useful range turned out to be [0, 0.01],
-    // not [0, 1] — see the ×100 rescale inside blurredBackgroundImage.
-    const blurQuad = new FullScreenQuad(new THREE.ShaderMaterial(HorizontalBlurShader));
-    const hBlurMaterial = blurQuad.material as THREE.ShaderMaterial;
-    const vBlurMaterial = new THREE.ShaderMaterial(VerticalBlurShader);
-    let blurTargetA: THREE.WebGLRenderTarget | null = null;
-    let blurTargetB: THREE.WebGLRenderTarget | null = null;
-    let bakedBlur: { source: THREE.Texture; strength: number; texture: THREE.Texture } | null = null;
-
-    function blurredBackgroundImage(source: THREE.Texture, blurriness: number): THREE.Texture {
-      if (blurriness <= 0) return source;
-      // The full-strength blur (what used to sit at blurriness=1) was already
-      // maxed out well before the slider got anywhere near there — ×100 so the
-      // whole useful range lives in [0, 0.01], matching what actually reads as
-      // "just barely too strong" through "as blurry as anyone wants" in practice.
-      const strength = Math.min(1, blurriness * 100);
-      if (bakedBlur && bakedBlur.source === source && bakedBlur.strength === strength) return bakedBlur.texture;
-
-      // Smaller target = cheaper AND blurrier — same lever bloom already pulls.
-      const size = Math.max(8, Math.round(256 * (1 - strength) + 8));
-      if (!blurTargetA || blurTargetA.width !== size) {
-        blurTargetA?.dispose();
-        blurTargetB?.dispose();
-        blurTargetA = new THREE.WebGLRenderTarget(size, size, { generateMipmaps: false });
-        blurTargetB = new THREE.WebGLRenderTarget(size, size, { generateMipmaps: false });
-      }
-
-      const iterations = 1 + Math.round(strength * 3);
-      let readTexture = source;
-      for (let i = 0; i < iterations; i++) {
-        hBlurMaterial.uniforms.tDiffuse.value = readTexture;
-        hBlurMaterial.uniforms.h.value = 1 / size;
-        renderer.setRenderTarget(blurTargetA);
-        blurQuad.material = hBlurMaterial;
-        blurQuad.render(renderer);
-
-        vBlurMaterial.uniforms.tDiffuse.value = blurTargetA!.texture;
-        vBlurMaterial.uniforms.v.value = 1 / size;
-        renderer.setRenderTarget(blurTargetB);
-        blurQuad.material = vBlurMaterial;
-        blurQuad.render(renderer);
-
-        readTexture = blurTargetB!.texture;
-      }
-      renderer.setRenderTarget(null);
-
-      bakedBlur = { source, strength, texture: readTexture };
-      return readTexture;
-    }
+    const backgroundBlur = createBackgroundBlur(renderer);
 
     let clock: ClockState = createClock(epochMs ?? Date.now());
     let frameId = 0;
@@ -921,6 +593,39 @@ export function Viewport({
     resetSimulationRef.current = () => {
       clock = createClock(Date.now());
       resetAllParticleSimulations();
+    };
+
+    snapSelectedCameraToEditorRef.current = () => {
+      if (!selectedNodeIdRef.current || !onTransformChangeRef.current) return;
+      const targetNode = graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current);
+      if (!targetNode || targetNode.type !== CAMERA_NODE.type) return;
+
+      activeCamera.updateMatrixWorld(true);
+      const mat = activeCamera.matrixWorld;
+      const pos = new THREE.Vector3();
+      const quat = new THREE.Quaternion();
+      const scale = new THREE.Vector3();
+      mat.decompose(pos, quat, scale);
+
+      const euler = new THREE.Euler().setFromQuaternion(quat, "YXZ");
+
+      const location = new THREE.Vector3(
+        Math.round(pos.x * 100) / 100,
+        Math.round(pos.y * 100) / 100,
+        Math.round(pos.z * 100) / 100,
+      );
+      const rotation = new THREE.Vector3(
+        euler.x,
+        euler.y,
+        euler.z,
+      );
+
+      const fov = activeCamera instanceof THREE.PerspectiveCamera ? Math.round(activeCamera.fov) : undefined;
+
+      const patch: Record<string, unknown> = { location, rotation };
+      if (fov !== undefined) patch.fov = fov;
+
+      onTransformChangeRef.current(selectedNodeIdRef.current, patch);
     };
 
     // A copied-in projection matrix stays copied in until something rebuilds
@@ -1044,18 +749,19 @@ export function Viewport({
         }
       }
 
-      // Sync Camera 3D Helpers in editorUiScene (editor view only)
+      // Sync Camera 3D Helpers in editorUiScene (editor view only). Routed
+      // through editorHelpers so a camera node that's been deleted — or a
+      // whole graph replaced by "New" — takes its helper with it; these used
+      // to be added and never removed, leaving the last camera floating in
+      // an otherwise empty scene.
       const activeCameraHelpers = new Map<string, THREE.Object3D>();
       for (const [nodeId, res] of results.entries()) {
         const node = graphRef.current.nodes.find((n) => n.id === nodeId);
         if (node?.type === CAMERA_NODE.type && res.geometry instanceof THREE.Object3D) {
-          const camGroup = res.geometry as THREE.Object3D;
-          activeCameraHelpers.set(nodeId, camGroup);
-          if (!outputMode && !editorUiScene.children.includes(camGroup)) {
-            editorUiScene.add(camGroup);
-          }
+          activeCameraHelpers.set(nodeId, res.geometry as THREE.Object3D);
         }
       }
+      editorHelpers.sync(outputMode ? new Map() : activeCameraHelpers);
 
       // A Camera node drives the camera directly from its Location/Rotation/
       // FOV (or its DLT solve) — but only in the *output* window. That is
@@ -1078,6 +784,12 @@ export function Viewport({
         activeCameraResult = results.get(cameraNodes[0].id);
       }
       const cameraResult = activeCameraResult;
+      if (cameraResult && typeof cameraResult.projectionType === "string") {
+        const wantsOrtho = cameraResult.projectionType === "orthographic";
+        if (wantsOrtho !== isOrthographicRef.current) {
+          setIsOrthographic(wantsOrtho);
+        }
+      }
       const calibrationMatrix =
         outputMode && cameraResult?.matrix instanceof THREE.Matrix4 ? cameraResult.matrix as THREE.Matrix4 : null;
 
@@ -1143,15 +855,16 @@ export function Viewport({
         gizmo.gizmoCamera.lookAt(0, 0, 0);
       }
 
-      let output = results.get(renderNodeIdRef.current)?.geometry;
-      if (!output) {
-        for (const res of results.values()) {
-          if (res && res.geometry instanceof THREE.Object3D) {
-            output = res.geometry;
-            break;
-          }
-        }
-      }
+      // Strictly what the Render node resolves to — no "else grab whichever
+      // node happened to produce geometry first" fallback. That fallback
+      // made unwiring a node from Render look like it did nothing: the node
+      // simply got re-picked as the scene output on the very next frame, so
+      // its object stayed on screen (and, being an arbitrary pick over a
+      // Map, which node won was down to evaluation order). No Render node,
+      // or nothing wired into it, now means an empty view — the same thing
+      // every other node-graph editor does, and the only reading that lets
+      // the wire actually mean something.
+      const output = results.get(renderNodeIdRef.current)?.geometry;
       const rawOutput = output instanceof THREE.Object3D ? output : null;
 
       if (outputMode) {
@@ -1176,43 +889,60 @@ export function Viewport({
         // deep-copies the hierarchy but shares geometry/material by
         // reference — cheap, and nothing GPU-owned needs disposing when the
         // old clone is dropped.
-        const clone = rawOutput?.clone(true) ?? null;
-        if (currentObject) scene.remove(currentObject);
-        if (clone) scene.add(clone);
-        currentObject = clone;
-      } else if (rawOutput !== currentObject) {
-        if (currentObject) scene.remove(currentObject);
-        if (rawOutput) scene.add(rawOutput);
+        currentObject = rawOutput?.clone(true) ?? null;
+      } else {
         currentObject = rawOutput;
       }
 
-      // Sync standalone object geometries (such as Empty objects) into scene so they render and raycast in 3D
-      for (const [, res] of results.entries()) {
-        if (res && res.geometry instanceof THREE.Object3D) {
-          const geomObj = res.geometry as THREE.Object3D;
-          if (!geomObj.parent && geomObj !== currentObject) {
-            scene.add(geomObj);
-          }
-        }
+      // One reconciliation for everything this viewport shows: the render
+      // output, plus every Empty anchor.
+      //
+      // Empties exist unconditionally — they are the scene's reference
+      // frames, not its content. Their whole job is to be positioned and
+      // then drive other nodes through their Matrix output, so requiring a
+      // path to Render before one is visible got the dependency backwards:
+      // the anchor would vanish exactly when it was being used as an anchor.
+      // The only case one is left out is when it is already inside the
+      // rendered tree, where adding it again would tear it out of the group
+      // that legitimately holds it (three.js allows a single parent).
+      //
+      // Every *other* unconnected node (a Box just dropped on the canvas, an
+      // Array with nothing plugged in) still stays invisible until it's
+      // actually wired up; sweeping in any orphaned THREE.Object3D was an
+      // earlier bug here, and it's what let a stray downstream clone (Array
+      // and Look At clone their input rather than reparenting it) render as
+      // a duplicate.
+      const desiredContents = new Map<string, THREE.Object3D>();
+      if (currentObject) desiredContents.set(RENDER_OUTPUT_KEY, currentObject);
+      for (const [nodeId, res] of results.entries()) {
+        const node = graphRef.current.nodes.find((n) => n.id === nodeId);
+        if (node?.type !== OBJECT_EMPTY_NODE.type) continue;
+        if (!(res?.geometry instanceof THREE.Object3D)) continue;
+        const geomObj = res.geometry as THREE.Object3D;
+        if (currentObject && isSelfOrDescendantOf(geomObj, currentObject)) continue;
+        desiredContents.set(nodeId, geomObj);
       }
+      sceneContents.sync(desiredContents);
 
       // Move/rotate/scale gizmo: attach to selected mesh, Empty, or Light
       if (transformControls && !transformControls.dragging) {
         let targetObject: THREE.Object3D | null = null;
         if (selectedNodeIdRef.current) {
-          if (currentObject) {
-            currentObject.traverse((obj) => {
-              if (!targetObject && obj.userData.nodeId === selectedNodeIdRef.current) targetObject = obj;
-            });
-          }
-          if (!targetObject) {
-            scene.traverse((obj) => {
-              if (!targetObject && obj.userData.nodeId === selectedNodeIdRef.current) targetObject = obj;
-            });
-          }
-          if (!targetObject) {
-            const res = results.get(selectedNodeIdRef.current);
-            if (res?.geometry instanceof THREE.Object3D) targetObject = res.geometry;
+          // The selected node's own result first — it is the authoritative
+          // answer to "which object does this node drive", and the only one
+          // that can't be a copy. The scene traversals below match on
+          // `userData.nodeId`, which Object3D.clone() duplicates along with
+          // everything else in userData: an Array's 16 copies of a Box, or a
+          // Look At wrapper's clone of its input, each carry the *source*
+          // node's id. Searching the scene first therefore latched the gizmo
+          // onto whichever clone happened to be reached first, so dragging
+          // moved a copy that the graph overwrote on the next frame while
+          // the params were written back to a node whose real object never
+          // moved. They stay as fallbacks for nodes with no geometry output
+          // of their own (lights, camera helpers).
+          const ownResult = results.get(selectedNodeIdRef.current);
+          if (ownResult?.geometry instanceof THREE.Object3D) {
+            targetObject = ownResult.geometry;
           }
           if (!targetObject) {
             const light = activeLights.get(selectedNodeIdRef.current);
@@ -1222,11 +952,28 @@ export function Viewport({
             const camHelper = activeCameraHelpers.get(selectedNodeIdRef.current);
             if (camHelper) targetObject = camHelper;
           }
+          if (!targetObject) {
+            scene.traverse((obj) => {
+              if (!targetObject && obj.userData.nodeId === selectedNodeIdRef.current) targetObject = obj;
+            });
+          }
         }
         const gizmoTarget = targetObject ? resolveGizmoTarget(graphRef.current, selectedNodeIdRef.current!) : null;
 
         if (targetObject && gizmoTarget) {
-          if (attachedObjectNodeId !== selectedNodeIdRef.current) {
+          // Give a parentless target a home before attaching — see
+          // gizmoAnchorScene's own comment for why TransformControls cannot
+          // work with one that has no parent.
+          if (!targetObject.parent) {
+            gizmoAnchorScene.add(targetObject);
+          }
+
+          // Re-attach when the *object* changes too, not just the selection:
+          // a node that rebuilds its mesh (Text on an edit, Line Graph on a
+          // new point count) hands back a different instance under the same
+          // node id, and the gizmo would otherwise stay bound to the
+          // discarded one and appear to drag nothing.
+          if (attachedObjectNodeId !== selectedNodeIdRef.current || transformControls.object !== targetObject) {
             transformControls.attach(targetObject);
             attachedObjectNodeId = selectedNodeIdRef.current;
           }
@@ -1251,64 +998,44 @@ export function Viewport({
           if (!targetObject.matrixAutoUpdate) {
             targetObject.matrix.decompose(targetObject.position, targetObject.quaternion, targetObject.scale);
           }
+
+          // Nothing traverses the parking scene during rendering, so its
+          // contents' matrixWorld would otherwise stay at whatever it was
+          // when the object was last drawn — or identity if it never was.
+          // TransformControls does all of its drag math in world space, so a
+          // stale one is what makes a drag come out wrong rather than
+          // simply not start. (`matrix.copy()` never sets
+          // matrixWorldNeedsUpdate, so this has to be forced.)
+          if (targetObject.parent === gizmoAnchorScene) {
+            gizmoAnchorScene.updateMatrixWorld(true);
+          }
         } else if (attachedObjectNodeId !== null) {
           transformControls.detach();
           attachedObjectNodeId = null;
           attachedGizmoTarget = null;
         }
+
+        // Release anything left parked once it is no longer the gizmo's
+        // target — the parking scene should only ever hold the object being
+        // edited right now. (An object that goes back to being drawn gets
+        // reparented by scene.add() anyway; this just keeps the scene from
+        // accumulating every object ever selected.)
+        for (const parked of [...gizmoAnchorScene.children]) {
+          if (parked !== targetObject) gizmoAnchorScene.remove(parked);
+        }
       }
 
       // Sync Environment & HDRI / Background Color
       const renderResult = results.get(renderNodeIdRef.current);
-      let activeEnv: EnvironmentData | null = null;
-      if (renderResult?.environment && typeof renderResult.environment === "object") {
-        activeEnv = renderResult.environment as EnvironmentData;
-      } else {
-        for (const res of results.values()) {
-          if (res.environment && typeof res.environment === "object") {
-            activeEnv = res.environment as EnvironmentData;
-            break;
-          }
-        }
-      }
-
+      const activeEnv = resolveActiveEnvironment(results, renderNodeIdRef.current);
       const applyEnv = outputMode || showEnvInEditorRef.current;
-
-      if (activeEnv && applyEnv) {
-        // scene.environment (reflections/lighting) is driven by the HDRI
-        // texture regardless of what's actually drawn behind the scene —
-        // a flat background image only replaces what's *visible*, same as
-        // the flat color it's standing in for.
-        scene.environment = activeEnv.texture ?? null;
-
-        if (activeEnv.showBackground && activeEnv.backgroundImage) {
-          // Blur the raw source first (its own blur bake ignores any
-          // offset/repeat/rotation, see blurredBackgroundImage's own
-          // comment), THEN apply the fit/pan/rotate transform to whichever
-          // texture — sharp or blurred — comes out of that.
-          const bgTexture = blurredBackgroundImage(activeEnv.backgroundImage, activeEnv.blurriness);
-          applyBackgroundImageTransform(bgTexture, activeEnv, host.clientWidth, host.clientHeight);
-          bgScene.background = bgTexture;
-          (bgScene as any).backgroundBlurriness = 0;
-          (scene as any).backgroundBlurriness = 0;
-        } else if (activeEnv.showBackground && activeEnv.texture) {
-          bgScene.background = activeEnv.texture;
-          (bgScene as any).backgroundBlurriness = activeEnv.blurriness;
-          (scene as any).backgroundBlurriness = activeEnv.blurriness;
-        } else {
-          bgScene.background = activeEnv.color;
-          (bgScene as any).backgroundBlurriness = 0;
-          (scene as any).backgroundBlurriness = 0;
-        }
-        if ("environmentIntensity" in scene) {
-          (scene as any).environmentIntensity = activeEnv.intensity;
-        }
-      } else {
-        scene.environment = null;
-        bgScene.background = viewportBackground;
-        (bgScene as any).backgroundBlurriness = 0;
-        (scene as any).backgroundBlurriness = 0;
-      }
+      applyEnvironment(
+        applyEnv ? activeEnv : null,
+        { scene, bgScene, fallbackBackground: viewportBackground },
+        backgroundBlur,
+        host.clientWidth,
+        host.clientHeight,
+      );
 
       // Toggle helper visibility (AxesHelper / Empty crosshairs / Light target helpers)
       scene.traverse((obj) => {
@@ -1353,6 +1080,40 @@ export function Viewport({
         }
       }
 
+      // Passe-partout guide: the editor's own camera keeps this pane's live
+      // aspect ratio (free orbit, unconstrained by any Camera node — see the
+      // comment above the calibrationMatrix branch), but "Aligner Caméra"
+      // captures only the vertical FOV, which reproduces the wrong framing
+      // whenever the output's aspect (targetAspect) differs from this pane's.
+      // Drawing the target-aspect crop as a guide, rather than actually
+      // letterboxing the editor's render, lets you compose within the
+      // correct bounds before hitting Align without losing free navigation.
+      const guideEl = cameraGuideRef.current;
+      if (guideEl) {
+        const selectedIsCamera =
+          !!selectedNodeIdRef.current &&
+          graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current)?.type === CAMERA_NODE.type;
+        if (!outputMode && selectedIsCamera && targetAspect && targetAspect > 0) {
+          const containerAspect = width / height;
+          let guideWidth = width;
+          let guideHeight = height;
+          if (containerAspect > targetAspect) {
+            guideHeight = height;
+            guideWidth = height * targetAspect;
+          } else {
+            guideWidth = width;
+            guideHeight = width / targetAspect;
+          }
+          guideEl.style.display = "block";
+          guideEl.style.width = `${guideWidth}px`;
+          guideEl.style.height = `${guideHeight}px`;
+          guideEl.style.left = `${(width - guideWidth) / 2}px`;
+          guideEl.style.top = `${(height - guideHeight) / 2}px`;
+        } else {
+          guideEl.style.display = "none";
+        }
+      }
+
       renderer.setViewport(viewX, viewY, viewWidth, viewHeight);
       renderer.setScissor(viewX, viewY, viewWidth, viewHeight);
       renderer.setScissorTest(outputMode && targetAspect !== null);
@@ -1367,189 +1128,21 @@ export function Viewport({
       // even with no postprocess node connected at all.
       const motionBlur = typeof renderResult?.motionBlur === "number" ? renderResult.motionBlur : 0;
 
-      if (postConfigs.length > 0 || motionBlur > 0) {
+      if (postChain.isActive(postConfigs, motionBlur)) {
         scene.background = bgScene.background;
-
-        if (motionBlur > 0) {
-          motionBlurEffect.renderVelocity(renderer, scene, camera);
-        }
-
-        const activeNodeIds = new Set<string>();
-
-        // Rebuild composer pass order
-        composer.passes.length = 0;
-        composer.addPass(renderPass);
-        renderPass.clearColor = new THREE.Color(0x000000);
-        renderPass.clearAlpha = 1;
-        renderPass.clear = true;
-        renderPass.clearDepth = true;
-
-        postConfigs.forEach((cfg) => {
-          if (!cfg || !cfg.type || !cfg.nodeId) return;
-          activeNodeIds.add(cfg.nodeId);
-
-          let cached = passCache.get(cfg.nodeId);
-
-          // If pass type changed or doesn't exist yet, instantiate it once
-          if (!cached || cached.type !== cfg.type) {
-            if (cached) disposePass(cached);
-
-            let pass: any = null;
-            switch (cfg.type) {
-              case "bloom":
-                pass = new UnrealBloomPass(new THREE.Vector2(width, height), 1.5, 0.4, 0.1);
-                break;
-              case "vignette":
-                pass = new ShaderPass(VignetteShader);
-                break;
-              case "rgb-shift":
-                pass = new ShaderPass(RGBShiftShader);
-                break;
-              case "dof":
-                pass = new BokehPass(scene, camera, { focus: 10.0, aperture: 0.025, maxblur: 0.01 });
-                break;
-              case "outline":
-                pass = new OutlinePass(new THREE.Vector2(width, height), scene, camera);
-                break;
-              case "film-grain":
-                pass = new FilmPass(0.35, false);
-                break;
-              case "glitch":
-                pass = new GlitchPass();
-                break;
-              case "pixelate":
-                pass = new ShaderPass(CustomPixelShader);
-                break;
-              case "kaleidoscope":
-                pass = new ShaderPass(KaleidoShader);
-                break;
-              case "color-correction":
-                pass = new ShaderPass(ColorCorrectionShader);
-                break;
-              case "antialias":
-                pass = new FXAAPass();
-                break;
-            }
-
-            if (pass) {
-              cached = { type: cfg.type, pass };
-              passCache.set(cfg.nodeId, cached);
-            }
-          }
-
-          if (!cached) return;
-          const pass = cached.pass;
-
-          // Update pass parameters dynamically on the persistent pass instance
-          switch (cfg.type) {
-            case "bloom": {
-              pass.strength = Number(cfg.params.strength) ?? 1.5;
-              pass.radius = Number(cfg.params.radius) ?? 0.4;
-              pass.threshold = Number(cfg.params.threshold) ?? 0.85;
-              if (pass.resolution) pass.resolution.set(width, height);
-              break;
-            }
-            case "vignette": {
-              if (pass.uniforms["offset"]) pass.uniforms["offset"].value = Number(cfg.params.offset) ?? 1.0;
-              if (pass.uniforms["darkness"]) pass.uniforms["darkness"].value = Number(cfg.params.darkness) ?? 1.5;
-              break;
-            }
-            case "rgb-shift": {
-              if (pass.uniforms["amount"]) pass.uniforms["amount"].value = Number(cfg.params.amount) ?? 0.005;
-              if (pass.uniforms["angle"]) pass.uniforms["angle"].value = Number(cfg.params.angle) ?? 0;
-              break;
-            }
-            case "dof": {
-              if (pass.uniforms["focus"]) pass.uniforms["focus"].value = Math.max(0.1, Number(cfg.params.focus) ?? 10.0);
-              if (pass.uniforms["aperture"]) pass.uniforms["aperture"].value = Math.max(0, Number(cfg.params.aperture) ?? 0.025);
-              if (pass.uniforms["maxblur"]) pass.uniforms["maxblur"].value = Math.max(0, Number(cfg.params.maxblur) ?? 0.01);
-              break;
-            }
-            case "outline": {
-              const edgeColor = cfg.params.edgeColor instanceof THREE.Color ? cfg.params.edgeColor : new THREE.Color(0xffffff);
-              pass.edgeStrength = Number(cfg.params.edgeStrength) ?? 3.0;
-              pass.edgeGlow = 0.5;
-              pass.edgeThickness = Number(cfg.params.edgeThickness) ?? 1.0;
-              pass.visibleEdgeColor.copy(edgeColor);
-              if (currentObject) {
-                const meshes: THREE.Mesh[] = [];
-                currentObject.traverse((c) => {
-                  if (c instanceof THREE.Mesh) meshes.push(c);
-                });
-                pass.selectedObjects = meshes;
-              }
-              break;
-            }
-            case "film-grain": {
-              if (pass.uniforms["nIntensity"]) pass.uniforms["nIntensity"].value = Number(cfg.params.noiseIntensity) ?? 0.35;
-              if (pass.uniforms["grayscale"]) pass.uniforms["grayscale"].value = Boolean(cfg.params.grayscale) ? 1 : 0;
-              break;
-            }
-            case "glitch": {
-              const active = Boolean(cfg.params.active ?? true);
-              pass.enabled = active;
-              pass.goWild = Boolean(cfg.params.wild);
-              break;
-            }
-            case "pixelate": {
-              if (pass.uniforms["resolution"]) pass.uniforms["resolution"].value.set(width, height);
-              if (pass.uniforms["pixelSize"]) pass.uniforms["pixelSize"].value = Math.max(1, Number(cfg.params.pixelSize) || 6);
-              break;
-            }
-            case "kaleidoscope": {
-              if (pass.uniforms["sides"]) pass.uniforms["sides"].value = Math.max(1, Number(cfg.params.sides) || 6);
-              if (pass.uniforms["angle"]) pass.uniforms["angle"].value = Number(cfg.params.angle) || 0;
-              break;
-            }
-            case "color-correction": {
-              const brightness = Number(cfg.params.brightness) || 0;
-              const contrast = Number(cfg.params.contrast) || 1;
-              const saturation = Number(cfg.params.saturation) || 1;
-              if (pass.uniforms["powRGB"]) pass.uniforms["powRGB"].value.set(contrast, contrast, contrast);
-              if (pass.uniforms["mulRGB"]) pass.uniforms["mulRGB"].value.set(saturation, saturation, saturation);
-              if (pass.uniforms["addRGB"]) pass.uniforms["addRGB"].value.set(brightness, brightness, brightness);
-              break;
-            }
-            case "antialias": {
-              pass.enabled = Boolean(cfg.params.enabled ?? true);
-              if (pass.material?.uniforms["resolution"]) {
-                pass.material.uniforms["resolution"].value.set(
-                  1 / (width * renderer.getPixelRatio()),
-                  1 / (height * renderer.getPixelRatio())
-                );
-              }
-              break;
-            }
-          }
-
-          composer.addPass(pass);
+        postChain.render({
+          scene,
+          camera,
+          configs: postConfigs,
+          motionBlur,
+          width,
+          height,
+          outlineTarget: currentObject,
         });
-
-        // Appended last, after every postprocess effect: the smear should be
-        // of the finished frame (bloom, grading and all), not of a raw one
-        // that later passes would then re-process.
-        if (motionBlur > 0) {
-          motionBlurEffect.setIntensity(motionBlur);
-          composer.addPass(motionBlurEffect.pass);
-        }
-
-        composer.addPass(outputPass);
-
-        // Dispose pass instances for removed nodes
-        for (const [nodeId, entry] of passCache.entries()) {
-          if (!activeNodeIds.has(nodeId)) {
-            disposePass(entry);
-            passCache.delete(nodeId);
-          }
-        }
-
-        composer.render();
       } else {
-        // Clear stale pass instances if postprocessing is disconnected
-        if (passCache.size > 0) {
-          passCache.forEach((entry) => disposePass(entry));
-          passCache.clear();
-        }
+        // Nothing in the chain this frame — release the passes rather than
+        // holding their render targets for a graph that no longer wants them.
+        postChain.dispose();
 
         scene.background = bgScene.background;
         (scene as any).backgroundBlurriness = (bgScene as any).backgroundBlurriness ?? 0;
@@ -1592,15 +1185,15 @@ export function Viewport({
       }
       transformControls?.dispose();
       controls.dispose();
-      passCache.forEach((entry) => disposePass(entry));
-      passCache.clear();
+      // These objects are cached per node id at module scope and outlive
+      // this viewport (see nodeCaches.ts) — hand them back rather than
+      // leaving them parented to a scene that's about to be thrown away.
+      sceneContents.clear();
+      editorHelpers.clear();
+      postChain.dispose();
       viewportBackground.dispose();
       motionBlurEffect.dispose();
-      blurQuad.dispose();
-      hBlurMaterial.dispose();
-      vBlurMaterial.dispose();
-      blurTargetA?.dispose();
-      blurTargetB?.dispose();
+      backgroundBlur.dispose();
       renderer.dispose();
       if (host.contains(renderer.domElement)) {
         host.removeChild(renderer.domElement);
@@ -1610,18 +1203,43 @@ export function Viewport({
 
   return (
     <div className="viewport-container" ref={hostRef}>
+      {/* Passe-partout guide: target-output-aspect crop, shown while a Camera
+          node is selected so "Aligner Caméra" reproduces what's actually
+          framed — see the comment in tick() next to cameraGuideRef. */}
+      {!outputMode && <div className="viewport-camera-guide" ref={cameraGuideRef} />}
       {/* Top-Left Viewport HUD & Controls — editor-only, never shown in the output window */}
       {!outputMode && (
         <div className="viewport-hud">
+          {selectedNodeId &&
+            graph.nodes.find((n) => n.id === selectedNodeId)?.type === CAMERA_NODE.type && (
+              <button
+                type="button"
+                className="viewport-hud-button viewport-hud-button-active"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#38bdf8",
+                  backgroundColor: "rgba(56, 189, 248, 0.15)",
+                  borderColor: "#38bdf8",
+                }}
+                onClick={() => snapSelectedCameraToEditorRef.current?.()}
+                title="Align selected camera to 3D editor view"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                  <circle cx="12" cy="13" r="4" />
+                </svg>
+              </button>
+            )}
           <button
             type="button"
             className={`viewport-hud-button ${isOrthographic ? "viewport-hud-button-active" : ""}`}
             style={{
               display: "inline-flex",
               alignItems: "center",
-              gap: "6px",
+              justifyContent: "center",
               color: isOrthographic ? "#38bdf8" : "#cbd5e1",
-              fontWeight: 600,
             }}
             onClick={() => setIsOrthographic((prev) => !prev)}
             title={
@@ -1630,7 +1248,7 @@ export function Viewport({
                 : "Perspective View (click to switch to Orthographic)"
             }
           >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               {isOrthographic ? (
                 <>
                   <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -1644,19 +1262,30 @@ export function Viewport({
                 </>
               )}
             </svg>
-            {isOrthographic ? "Ortho" : "Persp"}
           </button>
           <button
             type="button"
             className={`viewport-hud-button ${showEnvInEditor ? "viewport-hud-button-active" : ""}`}
             style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
               color: showEnvInEditor ? "#38bdf8" : "#cbd5e1",
-              fontWeight: 600,
             }}
             onClick={() => setShowEnvInEditor((prev) => !prev)}
-            title="Toggle Environment (HDRI/Background) in Editor Viewport"
+            title="Toggle Environment (HDRI / Background)"
           >
-            Env
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="5" />
+              <line x1="12" y1="1" x2="12" y2="3" />
+              <line x1="12" y1="21" x2="12" y2="23" />
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+              <line x1="1" y1="12" x2="3" y2="12" />
+              <line x1="21" y1="12" x2="23" y2="12" />
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+            </svg>
           </button>
           <div className="viewport-hud-legend">
             {(
@@ -1674,7 +1303,6 @@ export function Viewport({
                 onClick={() => {
                   const sign = axisSideRef.current[axis];
                   setAxisViewRef.current(axis, sign);
-                  // Flip for next time, so the same button walks both sides.
                   axisSideRef.current[axis] = (sign === 1 ? -1 : 1) as 1 | -1;
                 }}
               >
@@ -1683,11 +1311,16 @@ export function Viewport({
             ))}
           </div>
           <button
+            type="button"
             className="viewport-hud-button"
+            style={{ display: "inline-flex", alignItems: "center", justifyContent: "center" }}
             onClick={() => resetCameraRef.current()}
-            title="Reset 3D Camera"
+            title="Reset 3D Camera view"
           >
-            Reset Cam
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+              <path d="M3 3v5h5" />
+            </svg>
           </button>
           {onToggleSplitView && (
             <button
@@ -1696,14 +1329,16 @@ export function Viewport({
               style={{
                 display: "inline-flex",
                 alignItems: "center",
-                gap: "6px",
+                justifyContent: "center",
                 color: isSplitView ? "#38bdf8" : "#cbd5e1",
-                fontWeight: 600,
               }}
               onClick={onToggleSplitView}
-              title={isSplitView ? "Close Split View" : "Open Split View"}
+              title={isSplitView ? "Close Split View (Shift+Tab)" : "Open Split View (Shift+Tab)"}
             >
-              {isSplitView ? "Single View" : "Split View"}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <line x1="12" y1="3" x2="12" y2="21" />
+              </svg>
             </button>
           )}
           {onSelectNode && (
@@ -1711,13 +1346,42 @@ export function Viewport({
               {(["translate", "rotate", "scale"] as const).map((mode) => (
                 <button
                   key={mode}
+                  type="button"
                   className={
                     "viewport-hud-button" + (transformMode === mode ? " viewport-hud-button-active" : "")
                   }
+                  style={{ display: "inline-flex", alignItems: "center", justifyContent: "center" }}
                   onClick={() => setTransformMode(mode)}
-                  title={`Gizmo: ${mode}`}
+                  title={
+                    mode === "translate"
+                      ? "Gizmo: Translate (W)"
+                      : mode === "rotate"
+                      ? "Gizmo: Rotate (E)"
+                      : "Gizmo: Scale (R)"
+                  }
                 >
-                  {mode === "translate" ? "Move" : mode === "rotate" ? "Rotate" : "Scale"}
+                  {mode === "translate" ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="5 9 2 12 5 15" />
+                      <polyline points="9 5 12 2 15 5" />
+                      <polyline points="15 19 12 22 9 19" />
+                      <polyline points="19 9 22 12 19 15" />
+                      <line x1="2" y1="12" x2="22" y2="12" />
+                      <line x1="12" y1="2" x2="12" y2="22" />
+                    </svg>
+                  ) : mode === "rotate" ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21.5 2v6h-6" />
+                      <path d="M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+                    </svg>
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="15 3 21 3 21 9" />
+                      <polyline points="9 21 3 21 3 15" />
+                      <line x1="21" y1="3" x2="14" y2="10" />
+                      <line x1="3" y1="21" x2="10" y2="14" />
+                    </svg>
+                  )}
                 </button>
               ))}
             </div>

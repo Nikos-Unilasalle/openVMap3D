@@ -16,7 +16,25 @@ import { INSPECTOR_NODE } from "./inspector";
 import { AUDIO_PEAK_DETECTOR_NODE, AUDIO_PLAYER_NODE, AUDIO_SPECTRUM_NODE, AUDIO_SYNTH_NODE, MICROPHONE_INPUT_NODE } from "./sound";
 import { RANDOM_LIST_NODE, RANDOM_MATRIX_NODE, RANDOM_VALUE_NODE, RANDOM_VECTOR_NODE } from "./random";
 
+import { FRAME_NODE, TIME_NODE } from "./time";
+
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "test" };
+
+describe("TIME_NODE and FRAME_NODE", () => {
+  test("TIME_NODE outputs seconds and step", () => {
+    const res = TIME_NODE.evaluate({}, TIME_NODE.defaultParams, { time: 2.5, step: 150, nodeId: "t" });
+    expect(res.seconds).toBe(2.5);
+    expect(res.step).toBe(150);
+  });
+
+  test("FRAME_NODE outputs currentFrame or step", () => {
+    const res1 = FRAME_NODE.evaluate({}, FRAME_NODE.defaultParams, { time: 1.0, step: 60, currentFrame: 42, nodeId: "f" });
+    expect(res1.frame).toBe(42);
+
+    const res2 = FRAME_NODE.evaluate({}, FRAME_NODE.defaultParams, { time: 1.0, step: 60, nodeId: "f" });
+    expect(res2.frame).toBe(60);
+  });
+});
 
 describe("VALUE_MATH_NODE", () => {
   test("adds by default", () => {

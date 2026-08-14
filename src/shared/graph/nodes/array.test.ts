@@ -90,3 +90,23 @@ describe("ARRAY_NODE", () => {
     expect(group.children.length).toBe(0);
   });
 });
+
+describe("ARRAY_NODE source ownership", () => {
+  it("clones its source rather than reparenting it, leaving the source parentless", () => {
+    // This is why the viewport needs a parking scene for gizmo targets:
+    // TransformControls requires its attached object to be in a scene graph
+    // (it calls object.parent.updateMatrixWorld() unguarded), but a node
+    // feeding an Array is drawn only through these clones — its own object
+    // belongs to no scene at all. See gizmoAnchorScene in Viewport.tsx.
+    const source = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial());
+
+    const res = ARRAY_NODE.evaluate({ geometry: source }, { mode: "linear", count: 3 }, CTX);
+    const group = res.geometry as THREE.Group;
+
+    expect(group.children.length).toBe(3);
+    expect(source.parent).toBeNull();
+    for (const wrapper of group.children) {
+      expect(wrapper.children[0]).not.toBe(source);
+    }
+  });
+});

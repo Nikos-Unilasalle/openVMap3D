@@ -66,9 +66,17 @@ function fileField(nodeId: string, field: ParamFieldDef & { kind: "file" }, valu
         });
         if (!path || Array.isArray(path)) return;
         const ext = path.split(".").pop()?.toLowerCase() ?? "";
-        const isBinaryImage = ["png", "jpg", "jpeg", "webp", "bmp", "hdr", "exr", "tif", "tiff"].includes(ext);
+        // Images AND audio are binary formats — readTextFile would decode
+        // their bytes as UTF-8, corrupting anything that isn't valid text
+        // (which is most of a compressed image or audio file). Keep this
+        // list in sync with rehydrateFiles.ts's BINARY_EXTENSIONS, which
+        // re-reads these same files from disk on project load.
+        const isBinary = [
+          "png", "jpg", "jpeg", "webp", "bmp", "hdr", "exr", "tif", "tiff",
+          "mp3", "wav", "ogg", "flac", "m4a", "aac",
+        ].includes(ext);
 
-        if (isBinaryImage) {
+        if (isBinary) {
           const bytes = await readFile(path);
           field.onLoaded?.(nodeId, path, bytes);
         } else {

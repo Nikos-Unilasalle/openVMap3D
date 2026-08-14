@@ -3,9 +3,12 @@ import * as THREE from "three";
 import { CAMERA_NODE } from "./shared/graph/nodes/camera";
 import { DEFAULT_REGISTRY } from "./shared/graph/nodes";
 import { findRenderNodeId } from "./shared/graph/nodes/render";
+import { rehydrateFileNodesFromDisk } from "./shared/graph/rehydrateFiles";
 import { cloneGraph } from "./shared/graph/cloneGraph";
+import { disposeNodeCaches } from "./shared/graph/nodeCaches";
 import { rehydrateGraphParams } from "./shared/graph/rehydrateParams";
-import { Connection, Graph, Keyframe, NodeInstance } from "./shared/graph/types";
+import { paramPanelValues } from "./shared/graph/paramPanelValues";
+import { Connection, Graph, Keyframe, KeyframeStore, NodeInstance } from "./shared/graph/types";
 import { broadcastGraph, PreviewCameraPose, startBroadcasting } from "./shared/ipc";
 import { TransformPatch } from "./shared/three/Viewport";
 import { SplitViewport } from "./shared/three/SplitViewport";
@@ -24,6 +27,79 @@ function node(id: string, type: string, position: { x: number; y: number }, para
 
 function edge(fromNode: string, fromSocket: string, toNode: string, toSocket: string): Connection {
   return { id: `${fromNode}.${fromSocket}->${toNode}.${toSocket}`, fromNode, fromSocket, toNode, toSocket };
+}
+
+/**
+ * Keyframe values are stored in the graph and round-trip through the .ovm as
+ * plain JSON, so a THREE.Vector3/Color is kept as its own plain fields —
+ * rehydrateParams.ts turns those back into class instances on load, and
+ * interpolateValue (evaluate.ts) blends either form.
+ */
+function serializeKeyframeValue(value: unknown): unknown {
+  if (value === undefined) return 0;
+  return JSON.parse(JSON.stringify(value));
+}
+
+/**
+ * Shared by onParamChange and onTransformChange (the gizmo drag / "Aligner
+ * Caméra" path — see Viewport.tsx): if `paramId` (or, for a Vector3, any of
+ * its `.x`/`.y`/`.z` components) already has a keyframe track on this node,
+ * writes `value` into that track at `currentFrame` instead of leaving it to
+ * fall back to the base param. Deliberately does NOT create a *new* track —
+ * only a "K" press does that (see ParamPanel) — so editing an unkeyframed
+ * field elsewhere still just edits its static value, same as before any
+ * keyframe exists. Returns `keyframes` unchanged (same reference) if nothing
+ * on this node was actually keyframed, so callers can no-op cheaply.
+ */
+function applyKeyframedParamUpdate(
+  keyframes: KeyframeStore | undefined,
+  nodeId: string,
+  paramId: string,
+  value: unknown,
+  currentFrame: number,
+): KeyframeStore | undefined {
+  const nodeKeys = keyframes?.[nodeId];
+  if (!nodeKeys) return keyframes;
+
+  const updatedNodeKeys = { ...nodeKeys };
+  let modified = false;
+
+  const updateOrInsertKeyframe = (key: string, val: unknown) => {
+    const list = updatedNodeKeys[key] || [];
+    const idx = list.findIndex((k) => k.frame === currentFrame);
+    let newList: Keyframe[];
+    if (idx >= 0) {
+      newList = [...list];
+      newList[idx] = { frame: currentFrame, value: val };
+    } else {
+      newList = [...list, { frame: currentFrame, value: val }].sort((a, b) => a.frame - b.frame);
+    }
+    updatedNodeKeys[key] = newList;
+    modified = true;
+  };
+
+  if (updatedNodeKeys[paramId] && updatedNodeKeys[paramId].length > 0) {
+    // Whole-value track. It only holds a number when the param *is* a
+    // number: a Vector3 or Color track holds the composite, which
+    // interpolateValue (see evaluate.ts) knows how to blend. Coercing
+    // everything through Number() here turned every non-scalar update into
+    // NaN and then stored a literal 0, quietly flattening the track.
+    const valNum = Number(value);
+    const isScalar = typeof value === "number" || (typeof value === "string" && Number.isFinite(valNum));
+    updateOrInsertKeyframe(paramId, isScalar ? valNum : serializeKeyframeValue(value));
+  }
+
+  if (value instanceof THREE.Vector3 || (typeof value === "object" && value !== null && ("x" in value || "y" in value || "z" in value))) {
+    const vec = parseVector3(value);
+    for (const comp of ["x", "y", "z"] as const) {
+      const fullKey = `${paramId}.${comp}`;
+      if (updatedNodeKeys[fullKey] && updatedNodeKeys[fullKey].length > 0) {
+        updateOrInsertKeyframe(fullKey, vec[comp]);
+      }
+    }
+  }
+
+  return modified ? { ...keyframes, [nodeId]: updatedNodeKeys } : keyframes;
 }
 
 function buildSmokeTestGraph(): Graph {
@@ -139,8 +215,7 @@ function MainEditor() {
         if (existingIndex >= 0) {
           nextList = paramList.filter((_, idx) => idx !== existingIndex);
         } else {
-          const valCopy = currentValue !== undefined ? JSON.parse(JSON.stringify(currentValue)) : 0;
-          const newKeyframe: Keyframe = { frame, value: valCopy };
+          const newKeyframe: Keyframe = { frame, value: serializeKeyframeValue(currentValue) };
           nextList = [...paramList, newKeyframe].sort((a, b) => a.frame - b.frame);
         }
 
@@ -324,12 +399,31 @@ function MainEditor() {
 
   const handleLoadGraph = (newGraph: Graph, filename?: string) => {
     historyRef.current = { past: [], future: [] };
-    setGraph(rehydrateGraphParams(newGraph, DEFAULT_REGISTRY));
+    // Drop every cached mesh/texture/toggle belonging to the outgoing graph.
+    // Node ids are stable and saved into the .ovm, so without this the
+    // incoming graph silently inherits the previous project's cached
+    // objects for any id the two happen to share — the exact hazard
+    // nodeCaches.ts documents, which until now was only guarded against on
+    // per-node deletion in the editor, not on New or Open.
+    disposeNodeCaches(graph.nodes.map((n) => n.id));
+
+    const rehydrated = rehydrateGraphParams(newGraph, DEFAULT_REGISTRY);
+    setGraph(rehydrated);
     setSelectedNodeId(null);
     setEditorKey((k) => k + 1);
     if (filename) {
       setCurrentFilename(filename);
     }
+    // File-backed nodes (CSV Reader, OBJ Model, Image Texture, Audio
+    // Player, ...) only store the picked path in the graph, never the
+    // loaded data itself — see rehydrateFileNodesFromDisk. Re-read every
+    // such file from disk, then nudge state so the param panel (column
+    // dropdowns, filenames) refreshes once the data lands; evaluate()
+    // itself already re-reads each node's cache live every tick, so the
+    // 3D view/audio alone would've caught up on their own.
+    rehydrateFileNodesFromDisk(rehydrated).then((changed) => {
+      if (changed) setGraph((g) => ({ ...g }));
+    });
   };
 
   const handleFilenameChange = (name: string, path: string | null) => {
@@ -348,47 +442,10 @@ function MainEditor() {
         paramId === "active" &&
         (value === true || value === 1);
 
-      let nextKeyframes = prevGraph.keyframes;
-      if (keyframesEnabled && currentFrame >= 0 && nextKeyframes && nodeIdToUpdate) {
-        const nodeKeys = nextKeyframes[nodeIdToUpdate];
-        if (nodeKeys) {
-          let updatedNodeKeys = { ...nodeKeys };
-          let modified = false;
-
-          const updateOrInsertKeyframe = (key: string, val: number) => {
-            const list = updatedNodeKeys[key] || [];
-            const idx = list.findIndex((k) => k.frame === currentFrame);
-            let newList: Keyframe[];
-            if (idx >= 0) {
-              newList = [...list];
-              newList[idx] = { frame: currentFrame, value: val };
-            } else {
-              newList = [...list, { frame: currentFrame, value: val }].sort((a, b) => a.frame - b.frame);
-            }
-            updatedNodeKeys[key] = newList;
-            modified = true;
-          };
-
-          if (updatedNodeKeys[paramId] && updatedNodeKeys[paramId].length > 0) {
-            const valNum = Number(value);
-            updateOrInsertKeyframe(paramId, Number.isFinite(valNum) ? valNum : 0);
-          }
-
-          if (value instanceof THREE.Vector3 || (typeof value === "object" && value !== null && ("x" in value || "y" in value || "z" in value))) {
-            const vec = parseVector3(value);
-            for (const comp of ["x", "y", "z"] as const) {
-              const fullKey = `${paramId}.${comp}`;
-              if (updatedNodeKeys[fullKey] && updatedNodeKeys[fullKey].length > 0) {
-                updateOrInsertKeyframe(fullKey, vec[comp]);
-              }
-            }
-          }
-
-          if (modified) {
-            nextKeyframes = { ...nextKeyframes, [nodeIdToUpdate]: updatedNodeKeys };
-          }
-        }
-      }
+      const nextKeyframes =
+        keyframesEnabled && currentFrame >= 0 && nodeIdToUpdate
+          ? applyKeyframedParamUpdate(prevGraph.keyframes, nodeIdToUpdate, paramId, value, currentFrame)
+          : prevGraph.keyframes;
 
       const nextParams = { ...instance.params };
       if (value instanceof THREE.Vector3) {
@@ -456,12 +513,30 @@ function MainEditor() {
   const onTransformStart = useCallback(() => pushHistory(), [pushHistory]);
 
   const onTransformChange = (transformNodeId: string, patch: TransformPatch) => {
-    setGraph((prevGraph) => ({
-      ...prevGraph,
-      nodes: prevGraph.nodes.map((n) =>
-        n.id === transformNodeId ? { ...n, params: { ...n.params, ...patch } } : n,
-      ),
-    }));
+    setGraph((prevGraph) => {
+      // Same keyframe-track-if-one-already-exists rule as onParamChange —
+      // otherwise a gizmo drag (or "Aligner Caméra", which reuses this same
+      // path) always wrote straight to the base param, which keyframe
+      // playback then overrode right back on the next frame: no way to pose
+      // a camera (or any keyframed object) differently at different times
+      // by dragging it, only by typing numbers into the param panel field
+      // by field. Each patch entry (location/rotation/scale, or fov from
+      // the align button) is checked independently.
+      let nextKeyframes = prevGraph.keyframes;
+      if (keyframesEnabled && currentFrame >= 0) {
+        for (const [key, value] of Object.entries(patch)) {
+          nextKeyframes = applyKeyframedParamUpdate(nextKeyframes, transformNodeId, key, value, currentFrame);
+        }
+      }
+
+      return {
+        ...prevGraph,
+        keyframes: nextKeyframes,
+        nodes: prevGraph.nodes.map((n) =>
+          n.id === transformNodeId ? { ...n, params: { ...n.params, ...patch } } : n,
+        ),
+      };
+    });
   };
 
   const onSplitHandleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -487,7 +562,10 @@ function MainEditor() {
     };
   }, []);
 
-  const selectedEvaluated = selectedNodeId && evaluatedResults ? evaluatedResults.get(selectedNodeId) : null;
+  const selectedParamValues =
+    selectedInstance && selectedDef
+      ? paramPanelValues(graph, selectedInstance, selectedDef, evaluatedResults)
+      : {};
 
   const selectedKeyframeFrames = selectedNodeId && graph.keyframes?.[selectedNodeId]
     ? Array.from(
@@ -575,12 +653,7 @@ function MainEditor() {
                 ? selectedDef.dynamicParamFields(selectedInstance)
                 : (selectedDef.paramFields ?? [])
             }
-            params={{
-              ...selectedDef.defaultParams,
-              ...selectedInstance.params,
-              ...((selectedEvaluated?.__evaluatedInputs as Record<string, unknown>) ?? {}),
-              ...(selectedEvaluated ?? {}),
-            }}
+            params={selectedParamValues}
             keyframes={graph.keyframes}
             currentFrame={keyframesEnabled ? currentFrame : -1}
             keyframesEnabled={keyframesEnabled}

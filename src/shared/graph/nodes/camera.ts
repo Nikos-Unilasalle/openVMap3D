@@ -3,10 +3,12 @@ import { projectionMatrixFromCalibration, ProjectorCalibration } from "../calibr
 import { DEFAULT_PICKS, isCalibrationPicks, isReferencePointArray, solveFromPicks } from "../calibration/picks";
 import { NodeDefinition } from "../types";
 import { toBoolean } from "../sockets";
+import { extractPositionFromInput } from "./transform";
 
 const ZERO = new THREE.Vector3(0, 0, 0);
 const ONE = new THREE.Vector3(1, 1, 1);
 const DEFAULT_LOCATION = new THREE.Vector3(0, 0, 5);
+const DEFAULT_UP = new THREE.Vector3(0, 1, 0);
 const DEFAULT_FOV = 50;
 
 /** Relative image units, so the frustum is built against a 1x1 image — see picks.ts on why no resolution is stored. */
@@ -89,11 +91,36 @@ function buildCameraHelperGeometry(fov: number, isActive: boolean): THREE.Group 
   return group;
 }
 
-function manualPose(inputs: Record<string, unknown>) {
+/**
+ * Aiming the camera at something is the overwhelmingly common case — a
+ * subject to orbit, a projection surface to stay square to — and expressing
+ * it as an Euler triple by hand is the least usable way to say it. So the
+ * Look At node's math is embedded here, exactly as a Directional Light
+ * embeds its own Target: wire an Empty (or any object, or a bare position)
+ * into Target and the camera tracks it, with `rotation` ignored for as long
+ * as it does. Nothing wired and Use Target off leaves the manual Euler pose
+ * untouched, so existing graphs behave identically.
+ */
+function manualPose(inputs: Record<string, unknown>, params: Record<string, unknown>) {
   const location = asVector3(inputs.location, DEFAULT_LOCATION);
-  const rotation = asVector3(inputs.rotation, ZERO);
   const fov = Number(inputs.fov) || DEFAULT_FOV;
-  const quaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(rotation.x, rotation.y, rotation.z));
+
+  const useTarget = inputs.target !== undefined || toBoolean(params.useTarget ?? false);
+  if (useTarget) {
+    const target = extractPositionFromInput(inputs.target, asVector3(params.target, ZERO));
+    const up = asVector3(params.up, DEFAULT_UP);
+    // Degenerate when the camera sits exactly on its target — lookAt would
+    // produce a zero-length forward axis and a NaN matrix, which silently
+    // blanks the whole view. Fall back to the untargeted pose instead.
+    if (target.distanceToSquared(location) > 1e-12) {
+      const matrix = new THREE.Matrix4().lookAt(location, target, up);
+      matrix.setPosition(location);
+      return { matrix, fov, projection: null, error: 0 };
+    }
+  }
+
+  const rotation = asVector3(inputs.rotation, ZERO);
+  const quaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(rotation.x, rotation.y, rotation.z, "YXZ"));
   return { matrix: new THREE.Matrix4().compose(location, quaternion, ONE), fov, projection: null, error: 0 };
 }
 
@@ -122,6 +149,11 @@ export const CAMERA_NODE: NodeDefinition = {
     { id: "matrix", label: "Matrix", type: "matrix" },
     { id: "location", label: "Location", type: "vector" },
     { id: "rotation", label: "Rotation", type: "vector" },
+    // "any" rather than the Directional Light's "geometry", so this accepts
+    // both an object to track (an Empty, the usual case) and a bare
+    // position — same as the Look At node's own Target, whose behaviour
+    // this embeds.
+    { id: "target", label: "Target", type: "any" },
     { id: "fov", label: "FOV", type: "value" },
     { id: "active", label: "Active", type: "value" },
     { id: "refPoints", label: "Ref Points", type: "list" },
@@ -137,16 +169,24 @@ export const CAMERA_NODE: NodeDefinition = {
   defaultParams: {
     location: DEFAULT_LOCATION.clone(),
     rotation: ZERO.clone(),
+    useTarget: false,
+    target: ZERO.clone(),
+    up: DEFAULT_UP.clone(),
     fov: DEFAULT_FOV,
     active: true,
     mode: "manual",
+    projectionType: "perspective",
     calibrationPicks: { ...DEFAULT_PICKS },
   },
   paramFields: [
     { id: "active", label: "Active", kind: "boolean" },
     { id: "mode", label: "Mode", kind: "select", options: ["manual", "calibrated"] },
+    { id: "projectionType", label: "Projection", kind: "select", options: ["perspective", "orthographic"] },
     { id: "location", label: "Location", kind: "vector" },
     { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true },
+    { id: "useTarget", label: "Use Target (Look At)", kind: "boolean" },
+    { id: "target", label: "Target (fallback)", kind: "vector" },
+    { id: "up", label: "Up", kind: "vector" },
     { id: "fov", label: "FOV (deg)", kind: "number" },
   ],
   evaluate: (inputs, params, ctx) => {
@@ -168,13 +208,13 @@ export const CAMERA_NODE: NodeDefinition = {
             error: calibration.reprojectionError,
           };
         } else {
-          pose = manualPose(inputs);
+          pose = manualPose(inputs, params);
         }
       } else {
-        pose = manualPose(inputs);
+        pose = manualPose(inputs, params);
       }
     } else {
-      pose = manualPose(inputs);
+      pose = manualPose(inputs, params);
     }
 
     if (inputs.matrix instanceof THREE.Matrix4) {
@@ -184,7 +224,17 @@ export const CAMERA_NODE: NodeDefinition = {
     const group = getGroup(ctx.nodeId);
     group.clear();
     group.matrixAutoUpdate = false;
-    group.matrix.copy(pose.matrix);
+    // Skip the overwrite for the node the viewport gizmo is dragging right
+    // now — the same guard every primitive in object.ts already has, and the
+    // Camera was the one gizmo-draggable node missing it. Without it, the
+    // graph reclaimed the camera's matrix on every frame of a drag: the
+    // gizmo's own pose was overwritten before it could be read back, so
+    // dragging the camera never made it to location/rotation and those
+    // params stayed at whatever they were — which is what a keyframe taken
+    // afterwards then captured.
+    if (ctx.nodeId !== ctx.liveEditNodeId) {
+      group.matrix.copy(pose.matrix);
+    }
     group.userData.nodeId = ctx.nodeId;
     const helperContent = buildCameraHelperGeometry(pose.fov, isActive);
     helperContent.traverse((child) => {
@@ -194,6 +244,13 @@ export const CAMERA_NODE: NodeDefinition = {
 
     return {
       ...pose,
+      // The group's matrix, not `pose.matrix` — they agree except during a
+      // gizmo drag, where the group carries the live dragged pose and
+      // pose.matrix is still the pre-drag params. Downstream readers
+      // (Distance, Look At, the render camera itself) should follow what is
+      // actually on screen, same as primitiveOutputs does in object.ts.
+      matrix: group.matrix.clone(),
+      projectionType: String(params.projectionType || "perspective"),
       geometry: group,
       active: isActive ? 1 : 0,
     };

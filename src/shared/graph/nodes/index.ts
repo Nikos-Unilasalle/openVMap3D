@@ -6,8 +6,9 @@ import { DECOMPOSE_MATRIX_NODE, LOOK_AT_NODE, MATRIX_TRANSFORM_NODE, PARENT_NODE
 import { CLAMP_NODE, MAP_RANGE_NODE, VALUE_CONSTANT_NODE, VALUE_MATH_NODE } from "./valueMath";
 import { MERGE_NODE } from "./merge";
 import { OBJECT_BAR_GRAPH_NODE, OBJECT_BOX_NODE, OBJECT_CONE_NODE, OBJECT_CYLINDER_NODE, OBJECT_DISC_NODE, OBJECT_EMPTY_NODE, OBJECT_PLANE_NODE, OBJECT_SPHERE_NODE, OBJECT_TEXT_NODE } from "./object";
+import { CHART_AXIS_NODE, LINE_GRAPH_NODE, PIE_CHART_NODE, POINT_CLOUD_NODE, SCATTER_PLOT_NODE } from "./chart";
 import { RENDER_NODE } from "./render";
-import { TIME_NODE } from "./time";
+import { FRAME_NODE, TIME_NODE } from "./time";
 import { VECTOR_COMPOSE_NODE, VECTOR_DECOMPOSE_NODE, VECTOR_MATH_NODE } from "./vector";
 import { DISTANCE_NODE, PROXIMITY_OBJECT_NODE } from "./distance";
 import { BOOLEAN_LOGIC_NODE, COMPARE_NODE, GATE_NODE, LOGIC_BRIDGE_NODE, TOGGLE_NODE, TRIGGER_NODE } from "./logic";
@@ -55,6 +56,7 @@ import {
 /** The starter catalogue — grows node by node; BIBLE.md has the full target list. */
 export const STARTER_NODES = [
   TIME_NODE,
+  FRAME_NODE,
   VALUE_CONSTANT_NODE,
   VALUE_MATH_NODE,
   CLAMP_NODE,
@@ -98,6 +100,11 @@ export const STARTER_NODES = [
   OBJECT_CONE_NODE,
   OBJECT_TEXT_NODE,
   OBJECT_BAR_GRAPH_NODE,
+  LINE_GRAPH_NODE,
+  CHART_AXIS_NODE,
+  PIE_CHART_NODE,
+  SCATTER_PLOT_NODE,
+  POINT_CLOUD_NODE,
   OBJECT_OBJ_NODE,
   TEXTURE_IMAGE_NODE,
   TEXTURE_PLANE_NODE,
@@ -171,6 +178,7 @@ export * from "./valueMath";
 export * from "./vector";
 export * from "./transform";
 export * from "./object";
+export * from "./chart";
 export * from "./render";
 export * from "./logic";
 export * from "./oscillator";

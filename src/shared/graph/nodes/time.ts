@@ -19,3 +19,20 @@ export const TIME_NODE: NodeDefinition = {
   defaultParams: {},
   evaluate: (_inputs, _params, ctx) => ({ seconds: ctx.time, step: ctx.step }),
 };
+
+/**
+ * Frame node — outputs the current frame index of the timeline / playback context.
+ */
+export const FRAME_NODE: NodeDefinition = {
+  type: "time/frame",
+  label: "Frame",
+  category: "time",
+  inputs: [],
+  outputs: [
+    { id: "frame", label: "Frame", type: "value" },
+  ],
+  defaultParams: {},
+  evaluate: (_inputs, _params, ctx) => ({
+    frame: ctx.currentFrame !== undefined ? ctx.currentFrame : ctx.step,
+  }),
+};
