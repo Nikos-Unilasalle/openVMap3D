@@ -45,6 +45,28 @@ export interface EvalContext {
   currentFrame?: number;
   /** Active keyframe store. */
   keyframes?: KeyframeStore;
+  /**
+   * Which of this node's input sockets actually have a wire in them.
+   *
+   * Almost no node needs this: the usual `inputs.x !== undefined ? inputs.x
+   * : params.x` idiom works precisely because the evaluator fills *every*
+   * declared socket, falling back to the param when nothing is connected —
+   * so reading `inputs.x` already gives "the wire if there is one, the param
+   * otherwise".
+   *
+   * The catch is that the same fill-in makes `inputs.x !== undefined` a
+   * useless test for "is this wired", since it is always true. A node whose
+   * *behaviour* (not just its value) forks on whether something is driving a
+   * socket has to ask here instead. Fly To is the case that found this: it
+   * runs its own flight timer unless Progress is being driven from outside,
+   * and testing `inputs.progress !== undefined` meant the timer branch was
+   * unreachable in the real app while unit tests calling `evaluate()`
+   * directly — with no `progress` key at all — passed happily.
+   *
+   * Absent when a node is evaluated outside a graph (a direct `evaluate()`
+   * call in a test); treat that as "nothing wired".
+   */
+  connectedInputs?: ReadonlySet<string>;
 }
 
 /**

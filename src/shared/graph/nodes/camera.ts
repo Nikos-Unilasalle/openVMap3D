@@ -102,11 +102,20 @@ function buildCameraHelperGeometry(fov: number, isActive: boolean): THREE.Group 
  * as it does. Nothing wired and Use Target off leaves the manual Euler pose
  * untouched, so existing graphs behave identically.
  */
-function manualPose(inputs: Record<string, unknown>, params: Record<string, unknown>) {
+function manualPose(
+  inputs: Record<string, unknown>,
+  params: Record<string, unknown>,
+  connectedInputs?: ReadonlySet<string>,
+) {
   const location = asVector3(inputs.location, DEFAULT_LOCATION);
   const fov = Number(inputs.fov) || DEFAULT_FOV;
 
-  const isTargetWired = inputs.target !== undefined && inputs.target !== params.target;
+  // Asked directly rather than inferred by comparing the input against the
+  // param. That comparison only worked by reference-identity accident — an
+  // unwired socket is handed the param object itself — and quietly broke as
+  // soon as Target carried a keyframe, since interpolation hands back a
+  // fresh Vector3 that compares unequal and read as a wire that isn't there.
+  const isTargetWired = connectedInputs?.has("target") ?? false;
   const useTarget = toBoolean(params.useTarget ?? false) || isTargetWired;
   if (useTarget) {
     const target = extractPositionFromInput(inputs.target, asVector3(params.target, ZERO));
@@ -213,13 +222,13 @@ export const CAMERA_NODE: NodeDefinition = {
             error: calibration.reprojectionError,
           };
         } else {
-          pose = manualPose(inputs, params);
+          pose = manualPose(inputs, params, ctx.connectedInputs);
         }
       } else {
-        pose = manualPose(inputs, params);
+        pose = manualPose(inputs, params, ctx.connectedInputs);
       }
     } else {
-      pose = manualPose(inputs, params);
+      pose = manualPose(inputs, params, ctx.connectedInputs);
     }
 
     if (inputs.matrix instanceof THREE.Matrix4) {
@@ -327,6 +336,14 @@ interface FlyToState {
   isFlying?: boolean;
   lastTrigger?: boolean;
   startSimTime?: number;
+  /**
+   * A flight ran to completion and nothing has re-triggered since. Held
+   * separately from `isFlying` because progress has to *stay* at the
+   * destination afterwards: the timer branch stops running the moment the
+   * flight ends, and without this the next frame fell through to the
+   * Progress param — still 0 — and snapped the camera back to Camera A.
+   */
+  landed?: boolean;
 }
 
 // createNodeCache, not a bare Map: node ids are stable (saved into .ovm,
@@ -395,6 +412,7 @@ export const CAMERA_FLY_TO_NODE: NodeDefinition = {
 
     if (isTriggered && !state.lastTrigger) {
       state.isFlying = true;
+      state.landed = false;
       state.startTime = nowSec;
       state.startSimTime = ctx.time;
     }
@@ -404,8 +422,15 @@ export const CAMERA_FLY_TO_NODE: NodeDefinition = {
     const arcHeight = inputs.arcHeight !== undefined ? Number(inputs.arcHeight) : Number(params.arcHeight ?? 1.0);
     const easingType = String(params.easing || "easeInOutCubic");
 
+    // `connectedInputs`, not `inputs.progress !== undefined`: the evaluator
+    // fills every declared socket from its param when nothing is wired, so
+    // that test was always true and the flight timer below was unreachable in
+    // the app — Progress sat at 0 and the camera never moved. It only looked
+    // right in tests that call evaluate() directly, omitting the key.
+    const isProgressDriven = ctx.connectedInputs?.has("progress") ?? false;
+
     let rawProgress = 0.0;
-    if (inputs.progress !== undefined) {
+    if (isProgressDriven) {
       rawProgress = Math.max(0, Math.min(1, Number(inputs.progress) || 0));
     } else if (state.isFlying && state.startTime !== undefined) {
       // Advance either by sim time (if timeline is playing) or real-world clock
@@ -416,7 +441,10 @@ export const CAMERA_FLY_TO_NODE: NodeDefinition = {
       rawProgress = Math.max(0, Math.min(1, elapsed / duration));
       if (rawProgress >= 1.0) {
         state.isFlying = false;
+        state.landed = true;
       }
+    } else if (state.landed) {
+      rawProgress = 1.0;
     } else {
       rawProgress = Math.max(0, Math.min(1, Number(params.progress) || 0));
     }
@@ -445,20 +473,19 @@ export const CAMERA_FLY_TO_NODE: NodeDefinition = {
     const isFinished = rawProgress >= 0.999 ? 1 : 0;
 
     // Only in charge of the output camera while there is a reason to be:
-    // mid-flight, deliberately scrubbed by a wired Progress, or parked at the
-    // destination because "Auto Switch Active Cam" says not to hand control
-    // back. Never true just because the node exists and hasn't been touched
-    // — the earlier unconditional `active: 1` meant dropping a Fly To node
-    // into the graph silently overrode every Camera node's own Active
-    // toggle, permanently, before the flight was ever triggered. It also
-    // meant "Auto Switch Active Cam" had no way to actually switch anything
-    // back: `active` never went false once a flight had happened.
+    // mid-flight, driven by a wired Progress, scrubbed by hand on the param,
+    // or parked at the destination because "Auto Switch Active Cam" says not
+    // to hand control back. Never true just because the node exists and
+    // hasn't been touched — the original unconditional `active: 1` meant
+    // dropping a Fly To node into the graph silently overrode every Camera
+    // node's own Active toggle, permanently, before the flight was ever
+    // triggered. It also left "Auto Switch Active Cam" with nothing to
+    // switch: `active` never went false once a flight had happened.
     const switchOnFinish = toBoolean(params.switchActiveOnFinish ?? true);
-    const everStarted = state.startTime !== undefined;
     const isActive =
-      inputs.progress !== undefined ||
+      isProgressDriven ||
       state.isFlying === true ||
-      (everStarted && isFinished === 1 && !switchOnFinish);
+      (state.landed ? !switchOnFinish : rawProgress > 0);
 
     const helper = buildCameraHelperGeometry(fov, isActive);
     helper.traverse((child) => {

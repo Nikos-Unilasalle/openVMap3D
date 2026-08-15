@@ -3,7 +3,9 @@ import { describe, expect, test } from "vitest";
 import { projectWithCalibration } from "../calibration/dlt";
 import { CalibrationPicks, solveFromPicks } from "../calibration/picks";
 import { roomCornerReferencePoints } from "../calibration/roomCorner";
-import { EvalContext } from "../types";
+import { evaluateGraph } from "../evaluate";
+import { DEFAULT_REGISTRY } from "../nodes";
+import { EvalContext, Graph } from "../types";
 import { CAMERA_FLY_TO_NODE, CAMERA_NODE } from "./camera";
 
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "cam-test" };
@@ -162,11 +164,14 @@ function forwardAxis(matrix: THREE.Matrix4): THREE.Vector3 {
 }
 
 describe("CAMERA_NODE target (embedded look-at)", () => {
+  /** "Target has a wire in it" — the thing the node forks on, which `inputs` alone cannot express (see EvalContext.connectedInputs). */
+  const WIRED_TARGET: EvalContext = { ...CTX, connectedInputs: new Set(["target"]) };
+
   test("a wired Target position aims the camera at it, keeping its own location", () => {
     const location = new THREE.Vector3(0, 0, 5);
     const target = new THREE.Vector3(0, 0, 0);
 
-    const result = CAMERA_NODE.evaluate({ location, target }, CAMERA_NODE.defaultParams, CTX);
+    const result = CAMERA_NODE.evaluate({ location, target }, CAMERA_NODE.defaultParams, WIRED_TARGET);
     const matrix = result.matrix as THREE.Matrix4;
 
     const position = new THREE.Vector3().setFromMatrixPosition(matrix);
@@ -186,7 +191,7 @@ describe("CAMERA_NODE target (embedded look-at)", () => {
     const result = CAMERA_NODE.evaluate(
       { location: new THREE.Vector3(0, 0, 0), target: anchor },
       CAMERA_NODE.defaultParams,
-      CTX,
+      WIRED_TARGET,
     );
 
     const forward = forwardAxis(result.matrix as THREE.Matrix4);
@@ -203,7 +208,7 @@ describe("CAMERA_NODE target (embedded look-at)", () => {
         target: new THREE.Vector3(0, 0, 0),
       },
       CAMERA_NODE.defaultParams,
-      CTX,
+      WIRED_TARGET,
     );
 
     const forward = forwardAxis(withRotation.matrix as THREE.Matrix4);
@@ -242,7 +247,7 @@ describe("CAMERA_NODE target (embedded look-at)", () => {
     const result = CAMERA_NODE.evaluate(
       { location, target: location.clone() },
       CAMERA_NODE.defaultParams,
-      CTX,
+      WIRED_TARGET,
     );
 
     const matrix = result.matrix as THREE.Matrix4;
@@ -341,6 +346,20 @@ describe("solveFromPicks", () => {
 });
 
 describe("CAMERA_FLY_TO_NODE", () => {
+  /**
+   * Fly To only reads its Progress *input* when something is actually wired
+   * into that socket — the evaluator fills every declared socket from its
+   * param otherwise, so a node cannot tell the two apart from `inputs`
+   * alone (see EvalContext.connectedInputs). A direct evaluate() call has to
+   * say so explicitly, or it tests a situation the app never produces.
+   */
+  const wiredProgress = (nodeId: string): EvalContext => ({
+    time: 0,
+    step: 0,
+    nodeId,
+    connectedInputs: new Set(["progress"]),
+  });
+
   test("interpolates smoothly between Camera A and Camera B positions and orientations", () => {
     const camA = new THREE.Matrix4().makeTranslation(0, 0, 10);
     const camB = new THREE.Matrix4().makeTranslation(10, 0, 10);
@@ -348,7 +367,7 @@ describe("CAMERA_FLY_TO_NODE", () => {
     const midResult = CAMERA_FLY_TO_NODE.evaluate(
       { cameraA: camA, cameraB: camB, progress: 0.5 },
       CAMERA_FLY_TO_NODE.defaultParams,
-      CTX
+      wiredProgress("fly-interp")
     );
 
     const matrix = midResult.matrix as THREE.Matrix4;
@@ -363,7 +382,7 @@ describe("CAMERA_FLY_TO_NODE", () => {
     const endResult = CAMERA_FLY_TO_NODE.evaluate(
       { cameraA: camA, cameraB: camB, progress: 1.0 },
       CAMERA_FLY_TO_NODE.defaultParams,
-      CTX
+      wiredProgress("fly-interp")
     );
 
     const endPos = new THREE.Vector3().setFromMatrixPosition(endResult.matrix as THREE.Matrix4);
@@ -479,9 +498,129 @@ describe("CAMERA_FLY_TO_NODE", () => {
     const result = CAMERA_FLY_TO_NODE.evaluate(
       { cameraA: camA, cameraB: camB, progress: 0.5 },
       CAMERA_FLY_TO_NODE.defaultParams,
-      { time: 0, step: 0, nodeId: "fly-scrub" },
+      wiredProgress("fly-scrub"),
     );
 
+    expect(result.active).toBe(1);
+  });
+});
+
+/**
+ * Through evaluateGraph, not evaluate() — the distinction that let the
+ * flight timer ship broken. The evaluator fills every declared input socket
+ * from its param when nothing is wired, so a direct evaluate() call that
+ * simply omits a key exercises a situation the running app never produces.
+ */
+describe("CAMERA_FLY_TO_NODE in a real graph", () => {
+  function flyToGraph(params: Record<string, unknown> = {}): Graph {
+    return {
+      nodes: [
+        {
+          id: "fly",
+          type: CAMERA_FLY_TO_NODE.type,
+          position: { x: 0, y: 0 },
+          params: { ...CAMERA_FLY_TO_NODE.defaultParams, duration: 2.0, arcHeight: 0, ...params },
+        },
+      ],
+      connections: [],
+    };
+  }
+
+  function evalAt(graph: Graph, time: number): Record<string, unknown> {
+    return evaluateGraph(graph, DEFAULT_REGISTRY, { time, step: time * 60, nodeId: "" }).get("fly")!;
+  }
+
+  test("an untriggered node stays out of the way instead of seizing the camera", () => {
+    // The bug this covers: `active` was hardcoded to 1, so merely placing a
+    // Fly To node overrode every Camera node's Active toggle for good.
+    const result = evalAt(flyToGraph(), 1);
+
+    expect(result.active).toBe(0);
+    expect(result.progress).toBe(0);
+  });
+
+  test("a triggered flight actually advances over time", () => {
+    // The bug this covers: Progress is an unwired socket, so the evaluator
+    // filled inputs.progress with the param (0). The old
+    // `inputs.progress !== undefined` test therefore always won and the
+    // timer branch never ran — Progress stayed 0 forever and nothing moved.
+    const graph = flyToGraph();
+    evalAt(graph, 1);
+
+    graph.nodes[0].params.trigger = 1;
+    evalAt(graph, 2);
+
+    expect(evalAt(graph, 3).progress).toBeCloseTo(0.5);
+    expect(evalAt(graph, 2.5).progress).toBeCloseTo(0.25);
+  });
+
+  test("the camera stays at the destination after landing rather than snapping back", () => {
+    // Once the flight ends isFlying goes false, and without the landed flag
+    // the next frame fell through to the Progress param — still 0 — putting
+    // the camera back at Camera A one frame after arriving.
+    const graph = flyToGraph();
+    evalAt(graph, 1);
+    graph.nodes[0].params.trigger = 1;
+    evalAt(graph, 2);
+
+    expect(evalAt(graph, 4).progress).toBeCloseTo(1);
+    expect(evalAt(graph, 9).progress).toBeCloseTo(1);
+  });
+
+  test("control returns to the Camera nodes once landed, by default", () => {
+    const graph = flyToGraph();
+    evalAt(graph, 1);
+    graph.nodes[0].params.trigger = 1;
+    evalAt(graph, 2);
+
+    const landed = evalAt(graph, 4);
+    expect(landed.isFinished).toBe(1);
+    expect(landed.active).toBe(0);
+  });
+
+  test("with Auto Switch off it keeps the camera parked at the destination", () => {
+    const graph = flyToGraph({ switchActiveOnFinish: false });
+    evalAt(graph, 1);
+    graph.nodes[0].params.trigger = 1;
+    evalAt(graph, 2);
+
+    expect(evalAt(graph, 4).active).toBe(1);
+  });
+
+  test("re-triggering flies again from the start", () => {
+    const graph = flyToGraph();
+    evalAt(graph, 1);
+    graph.nodes[0].params.trigger = 1;
+    evalAt(graph, 2);
+    evalAt(graph, 4);
+
+    // Release, then press again — the same rising edge a held key produces.
+    graph.nodes[0].params.trigger = 0;
+    evalAt(graph, 5);
+    graph.nodes[0].params.trigger = 1;
+    evalAt(graph, 6);
+
+    expect(evalAt(graph, 7).progress).toBeCloseTo(0.5);
+  });
+
+  test("a wired Progress takes over and reports itself in charge", () => {
+    const graph: Graph = {
+      nodes: [
+        { id: "p", type: "value/constant", position: { x: 0, y: 0 }, params: { value: 0.5 } },
+        {
+          id: "fly",
+          type: CAMERA_FLY_TO_NODE.type,
+          position: { x: 0, y: 0 },
+          params: { ...CAMERA_FLY_TO_NODE.defaultParams, arcHeight: 0 },
+        },
+      ],
+      connections: [
+        { id: "c1", fromNode: "p", fromSocket: "out", toNode: "fly", toSocket: "progress" },
+      ],
+    };
+
+    const result = evalAt(graph, 1);
+    expect(result.progress).toBeCloseTo(0.5);
     expect(result.active).toBe(1);
   });
 });

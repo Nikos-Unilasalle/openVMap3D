@@ -222,9 +222,15 @@ export function evaluateGraph(graph: Graph, registry: NodeRegistry, ctx: EvalCon
     const nodeConnections = graph.connections.filter((c) => c.toNode === nodeId);
     const socketDefs = def.dynamicInputs ? def.dynamicInputs(nodeConnections) : def.inputs;
     const inputs: Record<string, unknown> = {};
+    // Which sockets a wire actually reaches, kept alongside the values: the
+    // fill-in below makes `inputs.x !== undefined` true either way, so a node
+    // forking its behaviour on "is this driven" has no other way to tell (see
+    // EvalContext.connectedInputs).
+    const connectedInputs = new Set<string>();
     for (const socket of socketDefs) {
       const conn = connectionInto(graph.connections, nodeId, socket.id);
       if (conn) {
+        connectedInputs.add(socket.id);
         // Priority rule: Node connection l'emporte toujours sur les keyframes!
         inputs[socket.id] = results.get(conn.fromNode)?.[conn.fromSocket];
       } else {
@@ -241,7 +247,7 @@ export function evaluateGraph(graph: Graph, registry: NodeRegistry, ctx: EvalCon
     }
 
     try {
-      const outputs = def.evaluate(inputs, params, { ...ctx, nodeId }) || {};
+      const outputs = def.evaluate(inputs, params, { ...ctx, nodeId, connectedInputs }) || {};
       applyVisibility(outputs.geometry, inputs[VISIBILITY_SOCKET]);
       results.set(nodeId, {
         ...outputs,
