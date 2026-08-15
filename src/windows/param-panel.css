@@ -103,6 +103,28 @@
   padding: 7px 12px;
 }
 
+/*
+ * A param whose socket has a wire in it. The field shows what the wire is
+ * delivering, not the param underneath — so it is dimmed and made
+ * non-interactive rather than left looking editable: typing into it would
+ * appear to work and be overwritten on the next evaluation. Everything but
+ * the label is inert, so an axis "use" checkbox in the label still works.
+ */
+.param-row-driven > *:not(label) {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.param-row-driven label {
+  font-style: italic;
+}
+
+.param-row-driven label::after {
+  content: " ⇢";
+  color: #38bdf8;
+  font-style: normal;
+}
+
 .param-row label {
   color: #9aa4b2;
   white-space: nowrap;

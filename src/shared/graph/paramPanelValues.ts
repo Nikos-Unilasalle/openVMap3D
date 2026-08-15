@@ -25,6 +25,24 @@ import { Graph, NodeDefinition, NodeInstance } from "./types";
  * wrote the base into the param underneath it, and the two disagreed as soon
  * as anything was wired into the Empty's Matrix input.
  */
+/**
+ * Which of a node's input sockets currently have a wire in them.
+ *
+ * A param sharing a socket's id is only that socket's *unconnected*
+ * fallback, so while the wire is there the param is not in charge of
+ * anything — the panel shows the incoming value (see below) and editing the
+ * field underneath it is overwritten on the next evaluation. The panel uses
+ * this to say so rather than leaving the operator to discover it by typing
+ * into a field that silently springs back.
+ */
+export function connectedSocketIds(graph: Graph, nodeId: string): Set<string> {
+  const connected = new Set<string>();
+  for (const connection of graph.connections) {
+    if (connection.toNode === nodeId) connected.add(connection.toSocket);
+  }
+  return connected;
+}
+
 export function paramPanelValues(
   graph: Graph,
   instance: NodeInstance,
@@ -35,10 +53,9 @@ export function paramPanelValues(
   const merged: Record<string, unknown> = { ...def.defaultParams, ...instance.params };
 
   const evaluatedInputs = (evaluated?.__evaluatedInputs as Record<string, unknown>) ?? {};
-  for (const connection of graph.connections) {
-    if (connection.toNode !== instance.id) continue;
-    if (connection.toSocket in evaluatedInputs) {
-      merged[connection.toSocket] = evaluatedInputs[connection.toSocket];
+  for (const socketId of connectedSocketIds(graph, instance.id)) {
+    if (socketId in evaluatedInputs) {
+      merged[socketId] = evaluatedInputs[socketId];
     }
   }
 

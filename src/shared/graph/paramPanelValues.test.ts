@@ -3,8 +3,12 @@ import { describe, expect, test } from "vitest";
 import { EvalResult } from "./evaluate";
 import { DEFAULT_REGISTRY } from "./nodes";
 import { OBJECT_EMPTY_NODE } from "./nodes/object";
-import { paramPanelValues } from "./paramPanelValues";
+import { connectedSocketIds, paramPanelValues } from "./paramPanelValues";
 import { Graph, NodeInstance } from "./types";
+
+function node(id: string, type: string): NodeInstance {
+  return { id, type, params: {}, position: { x: 0, y: 0 } };
+}
 
 function emptyInstance(params: Record<string, unknown> = {}): NodeInstance {
   return { id: "empty1", type: OBJECT_EMPTY_NODE.type, params, position: { x: 0, y: 0 } };
@@ -110,5 +114,34 @@ describe("paramPanelValues", () => {
 
     expect(values.scale).toBeInstanceOf(THREE.Vector3);
     expect((values.scale as THREE.Vector3).x).toBe(1);
+  });
+});
+
+describe("connectedSocketIds", () => {
+  test("lists the sockets of this node that have a wire in them", () => {
+    const graph: Graph = {
+      nodes: [node("a", "value/constant"), node("b", "canvas/goto")],
+      connections: [
+        { id: "c1", fromNode: "a", fromSocket: "out", toNode: "b", toSocket: "canvas" },
+        { id: "c2", fromNode: "a", fromSocket: "out", toNode: "b", toSocket: "trigger" },
+      ],
+    };
+
+    expect(connectedSocketIds(graph, "b")).toEqual(new Set(["canvas", "trigger"]));
+  });
+
+  test("a wire out of the node doesn't count — only what drives it", () => {
+    const graph: Graph = {
+      nodes: [node("a", "canvas/goto"), node("b", "value/constant")],
+      connections: [{ id: "c1", fromNode: "a", fromSocket: "switched", toNode: "b", toSocket: "value" }],
+    };
+
+    expect(connectedSocketIds(graph, "a")).toEqual(new Set());
+  });
+
+  test("a node with nothing plugged in has no driven params", () => {
+    const graph: Graph = { nodes: [node("a", "canvas/goto")], connections: [] };
+
+    expect(connectedSocketIds(graph, "a")).toEqual(new Set());
   });
 });

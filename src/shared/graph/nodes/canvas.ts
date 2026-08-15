@@ -31,7 +31,7 @@ export const CANVAS_GOTO_NODE: NodeDefinition = {
   outputs: [{ id: "switched", label: "Switched", type: "value" }],
   defaultParams: { canvas: 1, trigger: 0 },
   paramFields: [
-    { id: "canvas", label: "Canvas (1-6)", kind: "number", step: 1 },
+    { id: "canvas", label: "Canvas (fallback)", kind: "number", step: 1 },
     { id: "trigger", label: "Trigger (fallback)", kind: "boolean" },
   ],
   evaluate: (inputs, params, ctx) => {

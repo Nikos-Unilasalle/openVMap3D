@@ -8,7 +8,7 @@ import { cloneGraph } from "./shared/graph/cloneGraph";
 import { consumeCanvasSwitchRequest } from "./shared/graph/canvasSwitchStore";
 import { disposeNodeCaches } from "./shared/graph/nodeCaches";
 import { rehydrateGraphParams } from "./shared/graph/rehydrateParams";
-import { paramPanelValues } from "./shared/graph/paramPanelValues";
+import { connectedSocketIds, paramPanelValues } from "./shared/graph/paramPanelValues";
 import {
   CANVAS_COUNT,
   Connection,
@@ -793,6 +793,7 @@ function MainEditor() {
             keyframesEnabled={keyframesEnabled}
             onChange={onParamChange}
             onToggleKeyframe={onToggleKeyframe}
+            connectedSockets={connectedSocketIds(graph, selectedInstance.id)}
           />
         )}
       </div>

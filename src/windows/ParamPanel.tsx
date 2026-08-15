@@ -21,6 +21,13 @@ interface ParamPanelProps {
   keyframesEnabled?: boolean;
   onChange: (paramId: string, value: unknown) => void;
   onToggleKeyframe?: (nodeId: string, paramKey: string, frame: number, currentValue: any) => void;
+  /**
+   * Input sockets of this node that have a wire in them. Such a field shows
+   * the value arriving through the wire, not the param under it, so it is
+   * marked and made non-interactive: editing it would look like it worked
+   * and be overwritten on the next evaluation.
+   */
+  connectedSockets?: Set<string>;
 }
 
 export type KeyframeStatus = "none" | "exact" | "interpolated";
@@ -288,6 +295,7 @@ export function ParamPanel({
   keyframesEnabled = true,
   onChange,
   onToggleKeyframe,
+  connectedSockets,
 }: ParamPanelProps) {
   const categoryColor = category ? CATEGORY_COLOR[category] : UNKNOWN_CATEGORY_COLOR;
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ Transform: true });
@@ -366,11 +374,13 @@ export function ParamPanel({
                   const useKey = "use" + field.id.toUpperCase();
                   const hasUseToggle = field.kind === "number" && params[useKey] !== undefined;
                   const status = keyframesEnabled ? getKeyframeStatus(keyframes, nodeId, field.id, currentFrame) : "none";
+                  const isDriven = connectedSockets?.has(field.id) ?? false;
 
                   return (
                     <div
-                      className="param-row"
+                      className={"param-row" + (isDriven ? " param-row-driven" : "")}
                       key={field.id}
+                      title={isDriven ? `${field.label} comes from the wire plugged into this node — unplug it to set a value here` : undefined}
                     >
                       <label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                         {field.label}
