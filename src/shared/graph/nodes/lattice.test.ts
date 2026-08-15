@@ -4,9 +4,15 @@ import { EvalContext } from "../types";
 import {
   buildLatticeControlPoints,
   createLatticeCageGeometry,
+  defaultLatticePoints,
   evaluateFFDPoint,
   evaluateLatticeControlPoint,
   LATTICE_DEFORM_NODE,
+  LATTICE_GRID_PARAM_IDS,
+  latticeBasePointForTarget,
+  latticeBasePoints,
+  latticeEvaluatedPoints,
+  latticeParamsWithRebuiltGrid,
   LatticeGridConfig,
 } from "./lattice";
 
@@ -105,5 +111,190 @@ describe("LATTICE DEFORM NODE", () => {
     expect(deformedMesh).toBeDefined();
     expect(deformedMesh.geometry).toBeInstanceOf(THREE.BufferGeometry);
     expect(deformedMesh.geometry.attributes.normal).toBeDefined();
+  });
+});
+
+describe("LATTICE_DEFORM_NODE source transform tracking", () => {
+  /** A graph-driven mesh: matrixAutoUpdate off, `matrix` written by its node. */
+  function graphDrivenMesh(matrix: THREE.Matrix4): THREE.Mesh {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    mesh.matrixAutoUpdate = false;
+    mesh.matrix.copy(matrix);
+    return mesh;
+  }
+
+  function deformedBoundsCentre(res: Record<string, unknown>): THREE.Vector3 {
+    const group = res.geometry as THREE.Group;
+    const mesh = group.children.find(
+      (c): c is THREE.Mesh => (c as THREE.Mesh).isMesh === true,
+    )!;
+    mesh.geometry.computeBoundingBox();
+    return mesh.geometry.boundingBox!.getCenter(new THREE.Vector3());
+  }
+
+  it("follows an animated source, whose matrixWorld nothing refreshes once it is consumed", () => {
+    // A node feeding the lattice is no longer drawn itself — only the
+    // deformed result is — so nothing traverses it and matrixWorld goes
+    // stale. Reading matrixWorld therefore froze the deformation at the
+    // source's last drawn pose: a rotating cube stopped rotating the moment
+    // a lattice was connected.
+    const source = graphDrivenMesh(new THREE.Matrix4().makeTranslation(0, 0, 0));
+
+    // A cage whose control points match its size, so the lattice itself is
+    // neutral and any movement seen is purely the source's own.
+    const neutral = {
+      ...LATTICE_DEFORM_NODE.defaultParams,
+      sizeX: 10,
+      sizeY: 10,
+      sizeZ: 10,
+      pointsList: defaultLatticePoints(10, 10, 10, 2, 2, 2),
+    };
+
+    const before = deformedBoundsCentre(
+      LATTICE_DEFORM_NODE.evaluate({ geometry: source }, neutral, { nodeId: "lat-anim" } as any),
+    );
+
+    // The source's node moves it on the next frame, exactly as an animated
+    // Transform would.
+    source.matrix.copy(new THREE.Matrix4().makeTranslation(3, 0, 0));
+
+    const after = deformedBoundsCentre(
+      LATTICE_DEFORM_NODE.evaluate({ geometry: source }, neutral, { nodeId: "lat-anim" } as any),
+    );
+
+    expect(after.x - before.x).toBeCloseTo(3, 1);
+  });
+});
+
+describe("latticeParamsWithRebuiltGrid", () => {
+  function extent(points: THREE.Vector3[], axis: "x" | "y" | "z"): number {
+    const vals = points.map((p) => p[axis]);
+    return Math.max(...vals) - Math.min(...vals);
+  }
+
+  it("rebuilds the stored grid to the new Size, which a count check alone never caught", () => {
+    // The point count is unchanged by a resize, so evaluate's own
+    // count-mismatch guard never fired and the old, smaller grid was used
+    // verbatim — the Size fields did nothing at all.
+    const next = latticeParamsWithRebuiltGrid({ ...LATTICE_DEFORM_NODE.defaultParams, sizeX: 8 });
+    const points = next.pointsList as THREE.Vector3[];
+
+    expect(points.length).toBe(8);
+    expect(extent(points, "x")).toBeCloseTo(8);
+    expect(extent(points, "y")).toBeCloseTo(2);
+  });
+
+  it("rebuilds to the new subdivision count so the handles match the cage", () => {
+    const next = latticeParamsWithRebuiltGrid({
+      ...LATTICE_DEFORM_NODE.defaultParams,
+      subdivisionsU: 4,
+    });
+    const points = next.pointsList as THREE.Vector3[];
+
+    expect(points.length).toBe(4 * 2 * 2);
+    expect(new Set(points.map((p) => p.x.toFixed(4))).size).toBe(4);
+  });
+
+  it("leaves every other param untouched", () => {
+    const next = latticeParamsWithRebuiltGrid({
+      ...LATTICE_DEFORM_NODE.defaultParams,
+      sizeX: 5,
+      twist: 33,
+      deformAxis: "z",
+    });
+
+    expect(next.twist).toBe(33);
+    expect(next.deformAxis).toBe("z");
+  });
+
+  it("lists exactly the params that define the grid's shape", () => {
+    // Deformation modulators must NOT be in here: they are applied on top of
+    // the base grid at evaluation time, so rebuilding on those would throw
+    // away the user's point edits every time a slider moved.
+    expect([...LATTICE_GRID_PARAM_IDS]).toEqual([
+      "sizeX",
+      "sizeY",
+      "sizeZ",
+      "subdivisionsU",
+      "subdivisionsV",
+      "subdivisionsW",
+    ]);
+  });
+});
+
+describe("LATTICE_DEFORM_NODE cage", () => {
+  function cageExtentX(res: Record<string, unknown>): number {
+    const attr = (res.cage as THREE.LineSegments).geometry.attributes.position;
+    const xs: number[] = [];
+    for (let i = 0; i < attr.count; i++) xs.push(attr.getX(i));
+    return Math.max(...xs) - Math.min(...xs);
+  }
+
+  it("draws the grid the stored points describe", () => {
+    const res = LATTICE_DEFORM_NODE.evaluate(
+      {},
+      latticeParamsWithRebuiltGrid({ ...LATTICE_DEFORM_NODE.defaultParams, sizeX: 8 }),
+      { nodeId: "lat-cage-size" } as any,
+    );
+
+    expect(cageExtentX(res)).toBeCloseTo(8, 1);
+  });
+});
+
+describe("lattice handle positions under modulators", () => {
+  const tapered = { ...LATTICE_DEFORM_NODE.defaultParams, taper: 0.4 };
+
+  it("evaluated points sit on the deformed cage, not on the raw stored grid", () => {
+    // The reported bug: with a taper dialled in, the handles stayed on the
+    // undeformed grid and floated off the cage they are meant to edit.
+    const base = latticeBasePoints(tapered);
+    const shown = latticeEvaluatedPoints(tapered);
+
+    expect(shown.length).toBe(base.length);
+    const moved = shown.filter((p, i) => p.distanceTo(base[i]) > 1e-6);
+    expect(moved.length).toBeGreaterThan(0);
+  });
+
+  it("with no modulators the two coincide, so nothing changes for a plain lattice", () => {
+    const plain = { ...LATTICE_DEFORM_NODE.defaultParams };
+    const base = latticeBasePoints(plain);
+    const shown = latticeEvaluatedPoints(plain);
+
+    for (let i = 0; i < base.length; i++) expect(shown[i].distanceTo(base[i])).toBeCloseTo(0, 6);
+  });
+
+  it("solves the base point that lands a handle exactly where it was dragged", () => {
+    const index = 0;
+    const target = new THREE.Vector3(-1.7, -1.2, 0.6);
+
+    const solvedBase = latticeBasePointForTarget(tapered, index, target);
+
+    // Feeding that base back through the forward pass must reproduce the drag.
+    const withEdit = {
+      ...tapered,
+      pointsList: latticeBasePoints(tapered).map((p, i) => (i === index ? solvedBase : p)),
+    };
+    expect(latticeEvaluatedPoints(withEdit)[index].distanceTo(target)).toBeLessThan(1e-6);
+  });
+
+  it("round-trips under twist and shear too, not just the linear cases", () => {
+    const gnarly = { ...LATTICE_DEFORM_NODE.defaultParams, twist: 55, shearX: 0.3, taper: -0.2, bulge: 0.25 };
+    const index = 5;
+    const target = new THREE.Vector3(0.8, 0.4, -0.9);
+
+    const solvedBase = latticeBasePointForTarget(gnarly, index, target);
+    const withEdit = {
+      ...gnarly,
+      pointsList: latticeBasePoints(gnarly).map((p, i) => (i === index ? solvedBase : p)),
+    };
+
+    expect(latticeEvaluatedPoints(withEdit)[index].distanceTo(target)).toBeLessThan(1e-6);
+  });
+
+  it("with no modulators the solved base is just the target", () => {
+    const plain = { ...LATTICE_DEFORM_NODE.defaultParams };
+    const target = new THREE.Vector3(0.3, -0.7, 0.9);
+
+    expect(latticeBasePointForTarget(plain, 3, target).distanceTo(target)).toBeLessThan(1e-9);
   });
 });

@@ -58,7 +58,9 @@ function collectTriangles(object: THREE.Object3D): TriangleSample[] {
     // being drawn elsewhere. updateWorldMatrix guards that call behind
     // matrixAutoUpdate and still refreshes matrixWorld, which is the part
     // actually needed here.
-    child.updateWorldMatrix(true, false);
+    // `force` (3rd arg) is required: three skips the recompute unless
+    // matrixWorldNeedsUpdate is set, and matrix.copy() never sets it.
+    child.updateWorldMatrix(true, false, true);
     const meshMatrix = child.matrixWorld.clone();
     const meshNormalMatrix = new THREE.Matrix3().getNormalMatrix(meshMatrix);
 

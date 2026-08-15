@@ -11,6 +11,11 @@ import { disposeNodeCaches } from "./shared/graph/nodeCaches";
 import { rehydrateGraphParams } from "./shared/graph/rehydrateParams";
 import { connectedSocketIds, paramPanelValues } from "./shared/graph/paramPanelValues";
 import {
+  LATTICE_DEFORM_NODE,
+  LATTICE_GRID_PARAM_IDS,
+  latticeParamsWithRebuiltGrid,
+} from "./shared/graph/nodes/lattice";
+import {
   CANVAS_COUNT,
   Connection,
   emptyGraph,
@@ -611,13 +616,24 @@ function MainEditor() {
           ? applyKeyframedParamUpdate(prevGraph.keyframes, nodeIdToUpdate, paramId, value, currentFrame)
           : prevGraph.keyframes;
 
-      const nextParams = { ...instance.params };
+      let nextParams = { ...instance.params };
       if (value instanceof THREE.Vector3) {
         nextParams[paramId] = value.clone();
       } else if (typeof value === "object" && value !== null) {
         nextParams[paramId] = JSON.parse(JSON.stringify(value));
       } else {
         nextParams[paramId] = value;
+      }
+
+      // A lattice's control points are stored as absolute positions, so the
+      // grid they describe has to be rebuilt when its dimensions change —
+      // the node's own evaluate is pure and cannot write them back. See
+      // latticeParamsWithRebuiltGrid.
+      if (
+        instance.type === LATTICE_DEFORM_NODE.type &&
+        (LATTICE_GRID_PARAM_IDS as readonly string[]).includes(paramId)
+      ) {
+        nextParams = latticeParamsWithRebuiltGrid(nextParams);
       }
 
       return {

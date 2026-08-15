@@ -13,6 +13,11 @@ import { insertCurvePointAfter, removeCurvePoint } from "../graph/curvePoints";
 import { GizmoTarget, resolveGizmoTarget } from "../graph/transformLookup";
 import { createCurvePointHandles } from "./curveHandles";
 import { createSceneMembership, isSelfOrDescendantOf } from "./sceneMembership";
+import {
+  LATTICE_DEFORM_NODE,
+  latticeBasePointForTarget,
+  latticeEvaluatedPoints,
+} from "../graph/nodes/lattice";
 import { createPostProcessChain } from "./postProcessChain";
 import { computeGizmoWriteback, TransformGizmoMode, TransformPatch } from "./gizmoWriteback";
 
@@ -563,7 +568,15 @@ export function Viewport({
           if (!node || !onTransformChangeRef.current) return;
           const rawList = Array.isArray(node.params.pointsList) ? [...node.params.pointsList] : [];
           if (pointIdx < 0 || pointIdx >= rawList.length) return;
-          rawList[pointIdx] = object.position.clone();
+          // A lattice handle is drawn on the deformed cage, so where it was
+          // dropped is not what `pointsList` stores — the base point that
+          // lands there once the modulators run is. Storing the handle
+          // position verbatim would bake the modulator in and then apply it
+          // a second time on the next evaluation.
+          rawList[pointIdx] =
+            node.type === LATTICE_DEFORM_NODE.type
+              ? latticeBasePointForTarget(node.params, pointIdx, object.position)
+              : object.position.clone();
           onTransformChangeRef.current(node.id, { pointsList: rawList });
           return;
         }
@@ -588,7 +601,11 @@ export function Viewport({
             offset.z *= deltaScaleZ;
             offset.applyQuaternion(deltaQuat);
             const newPos = new THREE.Vector3().addVectors(object.position, offset);
-            rawList[idx] = newPos;
+            // Same deformed-cage conversion as the single-handle path above.
+            rawList[idx] =
+              node.type === LATTICE_DEFORM_NODE.type
+                ? latticeBasePointForTarget(node.params, idx, newPos)
+                : newPos;
             const handle = curveHandles.handleAt(idx);
             if (handle) handle.position.copy(newPos);
           }
@@ -1192,8 +1209,17 @@ export function Viewport({
       // tube when it is moved, rotated or scaled.
       const curveTarget = outputMode ? null : resolveCurveEditTarget(graphRef.current, selectedNodeIdRef.current);
       const curveNode = curveTarget ? graphRef.current.nodes.find((n) => n.id === curveTarget.pointsNodeId) : undefined;
-      const rawCurvePoints = Array.isArray(curveNode?.params.pointsList) ? curveNode.params.pointsList : [];
-      const curvePoints = rawCurvePoints.map((p) => asVector3(p, new THREE.Vector3()));
+      // A lattice's handles go on its *deformed* cage, not on the raw stored
+      // grid: the stored points are the grid before taper/twist/bend are
+      // applied, so with any of those dialled in, handles drawn there float
+      // off the cage they are meant to be editing. A drag is converted back
+      // through latticeBasePointForTarget below.
+      const isLatticeNode = curveNode?.type === LATTICE_DEFORM_NODE.type;
+      const curvePoints = isLatticeNode
+        ? latticeEvaluatedPoints(curveNode!.params)
+        : (Array.isArray(curveNode?.params.pointsList) ? curveNode.params.pointsList : []).map((p) =>
+            asVector3(p, new THREE.Vector3()),
+          );
 
       if (curveTarget && curveNode && curvePoints.length >= 2) {
         if (curvePointsNodeId !== curveNode.id) {
@@ -1211,7 +1237,7 @@ export function Viewport({
         const spaceObject = results.get(curveTarget.spaceNodeId)?.geometry;
         const spaceMatrix = new THREE.Matrix4();
         if (spaceObject instanceof THREE.Object3D) {
-          spaceObject.updateWorldMatrix(true, false);
+          spaceObject.updateWorldMatrix(true, false, true);
           spaceMatrix.copy(spaceObject.matrixWorld);
         }
 
@@ -1220,8 +1246,7 @@ export function Viewport({
           (transformControls.object?.userData?.isCurvePointHandle ||
             transformControls.object?.userData?.isCurveCentroidHandle);
         const frozenIndices = isDraggingHandle ? selectedPointIndices : null;
-        const isLattice = curveNode.type === "modifier/lattice";
-        curveHandles.sync(curvePoints, spaceMatrix, selectedPointIndices, frozenIndices, !isLattice);
+        curveHandles.sync(curvePoints, spaceMatrix, selectedPointIndices, frozenIndices, !isLatticeNode);
       } else if (curveHandles.count() > 0) {
         curveHandles.clear();
         curvePointsNodeId = null;

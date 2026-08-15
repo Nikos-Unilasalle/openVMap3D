@@ -57,6 +57,178 @@ export function defaultLatticePoints(
   return pts;
 }
 
+/** The params that define the shape of the base grid, as opposed to how it is deformed. */
+export const LATTICE_GRID_PARAM_IDS = [
+  "sizeX",
+  "sizeY",
+  "sizeZ",
+  "subdivisionsU",
+  "subdivisionsV",
+  "subdivisionsW",
+] as const;
+
+/**
+ * Rebuilds `pointsList` for a lattice whose grid dimensions just changed.
+ *
+ * `pointsList` holds absolute control-point positions: it is both what the
+ * viewport draws draggable handles from and what the cage is built from. So
+ * it has to be regenerated whenever the grid it describes changes shape,
+ * which `evaluate` cannot do for itself — it is pure, and may not write back
+ * into params.
+ *
+ * Only a *count* mismatch used to be caught, and only inside evaluate, which
+ * left two holes: changing a Size did nothing whatsoever (the count still
+ * matched, so the old, differently-sized points were used verbatim), and
+ * changing a subdivision moved the cage but left the handles behind at the
+ * old grid's positions.
+ *
+ * Manual point edits are discarded, because a resized or re-subdivided grid
+ * has no meaningful correspondence to them — the same thing Blender does
+ * when a lattice's resolution changes.
+ */
+export function latticeParamsWithRebuiltGrid(params: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...params,
+    pointsList: defaultLatticePoints(
+      Math.max(0.01, asNumber(params.sizeX, 2.0)),
+      Math.max(0.01, asNumber(params.sizeY, 2.0)),
+      Math.max(0.01, asNumber(params.sizeZ, 2.0)),
+      asNumber(params.subdivisionsU, 2),
+      asNumber(params.subdivisionsV, 2),
+      asNumber(params.subdivisionsW, 2),
+    ),
+  };
+}
+
+/**
+ * The lattice's grid settings as the node itself reads them, so the viewport
+ * can draw exactly the grid the node will build rather than reconstructing
+ * the rules and drifting from them.
+ */
+export function latticeConfigFromParams(params: Record<string, unknown>): LatticeGridConfig {
+  return {
+    sizeX: Math.max(0.01, asNumber(params.sizeX, 2.0)),
+    sizeY: Math.max(0.01, asNumber(params.sizeY, 2.0)),
+    sizeZ: Math.max(0.01, asNumber(params.sizeZ, 2.0)),
+    subdivU: Math.max(2, Math.min(16, Math.round(asNumber(params.subdivisionsU, 2)))),
+    subdivV: Math.max(2, Math.min(16, Math.round(asNumber(params.subdivisionsV, 2)))),
+    subdivW: Math.max(2, Math.min(16, Math.round(asNumber(params.subdivisionsW, 2)))),
+    interpolation: String(params.interpolation) === "smooth" ? "smooth" : "linear",
+    strength: Math.max(0, Math.min(1, asNumber(params.strength, 1.0))),
+    deformAxis: (String(params.deformAxis || "y").toLowerCase() as "x" | "y" | "z") || "y",
+    bulge: asNumber(params.bulge, 0),
+    twist: asNumber(params.twist, 0),
+    taper: asNumber(params.taper, 0),
+    bend: asNumber(params.bend, 0),
+    shearX: asNumber(params.shearX, 0),
+    shearZ: asNumber(params.shearZ, 0),
+  };
+}
+
+/** The stored base points, or a freshly built grid when they don't match the current size. */
+export function latticeBasePoints(params: Record<string, unknown>): THREE.Vector3[] {
+  const c = latticeConfigFromParams(params);
+  const expected = c.subdivU * c.subdivV * c.subdivW;
+  const stored = Array.isArray(params.pointsList)
+    ? (params.pointsList as unknown[]).map((p) => asVector3(p, new THREE.Vector3()))
+    : [];
+  return stored.length === expected
+    ? stored
+    : defaultLatticePoints(c.sizeX, c.sizeY, c.sizeZ, c.subdivU, c.subdivV, c.subdivW);
+}
+
+/** Normalized grid coordinates of point `index`, in the same i→j→k order pointsList uses. */
+function normalizedGridCoords(c: LatticeGridConfig, index: number): [number, number, number] {
+  const nv = c.subdivV;
+  const nw = c.subdivW;
+  const i = Math.floor(index / (nv * nw));
+  const j = Math.floor((index % (nv * nw)) / nw);
+  const k = index % nw;
+  return [
+    c.subdivU > 1 ? i / (c.subdivU - 1) - 0.5 : 0,
+    nv > 1 ? j / (nv - 1) - 0.5 : 0,
+    nw > 1 ? k / (nw - 1) - 0.5 : 0,
+  ];
+}
+
+/**
+ * Where each control point actually ends up once the procedural modulators
+ * (taper, twist, bend, …) have been applied — i.e. the corners of the cage
+ * as drawn.
+ *
+ * The viewport's draggable handles are placed here rather than on the raw
+ * stored points, because the stored points are the grid *before* modulators:
+ * with any taper dialled in, handles drawn there float off the cage they are
+ * supposed to be editing.
+ */
+export function latticeEvaluatedPoints(params: Record<string, unknown>): THREE.Vector3[] {
+  const config = latticeConfigFromParams(params);
+  const grid = buildLatticeControlPoints(config, latticeBasePoints(params));
+  const points: THREE.Vector3[] = [];
+  for (let i = 0; i < grid.length; i++) {
+    for (let j = 0; j < grid[i].length; j++) {
+      for (let k = 0; k < grid[i][j].length; k++) points.push(grid[i][j][k]);
+    }
+  }
+  return points;
+}
+
+/**
+ * The base point that would land at `target` once the modulators are applied
+ * — the inverse of what latticeEvaluatedPoints computes, so that dragging a
+ * handle drawn on the deformed cage edits the underlying grid correctly.
+ *
+ * Solved numerically (Newton, finite-difference Jacobian) rather than
+ * algebraically: the modulators compose taper, twist, bulge, bend and shear,
+ * and several of them are driven by the point's own coordinate along the
+ * deform axis, which makes the closed-form inverse both messy and a second
+ * place for the forward maths to be duplicated and drift out of sync. Three
+ * iterations put the residual far below what a mouse can express; if the
+ * Jacobian is singular (a modulator collapsing an axis) the step is skipped
+ * and the last good estimate stands, so a drag degrades rather than
+ * exploding.
+ */
+export function latticeBasePointForTarget(
+  params: Record<string, unknown>,
+  index: number,
+  target: THREE.Vector3,
+): THREE.Vector3 {
+  const config = latticeConfigFromParams(params);
+  const [uNorm, vNorm, wNorm] = normalizedGridCoords(config, index);
+  const forward = (base: THREE.Vector3) =>
+    evaluateLatticeControlPoint(uNorm, vNorm, wNorm, config, index, base);
+
+  const basePoints = latticeBasePoints(params);
+  const estimate = (basePoints[index] ?? new THREE.Vector3()).clone();
+
+  const EPS = 1e-4;
+  for (let iteration = 0; iteration < 3; iteration++) {
+    const residual = new THREE.Vector3().subVectors(target, forward(estimate));
+    if (residual.lengthSq() < 1e-14) break;
+
+    const columns = (["x", "y", "z"] as const).map((axis) => {
+      const nudged = estimate.clone();
+      nudged[axis] += EPS;
+      return new THREE.Vector3().subVectors(forward(nudged), forward(estimate)).divideScalar(EPS);
+    });
+
+    const jacobian = new THREE.Matrix3().set(
+      columns[0].x, columns[1].x, columns[2].x,
+      columns[0].y, columns[1].y, columns[2].y,
+      columns[0].z, columns[1].z, columns[2].z,
+    );
+    const determinant =
+      jacobian.elements[0] * (jacobian.elements[4] * jacobian.elements[8] - jacobian.elements[7] * jacobian.elements[5]) -
+      jacobian.elements[3] * (jacobian.elements[1] * jacobian.elements[8] - jacobian.elements[7] * jacobian.elements[2]) +
+      jacobian.elements[6] * (jacobian.elements[1] * jacobian.elements[5] - jacobian.elements[4] * jacobian.elements[2]);
+    if (Math.abs(determinant) < 1e-9) break;
+
+    estimate.add(residual.clone().applyMatrix3(jacobian.clone().invert()));
+  }
+
+  return estimate;
+}
+
 /**
  * Evaluates the deformed 3D position of a local control point on the grid (i, j, k)
  * based on the base point + built-in procedural modulators + custom offset list.
@@ -569,10 +741,22 @@ export const LATTICE_DEFORM_NODE: NodeDefinition = {
     state.deformedMesh.visible = true;
     state.deformedMesh.material = srcMesh.material;
 
-    // Source world transform relative to scene
-    const sourceMatrix = srcMesh.matrixWorld && !srcMesh.matrixWorld.equals(new THREE.Matrix4())
-      ? srcMesh.matrixWorld.clone()
-      : srcMesh.matrix.clone();
+    // Source world transform. It has to be recomputed, not read: a node
+    // feeding the lattice is no longer drawn itself — only the deformed
+    // result is — so nothing traverses it and its matrixWorld is never
+    // refreshed. `matrix.copy()` doesn't flag it stale either, so the value
+    // sitting there is whatever the source last had when something else
+    // happened to draw it. Reading it froze the deformation at that pose,
+    // which is why connecting a lattice stopped an animated object dead.
+    // updateWorldMatrix walks the parents and guards updateMatrix() behind
+    // matrixAutoUpdate, so it is safe on a graph-driven mesh (whose
+    // position/quaternion/scale are stale by design).
+    // The third argument is `force`, and it is not optional here: three
+    // skips the recompute unless `matrixWorldNeedsUpdate` is set, and
+    // `matrix.copy()` never sets it (see Object3D.updateWorldMatrix). Without
+    // it this call is a silent no-op on exactly the meshes that need it.
+    srcMesh.updateWorldMatrix(true, false, true);
+    const sourceMatrix = srcMesh.matrixWorld.clone();
 
     // Composite transform from source geometry to lattice local space:
     // P_lattice = inv(LatticeMatrix) * (SourceMatrix * P_src)

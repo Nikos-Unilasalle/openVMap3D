@@ -182,6 +182,17 @@ Les prises de connexion (sockets) sont identifiees par des codes couleur normali
 | Color Correction | `postprocess/color_correction` | Étalonnage des couleurs (luminosité, contraste, saturation, teinte). |
 | Fog | `postprocess/fog` | Brume volumétrique basée sur le tampon de profondeur de la scène. |
 
+### Animation, Temps et Bruit Procédural (Wiggle)
+
+| Node | Type | Entrees | Sorties | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| Wiggle | `animation/wiggle` | evolution, speed, amplitude, amplitudeVector, rotationAmplitude, scaleAmplitude, seed, octaves, persistance, lacunarity, offset, baseVector, matrix | value, vector, rotation, scale, matrix | Générateur de bruit fractal (fBm) type Blender Animation Nodes produisant simultanément des oscillations scalaires, vectorielles 3D, de rotation Euler et de matrices de transformation complètes. |
+| Wiggle Number | `math/wiggle-number` | evolution, speed, amplitude, seed, octaves, persistance, lacunarity, offset | value | Générateur d'oscillations scalaires continues et cohérentes basées sur du bruit de gradient. |
+| Wiggle Vector | `vector/wiggle-vector` | evolution, speed, amplitude, seed, octaves, persistance, lacunarity, baseVector | vector | Générateur de bruit 3D vectoriel (X, Y, Z) décorrélé pour déplacements procéduraux. |
+| Oscillator | `animation/oscillator` | frequency, phase, amplitude, offset | out | Générateur de formes d'ondes périodiques continues (Sinus, Dent de scie, Carré, Triangle). |
+| Envelope | `animation/envelope` | trigger, attack, release | out | Générateur d'enveloppe Attack / Release réagissant aux triggers et fronts montants. |
+| Time | `time/time` | - | time, step | Horloge temps réel déterministe fournissant le temps écoulé en secondes et le numéro de frame. |
+
 ### Mathematiques, Vecteurs et Logique
 
 | Node | Type | Description |
@@ -199,6 +210,10 @@ Les prises de connexion (sockets) sont identifiees par des codes couleur normali
 | Color Compose | `math/color_compose` | Assemble des canaux R, G, B, A en une couleur. |
 | Color Decompose | `math/color_decompose` | Extrait les composantes scalaires R, G, B, A d'une couleur. |
 | Color Constant | `math/color_constant` | Émetteur d'une valeur de couleur fixe. |
+| Random Value | `math/random-value` | Génère des nombres aléatoires selon divers algorithmes (uniforme, gaussien, bruit 1D, exponentiel). |
+| Random Vector | `vector/random-vector` | Génère des vecteurs 3D aléatoires ou répartis sur/dans une sphère. |
+| Random Matrix | `transform/random-matrix` | Génère des matrices de transformation aléatoires (position, rotation, échelle). |
+| Random List | `list/random-list` | Génère une liste de valeurs pseudo-aléatoires continues ou discrètes. |
 | Boolean Logic | `logic/boolean` | Portes logiques booléennes : AND, OR, NOT, XOR. |
 | Compare | `logic/compare` | Comparateurs de valeurs : égal, différent, supérieur, inférieur. |
 | Gate | `logic/gate` | Laisse passer ou bloque un signal en fonction d'un contrôle booléen. |
