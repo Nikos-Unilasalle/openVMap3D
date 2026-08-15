@@ -46,6 +46,18 @@ export interface SocketDef {
   id: string;
   label: string;
   type: SocketType;
+  /**
+   * Input sockets only: this node takes ownership of the geometry wired into
+   * it — it reparents, clones, deforms or passes on the object, and is from
+   * then on responsible for putting it on screen. The source node stops
+   * being drawn in its own right (see sceneRoots.ts).
+   *
+   * Off by default, and deliberately not inferred from the socket type: a
+   * Spot Light's `target` and a Look At's `target` are geometry-typed too,
+   * but they only read a position off the object — it has to keep rendering
+   * where it is.
+   */
+  owns?: boolean;
 }
 
 /**

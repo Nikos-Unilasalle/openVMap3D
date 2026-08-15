@@ -193,7 +193,7 @@ export const LOOK_AT_NODE: NodeDefinition = {
   label: "Look At",
   category: "transform",
   inputs: [
-    { id: "geometry", label: "Geometry", type: "geometry" },
+    { id: "geometry", label: "Geometry", type: "geometry", owns: true },
     { id: "target", label: "Target", type: "any" },
     { id: "up", label: "Up", type: "vector" },
     { id: "eye", label: "Eye / Pos", type: "any" },

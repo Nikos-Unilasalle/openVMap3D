@@ -6,7 +6,7 @@ export const INSPECTOR_NODE: NodeDefinition = {
   type: "io/inspector",
   label: "Inspector",
   category: "io",
-  inputs: [{ id: "input", label: "Input", type: "any" }],
+  inputs: [{ id: "input", label: "Input", type: "any", owns: true }],
   outputs: [{ id: "out", label: "Out", type: "any" }],
   defaultParams: {},
   evaluate: (inputs, _params, ctx) => {

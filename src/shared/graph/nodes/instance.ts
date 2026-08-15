@@ -118,7 +118,7 @@ export const SET_INSTANCE_COLOR_NODE: NodeDefinition = {
   label: "Set Instance Color",
   category: "instance",
   inputs: [
-    { id: "geometry", label: "Geometry", type: "geometry" },
+    { id: "geometry", label: "Geometry", type: "geometry", owns: true },
     { id: "colors", label: "Colors", type: "list" },
     { id: "color", label: "Default Color", type: "color" },
     INSTANCE_INDEX_INPUT,
@@ -204,7 +204,7 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
   label: "Set Instance Transform",
   category: "instance",
   inputs: [
-    { id: "geometry", label: "Geometry", type: "geometry" },
+    { id: "geometry", label: "Geometry", type: "geometry", owns: true },
     { id: "matrix", label: "Matrix", type: "matrix" },
     { id: "matrices", label: "Matrices (List)", type: "any" },
     { id: "positions", label: "Positions (Vector List)", type: "list" },
@@ -404,11 +404,11 @@ export const GET_INSTANCE_NODE: NodeDefinition = {
   label: "Get Instance",
   category: "instance",
   inputs: [
-    { id: "geometry", label: "Geometry", type: "geometry" },
+    { id: "geometry", label: "Geometry", type: "geometry", owns: true },
     { id: "index", label: "Index", type: "value" },
   ],
   outputs: [
-    { id: "geometry", label: "Geometry", type: "geometry" },
+    { id: "geometry", label: "Geometry", type: "geometry", owns: true },
     { id: "count", label: "Count", type: "value" },
   ],
   defaultParams: { index: 0 },
@@ -443,7 +443,7 @@ export const GEOMETRY_TRANSFORM_NODE: NodeDefinition = {
   label: "Geometry Transform",
   category: "instance",
   inputs: [
-    { id: "geometry", label: "Geometry", type: "geometry" },
+    { id: "geometry", label: "Geometry", type: "geometry", owns: true },
     { id: "matrix", label: "Matrix", type: "matrix" },
     { id: "location", label: "Location", type: "vector" },
     { id: "posX", label: "Pos X", type: "value" },
@@ -559,7 +559,7 @@ export const INSTANCES_TO_LIST_NODE: NodeDefinition = {
   type: "structure/instances-to-list",
   label: "Instances to List",
   category: "converter",
-  inputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
+  inputs: [{ id: "geometry", label: "Geometry", type: "geometry", owns: true }],
   outputs: [
     { id: "list", label: "List", type: "list" },
     { id: "count", label: "Count", type: "value" },

@@ -191,8 +191,8 @@ export const LOGIC_BRIDGE_NODE: NodeDefinition = {
   category: "logic",
   inputs: [
     { id: "condition", label: "Condition", type: "value" },
-    { id: "ifTrue", label: "If True (A)", type: "any" },
-    { id: "ifFalse", label: "If False (B)", type: "any" },
+    { id: "ifTrue", label: "If True (A)", type: "any", owns: true },
+    { id: "ifFalse", label: "If False (B)", type: "any", owns: true },
   ],
   dynamicInputs: (_connections, connectionTypes) => {
     const connTrue = connectionTypes?.find((c) => c.connection.toSocket === "ifTrue");
@@ -205,8 +205,8 @@ export const LOGIC_BRIDGE_NODE: NodeDefinition = {
 
     return [
       { id: "condition", label: "Condition", type: "value" },
-      { id: "ifTrue", label: "If True (A)", type: activeType },
-      { id: "ifFalse", label: "If False (B)", type: activeType },
+      { id: "ifTrue", label: "If True (A)", type: activeType, owns: true },
+      { id: "ifFalse", label: "If False (B)", type: activeType, owns: true },
     ];
   },
   dynamicOutputs: (_connections, connectionTypes) => {

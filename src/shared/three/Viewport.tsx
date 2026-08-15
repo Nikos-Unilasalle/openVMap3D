@@ -5,10 +5,10 @@ import { TransformControls } from "three/examples/jsm/controls/TransformControls
 import { ClockState, createClock, tickClock } from "../graph/clock";
 import { EvalResult, evaluateGraph } from "../graph/evaluate";
 import { CAMERA_NODE } from "../graph/nodes/camera";
-import { OBJECT_EMPTY_NODE } from "../graph/nodes/object";
 import { asVector3 } from "../graph/nodes/transform";
 import { resetAllParticleSimulations } from "../graph/particleRuntime";
 import { resolveCurveEditTarget } from "../graph/curveLookup";
+import { resolveSceneRoots } from "../graph/sceneRoots";
 import { insertCurvePointAfter, removeCurvePoint } from "../graph/curvePoints";
 import { GizmoTarget, resolveGizmoTarget } from "../graph/transformLookup";
 import { createCurvePointHandles } from "./curveHandles";
@@ -40,25 +40,15 @@ import type { PreviewCameraPose } from "../ipc";
 import "./viewport.css";
 
 
-/**
- * Partial on purpose: a gizmo drag writes only the channel it is actually
- * dragging, and only when that channel isn't driven by a wire — see the
- * `objectChange` handler for why writing all three corrupted hand-set values.
- */
-/**
- * Membership key for the Render node's output (see sceneMembership.ts).
- * Every other key in that map is a node id; this one is deliberately not a
- * legal one, since the render output isn't owned by any single node — it's
- * whatever object the graph currently resolves to, and in the output window
- * it's a per-frame clone rather than the node's own object.
- */
-const RENDER_OUTPUT_KEY = "__render_output__";
-
-
 interface ViewportProps {
   graph: Graph;
   registry: NodeRegistry;
-  /** Which node in the graph is the terminal `render` node whose output gets drawn. */
+  /**
+   * Which node in the graph is the `render` node. Not a gate on what gets
+   * drawn any more (see sceneRoots.ts) — it supplies the output settings,
+   * the environment and the post-process chain, and its own subtree is what
+   * the outline pass and the passe-partout guide treat as "the output".
+   */
   renderNodeId: string;
   epochMs?: number;
   /**
@@ -629,14 +619,19 @@ export function Viewport({
       // the object.
       activeCurvePointIdx = null;
 
+      // three's Raycaster hits invisible objects too — it only skips them if
+      // you filter yourself — so a hidden object would otherwise still be
+      // clickable, and would steal clicks from whatever is visible behind it.
       const hit = raycaster
         ? raycaster.intersectObjects(scene.children, true).find((i) => {
             let curr: THREE.Object3D | null = i.object;
+            let taggedNode = false;
             while (curr) {
-              if (curr.userData?.nodeId) return true;
+              if (curr.visible === false) return false;
+              if (curr.userData?.nodeId) taggedNode = true;
               curr = curr.parent;
             }
-            return false;
+            return taggedNode;
           })
         : undefined;
 
@@ -688,6 +683,8 @@ export function Viewport({
     resize();
 
     let currentObject: THREE.Object3D | null = null;
+    let cachedRootsGraph: Graph | null = null;
+    let cachedRoots: string[] = [];
     const activeLights = new Map<string, THREE.Light>();
     const activeLightHelpers = new Map<string, THREE.Object3D>();
     // Everything this viewport puts into a scene goes through one of these,
@@ -993,32 +990,52 @@ export function Viewport({
         gizmo.gizmoCamera.lookAt(0, 0, 0);
       }
 
-      // Strictly what the Render node resolves to — no "else grab whichever
-      // node happened to produce geometry first" fallback. That fallback
-      // made unwiring a node from Render look like it did nothing: the node
-      // simply got re-picked as the scene output on the very next frame, so
-      // its object stayed on screen (and, being an arbitrary pick over a
-      // Map, which node won was down to evaluation order). No Render node,
-      // or nothing wired into it, now means an empty view — the same thing
-      // every other node-graph editor does, and the only reading that lets
-      // the wire actually mean something.
-      const output = results.get(renderNodeIdRef.current)?.geometry;
-      const rawOutput = output instanceof THREE.Object3D ? output : null;
+      // Everything this viewport shows, in one reconciliation: the object of
+      // every node that is a scene root — one whose geometry nothing
+      // downstream has taken ownership of (see sceneRoots.ts). A Render node
+      // is one root among others rather than the only door into the scene,
+      // which is what the Empty and light exemptions here were already
+      // working around.
+      //
+      // The containment check is the safety net for *reparenting* owners: a
+      // Merge pulls its inputs into its own group, and adding one to the
+      // scene again would tear it back out (three.js gives an Object3D
+      // exactly one parent). Cloning owners — Array, Look At, Spawner — are
+      // covered by the ownership declaration instead, since their source is
+      // never inside their output and no runtime check could tell the
+      // resulting duplicate from a legitimate second object.
+      // Only the graph's shape decides this, and it changes on an edit, not
+      // on a frame — recomputing it 60 times a second would walk every
+      // connection of every node for nothing.
+      if (cachedRootsGraph !== graphRef.current) {
+        cachedRootsGraph = graphRef.current;
+        cachedRoots = resolveSceneRoots(graphRef.current, registryRef.current);
+      }
 
-      if (outputMode) {
-        // Split View's right pane (and the separate Output Window) run
-        // their own tick() loop against the *same* graph, but every
-        // object/instance/merge node hands back one THREE.Object3D cached
-        // per node id at module scope (see nodeCaches.ts) — there is only
-        // ever one such object for the whole process, not one per Viewport.
-        // three.js gives an Object3D exactly one parent, so the instant a
-        // second Viewport's scene.add() runs on it, it's silently ripped out
-        // of whichever scene had it first. Before Split View existed only
-        // one Viewport ever called scene.add() on these objects, so this
-        // never fired; with two Viewports racing their own rAF loops, the
-        // editor pane's own scene.add() this frame gets undone by the
-        // output pane's scene.add() the next, leaving the editor empty
-        // until `rawOutput`'s identity happens to change again.
+      const rootObjects: { nodeId: string; object: THREE.Object3D }[] = [];
+      for (const nodeId of cachedRoots) {
+        const geometry = results.get(nodeId)?.geometry;
+        if (!(geometry instanceof THREE.Object3D)) continue;
+        rootObjects.push({ nodeId, object: geometry });
+      }
+
+      const desiredContents = new Map<string, THREE.Object3D>();
+      for (const { nodeId, object } of rootObjects) {
+        const insideAnotherRoot = rootObjects.some(
+          (other) => other.object !== object && isSelfOrDescendantOf(object, other.object),
+        );
+        if (insideAnotherRoot) continue;
+
+        // Split View's right pane (and the separate Output Window) run their
+        // own tick() loop against the *same* graph, but every object/
+        // instance/merge node hands back one THREE.Object3D cached per node
+        // id at module scope (see nodeCaches.ts) — there is only ever one
+        // such object for the whole process, not one per Viewport. three.js
+        // gives an Object3D exactly one parent, so the instant a second
+        // Viewport's scene.add() runs on it, it's silently ripped out of
+        // whichever scene had it first: the editor pane's own scene.add()
+        // this frame gets undone by the output pane's the next, leaving the
+        // editor empty until the object's identity happens to change again.
         //
         // This pane has no TransformControls (outputMode skips that whole
         // block below) needing a *stable* object identity to attach to
@@ -1027,40 +1044,16 @@ export function Viewport({
         // deep-copies the hierarchy but shares geometry/material by
         // reference — cheap, and nothing GPU-owned needs disposing when the
         // old clone is dropped.
-        currentObject = rawOutput?.clone(true) ?? null;
-      } else {
-        currentObject = rawOutput;
-      }
-
-      // One reconciliation for everything this viewport shows: the render
-      // output, plus every Empty anchor.
-      //
-      // Empties exist unconditionally — they are the scene's reference
-      // frames, not its content. Their whole job is to be positioned and
-      // then drive other nodes through their Matrix output, so requiring a
-      // path to Render before one is visible got the dependency backwards:
-      // the anchor would vanish exactly when it was being used as an anchor.
-      // The only case one is left out is when it is already inside the
-      // rendered tree, where adding it again would tear it out of the group
-      // that legitimately holds it (three.js allows a single parent).
-      //
-      // Every *other* unconnected node (a Box just dropped on the canvas, an
-      // Array with nothing plugged in) still stays invisible until it's
-      // actually wired up; sweeping in any orphaned THREE.Object3D was an
-      // earlier bug here, and it's what let a stray downstream clone (Array
-      // and Look At clone their input rather than reparenting it) render as
-      // a duplicate.
-      const desiredContents = new Map<string, THREE.Object3D>();
-      if (currentObject) desiredContents.set(RENDER_OUTPUT_KEY, currentObject);
-      for (const [nodeId, res] of results.entries()) {
-        const node = graphRef.current.nodes.find((n) => n.id === nodeId);
-        if (node?.type !== OBJECT_EMPTY_NODE.type) continue;
-        if (!(res?.geometry instanceof THREE.Object3D)) continue;
-        const geomObj = res.geometry as THREE.Object3D;
-        if (currentObject && isSelfOrDescendantOf(geomObj, currentObject)) continue;
-        desiredContents.set(nodeId, geomObj);
+        desiredContents.set(nodeId, outputMode ? object.clone(true) : object);
       }
       sceneContents.sync(desiredContents);
+
+      // What post-processing outlines and what the passe-partout guide frames
+      // is still the Render node's own subtree — "the output" is a narrower
+      // idea than "everything in the scene", and that is exactly what a
+      // Render node is for.
+      const renderOutput = results.get(renderNodeIdRef.current)?.geometry;
+      currentObject = renderOutput instanceof THREE.Object3D ? (desiredContents.get(renderNodeIdRef.current) ?? renderOutput) : null;
 
       // Curve control-point handles for the selected curve, drawn through the
       // world matrix of whatever object draws that curve so they track the

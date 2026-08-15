@@ -21,7 +21,8 @@ export const ARRAY_NODE: NodeDefinition = {
   label: "Array",
   category: "instance",
   inputs: [
-    { id: "geometry", label: "Geometry", type: "geometry" },
+    { id: "visible", label: "Visible", type: "value" },
+    { id: "geometry", label: "Geometry", type: "geometry", owns: true },
     { id: "count", label: "Count", type: "value" },
     { id: "spacing", label: "Spacing", type: "value" },
     { id: "radius", label: "Radius", type: "value" },
@@ -34,6 +35,7 @@ export const ARRAY_NODE: NodeDefinition = {
   ],
   outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
   defaultParams: {
+    visible: 1,
     count: 5,
     mode: "linear",
     axis: "X",
@@ -53,6 +55,7 @@ export const ARRAY_NODE: NodeDefinition = {
     centerGrid: true,
   },
   paramFields: [
+    { id: "visible", label: "Visible", kind: "boolean" },
     { id: "mode", label: "Mode", kind: "select", options: ["linear", "circular", "grid", "grid3d"] },
     { id: "count", label: "Count", kind: "number", step: 1 },
     { id: "axis", label: "Linear Axis", kind: "select", options: ["X", "Y", "Z"] },

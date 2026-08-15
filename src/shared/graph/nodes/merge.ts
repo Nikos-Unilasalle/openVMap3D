@@ -33,15 +33,21 @@ export const MERGE_NODE: NodeDefinition = {
   type: "structure/merge",
   label: "Merge",
   category: "structure",
-  inputs: [{ id: `${INPUT_PREFIX}0`, label: "In 1", type: "geometry" }],
-  dynamicInputs: (connections) =>
-    growingSockets(connections, INPUT_PREFIX, (i) => ({
+  inputs: [
+    { id: "visible", label: "Visible", type: "value" },
+    { id: `${INPUT_PREFIX}0`, label: "In 1", type: "geometry", owns: true },
+  ],
+  dynamicInputs: (connections) => [
+    { id: "visible", label: "Visible", type: "value" as const },
+    ...growingSockets(connections, INPUT_PREFIX, (i) => ({
       id: `${INPUT_PREFIX}${i}`,
       label: `In ${i + 1}`,
       type: "geometry",
+      owns: true,
     })),
+  ],
   outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
-  defaultParams: {},
+  defaultParams: { visible: 1 },
   evaluate: (inputs, _params, ctx) => {
     const group = getGroup(ctx.nodeId);
     group.clear();

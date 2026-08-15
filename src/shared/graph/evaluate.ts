@@ -182,6 +182,27 @@ function connectionInto(connections: Connection[], nodeId: string, socketId: str
  * "wrong" here usually still reads as "wrong in an obvious way" (e.g. reading
  * last frame's value from a node that isn't ready yet).
  */
+/**
+ * The one input socket the evaluator handles itself rather than leaving to
+ * each node: hiding an object is the same operation for every node that has
+ * one, and doing it here means a node only has to *declare* the socket to
+ * get it — wireable from a Logic node, keyframable, and hierarchical (a
+ * hidden Merge hides everything in it) because three.js already works that
+ * way.
+ *
+ * Visibility is scene membership, not a look: unlike an opacity of 0 it
+ * costs nothing to draw, applies to objects with no material of their own,
+ * and takes the whole subtree with it.
+ */
+const VISIBILITY_SOCKET = "visible";
+
+function applyVisibility(geometry: unknown, value: unknown): void {
+  // undefined means the node never declared the socket — leave it alone.
+  if (value === undefined || !(geometry instanceof THREE.Object3D)) return;
+  const asNumber = Number(value);
+  geometry.visible = Number.isFinite(asNumber) ? asNumber !== 0 : Boolean(value);
+}
+
 export function evaluateGraph(graph: Graph, registry: NodeRegistry, ctx: EvalContext): EvalResult {
   const { order, cyclic } = topoSort(graph);
   const results: EvalResult = new Map();
@@ -221,6 +242,7 @@ export function evaluateGraph(graph: Graph, registry: NodeRegistry, ctx: EvalCon
 
     try {
       const outputs = def.evaluate(inputs, params, { ...ctx, nodeId }) || {};
+      applyVisibility(outputs.geometry, inputs[VISIBILITY_SOCKET]);
       results.set(nodeId, {
         ...outputs,
         __evaluatedInputs: inputs,

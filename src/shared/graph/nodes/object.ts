@@ -199,6 +199,7 @@ export function applyMaterialParams(
 }
 
 export const COMMON_PRIMITIVE_INPUTS = [
+  { id: "visible", label: "Visible", type: "value" as const },
   { id: "texture", label: "Texture Map", type: "texture" as const },
   { id: "normal", label: "Normal Map", type: "texture" as const },
   { id: "matrix", label: "Matrix", type: "matrix" as const },
@@ -254,6 +255,7 @@ const COMMON_MATERIAL_PARAM_FIELDS: ParamFieldDef[] = [
  * is positioned/oriented/sized relative to.
  */
 const NATIVE_TRANSFORM_PARAM_FIELDS: ParamFieldDef[] = [
+  { id: "visible", label: "Visible", kind: "boolean", group: "Transform" },
   { id: "location", label: "Location", kind: "vector", group: "Transform" },
   { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true, group: "Transform" },
   { id: "scale", label: "Scale", kind: "vector", group: "Transform" },
@@ -325,6 +327,7 @@ export function buildPrimitiveDynamicParamFields(extraFields: ParamFieldDef[] = 
 }
 
 export const COMMON_DEFAULT_PARAMS = {
+  visible: 1,
   location: new THREE.Vector3(0, 0, 0),
   rotation: new THREE.Vector3(0, 0, 0),
   scale: new THREE.Vector3(1, 1, 1),

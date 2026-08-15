@@ -1,3 +1,4 @@
+import * as THREE from "three";
 import { describe, expect, test } from "vitest";
 import { evaluateGraph, topoSort } from "./evaluate";
 import { Connection, EvalContext, Graph, NodeDefinition, NodeInstance, createRegistry } from "./types";
@@ -183,5 +184,77 @@ describe("evaluateGraph", () => {
       const result = evaluateGraph(rehydrated, DEFAULT_REGISTRY, CTX);
       expect(result.size).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("the visible socket", () => {
+  const HIDEABLE: NodeDefinition = {
+    type: "test/hideable",
+    label: "Hideable",
+    category: "structure",
+    inputs: [{ id: "visible", label: "Visible", type: "value" }],
+    outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
+    defaultParams: { visible: 1 },
+    evaluate: () => ({ geometry: new THREE.Object3D() }),
+  };
+
+  const OPAQUE: NodeDefinition = {
+    type: "test/no-visible-socket",
+    label: "No Visible Socket",
+    category: "structure",
+    inputs: [],
+    outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
+    defaultParams: {},
+    evaluate: () => {
+      const object = new THREE.Object3D();
+      object.visible = false;
+      return { geometry: object };
+    },
+  };
+
+  function evaluateOne(def: NodeDefinition, params: Record<string, unknown>): THREE.Object3D {
+    const graph: Graph = {
+      nodes: [{ id: "n1", type: def.type, params, position: { x: 0, y: 0 } }],
+      connections: [],
+    };
+    const results = evaluateGraph(graph, createRegistry([def]), CTX);
+    return results.get("n1")?.geometry as THREE.Object3D;
+  }
+
+  test("a node only has to declare the socket — the evaluator applies it", () => {
+    expect(evaluateOne(HIDEABLE, { visible: 0 }).visible).toBe(false);
+    expect(evaluateOne(HIDEABLE, { visible: 1 }).visible).toBe(true);
+  });
+
+  test("booleans work as well as the 0/1 the param panel stores", () => {
+    expect(evaluateOne(HIDEABLE, { visible: false }).visible).toBe(false);
+    expect(evaluateOne(HIDEABLE, { visible: true }).visible).toBe(true);
+  });
+
+  test("a node without the socket keeps whatever visibility it set itself", () => {
+    expect(evaluateOne(OPAQUE, {}).visible).toBe(false);
+  });
+
+  test("a wire drives it, so a Logic node can switch an object off", () => {
+    const SWITCH: NodeDefinition = {
+      type: "test/switch",
+      label: "Switch",
+      category: "logic",
+      inputs: [],
+      outputs: [{ id: "out", label: "Out", type: "value" }],
+      defaultParams: {},
+      evaluate: () => ({ out: 0 }),
+    };
+    const graph: Graph = {
+      nodes: [
+        { id: "sw", type: "test/switch", params: {}, position: { x: 0, y: 0 } },
+        { id: "obj", type: "test/hideable", params: { visible: 1 }, position: { x: 0, y: 0 } },
+      ],
+      connections: [{ id: "c", fromNode: "sw", fromSocket: "out", toNode: "obj", toSocket: "visible" }],
+    };
+
+    const results = evaluateGraph(graph, createRegistry([SWITCH, HIDEABLE]), CTX);
+
+    expect((results.get("obj")?.geometry as THREE.Object3D).visible).toBe(false);
   });
 });

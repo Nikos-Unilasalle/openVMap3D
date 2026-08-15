@@ -333,6 +333,7 @@ export const CURVE_TO_MESH_NODE: NodeDefinition = {
   ],
   outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: {
+    visible: 1,
     location: new THREE.Vector3(0, 0, 0),
     rotation: new THREE.Vector3(0, 0, 0),
     scale: new THREE.Vector3(1, 1, 1),
@@ -356,6 +357,7 @@ export const CURVE_TO_MESH_NODE: NodeDefinition = {
     doubleSided: true,
   },
   dynamicParamFields: () => [
+    { id: "visible", label: "Visible", kind: "boolean", group: "Transform" },
     { id: "location", label: "Location", kind: "vector", group: "Transform" },
     { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true, group: "Transform" },
     { id: "scale", label: "Scale", kind: "vector", group: "Transform" },
@@ -522,7 +524,8 @@ export const CURVE_DEFORM_NODE: NodeDefinition = {
   label: "Curve Deform (Modifier)",
   category: "curve",
   inputs: [
-    { id: "geometry", label: "Geometry", type: "geometry" },
+    { id: "visible", label: "Visible", type: "value" },
+    { id: "geometry", label: "Geometry", type: "geometry", owns: true },
     { id: "curve", label: "Curve", type: "curve" },
     { id: "matrix", label: "Matrix", type: "matrix" },
     { id: "progress", label: "Progress", type: "value" },
@@ -530,6 +533,7 @@ export const CURVE_DEFORM_NODE: NodeDefinition = {
   ],
   outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: {
+    visible: 1,
     location: new THREE.Vector3(0, 0, 0),
     rotation: new THREE.Vector3(0, 0, 0),
     scale: new THREE.Vector3(1, 1, 1),
@@ -538,6 +542,7 @@ export const CURVE_DEFORM_NODE: NodeDefinition = {
     axis: "z",
   },
   dynamicParamFields: () => [
+    { id: "visible", label: "Visible", kind: "boolean" },
     { id: "location", label: "Location", kind: "vector" },
     { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true },
     { id: "scale", label: "Scale", kind: "vector" },

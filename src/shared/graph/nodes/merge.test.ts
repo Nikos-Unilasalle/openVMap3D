@@ -35,12 +35,14 @@ describe("MERGE_NODE", () => {
   });
 
   test("dynamicInputs always offers exactly one socket past the last connected one", () => {
-    expect(MERGE_NODE.dynamicInputs?.([]).map((s) => s.id)).toEqual(["in0"]);
+    // "visible" leads every geometry node's inputs (see evaluate.ts) — the
+    // growing In N sockets follow it.
+    expect(MERGE_NODE.dynamicInputs?.([]).map((s) => s.id)).toEqual(["visible", "in0"]);
     expect(
       MERGE_NODE.dynamicInputs?.([
         { id: "c0", fromNode: "box", fromSocket: "geometry", toNode: "merge", toSocket: "in0" },
       ]).map((s) => s.id),
-    ).toEqual(["in0", "in1"]);
+    ).toEqual(["visible", "in0", "in1"]);
   });
 
   test("end to end through evaluateGraph: two Box nodes into Merge into Render both survive", () => {

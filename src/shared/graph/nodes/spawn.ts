@@ -137,7 +137,7 @@ export const SPAWN_NODE: NodeDefinition = {
   category: "structure",
   inputs: [
     { id: "support", label: "Support (Surface)", type: "geometry" },
-    { id: "items", label: "Items to Spawn", type: "any" },
+    { id: "items", label: "Items to Spawn", type: "any", owns: true },
   ],
   outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
   defaultParams: {

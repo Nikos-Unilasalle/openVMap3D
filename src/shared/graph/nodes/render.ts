@@ -15,7 +15,7 @@ export const RENDER_NODE: NodeDefinition = {
   label: "Render",
   category: "structure",
   inputs: [
-    { id: "geometry", label: "Geometry", type: "geometry" },
+    { id: "geometry", label: "Geometry", type: "geometry", owns: true },
     { id: "environment", label: "Environment", type: "any" },
     { id: "postprocess", label: "Post-Process", type: "postprocess" },
     { id: "motionBlur", label: "Motion Blur", type: "value" },
