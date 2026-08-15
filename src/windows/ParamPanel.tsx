@@ -6,6 +6,7 @@ import { isTauri } from "../shared/graph/storage";
 import { CATEGORY_COLOR, NodeCategory, UNKNOWN_CATEGORY_COLOR } from "../shared/graph/categories";
 import { KeyframeStore, ParamFieldDef } from "../shared/graph/types";
 import { ColorPickerInput } from "./ColorPickerInput";
+import { CurveProfileEditor } from "./CurveProfileEditor";
 import { DragNumberInput } from "./DragNumberInput";
 import "./param-panel.css";
 
@@ -415,6 +416,12 @@ export function ParamPanel({
                           className="param-text-input"
                           value={String(params[field.id] ?? "")}
                           onChange={(e) => onChange(field.id, e.target.value)}
+                        />
+                      )}
+                      {field.kind === "curve_profile" && (
+                        <CurveProfileEditor
+                          value={params[field.id] as any}
+                          onChange={(v) => onChange(field.id, v)}
                         />
                       )}
                       {field.kind === "file" && fileField(nodeId, field, params[field.id], (v) => onChange(field.id, v))}

@@ -120,6 +120,8 @@ describe("GIZMO_SELECTABLE_TYPES", () => {
       "object/point_cloud",
       "object/obj",
       "object/text",
+      "curve/to_mesh",
+      "curve/deform",
       "object/empty",
       "texture/plane",
       "light/directional",

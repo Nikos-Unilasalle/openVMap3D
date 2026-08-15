@@ -22,6 +22,20 @@ function getState(nodeId: string): TextureNodeState {
   return state;
 }
 
+function createTextureBlob(content: unknown, path: string): Blob {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "png";
+  const mimeMap: Record<string, string> = {
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    webp: "image/webp",
+    bmp: "image/bmp",
+    svg: "image/svg+xml",
+  };
+  const mime = mimeMap[ext] || "image/png";
+  return content instanceof Uint8Array ? new Blob([content], { type: mime }) : new Blob([content as any], { type: mime });
+}
+
 function asColor(v: unknown, fallback: THREE.Color): THREE.Color {
   if (v instanceof THREE.Color) return v;
   if (typeof v === "object" && v !== null && "r" in v && "g" in v && "b" in v) {
@@ -61,17 +75,18 @@ export const TEXTURE_IMAGE_NODE: NodeDefinition = {
       id: "filePath",
       label: "Image File",
       kind: "file",
-      accept: [".png", ".jpg", ".jpeg", ".webp", ".bmp"],
+      accept: [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".svg"],
       onLoaded: (nodeId, path, content) => {
         const state = getState(nodeId);
         state.lastPath = path;
         try {
-          const blob = content instanceof Uint8Array ? new Blob([content]) : new Blob([content]);
+          const blob = createTextureBlob(content, path);
           const url = URL.createObjectURL(blob);
           const texture = new THREE.TextureLoader().load(url, (loaded) => {
             if (loaded.image?.width && loaded.image?.height) {
               state.aspectRatio = loaded.image.width / loaded.image.height;
             }
+            loaded.needsUpdate = true;
           });
           texture.wrapS = THREE.RepeatWrapping;
           texture.wrapT = THREE.RepeatWrapping;
@@ -104,6 +119,7 @@ export const TEXTURE_IMAGE_NODE: NodeDefinition = {
       if (inputs.uvOffset instanceof THREE.Vector3) {
         texture.offset.set(inputs.uvOffset.x, inputs.uvOffset.y);
       }
+      texture.colorSpace = THREE.SRGBColorSpace;
       texture.needsUpdate = true;
     }
 
@@ -136,6 +152,8 @@ export const TEXTURE_PLANE_NODE: NodeDefinition = {
     scale: new THREE.Vector3(1, 1, 1),
     filePath: "",
     color: new THREE.Color(0xffffff),
+    transparent: true,
+    alphaCutoff: 0.001,
     doubleSided: true,
     keepAspect: true,
     roughness: 0.5,
@@ -149,17 +167,18 @@ export const TEXTURE_PLANE_NODE: NodeDefinition = {
       id: "filePath",
       label: "Image File (Fallback)",
       kind: "file",
-      accept: [".png", ".jpg", ".jpeg", ".webp", ".bmp"],
+      accept: [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".svg"],
       onLoaded: (nodeId, path, content) => {
         const state = getState(nodeId);
         state.lastPath = path;
         try {
-          const blob = content instanceof Uint8Array ? new Blob([content]) : new Blob([content]);
+          const blob = createTextureBlob(content, path);
           const url = URL.createObjectURL(blob);
           const texture = new THREE.TextureLoader().load(url, (loaded) => {
             if (loaded.image?.width && loaded.image?.height) {
               state.aspectRatio = loaded.image.width / loaded.image.height;
             }
+            loaded.needsUpdate = true;
             if (state.mesh?.material) {
               (state.mesh.material as THREE.Material).needsUpdate = true;
             }
@@ -174,6 +193,8 @@ export const TEXTURE_PLANE_NODE: NodeDefinition = {
       },
     },
     { id: "color", label: "Color Tint", kind: "color" },
+    { id: "transparent", label: "Transparent (Alpha)", kind: "boolean" },
+    { id: "alphaCutoff", label: "Alpha Cutoff", kind: "number", step: 0.01 },
     { id: "doubleSided", label: "Double Sided", kind: "boolean" },
     { id: "keepAspect", label: "Keep Aspect Ratio", kind: "boolean" },
     { id: "roughness", label: "Roughness", kind: "number", step: 0.05 },
@@ -188,6 +209,8 @@ export const TEXTURE_PLANE_NODE: NodeDefinition = {
       const mat = new THREE.MeshStandardMaterial({
         color: 0xffffff,
         side: THREE.DoubleSide,
+        transparent: true,
+        alphaTest: 0.001,
       });
       const mesh = new THREE.Mesh(geom, mat);
       mesh.castShadow = true;
@@ -199,7 +222,7 @@ export const TEXTURE_PLANE_NODE: NodeDefinition = {
     const mesh = state.mesh;
 
     // Determine active texture (from input socket or param file fallback)
-    const inputTexture = inputs.texture instanceof THREE.Texture && inputs.texture.image ? inputs.texture : null;
+    const inputTexture = inputs.texture instanceof THREE.Texture ? inputs.texture : null;
     const activeTexture = inputTexture || state.texture;
 
     // Calculate aspect ratio scaling
@@ -213,10 +236,6 @@ export const TEXTURE_PLANE_NODE: NodeDefinition = {
 
     // Apply Matrix transformation
     if (ctx.nodeId !== ctx.liveEditNodeId) {
-      // The aspect correction is itself layered onto whatever's wired into
-      // `matrix` (the delta), not onto the node's own native pose (the
-      // base) — composeNativeMatrix's own base×delta order then puts the
-      // native transform underneath both.
       const wiredMatrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix.clone() : new THREE.Matrix4();
       if (keepAspect && aspect !== 1.0) {
         wiredMatrix.multiply(new THREE.Matrix4().makeScale(aspect, 1.0, 1.0));
@@ -232,6 +251,11 @@ export const TEXTURE_PLANE_NODE: NodeDefinition = {
     mat.side = Boolean(params.doubleSided ?? true) ? THREE.DoubleSide : THREE.FrontSide;
     mat.roughness = Math.max(0, Math.min(1, Number(params.roughness) ?? 0.5));
     mat.metalness = Math.max(0, Math.min(1, Number(params.metalness) ?? 0.1));
+
+    const isTransparent = Boolean(params.transparent ?? true);
+    mat.transparent = isTransparent;
+    mat.alphaTest = isTransparent ? Math.max(0, Number(params.alphaCutoff ?? 0.001)) : 0;
+    mat.depthWrite = !isTransparent || mat.alphaTest > 0;
 
     if (activeTexture) {
       mat.map = activeTexture;

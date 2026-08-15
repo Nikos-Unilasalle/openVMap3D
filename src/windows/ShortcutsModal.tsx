@@ -36,6 +36,17 @@ const SHORTCUT_SECTIONS: ShortcutSection[] = [
       { keys: ["Mouse Wheel"], description: "Zoom 3D View in / out" },
       { keys: ["X", "Y", "Z"], description: "Snap 3D Camera to orthogonal view (Right, Top, Front)" },
       { keys: ["T", "R", "S"], description: "Gizmo transform mode (Translate / Rotate / Scale)" },
+      { keys: ["Shift", "Drag Gizmo"], description: "Snap transform to increments (1 unit / 15°)" },
+    ],
+  },
+  {
+    category: "Curve Editing",
+    items: [
+      { keys: ["Click Node"], description: "Select a Curve node to show its control points in the 3D view" },
+      { keys: ["Click Point"], description: "Pick a control point — the gizmo moves it instead of the object" },
+      { keys: ["A"], description: "Add a control point after the picked one" },
+      { keys: ["D"], description: "Delete the picked control point (minimum of two)" },
+      { keys: ["Click Empty"], description: "Drop the picked point, gizmo returns to the object" },
     ],
   },
   {

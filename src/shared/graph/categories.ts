@@ -3,6 +3,7 @@ export type NodeCategory =
   | "calibration"
   | "compose"
   | "converter"
+  | "curve"
   | "instance"
   | "io"
   | "lighting"
@@ -26,6 +27,7 @@ export const CATEGORY_ORDER: NodeCategory[] = [
   "calibration",
   "compose",
   "converter",
+  "curve",
   "instance",
   "io",
   "lighting",
@@ -49,6 +51,7 @@ export const CATEGORY_LABEL: Record<NodeCategory, string> = {
   calibration: "Calibration",
   compose: "Compose",
   converter: "Converter",
+  curve: "Curve / Path",
   instance: "Instance",
   io: "I/O",
   lighting: "Lighting & Shadows",
@@ -75,6 +78,7 @@ export const CATEGORY_COLOR: Record<NodeCategory, string> = {
   calibration: "#94a3b8",
   compose: "#0ea5e9",
   converter: "#10b981",
+  curve: "#84cc16",
   instance: "#14b8a6",
   io: "#6366f1",
   lighting: "#f59e0b",

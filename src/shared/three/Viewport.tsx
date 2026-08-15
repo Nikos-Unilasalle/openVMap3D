@@ -6,8 +6,12 @@ import { ClockState, createClock, tickClock } from "../graph/clock";
 import { EvalResult, evaluateGraph } from "../graph/evaluate";
 import { CAMERA_NODE } from "../graph/nodes/camera";
 import { OBJECT_EMPTY_NODE } from "../graph/nodes/object";
+import { asVector3 } from "../graph/nodes/transform";
 import { resetAllParticleSimulations } from "../graph/particleRuntime";
+import { resolveCurveEditTarget } from "../graph/curveLookup";
+import { insertCurvePointAfter, removeCurvePoint } from "../graph/curvePoints";
 import { GizmoTarget, resolveGizmoTarget } from "../graph/transformLookup";
+import { createCurvePointHandles } from "./curveHandles";
 import { createSceneMembership, isSelfOrDescendantOf } from "./sceneMembership";
 import { createPostProcessChain } from "./postProcessChain";
 import { computeGizmoWriteback, TransformGizmoMode, TransformPatch } from "./gizmoWriteback";
@@ -339,6 +343,18 @@ export function Viewport({
     transformControls?.setColors(GIZMO_X_COLOR, GIZMO_Y_COLOR, GIZMO_Z_COLOR, GIZMO_ACTIVE_COLOR);
     let attachedObjectNodeId: string | null = null;
     let attachedGizmoTarget: GizmoTarget | null = null;
+
+    // Curve control-point editing. `activeCurvePointIdx` is null until a
+    // handle is actually clicked — the gizmo belongs to the selected object
+    // until then, and goes back to it as soon as the click lands anywhere
+    // else. `curvePointsNodeId` is the node the handles write into, which is
+    // not necessarily the selected one (see curveLookup.ts).
+    const curveHandles = createCurvePointHandles();
+    let curvePointsNodeId: string | null = null;
+    let activeCurvePointIdx: number | null = null;
+    if (!outputMode) {
+      editorUiScene.add(curveHandles.group);
+    }
     // Refreshed every tick() — the 'objectChange' listener needs the
     // *current* base matrix for an "offset" target (see below), and this is
     // the cheapest way to get it without re-running evaluateGraph itself.
@@ -384,11 +400,50 @@ export function Viewport({
       return tagName === "input" || tagName === "textarea" || (el as HTMLElement).isContentEditable;
     }
 
+    /**
+     * Add or remove a control point on the curve whose handles are showing —
+     * the only way to change how many points a curve has, since `pointsList`
+     * has no param-panel field of its own. A no-op unless a handle is
+     * actually picked, so A and D stay free for everything else.
+     */
+    function editPickedCurvePoint(operation: "insert" | "remove"): boolean {
+      if (activeCurvePointIdx === null || !curvePointsNodeId) return false;
+      const node = graphRef.current.nodes.find((n) => n.id === curvePointsNodeId);
+      if (!node || !onTransformChangeRef.current) return false;
+
+      const index = activeCurvePointIdx;
+      const nextPoints =
+        operation === "insert"
+          ? insertCurvePointAfter(node.params.pointsList, index)
+          : removeCurvePoint(node.params.pointsList, index);
+      // Null means the edit isn't legal — removing the last two points, say.
+      if (!nextPoints) return false;
+
+      // One discrete edit, one undo step (a drag records its own on start).
+      onTransformStartRef.current?.();
+      onTransformChangeRef.current(node.id, { pointsList: nextPoints });
+      // Keep a point selected either way: the one just inserted, or the
+      // neighbour that took the removed one's place.
+      activeCurvePointIdx = operation === "insert" ? index + 1 : Math.min(index, nextPoints.length - 1);
+      return true;
+    }
+
     function onViewportKeyDown(e: KeyboardEvent) {
       if (isInputElement(document.activeElement)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
       const key = e.key.toLowerCase();
+
+      // Curve control point editing — checked before the gizmo/camera keys so
+      // they only take over while a point is picked.
+      if (key === "a" && editPickedCurvePoint("insert")) {
+        e.preventDefault();
+        return;
+      }
+      if (key === "d" && editPickedCurvePoint("remove")) {
+        e.preventDefault();
+        return;
+      }
 
       // Gizmo mode shortcuts: T (translate), R (rotate), S (scale)
       if (key === "t") {
@@ -478,6 +533,21 @@ export function Viewport({
         // ended and evaluateGraph's own matrix.copy() ran again next frame.
         object.updateMatrix();
 
+        // A curve control point, not an object: `object.position` is already
+        // in the curve's own space (the handles' group carries the drawing
+        // object's world matrix — see curveHandles.ts), which is exactly what
+        // `pointsList` stores, so it goes back verbatim.
+        if (object.userData?.isCurvePointHandle) {
+          const pointIdx = object.userData.pointIndex as number;
+          const node = graphRef.current.nodes.find((n) => n.id === curvePointsNodeId);
+          if (!node || !onTransformChangeRef.current) return;
+          const rawList = Array.isArray(node.params.pointsList) ? [...node.params.pointsList] : [];
+          if (pointIdx < 0 || pointIdx >= rawList.length) return;
+          rawList[pointIdx] = object.position.clone();
+          onTransformChangeRef.current(node.id, { pointsList: rawList });
+          return;
+        }
+
         if (!attachedGizmoTarget || !onTransformChangeRef.current) return;
 
         // Which node id actually owns the params a drag writes into — the
@@ -543,6 +613,21 @@ export function Viewport({
       raycaster.setFromCamera(ndc, camera);
       raycaster.params.Line = { threshold: 0.3 };
       raycaster.params.Points = { threshold: 0.3 };
+
+      // Curve control points win over whatever is behind them — a handle sits
+      // on (or inside) the very mesh it shapes, so a raycast against the scene
+      // would swallow every click meant for one. tick() does the actual gizmo
+      // attach off this index, so it survives the next frame's re-evaluation.
+      if (curveHandles.count() > 0) {
+        const pickedIdx = curveHandles.pick(ndc, camera, rect.width, rect.height);
+        if (pickedIdx !== null) {
+          activeCurvePointIdx = pickedIdx;
+          return;
+        }
+      }
+      // Clicking anywhere else drops the point and hands the gizmo back to
+      // the object.
+      activeCurvePointIdx = null;
 
       const hit = raycaster
         ? raycaster.intersectObjects(scene.children, true).find((i) => {
@@ -977,8 +1062,56 @@ export function Viewport({
       }
       sceneContents.sync(desiredContents);
 
-      // Move/rotate/scale gizmo: attach to selected mesh, Empty, or Light
-      if (transformControls && !transformControls.dragging) {
+      // Curve control-point handles for the selected curve, drawn through the
+      // world matrix of whatever object draws that curve so they track the
+      // tube when it is moved, rotated or scaled.
+      const curveTarget = outputMode ? null : resolveCurveEditTarget(graphRef.current, selectedNodeIdRef.current);
+      const curveNode = curveTarget ? graphRef.current.nodes.find((n) => n.id === curveTarget.pointsNodeId) : undefined;
+      const rawCurvePoints = Array.isArray(curveNode?.params.pointsList) ? curveNode.params.pointsList : [];
+      const curvePoints = rawCurvePoints.map((p) => asVector3(p, new THREE.Vector3()));
+
+      if (curveTarget && curveNode && curvePoints.length >= 2) {
+        if (curvePointsNodeId !== curveNode.id) {
+          curvePointsNodeId = curveNode.id;
+          activeCurvePointIdx = null;
+        }
+        // An index past the end of the list is left alone rather than
+        // cleared: adding a point selects it one frame before the graph state
+        // carrying it arrives here. handleAt() returns null for an index with
+        // no handle, so the gizmo simply sits out that frame.
+
+        // The pose the curve is drawn at. `matrix.copy()` on a graph-driven
+        // mesh never flags matrixWorld as stale (see the gizmo block below),
+        // so it has to be recomputed rather than read.
+        const spaceObject = results.get(curveTarget.spaceNodeId)?.geometry;
+        const spaceMatrix = new THREE.Matrix4();
+        if (spaceObject instanceof THREE.Object3D) {
+          spaceObject.updateWorldMatrix(true, false);
+          spaceMatrix.copy(spaceObject.matrixWorld);
+        }
+
+        const draggedIdx =
+          transformControls?.dragging && transformControls.object?.userData?.isCurvePointHandle
+            ? (transformControls.object.userData.pointIndex as number)
+            : null;
+        curveHandles.sync(curvePoints, spaceMatrix, activeCurvePointIdx, draggedIdx);
+      } else if (curveHandles.count() > 0) {
+        curveHandles.clear();
+        curvePointsNodeId = null;
+        activeCurvePointIdx = null;
+      }
+
+      // Move/rotate/scale gizmo: attach to selected mesh, Empty, or Light —
+      // unless a curve control point is picked, which takes the gizmo for
+      // itself (its own writeback path, no GizmoTarget involved).
+      const pickedCurveHandle = transformControls ? curveHandles.handleAt(activeCurvePointIdx) : null;
+      if (transformControls && !transformControls.dragging && pickedCurveHandle) {
+        if (transformControls.object !== pickedCurveHandle) transformControls.attach(pickedCurveHandle);
+        transformControls.setMode(transformModeRef.current);
+        attachedObjectNodeId = null;
+        attachedGizmoTarget = null;
+        for (const parked of [...gizmoAnchorScene.children]) gizmoAnchorScene.remove(parked);
+      } else if (transformControls && !transformControls.dragging) {
         let targetObject: THREE.Object3D | null = null;
         if (selectedNodeIdRef.current) {
           // The selected node's own result first — it is the authoritative
@@ -1062,7 +1195,10 @@ export function Viewport({
           if (targetObject.parent === gizmoAnchorScene) {
             gizmoAnchorScene.updateMatrixWorld(true);
           }
-        } else if (attachedObjectNodeId !== null) {
+        } else if (transformControls.object) {
+          // `transformControls.object` rather than attachedObjectNodeId: the
+          // gizmo may currently be holding a curve point handle, which owns no
+          // node id of its own.
           transformControls.detach();
           attachedObjectNodeId = null;
           attachedGizmoTarget = null;
@@ -1240,6 +1376,7 @@ export function Viewport({
         window.removeEventListener("blur", onSnapWindowBlur);
       }
       transformControls?.dispose();
+      curveHandles.clear();
       controls.dispose();
       // These objects are cached per node id at module scope and outlive
       // this viewport (see nodeCaches.ts) — hand them back rather than

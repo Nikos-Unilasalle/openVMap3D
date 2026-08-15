@@ -57,6 +57,8 @@ import {
   POSTPROCESS_FOG_NODE,
 } from "./postprocessing";
 
+import { CURVE_DEFORM_NODE, CURVE_FROM_POINTS_NODE, CURVE_PRIMITIVE_NODE, CURVE_TO_MESH_NODE, SAMPLE_CURVE_NODE } from "./curve";
+
 /** The starter catalogue — grows node by node; BIBLE.md has the full target list. */
 export const STARTER_NODES = [
   REROUTE_NODE,
@@ -96,6 +98,11 @@ export const STARTER_NODES = [
   LOOK_AT_NODE,
   MATRIX_TRANSFORM_NODE,
   TRANSFORM_VECTOR_NODE,
+  CURVE_FROM_POINTS_NODE,
+  CURVE_PRIMITIVE_NODE,
+  CURVE_TO_MESH_NODE,
+  SAMPLE_CURVE_NODE,
+  CURVE_DEFORM_NODE,
   OBJECT_BOX_NODE,
   OBJECT_EMPTY_NODE,
   OBJECT_PLANE_NODE,
@@ -214,3 +221,4 @@ export * from "./environment";
 export * from "./listGroup";
 export * from "./spawn";
 export * from "./reroute";
+export * from "./curve";

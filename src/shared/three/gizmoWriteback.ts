@@ -3,10 +3,18 @@ import { GizmoTarget } from "../graph/transformLookup";
 
 export type TransformGizmoMode = "translate" | "rotate" | "scale";
 
+/**
+ * The params a viewport drag writes back. computeGizmoWriteback below only
+ * ever produces the pose fields; `pointsList` is the one entry that comes
+ * from elsewhere — a curve control point handle, which shares the same
+ * onTransformChange channel (see Viewport.tsx) because it wants the same
+ * one-undo-step-per-drag and keyframe handling.
+ */
 export interface TransformPatch {
   location?: THREE.Vector3;
   rotation?: THREE.Vector3;
   scale?: THREE.Vector3;
+  pointsList?: unknown[];
 }
 
 export interface GizmoWritebackInput {

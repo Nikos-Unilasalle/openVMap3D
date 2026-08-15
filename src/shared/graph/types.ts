@@ -67,6 +67,7 @@ export type ParamFieldDef =
   | { id: string; label: string; kind: "color"; group?: string }
   | { id: string; label: string; kind: "vector"; step?: number; degrees?: boolean; group?: string }
   | { id: string; label: string; kind: "text"; group?: string }
+  | { id: string; label: string; kind: "curve_profile"; group?: string }
   | {
       id: string;
       label: string;

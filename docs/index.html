@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wiki & Documentation Officielle — OpenVMap3D</title>
+  <meta name="description" content="Documentation complète, catalogue interactif des nodes et guide de calibration DLT vidéo-mapping 3D pour OpenVMap3D.">
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+
+  <!-- En-tête Sticky Navigation (Mode Light) -->
+  <header class="wiki-header">
+    <div class="header-container">
+      <a href="#tab-home" class="brand-logo">
+        <img src="img/logo.png" alt="OpenVMap Logo" class="logo-img-header">
+        <span class="brand-text">OpenVMap3D <span class="brand-badge">Wiki</span></span>
+      </a>
+
+      <nav>
+        <ul class="nav-menu">
+          <li><a href="#tab-home" class="nav-link active">Accueil</a></li>
+          <li><a href="#tab-nodes" class="nav-link">Catalogue des Nodes</a></li>
+          <li><a href="#tab-dlt" class="nav-link">Calibration DLT</a></li>
+          <li><a href="#tab-guides" class="nav-link">Guides & Tutoriels</a></li>
+          <li><a href="#tab-shortcuts" class="nav-link">Raccourcis</a></li>
+          <li><a href="#tab-troubleshoot" class="nav-link">Dépannage</a></li>
+        </ul>
+      </nav>
+
+      <a href="https://github.com/Nikos-Unilasalle/openVMap3D" target="_blank" rel="noopener" class="btn-github">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
+        </svg>
+        GitHub
+      </a>
+    </div>
+  </header>
+
+  <main class="wiki-main-container">
+
+    <!-- ONGLET 1 : ACCUEIL -->
+    <section id="tab-home" class="wiki-tab-content active">
+      <div class="hero-section">
+        <div class="hero-content">
+          <h1>Studio 3D & Node Graph <span class="gradient-text">Temps Réel</span></h1>
+          <p class="hero-subtitle">
+            Le moteur de vidéo-mapping 3D, de scénographie numérique et de dataviz réactive propulsé par Tauri 2, React 18 et Three.js r170.
+          </p>
+          <div class="hero-actions">
+            <a href="#tab-nodes" class="btn-primary nav-link">Exploration du Catalogue Nodes</a>
+            <a href="#tab-dlt" class="btn-secondary nav-link">Guide Calibration DLT</a>
+          </div>
+        </div>
+
+        <div class="hero-media">
+          <img src="img/videomap.jpg" alt="OpenVMap3D Interface Real Screenshot" class="hero-img">
+        </div>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">🌐</div>
+          <h3>Moteur DAG 100% Réactif</h3>
+          <p>Un flux de données unifié où la moindre modification de node réévalue l'intégralité du rendu 3D à 60 FPS sans boucle infinie.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">📐</div>
+          <h3>Calibration DLT Directe</h3>
+          <p>Alignez votre vidéo-projection sur les coins physiques d'une pièce grâce au solveur DLT temps réel calculant la pose et le lens shift.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🎬</div>
+          <h3>Timeline & Keyframing Granulaire</h3>
+          <p>Enregistrez des clés d'animation paramètre par paramètre ou axe par axe (<kbd>k</kbd>), avec priorité absolue des câbles sur l'interpolation.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ONGLET 2 : CATALOGUE DES NODES -->
+    <section id="tab-nodes" class="wiki-tab-content">
+      <div class="section-title-box">
+        <h2>Catalogue Complet des Nodes OpenVMap3D</h2>
+        <p>Explorez les 60+ nodes spécialisées avec leurs types de prises, paramètres par défaut et exemples d'utilisation.</p>
+      </div>
+
+      <div id="nodeCatalogContainer"></div>
+    </section>
+
+    <!-- ONGLET 3 : CALIBRATION DLT -->
+    <section id="tab-dlt" class="wiki-tab-content">
+      <div class="section-title-box">
+        <h2>Calibration Vidéo-Mapping 3D (Direct Linear Transformation)</h2>
+        <p>Ajustez virtuellement le projecteur physique à l'écran et visualisez la résolution DLT en direct.</p>
+      </div>
+
+      <!-- Widget du Simulateur DLT -->
+      <div id="dltSimulatorContainer"></div>
+
+      <div class="hero-media" style="margin-top: 2rem;">
+        <img src="img/openvmap.jpg" alt="DLT Calibration UI Real Screenshot" class="hero-img">
+      </div>
+    </section>
+
+    <!-- ONGLET 4 : GUIDES & TUTORIELS -->
+    <section id="tab-guides" class="wiki-tab-content">
+      <div class="section-title-box">
+        <h2>Guides & Tutoriels Pédagogiques</h2>
+        <p>Des instructions pas-à-pas claires, structurées et accompagnées de visuels réels de l'application.</p>
+      </div>
+
+      <div id="guidesListContainer"></div>
+    </section>
+
+    <!-- ONGLET 5 : RACCOURCIS CLAVIER -->
+    <section id="tab-shortcuts" class="wiki-tab-content">
+      <div class="section-title-box">
+        <h2>Raccourcis Clavier & Commandes Rapides</h2>
+        <p>Augmentez votre productivité en maîtrisant les raccourcis clés d'OpenVMap3D.</p>
+      </div>
+
+      <div id="keyboardVizContainer"></div>
+    </section>
+
+    <!-- ONGLET 6 : DEPANNAGE -->
+    <section id="tab-troubleshoot" class="wiki-tab-content">
+      <div class="section-title-box">
+        <h2>Centre de Diagnostic & Résolution de Problèmes</h2>
+        <p>Un assistant interactif pour résoudre rapidement les erreurs fréquentes d'animation, de calibration et d'audio.</p>
+      </div>
+
+      <div id="troubleshooterContainer"></div>
+    </section>
+
+  </main>
+
+  <footer class="wiki-footer">
+    <div class="header-container">
+      <p>© 2026 OpenVMap3D — Moteur de Studio 3D & Node Graph pour le Vidéo-Mapping. Publié sous Licence MIT.</p>
+    </div>
+  </footer>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

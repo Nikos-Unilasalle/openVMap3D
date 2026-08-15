@@ -18,6 +18,7 @@ export type SocketType =
   | "color"
   | "geometry"
   | "texture"
+  | "curve"
   | "list"
   | "text"
   | "postprocess"
@@ -32,6 +33,7 @@ export interface SocketValueMap {
   color: THREE.Color;
   geometry: THREE.Object3D;
   texture: THREE.Texture;
+  curve: THREE.Curve<THREE.Vector3>;
   list: unknown[];
   text: string;
   postprocess: unknown[];
@@ -58,6 +60,7 @@ export const SOCKET_COLOR: Record<SocketType, string> = {
   color: "#ec4899",
   geometry: "#22c55e",
   texture: "#2dd4bf",
+  curve: "#84cc16",
   list: "#94a3b8",
   text: "#f97316",
   postprocess: "#c084fc",
