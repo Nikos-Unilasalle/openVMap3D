@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Handle, Position } from "@xyflow/react";
 import * as THREE from "three";
 import { CATEGORY_COLOR, NodeCategory, UNKNOWN_CATEGORY_COLOR } from "../shared/graph/categories";
@@ -95,6 +95,46 @@ function renderValuePreview(val: unknown) {
  * NodeDefinition's socket list.
  */
 export function GraphNode({ data, selected }: { data: GraphNodeData; selected?: boolean }) {
+  if (data.nodeType === "utility/reroute") {
+    const socketType = data.inputs[0]?.type || "any";
+    const dotColor = SOCKET_COLOR[socketType] || "#38bdf8";
+
+    const rerouteStyle: React.CSSProperties = {
+      width: 10,
+      height: 10,
+      borderRadius: "50%",
+      background: dotColor,
+      border: selected ? "1.5px solid #ffffff" : "1.5px solid rgba(15, 23, 42, 0.9)",
+      boxShadow: selected ? "0 0 6px " + dotColor : "0 1px 3px rgba(0,0,0,0.6)",
+      position: "relative",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      cursor: "grab",
+    };
+
+    const handleCenterStyle: React.CSSProperties = {
+      width: 4,
+      height: 4,
+      left: "50%",
+      top: "50%",
+      transform: "translate(-50%, -50%)",
+      opacity: 0,
+      minWidth: 0,
+      minHeight: 0,
+      border: "none",
+      position: "absolute",
+      cursor: "crosshair",
+    };
+
+    return (
+      <div className={selected ? "graph-node-reroute selected" : "graph-node-reroute"} style={rerouteStyle} title="Reroute">
+        <Handle type="target" position={Position.Left} id="in" style={handleCenterStyle} />
+        <Handle type="source" position={Position.Right} id="out" style={handleCenterStyle} />
+      </div>
+    );
+  }
+
   const categoryColor = data.category ? CATEGORY_COLOR[data.category] : UNKNOWN_CATEGORY_COLOR;
   const inspectorVal = useInspectorValue(data.nodeId);
 

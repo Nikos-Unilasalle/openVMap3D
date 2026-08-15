@@ -228,6 +228,24 @@ export function createPostProcessChain(deps: PostProcessChainDeps) {
         motionBlurEffect.renderVelocity(renderer, scene, camera);
       }
 
+      // Handle Fog postprocess configuration
+      const fogCfg = configs.find((c) => c && c.type === "fog");
+      if (fogCfg) {
+        const color = fogCfg.params.color instanceof THREE.Color ? fogCfg.params.color : new THREE.Color(0x8899aa);
+        const mode = String(fogCfg.params.mode || "linear");
+        const density = Number(fogCfg.params.density) || 0.02;
+        const near = Number(fogCfg.params.near) || 1.0;
+        const far = Number(fogCfg.params.far) || 30.0;
+
+        if (mode === "exponential") {
+          scene.fog = new THREE.FogExp2(color, density);
+        } else {
+          scene.fog = new THREE.Fog(color, near, far);
+        }
+      } else {
+        scene.fog = null;
+      }
+
       const activeNodeIds = new Set<string>();
 
       composer.passes.length = 0;

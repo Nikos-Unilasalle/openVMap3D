@@ -48,6 +48,20 @@ export function TimelineBar({
     [totalFrames],
   );
 
+  const [isCmdPressed, setIsCmdPressed] = useState(false);
+
+  useEffect(() => {
+    function handleKeyChange(e: KeyboardEvent) {
+      setIsCmdPressed(e.metaKey || e.ctrlKey);
+    }
+    window.addEventListener("keydown", handleKeyChange);
+    window.addEventListener("keyup", handleKeyChange);
+    return () => {
+      window.removeEventListener("keydown", handleKeyChange);
+      window.removeEventListener("keyup", handleKeyChange);
+    };
+  }, []);
+
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (!isTimelineHovered || !keyframesEnabled || !onToggleMarker) return;
@@ -75,6 +89,11 @@ export function TimelineBar({
   }, [isTimelineHovered, keyframesEnabled, currentFrame, hoveredMarkerFrame, onToggleMarker]);
 
   const handlePointerDownTrack = (e: React.MouseEvent) => {
+    if (e.metaKey || e.ctrlKey) {
+      e.preventDefault();
+      onSplitHandleMouseDown(e);
+      return;
+    }
     if (!keyframesEnabled || totalFrames <= 0) return;
     e.stopPropagation();
     setIsScrubbing(true);
@@ -142,14 +161,21 @@ export function TimelineBar({
 
   return (
     <div
-      className="timeline-bar-container"
+      className={`timeline-bar-container ${isCmdPressed ? "cmd-active" : ""}`}
+      onMouseDown={(e) => {
+        if (e.metaKey || e.ctrlKey) {
+          e.preventDefault();
+          onSplitHandleMouseDown(e);
+        }
+      }}
       onMouseEnter={() => setIsTimelineHovered(true)}
       onMouseLeave={() => setIsTimelineHovered(false)}
+      title={isCmdPressed ? "Maintenez et glissez pour redimensionner la hauteur du canevas" : undefined}
     >
       <div
         className="timeline-split-resize-handle"
         onMouseDown={onSplitHandleMouseDown}
-        title="Glisser pour redimensionner les fenêtres"
+        title="Glisser ou Cmd+Glisser pour redimensionner les fenêtres"
       />
 
       <div className="timeline-bar-inner">

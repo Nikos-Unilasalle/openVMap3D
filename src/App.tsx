@@ -251,6 +251,27 @@ function MainEditor() {
   const [epochMs] = useState(() => Date.now());
   const graphRef = useRef(graph);
   graphRef.current = graph;
+
+  /**
+   * Free the cached mesh/texture/toggle state of any node that has left the
+   * graph, whatever made it leave.
+   *
+   * Node ids are stable — saved into the .ovm, restored identically by undo
+   * — so a cache entry that outlives its node is not just a leak: the next
+   * node to carry that id silently inherits it (see nodeCaches.ts). This
+   * used to be handled in exactly one place, the editor's own onNodesDelete
+   * callback, which meant every *other* way a node can vanish leaked: undo
+   * of an add, redo of a delete, New, Open, or any programmatic graph
+   * replacement. Reconciling against the graph itself covers all of them,
+   * and needs no cooperation from whatever did the removing.
+   */
+  const knownNodeIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const currentIds = new Set(graph.nodes.map((n) => n.id));
+    const departed = [...knownNodeIdsRef.current].filter((id) => !currentIds.has(id));
+    if (departed.length > 0) disposeNodeCaches(departed);
+    knownNodeIdsRef.current = currentIds;
+  }, [graph.nodes]);
   // Not React state on purpose — this changes at orbit-drag frequency, and
   // nothing in this component's own render output depends on it (only the
   // outgoing broadcast does). A state variable here would re-render
@@ -403,14 +424,6 @@ function MainEditor() {
 
   const handleLoadGraph = (newGraph: Graph, filename?: string) => {
     historyRef.current = { past: [], future: [] };
-    // Drop every cached mesh/texture/toggle belonging to the outgoing graph.
-    // Node ids are stable and saved into the .ovm, so without this the
-    // incoming graph silently inherits the previous project's cached
-    // objects for any id the two happen to share — the exact hazard
-    // nodeCaches.ts documents, which until now was only guarded against on
-    // per-node deletion in the editor, not on New or Open.
-    disposeNodeCaches(graph.nodes.map((n) => n.id));
-
     const rehydrated = rehydrateGraphParams(newGraph, DEFAULT_REGISTRY);
     setGraph(rehydrated);
     setSelectedNodeId(null);
@@ -551,12 +564,18 @@ function MainEditor() {
   useEffect(() => {
     function onMouseMove(e: MouseEvent) {
       if (!draggingSplit.current || !containerRef.current) return;
+      document.body.style.cursor = "row-resize";
+      document.body.style.userSelect = "none";
       const rect = containerRef.current.getBoundingClientRect();
       const percent = ((e.clientY - rect.top) / rect.height) * 100;
       setSplitPercent(Math.min(MAX_PANE_PERCENT, Math.max(MIN_PANE_PERCENT, percent)));
     }
     function onMouseUp() {
-      draggingSplit.current = false;
+      if (draggingSplit.current) {
+        draggingSplit.current = false;
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      }
     }
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);

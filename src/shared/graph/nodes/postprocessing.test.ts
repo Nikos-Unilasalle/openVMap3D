@@ -12,12 +12,26 @@ import {
   POSTPROCESS_PIXELATE_NODE,
   POSTPROCESS_RGB_SHIFT_NODE,
   POSTPROCESS_VIGNETTE_NODE,
+  POSTPROCESS_FOG_NODE,
   PostProcessConfig,
 } from "./postprocessing";
 
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "test-node" };
 
 describe("POST-PROCESSING NODES", () => {
+  it("evaluates Fog node and returns effect config", () => {
+    const res = POSTPROCESS_FOG_NODE.evaluate(
+      { near: 5.0, far: 50.0, density: 0.03 },
+      { mode: "exponential" },
+      CTX
+    );
+    const effects = res.effect as PostProcessConfig[];
+    expect(effects.length).toBe(1);
+    expect(effects[0].type).toBe("fog");
+    expect(effects[0].params.near).toBe(5.0);
+    expect(effects[0].params.far).toBe(50.0);
+    expect(effects[0].params.mode).toBe("exponential");
+  });
   it("evaluates Bloom node and returns effect config", () => {
     const res = POSTPROCESS_BLOOM_NODE.evaluate(
       { strength: 2.0, radius: 0.5, threshold: 0.8 },

@@ -5,7 +5,7 @@ import { NodeDefinition } from "../types";
 export const VECTOR_COMPOSE_NODE: NodeDefinition = {
   type: "vector/compose",
   label: "Compose Vector",
-  category: "converter",
+  category: "compose",
   inputs: [
     { id: "x", label: "X", type: "value" },
     { id: "y", label: "Y", type: "value" },
@@ -39,7 +39,7 @@ export const VECTOR_COMPOSE_NODE: NodeDefinition = {
 export const VECTOR_DECOMPOSE_NODE: NodeDefinition = {
   type: "vector/decompose",
   label: "Decompose Vector",
-  category: "converter",
+  category: "compose",
   inputs: [{ id: "vector", label: "Vector", type: "vector" }],
   outputs: [
     { id: "x", label: "X", type: "value" },

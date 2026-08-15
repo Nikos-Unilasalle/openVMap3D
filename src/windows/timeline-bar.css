@@ -12,6 +12,11 @@
   box-sizing: border-box;
 }
 
+.timeline-bar-container.cmd-active,
+.timeline-bar-container.cmd-active * {
+  cursor: row-resize !important;
+}
+
 /* 3px black line acts as resize handle */
 .timeline-split-resize-handle {
   width: 100%;

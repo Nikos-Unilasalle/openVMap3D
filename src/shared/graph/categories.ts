@@ -1,6 +1,7 @@
 /** BIBLE.md's base node catalog sections — one color per category, shown on the node header, the param panel, and the palette alike. */
 export type NodeCategory =
   | "calibration"
+  | "compose"
   | "converter"
   | "instance"
   | "io"
@@ -23,6 +24,7 @@ export type NodeCategory =
 /** Palette/section display order — alphabetically sorted. */
 export const CATEGORY_ORDER: NodeCategory[] = [
   "calibration",
+  "compose",
   "converter",
   "instance",
   "io",
@@ -45,6 +47,7 @@ export const CATEGORY_ORDER: NodeCategory[] = [
 
 export const CATEGORY_LABEL: Record<NodeCategory, string> = {
   calibration: "Calibration",
+  compose: "Compose",
   converter: "Converter",
   instance: "Instance",
   io: "I/O",
@@ -70,6 +73,7 @@ export const CATEGORY_LABEL: Record<NodeCategory, string> = {
  */
 export const CATEGORY_COLOR: Record<NodeCategory, string> = {
   calibration: "#94a3b8",
+  compose: "#0ea5e9",
   converter: "#10b981",
   instance: "#14b8a6",
   io: "#6366f1",

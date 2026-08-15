@@ -22,6 +22,9 @@ import { AUDIO_PEAK_DETECTOR_NODE, AUDIO_PLAYER_NODE, AUDIO_SPECTRUM_NODE, AUDIO
 import { RANDOM_LIST_NODE, RANDOM_MATRIX_NODE, RANDOM_VALUE_NODE, RANDOM_VECTOR_NODE } from "./random";
 import { KEYBOARD_NODE } from "./keyboard";
 import { ARRAY_NODE } from "./array";
+import { LIST_GROUP_NODE } from "./listGroup";
+import { SPAWN_NODE } from "./spawn";
+import { REROUTE_NODE } from "./reroute";
 import { GEOMETRY_TRANSFORM_NODE, GET_INSTANCE_NODE, INSTANCES_TO_LIST_NODE, SET_INSTANCE_COLOR_NODE, SET_INSTANCE_TRANSFORM_NODE } from "./instance";
 import { LIGHT_AMBIENT_NODE, LIGHT_DIRECTIONAL_NODE, LIGHT_POINT_NODE, LIGHT_SPOT_NODE } from "./light";
 import { ENVIRONMENT_NODE } from "./environment";
@@ -51,10 +54,12 @@ import {
   POSTPROCESS_PIXELATE_NODE,
   POSTPROCESS_RGB_SHIFT_NODE,
   POSTPROCESS_VIGNETTE_NODE,
+  POSTPROCESS_FOG_NODE,
 } from "./postprocessing";
 
 /** The starter catalogue — grows node by node; BIBLE.md has the full target list. */
 export const STARTER_NODES = [
+  REROUTE_NODE,
   TIME_NODE,
   FRAME_NODE,
   VALUE_CONSTANT_NODE,
@@ -169,6 +174,9 @@ export const STARTER_NODES = [
   POSTPROCESS_KALEIDOSCOPE_NODE,
   POSTPROCESS_COLOR_CORRECTION_NODE,
   POSTPROCESS_ANTIALIAS_NODE,
+  POSTPROCESS_FOG_NODE,
+  LIST_GROUP_NODE,
+  SPAWN_NODE,
 ];
 
 export const DEFAULT_REGISTRY = createRegistry(STARTER_NODES);
@@ -203,3 +211,6 @@ export * from "./texture";
 export * from "./particles";
 export * from "./postprocessing";
 export * from "./environment";
+export * from "./listGroup";
+export * from "./spawn";
+export * from "./reroute";

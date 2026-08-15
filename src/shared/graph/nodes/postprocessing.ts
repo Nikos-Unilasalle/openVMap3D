@@ -360,3 +360,47 @@ export const POSTPROCESS_ANTIALIAS_NODE: NodeDefinition = {
     return { effect: effectList };
   },
 };
+
+/** Fog & Atmospheric Post-Processing Node */
+export const POSTPROCESS_FOG_NODE: NodeDefinition = {
+  type: "postprocess/fog",
+  label: "Fog / Atmosphere",
+  category: "postprocess",
+  inputs: [
+    { id: "effect", label: "Post-Process", type: "postprocess" },
+    { id: "color", label: "Color", type: "color" },
+    { id: "density", label: "Density", type: "value" },
+    { id: "near", label: "Near Distance", type: "value" },
+    { id: "far", label: "Far Distance", type: "value" },
+  ],
+  outputs: [{ id: "effect", label: "Post-Process", type: "postprocess" }],
+  defaultParams: {
+    color: new THREE.Color(0x8899aa),
+    mode: "linear",
+    near: 1.0,
+    far: 30.0,
+    density: 0.02,
+  },
+  paramFields: [
+    { id: "color", label: "Fog Color", kind: "color" },
+    { id: "mode", label: "Fog Mode", kind: "select", options: ["linear", "exponential"] },
+    { id: "near", label: "Near Distance", kind: "number", step: 0.5 },
+    { id: "far", label: "Far Distance", kind: "number", step: 1.0 },
+    { id: "density", label: "Exp Density", kind: "number", step: 0.005 },
+  ],
+  evaluate: (inputs, params, ctx) => {
+    const color = asColor(inputs.color, asColor(params.color, new THREE.Color(0x8899aa)));
+    const mode = String(params.mode || "linear");
+    const near = Math.max(0, numberInput(inputs.near, params.near, 1.0));
+    const far = Math.max(near + 0.1, numberInput(inputs.far, params.far, 30.0));
+    const density = Math.max(0, numberInput(inputs.density, params.density, 0.02));
+
+    const effectList = accumulateEffect(inputs, {
+      type: "fog",
+      nodeId: ctx.nodeId,
+      params: { color, mode, near, far, density },
+    });
+
+    return { effect: effectList };
+  },
+};

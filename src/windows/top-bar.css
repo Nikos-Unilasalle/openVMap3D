@@ -158,6 +158,16 @@
   box-shadow: 0 0 10px rgba(236, 72, 153, 0.25);
 }
 
+.top-bar-button-shortcuts:hover {
+  border-color: #38bdf8;
+  color: #38bdf8;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
+}
+
+.top-bar-button-shortcuts:hover svg {
+  color: #38bdf8;
+}
+
 .top-bar-button-inc:hover svg {
   color: #f472b6;
 }

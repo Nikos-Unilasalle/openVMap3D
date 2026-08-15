@@ -15,18 +15,48 @@ import {
   useEdgesState,
   useNodesState,
   useReactFlow,
+  useViewport,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import * as THREE from "three";
 import { DEFAULT_PICKS } from "../shared/graph/calibration/picks";
 import { findCompatibleSocket, segmentIntersectsRect } from "../shared/graph/insertOnWire";
-import { disposeNodeCaches } from "../shared/graph/nodeCaches";
 import { SOCKET_COLOR } from "../shared/graph/sockets";
 import { Connection, Graph, KeyframeStore, NodeInstance, NodeRegistry } from "../shared/graph/types";
 import { GraphNode, GraphNodeData } from "./GraphNode";
 import { NodePalette } from "./NodePalette";
 import { NodeSearchModal } from "./NodeSearchModal";
 import "./graph-editor.css";
+
+/** Yellow spawn cursor crosshair (#f2c14e matching scalar sockets) */
+function SpawnCursorMarker({ position }: { position: { x: number; y: number } }) {
+  const { x, y, zoom } = useViewport();
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: x + position.x * zoom,
+        top: y + position.y * zoom,
+        transform: "translate(-50%, -50%)",
+        pointerEvents: "none",
+        zIndex: 0,
+      }}
+    >
+      <svg width="24" height="24" viewBox="-12 -12 24 24" style={{ overflow: "visible" }}>
+        {/* Crisp 1px crosshair in yellow scalar socket color (#f2c14e) */}
+        <path
+          d="M -10 0 L 10 0 M 0 -10 L 0 10"
+          stroke="#f2c14e"
+          strokeWidth="1"
+          vectorEffect="non-scaling-stroke"
+        />
+        {/* Center dot */}
+        <circle cx="0" cy="0" r="1.5" fill="#f2c14e" />
+      </svg>
+    </div>
+  );
+}
 
 function cloneDefaultParams(defaultParams: Record<string, unknown>): Record<string, unknown> {
   const cloned: Record<string, unknown> = {};
@@ -273,8 +303,11 @@ function GraphEditorContent({ graph, registry, onGraphChange, onSelectNode, sele
 
   const onNodesDelete = useCallback(
     (deletedNodes: Node<GraphNodeData>[]) => {
+      // Cache disposal is deliberately NOT done here. It is reconciled
+      // against the graph in App.tsx instead, so that undo, redo, New, Open
+      // and any other way a node can leave are covered by the same rule
+      // rather than each needing to remember to call it.
       const deletedIds = new Set(deletedNodes.map((n) => n.id));
-      disposeNodeCaches(deletedIds);
 
       const nextNodes = nodes.filter((n) => !deletedIds.has(n.id));
       const nextEdges = edges.filter((e) => !deletedIds.has(e.source) && !deletedIds.has(e.target));
@@ -402,6 +435,70 @@ function GraphEditorContent({ graph, registry, onGraphChange, onSelectNode, sele
     [commit, edges, graph.nodes, nodes, registry, setEdges, setNodes],
   );
 
+  const onEdgeClick: EdgeMouseHandler = useCallback(
+    (event, edge) => {
+      if (event.metaKey || event.ctrlKey) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+        const id = crypto.randomUUID();
+
+        const rerouteDef = registry.get("utility/reroute");
+        if (!rerouteDef) return;
+
+        const instance: NodeInstance = {
+          id,
+          type: "utility/reroute",
+          params: {},
+          position: { x: position.x - 5, y: position.y - 5 },
+        };
+
+        const flowNode: Node<GraphNodeData> = {
+          id,
+          type: "graphNode",
+          position: { x: position.x - 5, y: position.y - 5 },
+          data: {
+            nodeId: id,
+            nodeType: "utility/reroute",
+            label: "Reroute",
+            category: "converter",
+            inputs: [{ id: "in", label: "", type: "any" }],
+            outputs: [{ id: "out", label: "", type: "any" }],
+          },
+        };
+
+        const edge1: Edge = {
+          id: `${edge.source}.${edge.sourceHandle}->${id}.in`,
+          source: edge.source,
+          sourceHandle: edge.sourceHandle,
+          target: id,
+          targetHandle: "in",
+          style: edge.style,
+        };
+
+        const edge2: Edge = {
+          id: `${id}.out->${edge.target}.${edge.targetHandle}`,
+          source: id,
+          sourceHandle: "out",
+          target: edge.target,
+          targetHandle: edge.targetHandle,
+          style: edge.style,
+        };
+
+        const remainingEdges = edges.filter((e) => e.id !== edge.id);
+        const nextEdges = [...remainingEdges, edge1, edge2];
+        const unrefreshedNodes = [...nodes, flowNode];
+        const nextNodes = refreshDynamicSockets(unrefreshedNodes, nextEdges, [...graph.nodes, instance], registry);
+
+        setNodes(nextNodes);
+        setEdges(nextEdges);
+        onGraphChange?.(toGraph([...graph.nodes, instance], nextNodes, nextEdges, graph.keyframes, graph.markers));
+      }
+    },
+    [edges, graph, nodes, onGraphChange, registry, screenToFlowPosition, setEdges, setNodes],
+  );
+
   const onNodeDragStop = useCallback(
     (event: unknown, draggedNode: Node<GraphNodeData>) => {
       if (!(event instanceof MouseEvent) || !event.shiftKey) return;
@@ -467,13 +564,26 @@ function GraphEditorContent({ graph, registry, onGraphChange, onSelectNode, sele
     [commit, edges, graph.nodes, nodes, registry, setEdges, setNodes],
   );
 
+  const [spawnCursorPos, setSpawnCursorPos] = useState<{ x: number; y: number }>({ x: 300, y: 180 });
+  const spawnCursorPosRef = useRef(spawnCursorPos);
+
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node<GraphNodeData>) => {
       onSelectNode(node.id);
     },
     [onSelectNode],
   );
-  const onPaneClick = useCallback(() => onSelectNode(null), [onSelectNode]);
+  const onPaneClick = useCallback(
+    (event: React.MouseEvent) => {
+      onSelectNode(null);
+      if (event && typeof event.clientX === "number") {
+        const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+        spawnCursorPosRef.current = flowPos;
+        setSpawnCursorPos(flowPos);
+      }
+    },
+    [onSelectNode, screenToFlowPosition],
+  );
 
   const addNode = useCallback(
     (type: string) => {
@@ -481,9 +591,10 @@ function GraphEditorContent({ graph, registry, onGraphChange, onSelectNode, sele
       if (!def) return;
       const id = crypto.randomUUID();
 
+      const currentSpawnPos = spawnCursorPosRef.current;
       const position = pendingWireConnection
         ? { x: pendingWireConnection.position.x, y: pendingWireConnection.position.y }
-        : { x: 60 + nodes.length * 24, y: 60 + nodes.length * 24 };
+        : { x: currentSpawnPos.x - DEFAULT_NODE_WIDTH / 2, y: currentSpawnPos.y - DEFAULT_NODE_HEIGHT / 2 };
 
       const instance: NodeInstance = {
         id,
@@ -796,6 +907,7 @@ function GraphEditorContent({ graph, registry, onGraphChange, onSelectNode, sele
           onConnect={onConnect}
           isValidConnection={isValidConnection}
           onEdgeContextMenu={onEdgeContextMenu}
+          onEdgeClick={onEdgeClick}
           onNodeDragStop={onNodeDragStop}
           onNodeClick={onNodeClick}
           onPaneClick={onPaneClick}
@@ -809,6 +921,7 @@ function GraphEditorContent({ graph, registry, onGraphChange, onSelectNode, sele
           colorMode="dark"
         >
           <Background color="#5b6572" gap={20} />
+          <SpawnCursorMarker position={spawnCursorPos} />
         </ReactFlow>
       </div>
 

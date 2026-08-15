@@ -378,6 +378,45 @@ export function Viewport({
       transformControls.scaleSnap = enabled ? SCALE_SNAP : null;
     }
 
+    function isInputElement(el: Element | null): boolean {
+      if (!el) return false;
+      const tagName = el.tagName.toLowerCase();
+      return tagName === "input" || tagName === "textarea" || (el as HTMLElement).isContentEditable;
+    }
+
+    function onViewportKeyDown(e: KeyboardEvent) {
+      if (isInputElement(document.activeElement)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      const key = e.key.toLowerCase();
+
+      // Gizmo mode shortcuts: T (translate), R (rotate), S (scale)
+      if (key === "t") {
+        e.preventDefault();
+        setTransformMode("translate");
+        if (transformControls) transformControls.setMode("translate");
+      } else if (key === "r") {
+        e.preventDefault();
+        setTransformMode("rotate");
+        if (transformControls) transformControls.setMode("rotate");
+      } else if (key === "s") {
+        e.preventDefault();
+        setTransformMode("scale");
+        if (transformControls) transformControls.setMode("scale");
+      }
+      // Camera axis snapping shortcuts: X (Right), Y (Top), Z (Front)
+      else if (key === "x") {
+        e.preventDefault();
+        setAxisViewRef.current?.("x", 1);
+      } else if (key === "y") {
+        e.preventDefault();
+        setAxisViewRef.current?.("y", 1);
+      } else if (key === "z") {
+        e.preventDefault();
+        setAxisViewRef.current?.("z", 1);
+      }
+    }
+
     function onSnapKeyDown(e: KeyboardEvent) {
       if (e.key === "Shift") setSnapEnabled(true);
     }
@@ -391,6 +430,7 @@ export function Viewport({
     }
     if (!outputMode) {
       window.addEventListener("keydown", onSnapKeyDown);
+      window.addEventListener("keydown", onViewportKeyDown);
       window.addEventListener("keyup", onSnapKeyUp);
       window.addEventListener("blur", onSnapWindowBlur);
     }
@@ -1157,6 +1197,7 @@ export function Viewport({
         // holding their render targets for a graph that no longer wants them.
         postChain.dispose();
 
+        scene.fog = null;
         scene.background = bgScene.background;
         (scene as any).backgroundBlurriness = (bgScene as any).backgroundBlurriness ?? 0;
         renderer.clear();
@@ -1194,6 +1235,7 @@ export function Viewport({
         controls.removeEventListener("start", handleOrbitStart);
         controls.removeEventListener("change", emitCameraPose);
         window.removeEventListener("keydown", onSnapKeyDown);
+        window.removeEventListener("keydown", onViewportKeyDown);
         window.removeEventListener("keyup", onSnapKeyUp);
         window.removeEventListener("blur", onSnapWindowBlur);
       }

@@ -9,6 +9,7 @@ import {
 import { Graph } from "../shared/graph/types";
 import { closeOutputWindow, listMonitors, onOutputClosed, openOutputWindow } from "../shared/ipc";
 import logoUrl from "../assets/logo.png";
+import { ShortcutsModal } from "./ShortcutsModal";
 import "./top-bar.css";
 
 export interface TopBarProps {
@@ -35,6 +36,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [isEditingFilename, setIsEditingFilename] = useState(false);
   const [filenameInput, setFilenameInput] = useState(currentFilename);
   const [isOutputOpen, setIsOutputOpen] = useState(false);
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
 
   const showToast = (msg: string, error = false) => {
     setToastMessage(msg);
@@ -254,6 +256,19 @@ export const TopBar: React.FC<TopBarProps> = ({
           </div>
         )}
 
+        {/* SHORTCUTS — keyboard shortcuts reference popup */}
+        <button
+          className="top-bar-button top-bar-button-shortcuts"
+          onClick={() => setIsShortcutsOpen(true)}
+          title="Keyboard Shortcuts Guide"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2" y="4" width="20" height="16" rx="2" />
+            <path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M8 16h8" />
+          </svg>
+          Shortcuts
+        </button>
+
         {/* OUTPUT — fullscreen window on the second monitor */}
         <button
           className={`top-bar-button top-bar-button-output${isOutputOpen ? " top-bar-button-output-active" : ""}`}
@@ -293,6 +308,8 @@ export const TopBar: React.FC<TopBarProps> = ({
           </div>
         )}
       </div>
+
+      <ShortcutsModal isOpen={isShortcutsOpen} onClose={() => setIsShortcutsOpen(false)} />
     </header>
   );
 };
