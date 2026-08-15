@@ -208,9 +208,26 @@ interface GraphEditorProps {
   onGraphChange?: (graph: Graph) => void;
   onSelectNode: (nodeId: string | null) => void;
   selectedNodeId?: string | null;
+  /** How many canvases the document holds — the selector draws one tab each. Omit to hide the selector entirely. */
+  canvasCount?: number;
+  /** Index of the canvas this editor is showing. */
+  activeCanvas?: number;
+  /** Per canvas: whether it's still empty, so untouched slots read as available rather than identical to the one in use. */
+  emptyCanvases?: boolean[];
+  onSelectCanvas?: (index: number) => void;
 }
 
-function GraphEditorContent({ graph, registry, onGraphChange, onSelectNode, selectedNodeId }: GraphEditorProps) {
+function GraphEditorContent({
+  graph,
+  registry,
+  onGraphChange,
+  onSelectNode,
+  selectedNodeId,
+  canvasCount,
+  activeCanvas = 0,
+  emptyCanvases,
+  onSelectCanvas,
+}: GraphEditorProps) {
   const { screenToFlowPosition } = useReactFlow();
 
   const initialNodes = useMemo(() => {
@@ -923,6 +940,25 @@ function GraphEditorContent({ graph, registry, onGraphChange, onSelectNode, sele
           <Background color="#5b6572" gap={20} />
           <SpawnCursorMarker position={spawnCursorPos} />
         </ReactFlow>
+        {canvasCount && onSelectCanvas ? (
+          <div className="canvas-selector">
+            {Array.from({ length: canvasCount }, (_, index) => (
+              <button
+                key={index}
+                type="button"
+                className={
+                  "canvas-selector-tab" +
+                  (index === activeCanvas ? " canvas-selector-tab-active" : "") +
+                  (emptyCanvases?.[index] ? " canvas-selector-tab-empty" : "")
+                }
+                onClick={() => onSelectCanvas(index)}
+                title={`Canvas ${index + 1}${emptyCanvases?.[index] ? " (empty)" : ""}`}
+              >
+                {index + 1}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       {searchModalOpen && (

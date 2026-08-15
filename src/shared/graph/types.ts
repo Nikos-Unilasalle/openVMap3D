@@ -186,3 +186,48 @@ export interface Graph {
 export function emptyGraph(): Graph {
   return { nodes: [], connections: [], keyframes: {}, markers: [] };
 }
+
+/**
+ * How many canvases a project holds. Fixed rather than grown on demand —
+ * the same "scene list" model OpenVMap 2D already has, and what makes a
+ * canvas addressable by a stable number from anywhere (the selector, a Go To
+ * Canvas node, a key binding later) instead of by an identity that shifts as
+ * canvases are added and removed.
+ */
+export const CANVAS_COUNT = 6;
+
+/**
+ * A whole document: several independent node trees, one shown at a time.
+ *
+ * Each canvas is a complete Graph of its own — its own nodes, wires,
+ * keyframes and markers, its own Render node holding its output settings.
+ * Not one big graph partitioned by a per-node tag: BIBLE.md's scene model is
+ * "multiple independent trees, not one mega-graph", and it is what keeps a
+ * canvas's membership a matter of *which tree a node is in* rather than
+ * something that has to be wired or tagged.
+ *
+ * Only the active canvas is evaluated and drawn. Node ids are UUIDs
+ * (GraphEditor.tsx), so the per-node-id caches that hold meshes and other GPU
+ * resources (nodeCaches.ts) can't collide across canvases — an inactive
+ * canvas keeps its objects, and switching back to it costs one evaluation
+ * rather than a rebuild.
+ */
+export interface Project {
+  canvases: Graph[];
+  /** Index into `canvases` — the one being edited, evaluated and rendered. */
+  activeCanvas: number;
+}
+
+export function emptyProject(): Project {
+  return { canvases: Array.from({ length: CANVAS_COUNT }, emptyGraph), activeCanvas: 0 };
+}
+
+/** Pads/trims a canvas list to exactly CANVAS_COUNT — what a file loaded from any version gets normalized through. */
+export function normalizeCanvases(canvases: Graph[]): Graph[] {
+  return Array.from({ length: CANVAS_COUNT }, (_, i) => canvases[i] ?? emptyGraph());
+}
+
+/** True when nothing has been built in this canvas yet — drives the dimmed slots in the canvas selector. */
+export function isCanvasEmpty(graph: Graph | undefined): boolean {
+  return !graph || graph.nodes.length === 0;
+}

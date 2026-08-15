@@ -7,6 +7,7 @@ import { CLAMP_NODE, MAP_RANGE_NODE, VALUE_CONSTANT_NODE, VALUE_MATH_NODE } from
 import { MERGE_NODE } from "./merge";
 import { OBJECT_BAR_GRAPH_NODE, OBJECT_BOX_NODE, OBJECT_CONE_NODE, OBJECT_CYLINDER_NODE, OBJECT_DISC_NODE, OBJECT_EMPTY_NODE, OBJECT_PLANE_NODE, OBJECT_SPHERE_NODE, OBJECT_TEXT_NODE } from "./object";
 import { CHART_AXIS_NODE, LINE_GRAPH_NODE, PIE_CHART_NODE, POINT_CLOUD_NODE, SCATTER_PLOT_NODE } from "./chart";
+import { CANVAS_GOTO_NODE } from "./canvas";
 import { RENDER_NODE } from "./render";
 import { FRAME_NODE, TIME_NODE } from "./time";
 import { VECTOR_COMPOSE_NODE, VECTOR_DECOMPOSE_NODE, VECTOR_MATH_NODE } from "./vector";
@@ -134,6 +135,7 @@ export const STARTER_NODES = [
   LIGHT_AMBIENT_NODE,
   ENVIRONMENT_NODE,
   RENDER_NODE,
+  CANVAS_GOTO_NODE,
   COMPARE_NODE,
   BOOLEAN_LOGIC_NODE,
   TRIGGER_NODE,
@@ -196,6 +198,7 @@ export * from "./object";
 export * from "./chart";
 export * from "./render";
 export * from "./logic";
+export * from "./canvas";
 export * from "./oscillator";
 export * from "./color";
 export * from "./converter";

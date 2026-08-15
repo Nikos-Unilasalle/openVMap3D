@@ -5,10 +5,22 @@ import { DEFAULT_REGISTRY } from "./shared/graph/nodes";
 import { findRenderNodeId } from "./shared/graph/nodes/render";
 import { rehydrateFileNodesFromDisk } from "./shared/graph/rehydrateFiles";
 import { cloneGraph } from "./shared/graph/cloneGraph";
+import { consumeCanvasSwitchRequest } from "./shared/graph/canvasSwitchStore";
 import { disposeNodeCaches } from "./shared/graph/nodeCaches";
 import { rehydrateGraphParams } from "./shared/graph/rehydrateParams";
 import { paramPanelValues } from "./shared/graph/paramPanelValues";
-import { Connection, Graph, Keyframe, KeyframeStore, NodeInstance } from "./shared/graph/types";
+import {
+  CANVAS_COUNT,
+  Connection,
+  emptyGraph,
+  Graph,
+  isCanvasEmpty,
+  Keyframe,
+  KeyframeStore,
+  NodeInstance,
+  normalizeCanvases,
+  Project,
+} from "./shared/graph/types";
 import { broadcastGraph, maximizeMainWindow, PreviewCameraPose, startBroadcasting } from "./shared/ipc";
 import { TransformPatch } from "./shared/three/Viewport";
 import { SplitViewport } from "./shared/three/SplitViewport";
@@ -142,7 +154,13 @@ function App() {
 }
 
 function MainEditor() {
-  const [graph, setGraph] = useState<Graph>(buildSmokeTestGraph);
+  // The whole document. `graph` below is a view onto the active one — every
+  // existing edit path (params, gizmo, undo, the editor itself) still speaks
+  // in terms of one Graph and needs to know nothing about canvases.
+  const [canvases, setCanvases] = useState<Graph[]>(() =>
+    normalizeCanvases([buildSmokeTestGraph()]),
+  );
+  const [activeCanvas, setActiveCanvas] = useState(0);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [splitPercent, setSplitPercent] = useState(50);
   const [currentFilename, setCurrentFilename] = useState("project_v1.ovm");
@@ -150,6 +168,42 @@ function MainEditor() {
   const [editorKey, setEditorKey] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const draggingSplit = useRef(false);
+
+  const graph = canvases[activeCanvas] ?? emptyGraph();
+  const project: Project = { canvases, activeCanvas };
+
+  // Read through a ref rather than the captured value: setGraph is handed to
+  // callbacks that outlive the render they were made in (the gizmo's
+  // per-frame writes, most of all), and a stale index would write the edit
+  // into whichever canvas was open when the callback was created.
+  const activeCanvasRef = useRef(activeCanvas);
+  activeCanvasRef.current = activeCanvas;
+
+  const setGraph = useCallback((nextOrUpdater: Graph | ((prev: Graph) => Graph)) => {
+    setCanvases((prev) =>
+      prev.map((canvas, i) =>
+        i === activeCanvasRef.current
+          ? typeof nextOrUpdater === "function"
+            ? (nextOrUpdater as (prev: Graph) => Graph)(canvas)
+            : nextOrUpdater
+          : canvas,
+      ),
+    );
+  }, []);
+
+  const switchCanvas = useCallback((index: number) => {
+    if (index < 0 || index >= CANVAS_COUNT) return;
+    setActiveCanvas((prev) => {
+      if (prev === index) return prev;
+      // The ref leads the state: setGraph and the history helpers read it,
+      // and anything that fires between this call and the re-render (a gizmo
+      // frame, a pending param write) must already be aimed at the canvas
+      // being switched to.
+      activeCanvasRef.current = index;
+      return index;
+    });
+    setSelectedNodeId(null);
+  }, []);
 
   const renderNodeInstance = graph.nodes.find((n) => n.type === "render");
   const rawFrameCount = Number(renderNodeInstance?.params?.frameCount);
@@ -161,8 +215,38 @@ function MainEditor() {
   const keyframesEnabled = !!renderNodeInstance;
 
   const [isPlaying, setIsPlaying] = useState(true);
-  const [currentFrame, setCurrentFrame] = useState(0);
+  // Per canvas: each has its own Render node and so its own frame count, and
+  // coming back to a canvas should find it where you left it rather than
+  // wherever another canvas's playhead happens to be.
+  const [currentFrames, setCurrentFrames] = useState<number[]>(() => new Array(CANVAS_COUNT).fill(0));
+  const currentFrame = currentFrames[activeCanvas] ?? 0;
+  const setCurrentFrame = useCallback((nextOrUpdater: number | ((prev: number) => number)) => {
+    setCurrentFrames((prev) =>
+      prev.map((frame, i) =>
+        i === activeCanvasRef.current
+          ? typeof nextOrUpdater === "function"
+            ? nextOrUpdater(frame)
+            : nextOrUpdater
+          : frame,
+      ),
+    );
+  }, []);
   const [evaluatedResults, setEvaluatedResults] = useState<Map<string, Record<string, unknown>> | null>(null);
+
+  /**
+   * Runs after every evaluation the viewport does. A Go To Canvas node can't
+   * reach React state from inside `evaluate`, so it leaves its request in a
+   * module slot (canvasSwitchStore) and it gets collected here — the same
+   * indirection the Inspector node already uses to publish live values.
+   */
+  const onEvaluatedResults = useCallback(
+    (results: Map<string, Record<string, unknown>>) => {
+      setEvaluatedResults(results);
+      const requested = consumeCanvasSwitchRequest();
+      if (requested !== null) switchCanvas(requested);
+    },
+    [switchCanvas],
+  );
 
   useEffect(() => {
     void maximizeMainWindow();
@@ -172,7 +256,7 @@ function MainEditor() {
     if (keyframesEnabled && totalFrames > 0) {
       setCurrentFrame((prev) => Math.max(0, Math.min(totalFrames - 1, prev)));
     }
-  }, [totalFrames, keyframesEnabled]);
+  }, [totalFrames, keyframesEnabled, setCurrentFrame]);
 
   useEffect(() => {
     if (!keyframesEnabled || !isPlaying || totalFrames <= 0) return;
@@ -180,7 +264,7 @@ function MainEditor() {
       setCurrentFrame((prev) => (prev + 1) % totalFrames);
     }, 1000 / 60);
     return () => clearInterval(interval);
-  }, [keyframesEnabled, isPlaying, totalFrames]);
+  }, [keyframesEnabled, isPlaying, totalFrames, setCurrentFrame]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -267,11 +351,16 @@ function MainEditor() {
    */
   const knownNodeIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    const currentIds = new Set(graph.nodes.map((n) => n.id));
+    // Across *every* canvas, not just the open one: a node in a canvas that
+    // isn't on screen has not left the document, and reconciling against the
+    // active canvas alone would free the meshes of all five others the
+    // moment you switched — the exact opposite of what makes switching
+    // instant.
+    const currentIds = new Set(canvases.flatMap((canvas) => canvas.nodes.map((n) => n.id)));
     const departed = [...knownNodeIdsRef.current].filter((id) => !currentIds.has(id));
     if (departed.length > 0) disposeNodeCaches(departed);
     knownNodeIdsRef.current = currentIds;
-  }, [graph.nodes]);
+  }, [canvases]);
   // Not React state on purpose — this changes at orbit-drag frequency, and
   // nothing in this component's own render output depends on it (only the
   // outgoing broadcast does). A state variable here would re-render
@@ -328,7 +417,17 @@ function MainEditor() {
     broadcastGraph({ graph: graphRef.current, epochMs, calibratingNodeId, previewCamera: pose });
   };
 
-  const historyRef = useRef<{ past: Graph[]; future: Graph[] }>({ past: [], future: [] });
+  /**
+   * Undo history per canvas, keyed by canvas index. Cmd+Z after switching
+   * canvases undoes the last edit made *in the canvas you're looking at* —
+   * a single shared stack would have reached back into a tree that isn't on
+   * screen, undoing something invisible.
+   */
+  const historyRef = useRef<Record<number, { past: Graph[]; future: Graph[] }>>({});
+  const canvasHistory = useCallback(() => {
+    const index = activeCanvasRef.current;
+    return (historyRef.current[index] ??= { past: [], future: [] });
+  }, []);
   /**
    * Which (node, param) a run of edits is currently touching, so one slider
    * drag or one typed number collapses into a single undo step. Without it
@@ -352,42 +451,45 @@ function MainEditor() {
     // Still dialling the same control — fold into the step already recorded.
     if (coalesceKey && previous && previous.key === coalesceKey && now - previous.at < HISTORY_COALESCE_MS) return;
 
+    const history = canvasHistory();
     const snapshot = cloneGraph(graphRef.current);
-    const top = historyRef.current.past[historyRef.current.past.length - 1];
+    const top = history.past[history.past.length - 1];
     // Several edits can land in one event batch, before graphRef has caught
     // up — without this they'd each store the same pre-batch graph.
     if (top && JSON.stringify(top) === JSON.stringify(snapshot)) return;
 
-    historyRef.current.past.push(snapshot);
-    if (historyRef.current.past.length > HISTORY_LIMIT) historyRef.current.past.shift();
-    historyRef.current.future = [];
-  }, []);
+    history.past.push(snapshot);
+    if (history.past.length > HISTORY_LIMIT) history.past.shift();
+    history.future = [];
+  }, [canvasHistory]);
 
   const setGraphWithHistory = useCallback(
     (nextGraphOrUpdater: Graph | ((prev: Graph) => Graph), coalesceKey?: string) => {
       pushHistory(coalesceKey);
       setGraph((prev) => (typeof nextGraphOrUpdater === "function" ? nextGraphOrUpdater(prev) : nextGraphOrUpdater));
     },
-    [pushHistory],
+    [pushHistory, setGraph],
   );
 
   const undo = useCallback(() => {
-    if (historyRef.current.past.length === 0) return;
-    const previous = historyRef.current.past.pop()!;
-    historyRef.current.future.unshift(cloneGraph(graphRef.current));
+    const history = canvasHistory();
+    if (history.past.length === 0) return;
+    const previous = history.past.pop()!;
+    history.future.unshift(cloneGraph(graphRef.current));
     coalesceRef.current = null;
     setGraph(previous);
     setEditorKey((k) => k + 1);
-  }, []);
+  }, [canvasHistory, setGraph]);
 
   const redo = useCallback(() => {
-    if (historyRef.current.future.length === 0) return;
-    const next = historyRef.current.future.shift()!;
-    historyRef.current.past.push(cloneGraph(graphRef.current));
+    const history = canvasHistory();
+    if (history.future.length === 0) return;
+    const next = history.future.shift()!;
+    history.past.push(cloneGraph(graphRef.current));
     coalesceRef.current = null;
     setGraph(next);
     setEditorKey((k) => k + 1);
-  }, []);
+  }, [canvasHistory, setGraph]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -422,10 +524,15 @@ function MainEditor() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [undo, redo]);
 
-  const handleLoadGraph = (newGraph: Graph, filename?: string) => {
-    historyRef.current = { past: [], future: [] };
-    const rehydrated = rehydrateGraphParams(newGraph, DEFAULT_REGISTRY);
-    setGraph(rehydrated);
+  const handleLoadProject = (newProject: Project, filename?: string) => {
+    historyRef.current = {};
+    const rehydrated = normalizeCanvases(newProject.canvases).map((canvas) =>
+      rehydrateGraphParams(canvas, DEFAULT_REGISTRY),
+    );
+    setCanvases(rehydrated);
+    setActiveCanvas(newProject.activeCanvas);
+    activeCanvasRef.current = newProject.activeCanvas;
+    setCurrentFrames(new Array(CANVAS_COUNT).fill(0));
     setSelectedNodeId(null);
     setEditorKey((k) => k + 1);
     if (filename) {
@@ -437,10 +544,14 @@ function MainEditor() {
     // such file from disk, then nudge state so the param panel (column
     // dropdowns, filenames) refreshes once the data lands; evaluate()
     // itself already re-reads each node's cache live every tick, so the
-    // 3D view/audio alone would've caught up on their own.
-    rehydrateFileNodesFromDisk(rehydrated).then((changed) => {
-      if (changed) setGraph((g) => ({ ...g }));
-    });
+    // 3D view/audio alone would've caught up on their own. Every canvas is
+    // re-read, not just the open one: switching to another canvas later must
+    // not be the moment its files start loading.
+    for (const canvas of rehydrated) {
+      rehydrateFileNodesFromDisk(canvas).then((changed) => {
+        if (changed) setCanvases((prev) => [...prev]);
+      });
+    }
   };
 
   const handleFilenameChange = (name: string, path: string | null) => {
@@ -629,8 +740,8 @@ function MainEditor() {
       style={{ width: "100vw", height: "100vh", display: "flex", flexDirection: "column" }}
     >
       <TopBar
-        graph={graph}
-        onLoadGraph={handleLoadGraph}
+        project={project}
+        onLoadProject={handleLoadProject}
         currentFilename={currentFilename}
         currentFilePath={currentFilePath}
         onFilenameChange={handleFilenameChange}
@@ -649,7 +760,7 @@ function MainEditor() {
           onTransformStart={onTransformStart}
           onCameraChange={onPreviewCameraChange}
           currentFrame={keyframesEnabled ? currentFrame : -1}
-          onEvaluatedResults={setEvaluatedResults}
+          onEvaluatedResults={onEvaluatedResults}
           isPlaying={isPlaying}
         />
         {needsTransformHint && (
@@ -700,12 +811,16 @@ function MainEditor() {
       />
       <div style={{ flex: 1, minHeight: 0 }}>
         <GraphEditor
-          key={editorKey}
+          key={`${activeCanvas}:${editorKey}`}
           graph={graph}
           registry={DEFAULT_REGISTRY}
           onGraphChange={onGraphChange}
           onSelectNode={setSelectedNodeId}
           selectedNodeId={selectedNodeId}
+          canvasCount={CANVAS_COUNT}
+          activeCanvas={activeCanvas}
+          emptyCanvases={canvases.map(isCanvasEmpty)}
+          onSelectCanvas={switchCanvas}
         />
       </div>
     </div>

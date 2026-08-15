@@ -140,3 +140,60 @@ input, textarea, [contenteditable="true"], .drag-number-editing, .param-text-inp
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
+
+/*
+ * Canvas selector — which of the document's independent node trees is open.
+ * Sits over the flow canvas rather than in the palette: it belongs to the
+ * surface it switches, and stays put when the palette scrolls.
+ */
+.canvas-selector {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  background: rgba(59, 67, 79, 0.88);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 10;
+}
+
+.canvas-selector-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #cbd5e1;
+  border-radius: 5px;
+  padding: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.canvas-selector-tab:hover {
+  background: rgba(56, 189, 248, 0.25);
+  border-color: #38bdf8;
+  color: #ffffff;
+}
+
+/* An untouched slot reads as available rather than as another built scene. */
+.canvas-selector-tab-empty {
+  color: #64748b;
+  border-style: dashed;
+}
+
+.canvas-selector-tab-active {
+  background: #38bdf8;
+  border-color: #38bdf8;
+  color: #0b1220;
+}

@@ -2,7 +2,7 @@ import { open as dialogOpen, save as dialogSave } from "@tauri-apps/plugin-dialo
 import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import { DEFAULT_REGISTRY } from "./nodes";
 import { pruneDanglingConnections } from "./pruneConnections";
-import { Graph, NodeRegistry } from "./types";
+import { CANVAS_COUNT, Graph, NodeRegistry, normalizeCanvases, Project } from "./types";
 
 export function ensureOvmExtension(filename: string): string {
   if (!filename) return "project_v1.ovm";
@@ -43,8 +43,8 @@ export function incrementFilename(filename: string): string {
   return `${base}_v2${ext}`;
 }
 
-export function serializeGraph(graph: Graph): string {
-  const cleanGraph: Graph = {
+function cleanGraph(graph: Graph): Graph {
+  return {
     nodes: (graph.nodes || []).map((n) => ({
       id: n.id,
       type: n.type,
@@ -61,7 +61,56 @@ export function serializeGraph(graph: Graph): string {
     keyframes: graph.keyframes ? JSON.parse(JSON.stringify(graph.keyframes)) : {},
     markers: Array.isArray(graph.markers) ? [...graph.markers] : [],
   };
-  return JSON.stringify(cleanGraph, null, 2);
+}
+
+export function serializeGraph(graph: Graph): string {
+  return JSON.stringify(cleanGraph(graph), null, 2);
+}
+
+/**
+ * A whole document — every canvas, plus which one was open.
+ *
+ * The single-graph shape stays readable forever (see deserializeProject), so
+ * this is additive rather than a break: a file written before canvases
+ * existed loads as canvas 1 with the rest empty.
+ */
+export function serializeProject(project: Project): string {
+  return JSON.stringify(
+    {
+      canvases: normalizeCanvases(project.canvases).map(cleanGraph),
+      activeCanvas: clampCanvasIndex(project.activeCanvas),
+    },
+    null,
+    2,
+  );
+}
+
+function clampCanvasIndex(index: unknown): number {
+  const n = Math.round(Number(index));
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(CANVAS_COUNT - 1, n));
+}
+
+function validateGraphShape(data: { nodes?: unknown; connections?: unknown }, where: string): void {
+  if (!Array.isArray(data.nodes) || !Array.isArray(data.connections)) {
+    throw new Error(`Invalid graph format${where}: missing 'nodes' or 'connections' arrays.`);
+  }
+
+  for (const n of data.nodes) {
+    if (!n.id || !n.type || !n.position) {
+      throw new Error(
+        `Invalid node structure in graph${where}: missing required fields on node ${n?.id || "unknown"}.`,
+      );
+    }
+  }
+
+  for (const c of data.connections) {
+    if (!c.id || !c.fromNode || !c.fromSocket || !c.toNode || !c.toSocket) {
+      throw new Error(
+        `Invalid connection structure in graph${where}: missing required fields on connection ${c?.id || "unknown"}.`,
+      );
+    }
+  }
 }
 
 export function deserializeGraph(jsonString: string, registry: NodeRegistry = DEFAULT_REGISTRY): Graph {
@@ -71,26 +120,11 @@ export function deserializeGraph(jsonString: string, registry: NodeRegistry = DE
     throw new Error("Invalid file format: content is not a valid JSON object.");
   }
 
-  if (!Array.isArray(data.nodes) || !Array.isArray(data.connections)) {
-    throw new Error("Invalid graph format: missing 'nodes' or 'connections' arrays.");
-  }
+  validateGraphShape(data, "");
+  return adoptGraph(data, registry);
+}
 
-  for (const n of data.nodes) {
-    if (!n.id || !n.type || !n.position) {
-      throw new Error(
-        `Invalid node structure in graph: missing required fields on node ${n?.id || "unknown"}.`
-      );
-    }
-  }
-
-  for (const c of data.connections) {
-    if (!c.id || !c.fromNode || !c.fromSocket || !c.toNode || !c.toSocket) {
-      throw new Error(
-        `Invalid connection structure in graph: missing required fields on connection ${c?.id || "unknown"}.`
-      );
-    }
-  }
-
+function adoptGraph(data: { nodes: unknown[]; connections: unknown[]; keyframes?: unknown; markers?: unknown }, registry: NodeRegistry): Graph {
   // Sockets are a public surface — every saved file references them by id —
   // so a file outlives any socket that gets retired (the Camera's unused
   // geometry input, for one). The evaluator ignores a connection to a socket
@@ -100,13 +134,39 @@ export function deserializeGraph(jsonString: string, registry: NodeRegistry = DE
   // anywhere.
   return pruneDanglingConnections(
     {
-      nodes: data.nodes,
-      connections: data.connections,
-      keyframes: data.keyframes && typeof data.keyframes === "object" ? data.keyframes : {},
-      markers: Array.isArray(data.markers) ? data.markers : [],
+      nodes: data.nodes as Graph["nodes"],
+      connections: data.connections as Graph["connections"],
+      keyframes: data.keyframes && typeof data.keyframes === "object" ? (data.keyframes as Graph["keyframes"]) : {},
+      markers: Array.isArray(data.markers) ? (data.markers as number[]) : [],
     },
     registry,
   );
+}
+
+/**
+ * Reads either shape: a multi-canvas document, or a single graph saved before
+ * canvases existed — which becomes canvas 1, the remaining slots empty.
+ * Nobody's old .ovm needs converting, and no version field has to be
+ * consulted: the two shapes are told apart by whether `canvases` is there.
+ */
+export function deserializeProject(jsonString: string, registry: NodeRegistry = DEFAULT_REGISTRY): Project {
+  const data = JSON.parse(jsonString);
+
+  if (!data || typeof data !== "object") {
+    throw new Error("Invalid file format: content is not a valid JSON object.");
+  }
+
+  if (!Array.isArray(data.canvases)) {
+    validateGraphShape(data, "");
+    return { canvases: normalizeCanvases([adoptGraph(data, registry)]), activeCanvas: 0 };
+  }
+
+  const canvases = data.canvases.map((canvas: { nodes?: unknown; connections?: unknown }, i: number) => {
+    validateGraphShape(canvas, ` (canvas ${i + 1})`);
+    return adoptGraph(canvas as { nodes: unknown[]; connections: unknown[] }, registry);
+  });
+
+  return { canvases: normalizeCanvases(canvases), activeCanvas: clampCanvasIndex(data.activeCanvas) };
 }
 
 export function isTauri(): boolean {
@@ -115,9 +175,9 @@ export function isTauri(): boolean {
 
 /**
  * Open file via native Tauri dialog or browser file picker.
- * Returns { graph, filename } on success, null on cancel.
+ * Returns { project, filename } on success, null on cancel.
  */
-export async function openGraphWithFilePicker(): Promise<{ graph: Graph; filename: string } | null> {
+export async function openProjectWithFilePicker(): Promise<{ project: Project; filename: string } | null> {
   if (!isTauri()) {
     return new Promise((resolve) => {
       const input = document.createElement("input");
@@ -131,8 +191,8 @@ export async function openGraphWithFilePicker(): Promise<{ graph: Graph; filenam
         }
         try {
           const text = await file.text();
-          const graph = deserializeGraph(text);
-          resolve({ graph, filename: file.name });
+          const project = deserializeProject(text);
+          resolve({ project, filename: file.name });
         } catch (e) {
           alert("Erreur lors de la lecture du fichier : " + (e as Error).message);
           resolve(null);
@@ -151,22 +211,22 @@ export async function openGraphWithFilePicker(): Promise<{ graph: Graph; filenam
   if (!selected || typeof selected !== "string") return null;
 
   const content = await readTextFile(selected);
-  const graph = deserializeGraph(content);
+  const project = deserializeProject(content);
   const parts = selected.split(/[\/\\]/);
   const filename = parts[parts.length - 1] || "project_v1.ovm";
-  return { graph, filename };
+  return { project, filename };
 }
 
 /**
  * Save file via native Tauri dialog or browser blob download.
  * Returns saved filename on success, null on cancel.
  */
-export async function saveGraphAsWithFilePicker(
-  graph: Graph,
+export async function saveProjectAsWithFilePicker(
+  project: Project,
   suggestedFilename: string
 ): Promise<string | null> {
   const filename = ensureOvmExtension(suggestedFilename);
-  const jsonString = serializeGraph(graph);
+  const jsonString = serializeProject(project);
 
   if (!isTauri()) {
     const blob = new Blob([jsonString], { type: "application/json" });
@@ -196,11 +256,11 @@ export async function saveGraphAsWithFilePicker(
  * Used for "Save" (overwrite) and "Incremental Save".
  * Returns the resolved path/filename.
  */
-export async function saveGraphToPath(
-  graph: Graph,
+export async function saveProjectToPath(
+  project: Project,
   filePath: string
 ): Promise<string> {
-  const jsonString = serializeGraph(graph);
+  const jsonString = serializeProject(project);
 
   if (!isTauri()) {
     const parts = filePath.split(/[\/\\]/);

@@ -2,19 +2,20 @@ import React, { useEffect, useState } from "react";
 import {
   ensureOvmExtension,
   incrementFilename,
-  openGraphWithFilePicker,
-  saveGraphAsWithFilePicker,
-  saveGraphToPath,
+  openProjectWithFilePicker,
+  saveProjectAsWithFilePicker,
+  saveProjectToPath,
 } from "../shared/graph/storage";
-import { Graph } from "../shared/graph/types";
+import { emptyProject, Project } from "../shared/graph/types";
 import { closeOutputWindow, listMonitors, onOutputClosed, openOutputWindow } from "../shared/ipc";
 import logoUrl from "../assets/logo.png";
 import { ShortcutsModal } from "./ShortcutsModal";
 import "./top-bar.css";
 
 export interface TopBarProps {
-  graph: Graph;
-  onLoadGraph: (graph: Graph, filename?: string) => void;
+  /** The whole document — every canvas, not just the one on screen: saving writes them all. */
+  project: Project;
+  onLoadProject: (project: Project, filename?: string) => void;
   currentFilename: string;
   currentFilePath: string | null;
   onFilenameChange: (name: string, path: string | null) => void;
@@ -23,8 +24,8 @@ export interface TopBarProps {
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
-  graph,
-  onLoadGraph,
+  project,
+  onLoadProject,
   currentFilename,
   currentFilePath,
   onFilenameChange,
@@ -77,14 +78,14 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   // 0. NEW GRAPH
   const handleNewGraph = () => {
+    const hasContent = project.canvases.some((canvas) => canvas.nodes.length > 0);
     if (
-      graph.nodes.length > 0 &&
+      hasContent &&
       !window.confirm("Créer un nouveau graph ? Les modifications non sauvegardées seront perdues.")
     ) {
       return;
     }
-    const emptyGraph: Graph = { nodes: [], connections: [] };
-    onLoadGraph(emptyGraph, "project_v1.ovm");
+    onLoadProject(emptyProject(), "project_v1.ovm");
     onFilenameChange("project_v1.ovm", null);
     showToast("Nouveau graph créé !");
   };
@@ -92,9 +93,9 @@ export const TopBar: React.FC<TopBarProps> = ({
   // 1. LOAD GRAPH — native Tauri open dialog
   const handleLoadClick = async () => {
     try {
-      const res = await openGraphWithFilePicker();
+      const res = await openProjectWithFilePicker();
       if (res) {
-        onLoadGraph(res.graph, res.filename);
+        onLoadProject(res.project, res.filename);
         showToast(`"${res.filename}" chargé !`);
       }
     } catch (err: unknown) {
@@ -107,7 +108,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const handleSave = async () => {
     try {
       if (currentFilePath) {
-        await saveGraphToPath(graph, currentFilePath);
+        await saveProjectToPath(project, currentFilePath);
         showToast(`Sauvegardé : ${currentFilename}`);
       } else {
         // No path yet — fall through to Save As
@@ -123,7 +124,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const handleSaveAs = async () => {
     try {
       const safeName = ensureOvmExtension(currentFilename);
-      const savedName = await saveGraphAsWithFilePicker(graph, safeName);
+      const savedName = await saveProjectAsWithFilePicker(project, safeName);
       if (savedName) {
         // We don't have the full path back from just the name, so reset path to null
         // and the next Save will prompt again, OR we store from dialog
@@ -140,7 +141,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const handleIncrementalSave = async () => {
     try {
       const nextName = incrementFilename(currentFilename);
-      const savedName = await saveGraphAsWithFilePicker(graph, nextName);
+      const savedName = await saveProjectAsWithFilePicker(project, nextName);
       if (savedName) {
         onFilenameChange(savedName, null);
         showToast(`Sauvegarde incrémentale : ${savedName}`);

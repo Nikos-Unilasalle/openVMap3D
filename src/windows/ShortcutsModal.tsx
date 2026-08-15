@@ -66,6 +66,13 @@ const SHORTCUT_SECTIONS: ShortcutSection[] = [
     ],
   },
   {
+    category: "Canvases",
+    items: [
+      { keys: ["1", "…", "6"], description: "Canvas selector, top right of the node editor — click to switch" },
+      { keys: ["Go To Canvas node"], description: "Switch canvas from the graph itself, on a trigger (key, beat, condition)" },
+    ],
+  },
+  {
     category: "Timeline & Keyframe Animation",
     items: [
       { keys: ["Space"], description: "Play / Pause timeline playback" },
