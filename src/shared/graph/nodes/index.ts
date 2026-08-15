@@ -1,5 +1,5 @@
 import { createRegistry } from "../types";
-import { CAMERA_NODE } from "./camera";
+import { CAMERA_FLY_TO_NODE, CAMERA_NODE } from "./camera";
 import { GRID_NODE } from "./grid";
 import { ROOM_CORNER_NODE } from "./roomCorner";
 import { DECOMPOSE_MATRIX_NODE, LOOK_AT_NODE, MATRIX_TRANSFORM_NODE, PARENT_NODE, PIVOT_TRANSFORM_NODE, TRANSFORM_NODE, TRANSFORM_VECTOR_NODE } from "./transform";
@@ -167,6 +167,7 @@ export const STARTER_NODES = [
   RANDOM_MATRIX_NODE,
   RANDOM_LIST_NODE,
   CAMERA_NODE,
+  CAMERA_FLY_TO_NODE,
   GRID_NODE,
   ROOM_CORNER_NODE,
   PARTICLE_EMITTER_NODE,

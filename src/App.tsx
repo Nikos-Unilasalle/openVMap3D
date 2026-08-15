@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { CAMERA_NODE } from "./shared/graph/nodes/camera";
+import { CAMERA_FLY_TO_NODE, CAMERA_NODE } from "./shared/graph/nodes/camera";
 import { DEFAULT_REGISTRY } from "./shared/graph/nodes";
 import { findRenderNodeId } from "./shared/graph/nodes/render";
 import { rehydrateFileNodesFromDisk } from "./shared/graph/rehydrateFiles";
@@ -566,7 +566,7 @@ function MainEditor() {
       if (!instance) return prevGraph;
 
       const isActivatingCamera =
-        instance.type === CAMERA_NODE.type &&
+        (instance.type === CAMERA_NODE.type || instance.type === CAMERA_FLY_TO_NODE.type) &&
         paramId === "active" &&
         (value === true || value === 1);
 
@@ -591,7 +591,7 @@ function MainEditor() {
           if (n.id === instance.id) {
             return { ...n, params: nextParams };
           }
-          if (isActivatingCamera && n.type === CAMERA_NODE.type) {
+          if (isActivatingCamera && (n.type === CAMERA_NODE.type || n.type === CAMERA_FLY_TO_NODE.type)) {
             return { ...n, params: { ...n.params, active: false } };
           }
           return n;

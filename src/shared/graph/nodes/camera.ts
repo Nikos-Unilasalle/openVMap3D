@@ -3,6 +3,7 @@ import { projectionMatrixFromCalibration, ProjectorCalibration } from "../calibr
 import { DEFAULT_PICKS, isCalibrationPicks, isReferencePointArray, solveFromPicks } from "../calibration/picks";
 import { NodeDefinition } from "../types";
 import { toBoolean } from "../sockets";
+import { createNodeCache } from "../nodeCaches";
 import { extractPositionFromInput } from "./transform";
 
 const ZERO = new THREE.Vector3(0, 0, 0);
@@ -257,6 +258,221 @@ export const CAMERA_NODE: NodeDefinition = {
       projectionType: String(params.projectionType || "perspective"),
       geometry: group,
       active: isActive ? 1 : 0,
+    };
+  },
+};
+
+/** Helper for fly_to transitions easing */
+export function evaluateFlyToEasing(t: number, easing: string): number {
+  const clamped = Math.max(0, Math.min(1, t));
+  switch (easing) {
+    case "easeInOutCubic":
+      return clamped < 0.5 ? 4 * clamped * clamped * clamped : 1 - Math.pow(-2 * clamped + 2, 3) / 2;
+    case "easeInOutQuad":
+      return clamped < 0.5 ? 2 * clamped * clamped : 1 - Math.pow(-2 * clamped + 2, 2) / 2;
+    case "easeInOutSine":
+      return -(Math.cos(Math.PI * clamped) - 1) / 2;
+    case "easeInOutExpo":
+      return clamped === 0
+        ? 0
+        : clamped === 1
+        ? 1
+        : clamped < 0.5
+        ? Math.pow(2, 20 * clamped - 10) / 2
+        : (2 - Math.pow(2, -20 * clamped + 10)) / 2;
+    case "linear":
+      return clamped;
+    default:
+      // Smoothstep default (cinematic & natural)
+      return clamped * clamped * (3 - 2 * clamped);
+  }
+}
+
+
+function extractCameraPose(objOrMatrix: unknown, fallbackPosition: THREE.Vector3 = DEFAULT_LOCATION): { position: THREE.Vector3; quaternion: THREE.Quaternion; fov: number } {
+  const position = fallbackPosition.clone();
+  const quaternion = new THREE.Quaternion();
+  const scale = new THREE.Vector3(1, 1, 1);
+  let fov = 50;
+
+  if (objOrMatrix instanceof THREE.Matrix4) {
+    objOrMatrix.decompose(position, quaternion, scale);
+  } else if (objOrMatrix instanceof THREE.Object3D) {
+    if (objOrMatrix.matrix && !objOrMatrix.matrixAutoUpdate) {
+      objOrMatrix.matrix.decompose(position, quaternion, scale);
+    } else {
+      objOrMatrix.updateWorldMatrix(true, false);
+      objOrMatrix.matrixWorld.decompose(position, quaternion, scale);
+    }
+  } else if (objOrMatrix && typeof objOrMatrix === "object") {
+    const dict = objOrMatrix as Record<string, unknown>;
+    if (dict.matrix instanceof THREE.Matrix4) {
+      dict.matrix.decompose(position, quaternion, scale);
+    } else if (dict.geometry instanceof THREE.Object3D) {
+      if (dict.geometry.matrix && !dict.geometry.matrixAutoUpdate) {
+        dict.geometry.matrix.decompose(position, quaternion, scale);
+      } else {
+        dict.geometry.updateWorldMatrix(true, false);
+        dict.geometry.matrixWorld.decompose(position, quaternion, scale);
+      }
+    }
+    if (typeof dict.fov === "number" && Number.isFinite(dict.fov)) fov = dict.fov;
+  }
+
+  return { position, quaternion, fov };
+}
+
+interface FlyToState {
+  startTime?: number;
+  isFlying?: boolean;
+  lastTrigger?: boolean;
+  startSimTime?: number;
+}
+
+// createNodeCache, not a bare Map: node ids are stable (saved into .ovm,
+// restored identically by undo), so an unregistered cache lets a deleted
+// Fly To node's flight state silently reattach to whatever node next lands
+// on that id — undo of the delete, most directly.
+const flyToCache = createNodeCache<FlyToState>();
+
+/**
+ * 2. Camera Fly To Node (Unreal-style smooth camera hand-off transition)
+ */
+export const CAMERA_FLY_TO_NODE: NodeDefinition = {
+  type: "camera/fly_to",
+  label: "Fly To",
+  category: "calibration",
+  inputs: [
+    { id: "cameraA", label: "Camera A (Start)", type: "any" },
+    { id: "cameraB", label: "Camera B (Target)", type: "any" },
+    { id: "progress", label: "Progress (0-1)", type: "value" },
+    { id: "trigger", label: "Trigger Flight", type: "value" },
+    { id: "duration", label: "Duration (s)", type: "value" },
+    { id: "arcHeight", label: "Arc Height", type: "value" },
+  ],
+  outputs: [
+    { id: "geometry", label: "Geometry", type: "geometry" },
+    { id: "matrix", label: "Matrix", type: "matrix" },
+    { id: "fov", label: "FOV", type: "value" },
+    { id: "active", label: "Active", type: "value" },
+    { id: "progress", label: "Progress", type: "value" },
+    { id: "isFinished", label: "Finished Signal", type: "value" },
+  ],
+  defaultParams: {
+    progress: 0.0,
+    trigger: 0,
+    duration: 2.0,
+    arcHeight: 1.0,
+    easing: "easeInOutCubic",
+    switchActiveOnFinish: true,
+  },
+  dynamicParamFields: () => [
+    { id: "trigger", label: "Trigger (Fly)", kind: "boolean" },
+    { id: "progress", label: "Progress (0-1)", kind: "number", step: 0.01 },
+    { id: "duration", label: "Duration (s)", kind: "number", step: 0.2 },
+    { id: "arcHeight", label: "Flight Arc Height", kind: "number", step: 0.2 },
+    {
+      id: "easing",
+      label: "Easing Curve",
+      kind: "select",
+      options: ["easeInOutCubic", "smoothstep", "easeInOutQuad", "easeInOutSine", "easeInOutExpo", "linear"],
+    },
+    { id: "switchActiveOnFinish", label: "Auto Switch Active Cam", kind: "boolean" },
+  ],
+  evaluate: (inputs, params, ctx) => {
+    let state = flyToCache.get(ctx.nodeId);
+    if (!state) {
+      state = {};
+      flyToCache.set(ctx.nodeId, state);
+    }
+
+    const defaultTargetPos = new THREE.Vector3(5, 3, 5);
+    const poseA = extractCameraPose(inputs.cameraA, DEFAULT_LOCATION);
+    const poseB = extractCameraPose(inputs.cameraB, defaultTargetPos);
+
+    const isTriggered = toBoolean(inputs.trigger !== undefined ? inputs.trigger : params.trigger);
+    const nowSec = typeof performance !== "undefined" ? performance.now() / 1000 : Date.now() / 1000;
+
+    if (isTriggered && !state.lastTrigger) {
+      state.isFlying = true;
+      state.startTime = nowSec;
+      state.startSimTime = ctx.time;
+    }
+    state.lastTrigger = isTriggered;
+
+    const duration = Math.max(0.01, inputs.duration !== undefined ? Number(inputs.duration) : Number(params.duration ?? 2.0));
+    const arcHeight = inputs.arcHeight !== undefined ? Number(inputs.arcHeight) : Number(params.arcHeight ?? 1.0);
+    const easingType = String(params.easing || "easeInOutCubic");
+
+    let rawProgress = 0.0;
+    if (inputs.progress !== undefined) {
+      rawProgress = Math.max(0, Math.min(1, Number(inputs.progress) || 0));
+    } else if (state.isFlying && state.startTime !== undefined) {
+      // Advance either by sim time (if timeline is playing) or real-world clock
+      const elapsed =
+        ctx.time !== 0 && state.startSimTime !== undefined && ctx.time > state.startSimTime
+          ? ctx.time - state.startSimTime
+          : nowSec - state.startTime;
+      rawProgress = Math.max(0, Math.min(1, elapsed / duration));
+      if (rawProgress >= 1.0) {
+        state.isFlying = false;
+      }
+    } else {
+      rawProgress = Math.max(0, Math.min(1, Number(params.progress) || 0));
+    }
+
+    const e = evaluateFlyToEasing(rawProgress, easingType);
+
+    // Position interpolation with parabolic lift
+    const pos = new THREE.Vector3().lerpVectors(poseA.position, poseB.position, e);
+    const arcLift = 4.0 * e * (1.0 - e) * arcHeight;
+    pos.y += arcLift;
+
+    // Quaternion slerp orientation
+    const quat = poseA.quaternion.clone().slerp(poseB.quaternion, e);
+
+    // FOV interpolation
+    const fov = poseA.fov * (1.0 - e) + poseB.fov * e;
+
+    const matrix = new THREE.Matrix4().compose(pos, quat, ONE);
+
+    const group = getGroup(ctx.nodeId);
+    group.clear();
+    group.matrixAutoUpdate = false;
+    group.matrix.copy(matrix);
+    group.userData.nodeId = ctx.nodeId;
+
+    const isFinished = rawProgress >= 0.999 ? 1 : 0;
+
+    // Only in charge of the output camera while there is a reason to be:
+    // mid-flight, deliberately scrubbed by a wired Progress, or parked at the
+    // destination because "Auto Switch Active Cam" says not to hand control
+    // back. Never true just because the node exists and hasn't been touched
+    // — the earlier unconditional `active: 1` meant dropping a Fly To node
+    // into the graph silently overrode every Camera node's own Active
+    // toggle, permanently, before the flight was ever triggered. It also
+    // meant "Auto Switch Active Cam" had no way to actually switch anything
+    // back: `active` never went false once a flight had happened.
+    const switchOnFinish = toBoolean(params.switchActiveOnFinish ?? true);
+    const everStarted = state.startTime !== undefined;
+    const isActive =
+      inputs.progress !== undefined ||
+      state.isFlying === true ||
+      (everStarted && isFinished === 1 && !switchOnFinish);
+
+    const helper = buildCameraHelperGeometry(fov, isActive);
+    helper.traverse((child) => {
+      child.userData.nodeId = ctx.nodeId;
+    });
+    group.add(helper);
+
+    return {
+      matrix,
+      fov,
+      geometry: group,
+      active: isActive ? 1 : 0,
+      progress: rawProgress,
+      isFinished,
     };
   },
 };

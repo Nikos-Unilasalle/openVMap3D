@@ -4,7 +4,7 @@ import { projectWithCalibration } from "../calibration/dlt";
 import { CalibrationPicks, solveFromPicks } from "../calibration/picks";
 import { roomCornerReferencePoints } from "../calibration/roomCorner";
 import { EvalContext } from "../types";
-import { CAMERA_NODE } from "./camera";
+import { CAMERA_FLY_TO_NODE, CAMERA_NODE } from "./camera";
 
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "cam-test" };
 const ROOM = { width: 3.2, height: 2.5, depth: 2.8 };
@@ -337,5 +337,151 @@ describe("solveFromPicks", () => {
       expect(projected!.x).toBeCloseTo(picks[point.id].x, 6);
       expect(projected!.y).toBeCloseTo(picks[point.id].y, 6);
     }
+  });
+});
+
+describe("CAMERA_FLY_TO_NODE", () => {
+  test("interpolates smoothly between Camera A and Camera B positions and orientations", () => {
+    const camA = new THREE.Matrix4().makeTranslation(0, 0, 10);
+    const camB = new THREE.Matrix4().makeTranslation(10, 0, 10);
+
+    const midResult = CAMERA_FLY_TO_NODE.evaluate(
+      { cameraA: camA, cameraB: camB, progress: 0.5 },
+      CAMERA_FLY_TO_NODE.defaultParams,
+      CTX
+    );
+
+    const matrix = midResult.matrix as THREE.Matrix4;
+    const pos = new THREE.Vector3().setFromMatrixPosition(matrix);
+
+    // Midpoint X should be halfway (5.0)
+    expect(pos.x).toBeCloseTo(5.0);
+    // Parabolic arc lift adds vertical height offset at midpoint (e.g. +1.0)
+    expect(pos.y).toBeGreaterThan(0);
+    expect(midResult.isFinished).toBe(0);
+
+    const endResult = CAMERA_FLY_TO_NODE.evaluate(
+      { cameraA: camA, cameraB: camB, progress: 1.0 },
+      CAMERA_FLY_TO_NODE.defaultParams,
+      CTX
+    );
+
+    const endPos = new THREE.Vector3().setFromMatrixPosition(endResult.matrix as THREE.Matrix4);
+    expect(endPos.x).toBeCloseTo(10.0);
+    expect(endPos.y).toBeCloseTo(0.0);
+    expect(endResult.isFinished).toBe(1);
+  });
+
+  test("triggers flight on rising edge and advances with simulation time", () => {
+    const camA = new THREE.Matrix4().makeTranslation(0, 0, 0);
+    const camB = new THREE.Matrix4().makeTranslation(20, 0, 0);
+    const trigCtx: EvalContext = { time: 1.0, step: 60, nodeId: "fly-trig-test" };
+
+    // Initial state before trigger
+    const initial = CAMERA_FLY_TO_NODE.evaluate(
+      { cameraA: camA, cameraB: camB, trigger: 0 },
+      { ...CAMERA_FLY_TO_NODE.defaultParams, duration: 2.0, arcHeight: 0 },
+      trigCtx
+    );
+    expect(initial.progress).toBe(0);
+
+    // Trigger pulse at t = 1.0
+    CAMERA_FLY_TO_NODE.evaluate(
+      { cameraA: camA, cameraB: camB, trigger: 1 },
+      { ...CAMERA_FLY_TO_NODE.defaultParams, duration: 2.0, arcHeight: 0 },
+      trigCtx
+    );
+
+    // At t = 2.0 (elapsed 1.0s / 2.0s = 0.5)
+    const mid = CAMERA_FLY_TO_NODE.evaluate(
+      { cameraA: camA, cameraB: camB, trigger: 1 },
+      { ...CAMERA_FLY_TO_NODE.defaultParams, duration: 2.0, arcHeight: 0 },
+      { ...trigCtx, time: 2.0 }
+    );
+    expect(mid.progress).toBeCloseTo(0.5);
+    const midPos = new THREE.Vector3().setFromMatrixPosition(mid.matrix as THREE.Matrix4);
+    expect(midPos.x).toBeCloseTo(10.0);
+
+    // At t = 3.0 (elapsed 2.0s / 2.0s = 1.0) -> finished
+    const finish = CAMERA_FLY_TO_NODE.evaluate(
+      { cameraA: camA, cameraB: camB, trigger: 0 },
+      { ...CAMERA_FLY_TO_NODE.defaultParams, duration: 2.0, arcHeight: 0 },
+      { ...trigCtx, time: 3.0 }
+    );
+    expect(finish.progress).toBeCloseTo(1.0);
+    expect(finish.isFinished).toBe(1);
+    const finishPos = new THREE.Vector3().setFromMatrixPosition(finish.matrix as THREE.Matrix4);
+    expect(finishPos.x).toBeCloseTo(20.0);
+  });
+
+  test("active is false until the flight is triggered — dropping the node into the graph must not steal camera control", () => {
+    const idleCtx: EvalContext = { time: 0, step: 0, nodeId: "fly-idle" };
+
+    const untouched = CAMERA_FLY_TO_NODE.evaluate({ trigger: 0 }, CAMERA_FLY_TO_NODE.defaultParams, idleCtx);
+
+    expect(untouched.active).toBe(0);
+  });
+
+  test("active turns on for the duration of the flight", () => {
+    const camA = new THREE.Matrix4().makeTranslation(0, 0, 0);
+    const camB = new THREE.Matrix4().makeTranslation(20, 0, 0);
+    const trigCtx: EvalContext = { time: 1.0, step: 60, nodeId: "fly-active-during" };
+    const params = { ...CAMERA_FLY_TO_NODE.defaultParams, duration: 2.0, arcHeight: 0 };
+
+    CAMERA_FLY_TO_NODE.evaluate({ cameraA: camA, cameraB: camB, trigger: 1 }, params, trigCtx);
+
+    const mid = CAMERA_FLY_TO_NODE.evaluate(
+      { cameraA: camA, cameraB: camB, trigger: 1 },
+      params,
+      { ...trigCtx, time: 2.0 },
+    );
+    expect(mid.active).toBe(1);
+  });
+
+  test("switchActiveOnFinish (default true) hands control back once the flight lands", () => {
+    const camA = new THREE.Matrix4().makeTranslation(0, 0, 0);
+    const camB = new THREE.Matrix4().makeTranslation(20, 0, 0);
+    const trigCtx: EvalContext = { time: 1.0, step: 60, nodeId: "fly-handback" };
+    const params = { ...CAMERA_FLY_TO_NODE.defaultParams, duration: 2.0, arcHeight: 0, switchActiveOnFinish: true };
+
+    CAMERA_FLY_TO_NODE.evaluate({ cameraA: camA, cameraB: camB, trigger: 1 }, params, trigCtx);
+    const finish = CAMERA_FLY_TO_NODE.evaluate(
+      { cameraA: camA, cameraB: camB, trigger: 0 },
+      params,
+      { ...trigCtx, time: 3.0 },
+    );
+
+    expect(finish.isFinished).toBe(1);
+    expect(finish.active).toBe(0);
+  });
+
+  test("switchActiveOnFinish = false stays parked at the destination", () => {
+    const camA = new THREE.Matrix4().makeTranslation(0, 0, 0);
+    const camB = new THREE.Matrix4().makeTranslation(20, 0, 0);
+    const trigCtx: EvalContext = { time: 1.0, step: 60, nodeId: "fly-stay-parked" };
+    const params = { ...CAMERA_FLY_TO_NODE.defaultParams, duration: 2.0, arcHeight: 0, switchActiveOnFinish: false };
+
+    CAMERA_FLY_TO_NODE.evaluate({ cameraA: camA, cameraB: camB, trigger: 1 }, params, trigCtx);
+    const finish = CAMERA_FLY_TO_NODE.evaluate(
+      { cameraA: camA, cameraB: camB, trigger: 0 },
+      params,
+      { ...trigCtx, time: 3.0 },
+    );
+
+    expect(finish.isFinished).toBe(1);
+    expect(finish.active).toBe(1);
+  });
+
+  test("a wired Progress input is treated as deliberate control, active for as long as it's wired", () => {
+    const camA = new THREE.Matrix4().makeTranslation(0, 0, 10);
+    const camB = new THREE.Matrix4().makeTranslation(10, 0, 10);
+
+    const result = CAMERA_FLY_TO_NODE.evaluate(
+      { cameraA: camA, cameraB: camB, progress: 0.5 },
+      CAMERA_FLY_TO_NODE.defaultParams,
+      { time: 0, step: 0, nodeId: "fly-scrub" },
+    );
+
+    expect(result.active).toBe(1);
   });
 });

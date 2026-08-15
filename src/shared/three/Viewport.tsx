@@ -4,7 +4,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { ClockState, createClock, tickClock } from "../graph/clock";
 import { EvalResult, evaluateGraph } from "../graph/evaluate";
-import { CAMERA_NODE } from "../graph/nodes/camera";
+import { CAMERA_FLY_TO_NODE, CAMERA_NODE } from "../graph/nodes/camera";
 import { asVector3 } from "../graph/nodes/transform";
 import { resetAllParticleSimulations } from "../graph/particleRuntime";
 import { resolveCurveEditTarget } from "../graph/curveLookup";
@@ -110,6 +110,10 @@ export function Viewport({
   const [showEnvInEditor, setShowEnvInEditor] = useState(false);
   const showEnvInEditorRef = useRef(showEnvInEditor);
   showEnvInEditorRef.current = showEnvInEditor;
+
+  const [isCameraView, setIsCameraView] = useState(false);
+  const isCameraViewRef = useRef(isCameraView);
+  isCameraViewRef.current = isCameraView;
 
   const onToggleSplitViewRef = useRef(onToggleSplitView);
   onToggleSplitViewRef.current = onToggleSplitView;
@@ -892,13 +896,13 @@ export function Viewport({
       const activeCameraHelpers = new Map<string, THREE.Object3D>();
       for (const [nodeId, res] of results.entries()) {
         const node = graphRef.current.nodes.find((n) => n.id === nodeId);
-        if (node?.type === CAMERA_NODE.type && res.geometry instanceof THREE.Object3D) {
+        if ((node?.type === CAMERA_NODE.type || node?.type === CAMERA_FLY_TO_NODE.type) && res.geometry instanceof THREE.Object3D) {
           activeCameraHelpers.set(nodeId, res.geometry as THREE.Object3D);
         }
       }
       editorHelpers.sync(outputMode ? new Map() : activeCameraHelpers);
 
-      // A Camera node drives the camera directly from its Location/Rotation/
+      // A Camera or Fly To node drives the camera directly from its Matrix/
       // FOV (or its DLT solve) — but only in the *output* window. That is
       // the one view that has to show exactly what the real projector will
       // show, which orbit navigation would otherwise fight every frame. The
@@ -906,18 +910,32 @@ export function Viewport({
       // node's presence or mode, since it's for building/inspecting the
       // scene, not for judging alignment — that judgment only means
       // anything against the actual projected output (see OutputWindow).
-      const cameraNodes = graphRef.current.nodes.filter((n: { type: string; id: string }) => n.type === CAMERA_NODE.type);
-      let activeCameraResult: Record<string, unknown> | undefined;
-      for (const node of cameraNodes) {
+      // Prioritize Fly To if active or in flight, then fallback to Camera nodes
+      const flyToNodes = graphRef.current.nodes.filter((n: { type: string; id: string }) => n.type === CAMERA_FLY_TO_NODE.type);
+      let activeFlyToResult: Record<string, unknown> | undefined;
+      for (const node of flyToNodes) {
         const res = results.get(node.id);
         if (res && res.active !== 0 && res.active !== false) {
-          activeCameraResult = res;
+          activeFlyToResult = res;
           break;
         }
       }
-      if (!activeCameraResult && cameraNodes.length > 0) {
-        activeCameraResult = results.get(cameraNodes[0].id);
+
+      let activeCameraResult = activeFlyToResult;
+      if (!activeCameraResult) {
+        const cameraNodes = graphRef.current.nodes.filter((n: { type: string; id: string }) => n.type === CAMERA_NODE.type);
+        for (const node of cameraNodes) {
+          const res = results.get(node.id);
+          if (res && res.active !== 0 && res.active !== false) {
+            activeCameraResult = res;
+            break;
+          }
+        }
+        if (!activeCameraResult && cameraNodes.length > 0) {
+          activeCameraResult = results.get(cameraNodes[0].id);
+        }
       }
+
       const cameraResult = activeCameraResult;
       if (cameraResult && typeof cameraResult.projectionType === "string") {
         const wantsOrtho = cameraResult.projectionType === "orthographic";
@@ -925,8 +943,9 @@ export function Viewport({
           setIsOrthographic(wantsOrtho);
         }
       }
+      const shouldDriveCamera = outputMode || isCameraViewRef.current;
       const calibrationMatrix =
-        outputMode && cameraResult?.matrix instanceof THREE.Matrix4 ? cameraResult.matrix as THREE.Matrix4 : null;
+        shouldDriveCamera && cameraResult?.matrix instanceof THREE.Matrix4 ? cameraResult.matrix as THREE.Matrix4 : null;
 
       if (calibrationMatrix) {
         controls.enabled = false;
@@ -1418,6 +1437,29 @@ export function Viewport({
                 </svg>
               </button>
             )}
+          <button
+            type="button"
+            className={`viewport-hud-button ${isCameraView ? "viewport-hud-button-active" : ""}`}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: isCameraView ? "#38bdf8" : "#cbd5e1",
+              backgroundColor: isCameraView ? "rgba(56, 189, 248, 0.15)" : undefined,
+              borderColor: isCameraView ? "#38bdf8" : undefined,
+            }}
+            onClick={() => setIsCameraView((prev) => !prev)}
+            title={
+              isCameraView
+                ? "Camera View Active (click to switch to Free Orbit View)"
+                : "Look through Active Camera / Fly To (Camera View)"
+            }
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
+              <circle cx="12" cy="13" r="3" />
+            </svg>
+          </button>
           <button
             type="button"
             className={`viewport-hud-button ${isOrthographic ? "viewport-hud-button-active" : ""}`}
