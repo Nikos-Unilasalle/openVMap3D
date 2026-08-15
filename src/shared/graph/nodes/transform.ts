@@ -85,8 +85,8 @@ export function composeNativeMatrix(wiredMatrix: unknown, location: unknown, rot
  */
 export const TRANSFORM_NODE: NodeDefinition = {
   type: "transform",
-  label: "Transform",
-  category: "transform",
+  label: "Compose Matrix",
+  category: "compose",
   inputs: [
     { id: "location", label: "Location", type: "vector" },
     { id: "rotation", label: "Rotation", type: "vector" },
