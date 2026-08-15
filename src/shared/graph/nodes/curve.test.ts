@@ -79,6 +79,34 @@ describe("CURVE NODES", () => {
     expect(mesh.geometry).toBeInstanceOf(THREE.BufferGeometry);
   });
 
+  it("CURVE_TO_MESH_NODE trims curve from startProgress to endProgress", () => {
+    const pts = [
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(10, 0, 0),
+    ];
+    const curve = new THREE.CatmullRomCurve3(pts);
+
+    const full = CURVE_TO_MESH_NODE.evaluate(
+      { curve, startProgress: 0, endProgress: 1 },
+      CURVE_TO_MESH_NODE.defaultParams,
+      { time: 0, step: 0, nodeId: "curve-full" }
+    );
+    const fullMesh = full.geometry as THREE.Mesh;
+    fullMesh.geometry.computeBoundingBox();
+    const fullMaxX = fullMesh.geometry.boundingBox!.max.x;
+    expect(fullMaxX).toBeCloseTo(10, 0);
+
+    const trimmed = CURVE_TO_MESH_NODE.evaluate(
+      { curve, startProgress: 0.2, endProgress: 0.7 },
+      CURVE_TO_MESH_NODE.defaultParams,
+      { time: 0, step: 0, nodeId: "curve-trimmed" }
+    );
+    const trimmedMesh = trimmed.geometry as THREE.Mesh;
+    trimmedMesh.geometry.computeBoundingBox();
+    expect(trimmedMesh.geometry.boundingBox!.min.x).toBeGreaterThan(1.5);
+    expect(trimmedMesh.geometry.boundingBox!.max.x).toBeLessThan(7.5);
+  });
+
   it("SAMPLE_CURVE_NODE computes position, tangent, and orientation matrix at progress t", () => {
     const pts = [
       new THREE.Vector3(0, 0, 0),

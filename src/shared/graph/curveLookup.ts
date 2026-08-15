@@ -7,7 +7,11 @@ import { Graph, NodeInstance } from "./types";
  * into its `curve` input (see curve.ts). A node loaded from an .ovm file
  * carries the param regardless of type, so the check below accepts either.
  */
-export const CURVE_POINTS_NODE_TYPES = ["curve/from_points", "curve/to_mesh"];
+export const CURVE_POINTS_NODE_TYPES = [
+  "curve/from_points",
+  "curve/to_mesh",
+  "modifier/lattice",
+];
 
 /**
  * What the viewport's curve-point handles edit, and in whose space:

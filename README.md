@@ -96,6 +96,7 @@ Les prises de connexion (sockets) sont identifiees par des codes couleur normali
 | Empty | `object/empty` | matrix | geometry, matrix | Objet cible invisible servant de repère spatial, de pivot ou de cible d'éclairage. |
 | OBJ Model | `object/obj` | matrix, file | geometry, matrix | Importateur de fichiers 3D au format Wavefront `.obj` avec gestion des sous-objets. |
 | 3D Grid | `calibration/grid` | matrix | geometry, matrix | Grille de repère spatial 3D manipulable au gizmo, avec dimensions et subdivisions configurables. |
+| Lattice Deform | `modifier/lattice` | geometry, matrix, strength, points, bulge, twist, taper, bend, shearX, shearZ | geometry, matrix, cage | Cage de déformation 3D volumétrique (Free-Form Deformation type Blender) avec cage filaire et modulateurs. |
 | Merge | `structure/merge` | item1..item8 (dynamique) | geometry | Fusionne jusqu'à 8 flux géométriques en une seule hiérarchie de scène. |
 
 ### Courbes et Trajectoires (Three.js Curves)
@@ -104,7 +105,7 @@ Les prises de connexion (sockets) sont identifiees par des codes couleur normali
 | :--- | :--- | :--- | :--- | :--- |
 | Curve from Points | `curve/from_points` | pointsList | curve | Génère une courbe 3D à partir d'une liste de points de contrôle (Catmull-Rom, Bézier, Linéaire). |
 | Curve Primitive | `curve/primitive` | - | curve | Génère des courbes géométriques prédéfinies : Hélice (Helix), Cercle, Ligne, Rectangle. |
-| Curve to Mesh | `curve/to_mesh` | curve, thickness, texture, normal, color, emissive... | geometry, matrix | Génère un tube 3D balayé le long de la courbe avec profil d'épaisseur variable et matériaux PBR complets. |
+| Curve to Mesh | `curve/to_mesh` | curve, thickness, startProgress, endProgress, texture, normal, color, emissive... | geometry, matrix | Génère un tube 3D balayé avec début/fin paramétrables (0-100%), profil d'épaisseur variable et matériaux PBR. |
 | Follow Path | `curve/sample` | curve, progress (0-1), up | position, tangent, matrix, rotation | Échantillonne la position, le vecteur tangentiel et la matrice d'orientation le long d'une courbe. |
 | Curve Deform | `curve/deform` | geometry, curve, progress, stretch | geometry, matrix | Modificateur de déformation courbant un maillage 3D le long d'une trajectoire selon les repères de Frenet. |
 

@@ -25,7 +25,13 @@ const LINE_RENDER_ORDER = 998;
 export interface CurvePointHandles {
   readonly group: THREE.Group;
   /** Rebuild or update the handles for `points`, expressed in the space of `spaceMatrix`. */
-  sync(points: THREE.Vector3[], spaceMatrix: THREE.Matrix4, selectedIndex: number | null, frozenIndex: number | null): void;
+  sync(
+    points: THREE.Vector3[],
+    spaceMatrix: THREE.Matrix4,
+    selectedIndex: number | null,
+    frozenIndex: number | null,
+    showLine?: boolean
+  ): void;
   /** Remove and dispose every handle. */
   clear(): void;
   handleAt(index: number | null): THREE.Mesh | null;
@@ -91,7 +97,7 @@ export function createCurvePointHandles(): CurvePointHandles {
   return {
     group,
 
-    sync(points, spaceMatrix, selectedIndex, frozenIndex) {
+    sync(points, spaceMatrix, selectedIndex, frozenIndex, showLine = true) {
       if (points.length !== handles.length) build(points.length);
 
       // Handles are children of the curve's space, so a scaled object would
@@ -116,7 +122,12 @@ export function createCurvePointHandles(): CurvePointHandles {
         );
       });
 
-      if (line) line.geometry.setFromPoints(handles.map((h) => h.position));
+      if (line) {
+        line.visible = showLine !== false;
+        if (line.visible) {
+          line.geometry.setFromPoints(handles.map((h) => h.position));
+        }
+      }
 
       group.matrix.copy(spaceMatrix);
       // Forced: nothing else recomputes matrixWorld for a group whose matrix

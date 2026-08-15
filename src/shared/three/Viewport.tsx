@@ -1106,7 +1106,8 @@ export function Viewport({
           transformControls?.dragging && transformControls.object?.userData?.isCurvePointHandle
             ? (transformControls.object.userData.pointIndex as number)
             : null;
-        curveHandles.sync(curvePoints, spaceMatrix, activeCurvePointIdx, draggedIdx);
+        const isLattice = curveNode.type === "modifier/lattice";
+        curveHandles.sync(curvePoints, spaceMatrix, activeCurvePointIdx, draggedIdx, !isLattice);
       } else if (curveHandles.count() > 0) {
         curveHandles.clear();
         curvePointsNodeId = null;

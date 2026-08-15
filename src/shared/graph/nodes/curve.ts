@@ -123,31 +123,90 @@ export function buildBezierPath(pts: THREE.Vector3[], closed = false): THREE.Cur
   return path;
 }
 
-/** Generates custom tube geometry with variable radius R(t) = baseRadius * evalProfile(t) */
+/** Generates custom tube geometry with variable radius R(t) = baseRadius * evalProfile(t) and start/end trimming */
 export function createVariableThicknessTubeGeometry(
   curve: THREE.Curve<THREE.Vector3>,
   tubularSegments = 64,
   radialSegments = 8,
   baseRadius = 0.1,
   profile: ProfilePoint[] = DEFAULT_PROFILE_POINTS,
-  closed = false
+  _closed = false,
+  startProgress = 0.0,
+  endProgress = 1.0
 ): THREE.BufferGeometry {
-  const frames = curve.computeFrenetFrames(tubularSegments, closed);
+  const s = Math.max(0, Math.min(1, startProgress));
+  const e = Math.max(0, Math.min(1, endProgress));
+
+  // If start and end are virtually identical, produce empty geometry
+  if (Math.abs(e - s) < 1e-5) {
+    return new THREE.BufferGeometry();
+  }
+
+  // Sample points and tangents along the trimmed portion of the curve
+  const samplePoints: THREE.Vector3[] = [];
+  const tangents: THREE.Vector3[] = [];
+
+  for (let i = 0; i <= tubularSegments; i++) {
+    const t = i / tubularSegments;
+    const u = Math.max(0, Math.min(1, s + t * (e - s)));
+    samplePoints.push(curve.getPointAt(u));
+    const tan = curve.getTangentAt(u);
+    if (e < s) tan.negate();
+    tangents.push(tan.normalize());
+  }
+
+  // Compute parallel-transport Frenet frames along samplePoints
+  const normals: THREE.Vector3[] = [];
+  const binormals: THREE.Vector3[] = [];
+
+  let normal = new THREE.Vector3();
+  const initialTan = tangents[0];
+  if (Math.abs(initialTan.x) <= Math.abs(initialTan.y) && Math.abs(initialTan.x) <= Math.abs(initialTan.z)) {
+    normal.set(1, 0, 0);
+  } else if (Math.abs(initialTan.y) <= Math.abs(initialTan.x) && Math.abs(initialTan.y) <= Math.abs(initialTan.z)) {
+    normal.set(0, 1, 0);
+  } else {
+    normal.set(0, 0, 1);
+  }
+  const vec = new THREE.Vector3().crossVectors(initialTan, normal).normalize();
+  normal.crossVectors(initialTan, vec).normalize();
+
+  normals.push(normal.clone());
+  binormals.push(new THREE.Vector3().crossVectors(initialTan, normal).normalize());
+
+  for (let i = 1; i <= tubularSegments; i++) {
+    const prevT = tangents[i - 1];
+    const currT = tangents[i];
+    const prevN = normals[i - 1];
+
+    const axis = new THREE.Vector3().crossVectors(prevT, currT);
+    if (axis.lengthSq() > 1e-7) {
+      axis.normalize();
+      const angle = Math.acos(THREE.MathUtils.clamp(prevT.dot(currT), -1, 1));
+      normal = prevN.clone().applyAxisAngle(axis, angle);
+    } else {
+      normal = prevN.clone();
+    }
+    normals.push(normal);
+    binormals.push(new THREE.Vector3().crossVectors(currT, normal).normalize());
+  }
+
   const positions: number[] = [];
-  const normals: number[] = [];
+  const normalAttrs: number[] = [];
   const uvs: number[] = [];
   const indices: number[] = [];
 
   const vertex = new THREE.Vector3();
-  const normal = new THREE.Vector3();
+  const ringNormal = new THREE.Vector3();
 
   for (let i = 0; i <= tubularSegments; i++) {
-    const u = i / tubularSegments;
-    const P = curve.getPointAt(u);
-    const N = frames.normals[i];
-    const B = frames.binormals[i];
+    const t = i / tubularSegments; // 0 to 1 along the active visible trimmed mesh
+    const P = samplePoints[i];
+    const N = normals[i];
+    const B = binormals[i];
 
-    const radiusMultiplier = evalProfileCurve(profile, u);
+    // Evaluate profile curve along the active trimmed mesh [0, 1]
+    const radiusMultiplier = evalProfileCurve(profile, t);
     const currentRadius = Math.max(0.0001, baseRadius * radiusMultiplier);
 
     for (let j = 0; j <= radialSegments; j++) {
@@ -157,20 +216,20 @@ export function createVariableThicknessTubeGeometry(
       const cos = -Math.cos(theta);
 
       // Normal in circle plane
-      normal.x = cos * N.x + sin * B.x;
-      normal.y = cos * N.y + sin * B.y;
-      normal.z = cos * N.z + sin * B.z;
-      normal.normalize();
+      ringNormal.x = cos * N.x + sin * B.x;
+      ringNormal.y = cos * N.y + sin * B.y;
+      ringNormal.z = cos * N.z + sin * B.z;
+      ringNormal.normalize();
 
-      normals.push(normal.x, normal.y, normal.z);
+      normalAttrs.push(ringNormal.x, ringNormal.y, ringNormal.z);
 
       // Vertex position
-      vertex.x = P.x + currentRadius * normal.x;
-      vertex.y = P.y + currentRadius * normal.y;
-      vertex.z = P.z + currentRadius * normal.z;
+      vertex.x = P.x + currentRadius * ringNormal.x;
+      vertex.y = P.y + currentRadius * ringNormal.y;
+      vertex.z = P.z + currentRadius * ringNormal.z;
 
       positions.push(vertex.x, vertex.y, vertex.z);
-      uvs.push(u, v);
+      uvs.push(t, v);
     }
   }
 
@@ -189,7 +248,7 @@ export function createVariableThicknessTubeGeometry(
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normalAttrs, 3));
   geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
   geometry.setIndex(indices);
 
@@ -329,6 +388,8 @@ export const CURVE_TO_MESH_NODE: NodeDefinition = {
   inputs: [
     { id: "curve", label: "Curve", type: "curve" },
     { id: "thickness", label: "Thickness", type: "value" },
+    { id: "startProgress", label: "Start %", type: "value" },
+    { id: "endProgress", label: "End %", type: "value" },
     ...COMMON_PRIMITIVE_INPUTS,
   ],
   outputs: [...COMMON_PRIMITIVE_OUTPUTS],
@@ -338,6 +399,8 @@ export const CURVE_TO_MESH_NODE: NodeDefinition = {
     rotation: new THREE.Vector3(0, 0, 0),
     scale: new THREE.Vector3(1, 1, 1),
     thickness: 0.15,
+    startProgress: 0.0,
+    endProgress: 1.0,
     tubularSegments: 64,
     radialSegments: 12,
     color: new THREE.Color(0x38bdf8),
@@ -363,6 +426,8 @@ export const CURVE_TO_MESH_NODE: NodeDefinition = {
     { id: "scale", label: "Scale", kind: "vector", group: "Transform" },
 
     { id: "thickness", label: "Base Thickness", kind: "number", step: 0.02, group: "Geometry" },
+    { id: "startProgress", label: "Start %", kind: "number", step: 0.01, group: "Geometry" },
+    { id: "endProgress", label: "End %", kind: "number", step: 0.01, group: "Geometry" },
     { id: "tubularSegments", label: "Length Segments", kind: "number", step: 4, group: "Geometry" },
     { id: "radialSegments", label: "Radial Sides", kind: "number", step: 1, group: "Geometry" },
     { id: "doubleSided", label: "Double Sided", kind: "boolean", group: "Geometry" },
@@ -398,6 +463,8 @@ export const CURVE_TO_MESH_NODE: NodeDefinition = {
     }
 
     const thickness = inputs.thickness !== undefined ? asNumber(inputs.thickness, 0.15) : asNumber(params.thickness, 0.15);
+    const startProgress = Math.max(0, Math.min(1, inputs.startProgress !== undefined ? asNumber(inputs.startProgress, 0.0) : asNumber(params.startProgress, 0.0)));
+    const endProgress = Math.max(0, Math.min(1, inputs.endProgress !== undefined ? asNumber(inputs.endProgress, 1.0) : asNumber(params.endProgress, 1.0)));
     const tubularSegments = Math.max(8, Math.round(asNumber(params.tubularSegments, 64)));
     const radialSegments = Math.max(3, Math.round(asNumber(params.radialSegments, 12)));
     const profile = (Array.isArray(params.profile) ? params.profile : DEFAULT_PROFILE_POINTS) as ProfilePoint[];
@@ -416,7 +483,16 @@ export const CURVE_TO_MESH_NODE: NodeDefinition = {
 
     const mesh = state.mesh;
 
-    const signature = JSON.stringify([curve.toJSON(), tubularSegments, radialSegments, thickness, profile, closed]);
+    const signature = JSON.stringify([
+      curve.toJSON(),
+      tubularSegments,
+      radialSegments,
+      thickness,
+      profile,
+      closed,
+      startProgress,
+      endProgress,
+    ]);
     if (signature !== state.geometrySignature) {
       state.geometrySignature = signature;
       mesh.geometry.dispose();
@@ -427,6 +503,8 @@ export const CURVE_TO_MESH_NODE: NodeDefinition = {
         thickness,
         profile,
         closed,
+        startProgress,
+        endProgress
       );
     }
 

@@ -77,4 +77,13 @@ describe("resolveCurveEditTarget", () => {
 
     expect(resolveCurveEditTarget(graph, "def1")).toEqual({ pointsNodeId: "pts1", spaceNodeId: "def1" });
   });
+
+  test("Lattice Deform edits its own control points in its own space", () => {
+    const graph: Graph = {
+      nodes: [node("lat1", "modifier/lattice", { pointsList: POINTS })],
+      connections: [],
+    };
+
+    expect(resolveCurveEditTarget(graph, "lat1")).toEqual({ pointsNodeId: "lat1", spaceNodeId: "lat1" });
+  });
 });

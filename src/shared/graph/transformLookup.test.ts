@@ -129,6 +129,7 @@ describe("GIZMO_SELECTABLE_TYPES", () => {
       "light/spot",
       "calibration/camera",
       "calibration/grid",
+      "modifier/lattice",
     ]);
   });
 });
