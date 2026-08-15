@@ -146,7 +146,10 @@ export const CAMERA_NODE: NodeDefinition = {
   label: "Camera",
   category: "calibration",
   inputs: [
-    { id: "geometry", label: "Geometry", type: "geometry" },
+    // No `geometry` input: the Camera aims at things through `target` below,
+    // and builds its own helper for the `geometry` *output*. It carried an
+    // unused geometry input for a while that nothing ever read — wiring an
+    // object into it did nothing at all.
     { id: "matrix", label: "Matrix", type: "matrix" },
     { id: "location", label: "Location", type: "vector" },
     { id: "rotation", label: "Rotation", type: "vector" },

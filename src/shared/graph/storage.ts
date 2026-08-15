@@ -1,6 +1,8 @@
 import { open as dialogOpen, save as dialogSave } from "@tauri-apps/plugin-dialog";
 import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
-import { Graph } from "./types";
+import { DEFAULT_REGISTRY } from "./nodes";
+import { pruneDanglingConnections } from "./pruneConnections";
+import { Graph, NodeRegistry } from "./types";
 
 export function ensureOvmExtension(filename: string): string {
   if (!filename) return "project_v1.ovm";
@@ -62,7 +64,7 @@ export function serializeGraph(graph: Graph): string {
   return JSON.stringify(cleanGraph, null, 2);
 }
 
-export function deserializeGraph(jsonString: string): Graph {
+export function deserializeGraph(jsonString: string, registry: NodeRegistry = DEFAULT_REGISTRY): Graph {
   const data = JSON.parse(jsonString);
 
   if (!data || typeof data !== "object") {
@@ -89,12 +91,22 @@ export function deserializeGraph(jsonString: string): Graph {
     }
   }
 
-  return {
-    nodes: data.nodes,
-    connections: data.connections,
-    keyframes: data.keyframes && typeof data.keyframes === "object" ? data.keyframes : {},
-    markers: Array.isArray(data.markers) ? data.markers : [],
-  };
+  // Sockets are a public surface — every saved file references them by id —
+  // so a file outlives any socket that gets retired (the Camera's unused
+  // geometry input, for one). The evaluator ignores a connection to a socket
+  // that isn't declared any more, but the editor would still draw it,
+  // anchored to a handle that no longer exists. Absorbing the difference here
+  // means nothing downstream has to wonder whether a connection leads
+  // anywhere.
+  return pruneDanglingConnections(
+    {
+      nodes: data.nodes,
+      connections: data.connections,
+      keyframes: data.keyframes && typeof data.keyframes === "object" ? data.keyframes : {},
+      markers: Array.isArray(data.markers) ? data.markers : [],
+    },
+    registry,
+  );
 }
 
 export function isTauri(): boolean {

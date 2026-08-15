@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   deserializeGraph,
   ensureOvmExtension,
@@ -61,6 +61,28 @@ describe("storage utilities", () => {
       const restored = deserializeGraph(json);
 
       expect(restored).toEqual(graph);
+    });
+
+    it("drops a wire into a socket the node no longer has", () => {
+      // A .ovm saved back when the Camera still carried its unused geometry
+      // input. The evaluator ignores such a connection, but the editor would
+      // draw it anchored to a handle that isn't there any more.
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      const saved = JSON.stringify({
+        nodes: [
+          { id: "box", type: "object/box", position: { x: 0, y: 0 }, params: {} },
+          { id: "cam", type: "calibration/camera", position: { x: 100, y: 0 }, params: {} },
+        ],
+        connections: [
+          { id: "dead", fromNode: "box", fromSocket: "geometry", toNode: "cam", toSocket: "geometry" },
+          { id: "live", fromNode: "box", fromSocket: "geometry", toNode: "cam", toSocket: "target" },
+        ],
+      });
+
+      const restored = deserializeGraph(saved);
+
+      expect(restored.connections.map((c) => c.id)).toEqual(["live"]);
     });
 
     it("throws on invalid JSON or missing fields", () => {
