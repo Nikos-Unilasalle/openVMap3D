@@ -31,8 +31,9 @@ Disponible directement en ligne sur le Web et en application Desktop haute perfo
    - [Listes et Manipulation de Donnees](#listes-et-manipulation-de-donnees)
    - [Texte et Typographie](#texte-et-typographie)
    - [Organisation et Multi-Canevas](#organisation-et-multi-canevas)
-5. [Fonctionnalites Cles du Studio 3D](#fonctionnalites-cles-du-studio-3d)
-   - [Animation, Timeline et Keyframing](#animation-timeline-et-keyframing)
+5. [Moteur d'Animation Paramétrique et Studio 3D](#moteur-danimation-paramétrique-et-studio-3d)
+   - [Animation Nodal-Paramétrique et Modulations en Continu](#animation-nodal-paramétrique-et-modulations-en-continu)
+   - [Timeline, Interpolation et Keyframing Hybride](#timeline-interpolation-et-keyframing-hybride)
    - [Gizmos 3D et Manipulation Interactive](#gizmos-3d-et-manipulation-interactive)
    - [Calibration Video-Mapping (Direct Linear Transformation)](#calibration-video-mapping-direct-linear-transformation)
 6. [Raccourcis Clavier](#raccourcis-clavier)
@@ -274,16 +275,24 @@ Les prises de connexion (sockets) sont identifiees par des codes couleur normali
 
 ---
 
-## Fonctionnalites Cles du Studio 3D
+## Moteur d'Animation Paramétrique et Studio 3D
 
-### Animation, Timeline et Keyframing
+OpenVMap est avant tout un **moteur d'animation paramétrique et nodale** en temps réel. Contrairement aux outils d'animation 3D traditionnels à flux figé, chaque transformation, dimension, couleur, déformation de courbe, émission de particules, éclairage ou trajectoire de caméra est calculée et modulée dynamiquement par le graphe :
 
-Le studio intègre un moteur d'animation par images-clés (keyframes) universel :
+### Animation Nodal-Paramétrique et Modulations en Continu
+
+* **Génération Procédurale** : Combinaison de fonctions mathématiques (`Value Math`, `Map Range`, `Vector Math`, `Clamp`) et d'oscillateurs périodiques (`Oscillator`, `Envelope`, `Time`) pour animer la position, la rotation, l'échelle, les couleurs et l'opacité sans poser une seule image-clé fixe.
+* **Réactivité Audio et Entrées en Direct** : Les flux du microphone (`Microphone Input`), l'analyse FFT (`Audio Spectrum`), la détection de rythme (`Audio Peak Detector`) et le clavier (`Keyboard`) modulent instantanément la scène à 60 FPS.
+* **Trajectoires de Courbes et Déformations Dynamiques** : Pilotage continu d'objets le long de trajectoires 3D via `Follow Path` et déformation de maillages complexes par `Curve Deform` selon les repères de Frenet.
+
+### Timeline, Interpolation et Keyframing Hybride
+
+Le studio intègre également un système d'images-clés (keyframes) granulaire fonctionnant en synergie avec les modulations nodales :
 
 * **Pose d'Image-Clé Ciblée** : Survoler n'importe quel champ de saisie ou composante d'axe (X, Y ou Z) dans le panneau latéral et presser la touche `K` pour enregistrer une image-clé sur la frame courante.
 * **Interpolation Temporelle** : Les valeurs entre images-clés sont interpolées automatiquement. Les champs affichent un repère visuel vert sur les frames exactes et orange sur les frames interpolées.
 * **Marqueurs Neutres** : La touche `M` permet de poser des marqueurs visuels déplaçables à la souris sur la réglette de la timeline.
-* **Priorité de Câblage** : Toute prise reliée par un câble prend automatiquement la priorité sur l'interpolation des keyframes locales.
+* **Priorité Absolue du Câblage** : Toute prise reliée par un câble prévaut systématiquement sur l'interpolation des keyframes locales, garantissant le contrôle procédural continu.
 
 ### Gizmos 3D et Manipulation Interactive
 
