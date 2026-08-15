@@ -4,6 +4,7 @@ import { DEFAULT_PICKS, isCalibrationPicks, isReferencePointArray, solveFromPick
 import { NodeDefinition } from "../types";
 import { toBoolean } from "../sockets";
 import { createNodeCache } from "../nodeCaches";
+import { requestCameraHandoff } from "../cameraHandoffStore";
 import { extractPositionFromInput } from "./transform";
 
 const ZERO = new THREE.Vector3(0, 0, 0);
@@ -336,6 +337,8 @@ interface FlyToState {
   isFlying?: boolean;
   lastTrigger?: boolean;
   startSimTime?: number;
+  /** The landing hand-off has already been asked for, so it isn't re-requested on every subsequent frame. */
+  handedOff?: boolean;
   /**
    * A flight ran to completion and nothing has re-triggered since. Held
    * separately from `isFlying` because progress has to *stay* at the
@@ -413,6 +416,7 @@ export const CAMERA_FLY_TO_NODE: NodeDefinition = {
     if (isTriggered && !state.lastTrigger) {
       state.isFlying = true;
       state.landed = false;
+      state.handedOff = false;
       state.startTime = nowSec;
       state.startSimTime = ctx.time;
     }
@@ -472,20 +476,34 @@ export const CAMERA_FLY_TO_NODE: NodeDefinition = {
 
     const isFinished = rawProgress >= 0.999 ? 1 : 0;
 
+    // "Auto Switch Active Cam" is a hand-off, not a release: on landing, the
+    // Camera node wired into Camera B becomes the active one and this node
+    // steps aside. Merely dropping out of the way was the bug — the viewport
+    // then falls back to the first *active* Camera node, which is the one the
+    // flight departed from, so the view snapped back to the start the instant
+    // it arrived. Asked for once per landing, and only when there is a node
+    // to hand to: an unwired Camera B (flying to the default pose) has no
+    // owner to take over, so the node stays parked there instead.
+    const switchOnFinish = toBoolean(params.switchActiveOnFinish ?? true);
+    const handoffTarget = ctx.inputSources?.get("cameraB");
+    const canHandOff = switchOnFinish && handoffTarget !== undefined;
+
+    if (state.landed && canHandOff && !state.handedOff) {
+      state.handedOff = true;
+      requestCameraHandoff(handoffTarget!);
+    }
+
     // Only in charge of the output camera while there is a reason to be:
     // mid-flight, driven by a wired Progress, scrubbed by hand on the param,
-    // or parked at the destination because "Auto Switch Active Cam" says not
-    // to hand control back. Never true just because the node exists and
-    // hasn't been touched — the original unconditional `active: 1` meant
-    // dropping a Fly To node into the graph silently overrode every Camera
-    // node's own Active toggle, permanently, before the flight was ever
-    // triggered. It also left "Auto Switch Active Cam" with nothing to
-    // switch: `active` never went false once a flight had happened.
-    const switchOnFinish = toBoolean(params.switchActiveOnFinish ?? true);
+    // or parked at the destination because there was nobody to hand over to.
+    // Never true just because the node exists and hasn't been touched — the
+    // original unconditional `active: 1` meant dropping a Fly To node into
+    // the graph silently overrode every Camera node's own Active toggle,
+    // permanently, before the flight was ever triggered.
     const isActive =
       isProgressDriven ||
       state.isFlying === true ||
-      (state.landed ? !switchOnFinish : rawProgress > 0);
+      (state.landed ? !canHandOff : rawProgress > 0);
 
     const helper = buildCameraHelperGeometry(fov, isActive);
     helper.traverse((child) => {

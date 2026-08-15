@@ -67,6 +67,18 @@ export interface EvalContext {
    * call in a test); treat that as "nothing wired".
    */
   connectedInputs?: ReadonlySet<string>;
+  /**
+   * Which node feeds each connected input socket, by socket id.
+   *
+   * Rarer still than connectedInputs, and for one reason: a node that has to
+   * act on *another node* rather than on a value. Fly To is the case — when
+   * a flight lands it hands the active camera over to whichever Camera node
+   * is wired into Camera B, and a pose alone cannot say which node that was.
+   *
+   * Reading a value out of this is not the point and would be a mistake —
+   * `inputs` already carries every value. It exists to name a node.
+   */
+  inputSources?: ReadonlyMap<string, string>;
 }
 
 /**

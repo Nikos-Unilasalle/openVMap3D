@@ -5,6 +5,7 @@ import { DEFAULT_REGISTRY } from "./shared/graph/nodes";
 import { findRenderNodeId } from "./shared/graph/nodes/render";
 import { rehydrateFileNodesFromDisk } from "./shared/graph/rehydrateFiles";
 import { cloneGraph } from "./shared/graph/cloneGraph";
+import { consumeCameraHandoffRequest } from "./shared/graph/cameraHandoffStore";
 import { consumeCanvasSwitchRequest } from "./shared/graph/canvasSwitchStore";
 import { disposeNodeCaches } from "./shared/graph/nodeCaches";
 import { rehydrateGraphParams } from "./shared/graph/rehydrateParams";
@@ -239,13 +240,48 @@ function MainEditor() {
    * module slot (canvasSwitchStore) and it gets collected here — the same
    * indirection the Inspector node already uses to publish live values.
    */
+  /**
+   * Makes `nodeId` the active camera, every other Camera/Fly To node
+   * inactive — the same exclusivity the Active checkbox enforces, reached
+   * from the graph rather than the panel.
+   *
+   * Plain setGraph, not setGraphWithHistory: this fires when a Fly To
+   * flight lands, so putting it in the undo stack would mean every flight
+   * left an undo step nobody asked for, and Cmd+Z would rewind the camera
+   * hand-off rather than the operator's last real edit.
+   */
+  const activateCameraNode = useCallback((nodeId: string) => {
+    setGraph((prevGraph) => {
+      const target = prevGraph.nodes.find((n) => n.id === nodeId);
+      if (!target) return prevGraph;
+      const isCameraLike = (type: string) => type === CAMERA_NODE.type || type === CAMERA_FLY_TO_NODE.type;
+      if (!isCameraLike(target.type)) return prevGraph;
+      if (target.params.active === true && prevGraph.nodes.every((n) => n.id === nodeId || !isCameraLike(n.type) || n.params.active !== true)) {
+        // Already the sole active camera — returning the same graph keeps
+        // this off the render path entirely.
+        return prevGraph;
+      }
+
+      return {
+        ...prevGraph,
+        nodes: prevGraph.nodes.map((n) => {
+          if (n.id === nodeId) return { ...n, params: { ...n.params, active: true } };
+          if (isCameraLike(n.type)) return { ...n, params: { ...n.params, active: false } };
+          return n;
+        }),
+      };
+    });
+  }, [setGraph]);
+
   const onEvaluatedResults = useCallback(
     (results: Map<string, Record<string, unknown>>) => {
       setEvaluatedResults(results);
-      const requested = consumeCanvasSwitchRequest();
-      if (requested !== null) switchCanvas(requested);
+      const requestedCanvas = consumeCanvasSwitchRequest();
+      if (requestedCanvas !== null) switchCanvas(requestedCanvas);
+      const handoff = consumeCameraHandoffRequest();
+      if (handoff !== null) activateCameraNode(handoff);
     },
-    [switchCanvas],
+    [switchCanvas, activateCameraNode],
   );
 
   useEffect(() => {

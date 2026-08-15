@@ -227,10 +227,12 @@ export function evaluateGraph(graph: Graph, registry: NodeRegistry, ctx: EvalCon
     // forking its behaviour on "is this driven" has no other way to tell (see
     // EvalContext.connectedInputs).
     const connectedInputs = new Set<string>();
+    const inputSources = new Map<string, string>();
     for (const socket of socketDefs) {
       const conn = connectionInto(graph.connections, nodeId, socket.id);
       if (conn) {
         connectedInputs.add(socket.id);
+        inputSources.set(socket.id, conn.fromNode);
         // Priority rule: Node connection l'emporte toujours sur les keyframes!
         inputs[socket.id] = results.get(conn.fromNode)?.[conn.fromSocket];
       } else {
@@ -247,7 +249,7 @@ export function evaluateGraph(graph: Graph, registry: NodeRegistry, ctx: EvalCon
     }
 
     try {
-      const outputs = def.evaluate(inputs, params, { ...ctx, nodeId, connectedInputs }) || {};
+      const outputs = def.evaluate(inputs, params, { ...ctx, nodeId, connectedInputs, inputSources }) || {};
       applyVisibility(outputs.geometry, inputs[VISIBILITY_SOCKET]);
       results.set(nodeId, {
         ...outputs,

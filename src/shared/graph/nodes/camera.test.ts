@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import { projectWithCalibration } from "../calibration/dlt";
 import { CalibrationPicks, solveFromPicks } from "../calibration/picks";
 import { roomCornerReferencePoints } from "../calibration/roomCorner";
+import { consumeCameraHandoffRequest } from "../cameraHandoffStore";
 import { evaluateGraph } from "../evaluate";
 import { DEFAULT_REGISTRY } from "../nodes";
 import { EvalContext, Graph } from "../types";
@@ -457,7 +458,11 @@ describe("CAMERA_FLY_TO_NODE", () => {
     expect(mid.active).toBe(1);
   });
 
-  test("switchActiveOnFinish (default true) hands control back once the flight lands", () => {
+  test("landing with no Camera B node behind the pose keeps the camera parked there", () => {
+    // Auto Switch hands the active camera to the *node* wired into Camera B.
+    // A bare matrix has no node behind it — releasing control here would drop
+    // the view back to whichever Camera node is still active, i.e. the one
+    // the flight departed from.
     const camA = new THREE.Matrix4().makeTranslation(0, 0, 0);
     const camB = new THREE.Matrix4().makeTranslation(20, 0, 0);
     const trigCtx: EvalContext = { time: 1.0, step: 60, nodeId: "fly-handback" };
@@ -471,7 +476,7 @@ describe("CAMERA_FLY_TO_NODE", () => {
     );
 
     expect(finish.isFinished).toBe(1);
-    expect(finish.active).toBe(0);
+    expect(finish.active).toBe(1);
   });
 
   test("switchActiveOnFinish = false stays parked at the destination", () => {
@@ -567,17 +572,6 @@ describe("CAMERA_FLY_TO_NODE in a real graph", () => {
     expect(evalAt(graph, 9).progress).toBeCloseTo(1);
   });
 
-  test("control returns to the Camera nodes once landed, by default", () => {
-    const graph = flyToGraph();
-    evalAt(graph, 1);
-    graph.nodes[0].params.trigger = 1;
-    evalAt(graph, 2);
-
-    const landed = evalAt(graph, 4);
-    expect(landed.isFinished).toBe(1);
-    expect(landed.active).toBe(0);
-  });
-
   test("with Auto Switch off it keeps the camera parked at the destination", () => {
     const graph = flyToGraph({ switchActiveOnFinish: false });
     evalAt(graph, 1);
@@ -622,5 +616,113 @@ describe("CAMERA_FLY_TO_NODE in a real graph", () => {
     const result = evalAt(graph, 1);
     expect(result.progress).toBeCloseTo(0.5);
     expect(result.active).toBe(1);
+  });
+});
+
+describe("CAMERA_FLY_TO_NODE landing hand-off", () => {
+  function handoffGraph(params: Record<string, unknown> = {}): Graph {
+    return {
+      nodes: [
+        { id: "camA", type: CAMERA_NODE.type, position: { x: 0, y: 0 }, params: { active: true } },
+        { id: "camB", type: CAMERA_NODE.type, position: { x: 0, y: 0 }, params: { active: false } },
+        {
+          id: "fly",
+          type: CAMERA_FLY_TO_NODE.type,
+          position: { x: 0, y: 0 },
+          params: { ...CAMERA_FLY_TO_NODE.defaultParams, duration: 2.0, arcHeight: 0, ...params },
+        },
+      ],
+      connections: [
+        { id: "a", fromNode: "camA", fromSocket: "matrix", toNode: "fly", toSocket: "cameraA" },
+        { id: "b", fromNode: "camB", fromSocket: "matrix", toNode: "fly", toSocket: "cameraB" },
+      ],
+    };
+  }
+
+  function evalAt(graph: Graph, time: number) {
+    return evaluateGraph(graph, DEFAULT_REGISTRY, { time, step: time * 60, nodeId: "" });
+  }
+
+  function flyAndLand(graph: Graph) {
+    const fly = graph.nodes.find((n) => n.id === "fly")!;
+    evalAt(graph, 1);
+    fly.params.trigger = 1;
+    evalAt(graph, 2);
+    return evalAt(graph, 4);
+  }
+
+  test("landing hands the active camera to whatever is wired into Camera B", () => {
+    // The reported bug: Fly To merely stopped claiming control, so the
+    // viewport fell back to the first *active* Camera node — the one the
+    // flight departed from — and the view snapped back to camera 1.
+    consumeCameraHandoffRequest();
+    const graph = handoffGraph();
+
+    flyAndLand(graph);
+
+    expect(consumeCameraHandoffRequest()).toBe("camB");
+  });
+
+  test("the hand-off is asked for once, not on every frame after landing", () => {
+    // It writes to the graph, so re-requesting each frame would rewrite
+    // state 60 times a second for as long as the node sits there landed.
+    consumeCameraHandoffRequest();
+    const graph = handoffGraph();
+    flyAndLand(graph);
+    consumeCameraHandoffRequest();
+
+    evalAt(graph, 5);
+    evalAt(graph, 6);
+
+    expect(consumeCameraHandoffRequest()).toBeNull();
+  });
+
+  test("re-triggering hands off again", () => {
+    consumeCameraHandoffRequest();
+    const graph = handoffGraph();
+    flyAndLand(graph);
+    consumeCameraHandoffRequest();
+
+    const fly = graph.nodes.find((n) => n.id === "fly")!;
+    fly.params.trigger = 0;
+    evalAt(graph, 5);
+    fly.params.trigger = 1;
+    evalAt(graph, 6);
+    evalAt(graph, 9);
+
+    expect(consumeCameraHandoffRequest()).toBe("camB");
+  });
+
+  test("Auto Switch off keeps control instead of handing over", () => {
+    consumeCameraHandoffRequest();
+    const graph = handoffGraph({ switchActiveOnFinish: false });
+
+    const landed = flyAndLand(graph).get("fly")!;
+
+    expect(consumeCameraHandoffRequest()).toBeNull();
+    expect(landed.active).toBe(1);
+  });
+
+  test("with nothing wired into Camera B it stays parked rather than falling back to the start", () => {
+    // No node owns the destination pose, so there is nobody to hand to —
+    // releasing here would drop the view straight back to Camera A.
+    consumeCameraHandoffRequest();
+    const graph: Graph = {
+      nodes: [
+        { id: "camA", type: CAMERA_NODE.type, position: { x: 0, y: 0 }, params: { active: true } },
+        {
+          id: "fly",
+          type: CAMERA_FLY_TO_NODE.type,
+          position: { x: 0, y: 0 },
+          params: { ...CAMERA_FLY_TO_NODE.defaultParams, duration: 2.0, arcHeight: 0 },
+        },
+      ],
+      connections: [{ id: "a", fromNode: "camA", fromSocket: "matrix", toNode: "fly", toSocket: "cameraA" }],
+    };
+
+    const landed = flyAndLand(graph).get("fly")!;
+
+    expect(consumeCameraHandoffRequest()).toBeNull();
+    expect(landed.active).toBe(1);
   });
 });
