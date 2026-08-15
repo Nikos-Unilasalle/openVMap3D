@@ -304,7 +304,13 @@ Tous les objets géométriques 3D, caméras, lumières et grilles disposent d'un
   - `R` : Rotation (orientation Euler en degrés).
   - `S` : Mise à l'échelle (Scale).
 * **Contrainte d'Axe** : Les touches `X`, `Y` et `Z` permettent de restreindre la manipulation le long d'un axe unique.
-* **Édition Interactive des Courbes** : Lors de la sélection d'un nœud de courbe, les poignées de contrôle 3D s'affichent sous forme de sphères interactives. Sélectionner une poignée permet de la déplacer au Gizmo, d'insérer un point suivant avec la touche `A` ou d'en supprimer avec `D`.
+* **Édition Interactive des Courbes et de la Lattice** :
+  - Les poignées de contrôle 3D s'affichent sous forme de sphères interactives vertes.
+  - Sélectionner une poignée (clic) la passe en cyan et y attache le Gizmo.
+  - `Shift` + Clic permet d'ajouter ou retirer des points de contrôle de la sélection.
+  - `Cmd` (ou `Ctrl`) + Clic gauche & Glisser trace un **rectangle de sélection 2D (Marquee)** dans la vue 3D pour capturer instantanément plusieurs points de contrôle.
+  - Lorsqu'un groupe de points est sélectionné, un **Gizmo au barycentre (centroïde)** apparaît pour translater, pivoter ou mettre à l'échelle tous les points sélectionnés simultanément.
+  - Pour les courbes, les touches `A` et `D` permettent d'insérer ou supprimer des points de contrôle.
 
 ### Calibration Video-Mapping (Direct Linear Transformation)
 
@@ -323,17 +329,19 @@ OpenVMap intègre un solveur géométrique DLT pour l'alignement physique des vi
 | :--- | :--- |
 | `Espace` | Lancer / Mettre en pause la lecture de la timeline |
 | `Cmd` + `Espace` / `Ctrl` + `Espace` | Ouvrir la recherche rapide de nœuds au curseur |
-| `T` | Activer le Gizmo de Translation sur l'objet sélectionné |
-| `R` | Activer le Gizmo de Rotation sur l'objet sélectionné |
-| `S` | Activer le Gizmo d'Échelle (Scale) sur l'objet sélectionné |
+| `T` | Activer le Gizmo de Translation sur l'objet ou les points sélectionnés |
+| `R` | Activer le Gizmo de Rotation sur l'objet ou les points sélectionnés |
+| `S` | Activer le Gizmo d'Échelle (Scale) sur l'objet ou les points sélectionnés |
 | `X` / `Y` / `Z` | Verrouiller la manipulation du Gizmo sur l'axe X, Y ou Z |
+| `Cmd` + Clic gauche & Glisser | Sélection rectangulaire 2D (Marquee) de points de contrôle (Courbes, Lattice) |
+| `Shift` + Clic | Ajouter / retirer des points de contrôle ou nœuds de la sélection |
 | `A` | Insérer un nouveau point de contrôle après la poignée de courbe active |
 | `D` | Supprimer la poignée de courbe active |
 | `K` | Poser ou supprimer une image-clé sur le paramètre ou l'axe survolé |
 | `M` | Poser ou supprimer un marqueur de repère sur la timeline |
 | `Tab` | Masquer ou afficher les aides visuelles de l'éditeur 3D |
 | `Shift` + `Tab` | Basculer la vue scindée (Split View) Graphe / Vue 3D |
-| `Shift` + Clic / Glisser | Sélection multiple de nœuds ou tracé de rectangle de sélection |
+| `Shift` + Clic / Glisser | Sélection multiple de nœuds ou tracé de rectangle de sélection dans le graphe |
 | `Cmd` + `C` / `Cmd` + `V` | Copier / Coller les nœuds sélectionnés avec leurs connexions |
 | `Cmd` + `D` | Dupliquer les nœuds sélectionnés |
 | `Suppr` / `Backspace` | Supprimer les nœuds ou câbles sélectionnés |

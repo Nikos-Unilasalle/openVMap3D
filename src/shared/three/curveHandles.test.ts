@@ -98,4 +98,27 @@ describe("curve point handles", () => {
 
     expect(handles.handleAt(null)).toBeNull();
   });
+
+  test("computes centroid position for multiple selected handles", () => {
+    handles.sync(POINTS, new THREE.Matrix4(), new Set([0, 2]), null);
+
+    const centroid = handles.getCentroidHandle()!;
+    expect(centroid).toBeDefined();
+    // Points 0 (-2, 0, 0) and 2 (2, 0, 0) -> centroid at (0, 0, 0)
+    expect(centroid.position.distanceTo(new THREE.Vector3(0, 0, 0))).toBeLessThan(1e-6);
+  });
+
+  test("pickRect finds all handles inside a 2D screen bounding box", () => {
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+    camera.position.set(0, 0, 10);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld(true);
+    handles.sync(POINTS, new THREE.Matrix4(), null, null);
+
+    // Bounding box covering the center point (0, 1, 0) and right point (2, 0, 0)
+    const matches = handles.pickRect({ minX: 350, minY: 0, maxX: 800, maxY: 600 }, camera, 800, 600);
+    expect(matches).toContain(1);
+    expect(matches).toContain(2);
+    expect(matches).not.toContain(0);
+  });
 });

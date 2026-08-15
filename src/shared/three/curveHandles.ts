@@ -28,15 +28,24 @@ export interface CurvePointHandles {
   sync(
     points: THREE.Vector3[],
     spaceMatrix: THREE.Matrix4,
-    selectedIndex: number | null,
-    frozenIndex: number | null,
+    selectedIndices: Set<number> | number[] | number | null,
+    frozenIndices: Set<number> | number[] | number | null,
     showLine?: boolean
   ): void;
   /** Remove and dispose every handle. */
   clear(): void;
   handleAt(index: number | null): THREE.Mesh | null;
+  /** Returns the centroid anchor object when multiple points are selected. */
+  getCentroidHandle(): THREE.Object3D | null;
   /** Index of the handle nearest the pointer within PICK_RADIUS_PX, or null. */
   pick(ndc: THREE.Vector2, camera: THREE.Camera, widthPx: number, heightPx: number): number | null;
+  /** All handle indices falling inside the screen-space marquee bounding box. */
+  pickRect(
+    rect: { minX: number; minY: number; maxX: number; maxY: number },
+    camera: THREE.Camera,
+    widthPx: number,
+    heightPx: number
+  ): number[];
   count(): number;
 }
 
@@ -60,6 +69,11 @@ export function createCurvePointHandles(): CurvePointHandles {
   group.matrixAutoUpdate = false;
   let handles: THREE.Mesh[] = [];
   let line: THREE.Line | null = null;
+
+  // Invisible proxy anchor representing the centroid of selected control points
+  const centroid = new THREE.Object3D();
+  centroid.matrixAutoUpdate = false;
+  centroid.userData.isCurveCentroidHandle = true;
 
   function clear() {
     for (const child of [...group.children]) {
@@ -94,11 +108,21 @@ export function createCurvePointHandles(): CurvePointHandles {
     group.add(line);
   }
 
+  function toSet(val: Set<number> | number[] | number | null): Set<number> {
+    if (val === null || val === undefined) return new Set();
+    if (typeof val === "number") return new Set([val]);
+    if (Array.isArray(val)) return new Set(val);
+    return val;
+  }
+
   return {
     group,
 
-    sync(points, spaceMatrix, selectedIndex, frozenIndex, showLine = true) {
+    sync(points, spaceMatrix, selectedIndices, frozenIndices, showLine = true) {
       if (points.length !== handles.length) build(points.length);
+
+      const selectedSet = toSet(selectedIndices);
+      const frozenSet = toSet(frozenIndices);
 
       // Handles are children of the curve's space, so a scaled object would
       // stretch them into ellipsoids (and a 0.1× one shrink them to
@@ -115,10 +139,10 @@ export function createCurvePointHandles(): CurvePointHandles {
         if (!handle) return;
         // The handle being dragged owns its own position for the duration of
         // the drag — the graph is one frame behind it.
-        if (idx !== frozenIndex) handle.position.copy(point);
+        if (!frozenSet.has(idx)) handle.position.copy(point);
         handle.scale.copy(counterScale);
         (handle.material as THREE.MeshBasicMaterial).color.setHex(
-          idx === selectedIndex ? HANDLE_SELECTED_COLOR : HANDLE_COLOR,
+          selectedSet.has(idx) ? HANDLE_SELECTED_COLOR : HANDLE_COLOR,
         );
       });
 
@@ -127,6 +151,32 @@ export function createCurvePointHandles(): CurvePointHandles {
         if (line.visible) {
           line.geometry.setFromPoints(handles.map((h) => h.position));
         }
+      }
+
+      // Compute centroid position for all selected handles
+      if (selectedSet.size > 0) {
+        const sum = new THREE.Vector3();
+        let count = 0;
+        selectedSet.forEach((idx) => {
+          if (handles[idx]) {
+            sum.add(handles[idx].position);
+            count++;
+          }
+        });
+        if (count > 0) {
+          sum.divideScalar(count);
+          centroid.position.copy(sum);
+          centroid.rotation.set(0, 0, 0);
+          centroid.scale.set(1, 1, 1);
+          centroid.updateMatrix();
+        }
+        if (selectedSet.size > 1 && centroid.parent !== group) {
+          group.add(centroid);
+        } else if (selectedSet.size <= 1 && centroid.parent === group) {
+          group.remove(centroid);
+        }
+      } else if (centroid.parent === group) {
+        group.remove(centroid);
       }
 
       group.matrix.copy(spaceMatrix);
@@ -141,6 +191,10 @@ export function createCurvePointHandles(): CurvePointHandles {
     handleAt(index) {
       if (index === null) return null;
       return handles[index] ?? null;
+    },
+
+    getCentroidHandle() {
+      return centroid;
     },
 
     pick(ndc, camera, widthPx, heightPx) {
@@ -161,6 +215,30 @@ export function createCurvePointHandles(): CurvePointHandles {
       });
 
       return bestIndex;
+    },
+
+    pickRect(rect, camera, widthPx, heightPx) {
+      const minX = Math.min(rect.minX, rect.maxX);
+      const maxX = Math.max(rect.minX, rect.maxX);
+      const minY = Math.min(rect.minY, rect.maxY);
+      const maxY = Math.max(rect.minY, rect.maxY);
+
+      const worldPosition = new THREE.Vector3();
+      const matches: number[] = [];
+
+      handles.forEach((handle, idx) => {
+        handle.getWorldPosition(worldPosition).project(camera);
+        if (worldPosition.z > 1) return; // behind camera
+        // Convert NDC (-1..1, 1..-1) to pixel coords (0..widthPx, 0..heightPx)
+        const px = ((worldPosition.x + 1) * widthPx) / 2;
+        const py = ((-worldPosition.y + 1) * heightPx) / 2;
+
+        if (px >= minX && px <= maxX && py >= minY && py <= maxY) {
+          matches.push(idx);
+        }
+      });
+
+      return matches;
     },
 
     count() {

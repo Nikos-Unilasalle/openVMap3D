@@ -115,6 +115,8 @@ export function Viewport({
   const isCameraViewRef = useRef(isCameraView);
   isCameraViewRef.current = isCameraView;
 
+  const [marqueeBox, setMarqueeBox] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+
   const onToggleSplitViewRef = useRef(onToggleSplitView);
   onToggleSplitViewRef.current = onToggleSplitView;
   const snapSelectedCameraToEditorRef = useRef<() => void>(() => {});
@@ -338,14 +340,21 @@ export function Viewport({
     let attachedObjectNodeId: string | null = null;
     let attachedGizmoTarget: GizmoTarget | null = null;
 
-    // Curve control-point editing. `activeCurvePointIdx` is null until a
-    // handle is actually clicked — the gizmo belongs to the selected object
-    // until then, and goes back to it as soon as the click lands anywhere
-    // else. `curvePointsNodeId` is the node the handles write into, which is
-    // not necessarily the selected one (see curveLookup.ts).
+    // Curve control-point editing. `selectedPointIndices` holds the active
+    // selection of control points (single or multiple via marquee/shift).
+    // The gizmo belongs to the selected object when empty, and attaches to
+    // the picked handle or multi-point centroid when non-empty.
     const curveHandles = createCurvePointHandles();
     let curvePointsNodeId: string | null = null;
-    let activeCurvePointIdx: number | null = null;
+    let selectedPointIndices = new Set<number>();
+    let isMarqueeDragging = false;
+    let marqueeStartPos: { x: number; y: number } | null = null;
+
+    let dragStartCentroidPos = new THREE.Vector3();
+    let dragStartCentroidQuat = new THREE.Quaternion();
+    let dragStartCentroidScale = new THREE.Vector3(1, 1, 1);
+    let dragStartPointPositions = new Map<number, THREE.Vector3>();
+
     if (!outputMode) {
       editorUiScene.add(curveHandles.group);
     }
@@ -401,11 +410,11 @@ export function Viewport({
      * actually picked, so A and D stay free for everything else.
      */
     function editPickedCurvePoint(operation: "insert" | "remove"): boolean {
-      if (activeCurvePointIdx === null || !curvePointsNodeId) return false;
+      if (selectedPointIndices.size === 0 || !curvePointsNodeId) return false;
       const node = graphRef.current.nodes.find((n) => n.id === curvePointsNodeId);
       if (!node || !onTransformChangeRef.current) return false;
 
-      const index = activeCurvePointIdx;
+      const index = Array.from(selectedPointIndices)[0];
       const nextPoints =
         operation === "insert"
           ? insertCurvePointAfter(node.params.pointsList, index)
@@ -418,7 +427,8 @@ export function Viewport({
       onTransformChangeRef.current(node.id, { pointsList: nextPoints });
       // Keep a point selected either way: the one just inserted, or the
       // neighbour that took the removed one's place.
-      activeCurvePointIdx = operation === "insert" ? index + 1 : Math.min(index, nextPoints.length - 1);
+      const newIdx = operation === "insert" ? index + 1 : Math.min(index, nextPoints.length - 1);
+      selectedPointIndices = new Set([newIdx]);
       return true;
     }
 
@@ -495,7 +505,23 @@ export function Viewport({
       // for the rest of the drag, since this only fires on state *changes*.
       transformControls.addEventListener("dragging-changed", (event) => {
         controls.enabled = !event.value;
-        if (event.value) onTransformStartRef.current?.();
+        if (event.value) {
+          onTransformStartRef.current?.();
+          if (transformControls.object?.userData?.isCurveCentroidHandle) {
+            const centroid = transformControls.object;
+            dragStartCentroidPos.copy(centroid.position);
+            dragStartCentroidQuat.copy(centroid.quaternion);
+            dragStartCentroidScale.copy(centroid.scale);
+            dragStartPointPositions.clear();
+            const node = graphRef.current.nodes.find((n) => n.id === curvePointsNodeId);
+            const rawList = Array.isArray(node?.params.pointsList) ? node!.params.pointsList : [];
+            selectedPointIndices.forEach((idx) => {
+              const handle = curveHandles.handleAt(idx);
+              const pos = handle ? handle.position.clone() : asVector3(rawList[idx], new THREE.Vector3());
+              dragStartPointPositions.set(idx, pos);
+            });
+          }
+        }
         if (!event.value) suppressNextClick = true;
       });
 
@@ -527,7 +553,7 @@ export function Viewport({
         // ended and evaluateGraph's own matrix.copy() ran again next frame.
         object.updateMatrix();
 
-        // A curve control point, not an object: `object.position` is already
+        // A single curve control point drag: `object.position` is already
         // in the curve's own space (the handles' group carries the drawing
         // object's world matrix — see curveHandles.ts), which is exactly what
         // `pointsList` stores, so it goes back verbatim.
@@ -538,6 +564,35 @@ export function Viewport({
           const rawList = Array.isArray(node.params.pointsList) ? [...node.params.pointsList] : [];
           if (pointIdx < 0 || pointIdx >= rawList.length) return;
           rawList[pointIdx] = object.position.clone();
+          onTransformChangeRef.current(node.id, { pointsList: rawList });
+          return;
+        }
+
+        // Multi-point centroid drag: applies relative translation, rotation, and scaling
+        // around the selection center to all selected control points simultaneously.
+        if (object.userData?.isCurveCentroidHandle) {
+          const node = graphRef.current.nodes.find((n) => n.id === curvePointsNodeId);
+          if (!node || !onTransformChangeRef.current) return;
+          const rawList = Array.isArray(node.params.pointsList) ? [...node.params.pointsList] : [];
+
+          const deltaQuat = new THREE.Quaternion().copy(object.quaternion).multiply(dragStartCentroidQuat.clone().invert());
+          const deltaScaleX = dragStartCentroidScale.x !== 0 ? object.scale.x / dragStartCentroidScale.x : 1;
+          const deltaScaleY = dragStartCentroidScale.y !== 0 ? object.scale.y / dragStartCentroidScale.y : 1;
+          const deltaScaleZ = dragStartCentroidScale.z !== 0 ? object.scale.z / dragStartCentroidScale.z : 1;
+
+          for (const [idx, initialPos] of dragStartPointPositions.entries()) {
+            if (idx < 0 || idx >= rawList.length) continue;
+            const offset = new THREE.Vector3().subVectors(initialPos, dragStartCentroidPos);
+            offset.x *= deltaScaleX;
+            offset.y *= deltaScaleY;
+            offset.z *= deltaScaleZ;
+            offset.applyQuaternion(deltaQuat);
+            const newPos = new THREE.Vector3().addVectors(object.position, offset);
+            rawList[idx] = newPos;
+            const handle = curveHandles.handleAt(idx);
+            if (handle) handle.position.copy(newPos);
+          }
+
           onTransformChangeRef.current(node.id, { pointsList: rawList });
           return;
         }
@@ -587,9 +642,58 @@ export function Viewport({
 
     function onCanvasPointerDown(e: PointerEvent) {
       pointerDownAt = { x: e.clientX, y: e.clientY };
+
+      const isMarqueeModifier = e.metaKey || e.ctrlKey;
+      if (isMarqueeModifier && curveHandles.count() > 0 && !outputMode) {
+        isMarqueeDragging = true;
+        marqueeStartPos = { x: e.clientX, y: e.clientY };
+        controls.enabled = false;
+        e.stopImmediatePropagation();
+      }
+    }
+
+    function onCanvasPointerMove(e: PointerEvent) {
+      if (isMarqueeDragging && marqueeStartPos && host) {
+        const rect = host.getBoundingClientRect();
+        const x1 = Math.min(marqueeStartPos.x, e.clientX) - rect.left;
+        const x2 = Math.max(marqueeStartPos.x, e.clientX) - rect.left;
+        const y1 = Math.min(marqueeStartPos.y, e.clientY) - rect.top;
+        const y2 = Math.max(marqueeStartPos.y, e.clientY) - rect.top;
+        setMarqueeBox({
+          left: x1,
+          top: y1,
+          width: Math.max(1, x2 - x1),
+          height: Math.max(1, y2 - y1),
+        });
+      }
     }
 
     function onCanvasPointerUp(e: PointerEvent) {
+      if (isMarqueeDragging) {
+        isMarqueeDragging = false;
+        setMarqueeBox(null);
+        controls.enabled = true;
+
+        if (marqueeStartPos) {
+          const rect = renderer.domElement.getBoundingClientRect();
+          const minX = Math.min(marqueeStartPos.x, e.clientX) - rect.left;
+          const maxX = Math.max(marqueeStartPos.x, e.clientX) - rect.left;
+          const minY = Math.min(marqueeStartPos.y, e.clientY) - rect.top;
+          const maxY = Math.max(marqueeStartPos.y, e.clientY) - rect.top;
+
+          if (Math.hypot(e.clientX - marqueeStartPos.x, e.clientY - marqueeStartPos.y) > CLICK_MOVE_THRESHOLD_PX) {
+            const picked = curveHandles.pickRect({ minX, minY, maxX, maxY }, camera, rect.width, rect.height);
+            if (e.shiftKey) {
+              picked.forEach((idx) => selectedPointIndices.add(idx));
+            } else {
+              selectedPointIndices = new Set(picked);
+            }
+            pointerDownAt = null;
+            return;
+          }
+        }
+      }
+
       const down = pointerDownAt;
       pointerDownAt = null;
       if (suppressNextClick) {
@@ -615,13 +719,21 @@ export function Viewport({
       if (curveHandles.count() > 0) {
         const pickedIdx = curveHandles.pick(ndc, camera, rect.width, rect.height);
         if (pickedIdx !== null) {
-          activeCurvePointIdx = pickedIdx;
+          if (e.shiftKey) {
+            if (selectedPointIndices.has(pickedIdx)) {
+              selectedPointIndices.delete(pickedIdx);
+            } else {
+              selectedPointIndices.add(pickedIdx);
+            }
+          } else {
+            selectedPointIndices = new Set([pickedIdx]);
+          }
           return;
         }
       }
       // Clicking anywhere else drops the point and hands the gizmo back to
       // the object.
-      activeCurvePointIdx = null;
+      selectedPointIndices.clear();
 
       // three's Raycaster hits invisible objects too — it only skips them if
       // you filter yourself — so a hidden object would otherwise still be
@@ -654,8 +766,9 @@ export function Viewport({
     }
 
     if (!outputMode) {
-      renderer.domElement.addEventListener("pointerdown", onCanvasPointerDown);
-      renderer.domElement.addEventListener("pointerup", onCanvasPointerUp);
+      renderer.domElement.addEventListener("pointerdown", onCanvasPointerDown, { capture: true });
+      window.addEventListener("pointermove", onCanvasPointerMove);
+      window.addEventListener("pointerup", onCanvasPointerUp);
     }
 
     const motionBlurEffect = createMotionBlur(host.clientWidth || 1, host.clientHeight || 1);
@@ -992,7 +1105,7 @@ export function Viewport({
         // frame regardless of pointer state, and would otherwise flip
         // `enabled` back to true mid-drag within one frame of the
         // 'dragging-changed' listener turning it off.
-        if (!transformControls?.dragging) {
+        if (!transformControls?.dragging && !isMarqueeDragging) {
           controls.enabled = true;
           controls.update();
         }
@@ -1085,7 +1198,7 @@ export function Viewport({
       if (curveTarget && curveNode && curvePoints.length >= 2) {
         if (curvePointsNodeId !== curveNode.id) {
           curvePointsNodeId = curveNode.id;
-          activeCurvePointIdx = null;
+          selectedPointIndices.clear();
         }
         // An index past the end of the list is left alone rather than
         // cleared: adding a point selects it one frame before the graph state
@@ -1102,22 +1215,31 @@ export function Viewport({
           spaceMatrix.copy(spaceObject.matrixWorld);
         }
 
-        const draggedIdx =
-          transformControls?.dragging && transformControls.object?.userData?.isCurvePointHandle
-            ? (transformControls.object.userData.pointIndex as number)
-            : null;
+        const isDraggingHandle =
+          transformControls?.dragging &&
+          (transformControls.object?.userData?.isCurvePointHandle ||
+            transformControls.object?.userData?.isCurveCentroidHandle);
+        const frozenIndices = isDraggingHandle ? selectedPointIndices : null;
         const isLattice = curveNode.type === "modifier/lattice";
-        curveHandles.sync(curvePoints, spaceMatrix, activeCurvePointIdx, draggedIdx, !isLattice);
+        curveHandles.sync(curvePoints, spaceMatrix, selectedPointIndices, frozenIndices, !isLattice);
       } else if (curveHandles.count() > 0) {
         curveHandles.clear();
         curvePointsNodeId = null;
-        activeCurvePointIdx = null;
+        selectedPointIndices.clear();
       }
 
-      // Move/rotate/scale gizmo: attach to selected mesh, Empty, or Light —
-      // unless a curve control point is picked, which takes the gizmo for
-      // itself (its own writeback path, no GizmoTarget involved).
-      const pickedCurveHandle = transformControls ? curveHandles.handleAt(activeCurvePointIdx) : null;
+      // Move/rotate/scale gizmo: attach to selected mesh, Empty, Light,
+      // or to the picked control point / multi-point centroid proxy
+      let pickedCurveHandle: THREE.Object3D | null = null;
+      if (transformControls) {
+        if (selectedPointIndices.size === 1) {
+          const singleIdx = Array.from(selectedPointIndices)[0];
+          pickedCurveHandle = curveHandles.handleAt(singleIdx);
+        } else if (selectedPointIndices.size > 1) {
+          pickedCurveHandle = curveHandles.getCentroidHandle();
+        }
+      }
+
       if (transformControls && !transformControls.dragging && pickedCurveHandle) {
         if (transformControls.object !== pickedCurveHandle) transformControls.attach(pickedCurveHandle);
         transformControls.setMode(transformModeRef.current);
@@ -1379,8 +1501,9 @@ export function Viewport({
       cancelAnimationFrame(frameId);
       resizeObserver.disconnect();
       if (!outputMode) {
-        renderer.domElement.removeEventListener("pointerdown", onCanvasPointerDown);
-        renderer.domElement.removeEventListener("pointerup", onCanvasPointerUp);
+        renderer.domElement.removeEventListener("pointerdown", onCanvasPointerDown, { capture: true });
+        window.removeEventListener("pointermove", onCanvasPointerMove);
+        window.removeEventListener("pointerup", onCanvasPointerUp);
         controls.removeEventListener("start", handleOrbitStart);
         controls.removeEventListener("change", emitCameraPose);
         window.removeEventListener("keydown", onSnapKeyDown);
@@ -1409,6 +1532,22 @@ export function Viewport({
 
   return (
     <div className="viewport-container" ref={hostRef}>
+      {/* Rectangular Marquee Selection Overlay (Cmd+Drag) */}
+      {!outputMode && marqueeBox && (
+        <div
+          style={{
+            position: "absolute",
+            left: `${marqueeBox.left}px`,
+            top: `${marqueeBox.top}px`,
+            width: `${marqueeBox.width}px`,
+            height: `${marqueeBox.height}px`,
+            border: "1.5px dashed #38bdf8",
+            backgroundColor: "rgba(56, 189, 248, 0.18)",
+            pointerEvents: "none",
+            zIndex: 40,
+          }}
+        />
+      )}
       {/* Passe-partout guide: target-output-aspect crop, shown while a Camera
           node is selected so "Aligner Caméra" reproduces what's actually
           framed — see the comment in tick() next to cameraGuideRef. */}
