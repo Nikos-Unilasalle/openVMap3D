@@ -30,6 +30,7 @@ export const GIZMO_SELECTABLE_TYPES = [
   "light/point",
   "light/spot",
   "calibration/camera",
+  "calibration/grid",
 ];
 
 /**
