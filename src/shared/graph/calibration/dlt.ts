@@ -142,6 +142,27 @@ export function isCoplanar(points: THREE.Vector3[]): boolean {
   return Math.sqrt(sorted[0] / largest) < COPLANARITY_RATIO;
 }
 
+/**
+ * True when the operator has left the 2D image points effectively coincident —
+ * no meaningful spread in any direction. In that state `normalize2D` falls back
+ * to a unit scale but the design matrix's image terms collapse, so the solve
+ * returns an arbitrary projection that the (equally collapsed) pixel fit still
+ * reports a small error for — deceptively confident, worthless output.
+ *
+ * A straight-line *spread* of image points is NOT flagged here: unlike the 3D
+ * coplanar case (which truly drops a rank), projected 2D points that happen to
+ * lie near a line still leave the 3D->2D solve well-conditioned because the
+ * missing dimension lives in the 3D world coordinates. Only total collapse is a
+ * hard degeneracy on the image side.
+ */
+export function isImagePointsDegenerate(points: Point2D[]): boolean {
+  if (points.length === 0) return true;
+  const c = centroidOf(points);
+  const spread =
+    points.reduce((acc, p) => acc + (p.x - c.x) ** 2 + (p.y - c.y) ** 2, 0) / points.length;
+  return spread < 1e-12;
+}
+
 /** Solves the homogeneous system for the 3x4 projection matrix, in normalized coordinates. */
 function solveProjectionMatrix(world: THREE.Vector3[], image: Point2D[]): Mat {
   const rows: number[][] = [];
@@ -252,6 +273,7 @@ export function solveProjectorCalibration(
   const worldPoints = correspondences.map((c) => c.world);
   const imagePoints = correspondences.map((c) => c.image);
   if (isCoplanar(worldPoints)) return null;
+  if (isImagePointsDegenerate(imagePoints)) return null;
 
   const { matrix: imageTransform, normalized: normalizedImage } = normalize2D(imagePoints);
   const { matrix: worldTransform, normalized: normalizedWorld } = normalize3D(worldPoints);

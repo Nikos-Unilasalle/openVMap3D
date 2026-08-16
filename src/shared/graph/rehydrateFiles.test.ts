@@ -14,7 +14,7 @@ describe("rehydrateFileNodesFromDisk", () => {
       connections: [],
     };
 
-    await expect(rehydrateFileNodesFromDisk(graph)).resolves.toBe(false);
+    await expect(rehydrateFileNodesFromDisk(graph)).resolves.toEqual({ attempted: 0, succeeded: 0, failed: 0 });
   });
 
   test("no-op when no node has a file param set", async () => {
@@ -23,6 +23,6 @@ describe("rehydrateFileNodesFromDisk", () => {
       connections: [],
     };
 
-    await expect(rehydrateFileNodesFromDisk(graph)).resolves.toBe(false);
+    await expect(rehydrateFileNodesFromDisk(graph)).resolves.toEqual({ attempted: 0, succeeded: 0, failed: 0 });
   });
 });

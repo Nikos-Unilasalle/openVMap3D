@@ -199,17 +199,28 @@ function parseVector3(value: unknown): THREE.Vector3 {
   return new THREE.Vector3(0, 0, 0);
 }
 
+/** Clone the mutable types the keyframe store can hold so a caller mutating the
+ * value it received can't corrupt the live store (which owns these instances).
+ * A plain scalar (number/string/boolean) is returned as-is. */
+function cloneKeyframeValue(value: any): any {
+  if (value instanceof THREE.Vector3) return value.clone();
+  if (value instanceof THREE.Color) return value.clone();
+  if (value instanceof THREE.Euler) return value.clone();
+  if (value instanceof THREE.Quaternion) return value.clone();
+  return value;
+}
+
 function evaluateKeyframeList(list: Keyframe[], currentFrame: number, fallback: any): any {
   if (list.length === 0) return fallback;
-  if (list.length === 1) return list[0].value;
-  if (currentFrame <= list[0].frame) return list[0].value;
-  if (currentFrame >= list[list.length - 1].frame) return list[list.length - 1].value;
+  if (list.length === 1) return cloneKeyframeValue(list[0].value);
+  if (currentFrame <= list[0].frame) return cloneKeyframeValue(list[0].value);
+  if (currentFrame >= list[list.length - 1].frame) return cloneKeyframeValue(list[list.length - 1].value);
 
   for (let i = 0; i < list.length - 1; i++) {
     const k1 = list[i];
     const k2 = list[i + 1];
     if (currentFrame >= k1.frame && currentFrame <= k2.frame) {
-      if (k1.frame === k2.frame) return k1.value;
+      if (k1.frame === k2.frame) return cloneKeyframeValue(k1.value);
       const t = (currentFrame - k1.frame) / (k2.frame - k1.frame);
       return interpolateValue(k1.value, k2.value, t, k1.easeOut, k2.easeIn);
     }

@@ -665,8 +665,11 @@ function MainEditor() {
     // re-read, not just the open one: switching to another canvas later must
     // not be the moment its files start loading.
     for (const canvas of rehydrated) {
-      rehydrateFileNodesFromDisk(canvas).then((changed) => {
-        if (changed) setCanvases((prev) => [...prev]);
+      rehydrateFileNodesFromDisk(canvas).then(({ attempted }) => {
+        // Refresh whenever a reload actually ran (whether a given file read
+        // succeeded or failed) so the param panel drops its loading state;
+        // a graph with no file nodes legitimately stays put.
+        if (attempted > 0) setCanvases((prev) => [...prev]);
       });
     }
   };

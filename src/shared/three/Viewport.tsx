@@ -464,6 +464,11 @@ export function Viewport({
     // *current* base matrix for an "offset" target (see below), and this is
     // the cheapest way to get it without re-running evaluateGraph itself.
     let latestResults: EvalResult | null = null;
+    // Tracks whether the postprocess chain was active last frame. When it goes
+    // inactive we release the chain once; repeating that every idle frame would
+    // destroy and re-compile all the cached passes on the next activation
+    // (their render targets and shaders are expensive to rebuild).
+    let postChainWasActive = false;
 
     // Hold Shift to snap the gizmo to fixed increments — 1 unit for
     // move/scale, 15° for rotate. Three's TransformControls has no built-in
@@ -1622,6 +1627,7 @@ export function Viewport({
       const motionBlur = typeof renderResult?.motionBlur === "number" ? renderResult.motionBlur : 0;
 
       if (postChain.isActive(postConfigs, motionBlur)) {
+        postChainWasActive = true;
         scene.background = bgScene.background;
         postChain.render({
           scene,
@@ -1633,9 +1639,13 @@ export function Viewport({
           outlineTarget: currentObject,
         });
       } else {
-        // Nothing in the chain this frame — release the passes rather than
-        // holding their render targets for a graph that no longer wants them.
-        postChain.dispose();
+        // Nothing in the chain this frame — release the passes once we actually
+        // turn the chain off (not every idle frame, which would re-allocate all
+        // the cached passes the moment an effect switches back on).
+        if (postChainWasActive) {
+          postChain.dispose();
+          postChainWasActive = false;
+        }
 
         scene.fog = null;
         scene.background = bgScene.background;

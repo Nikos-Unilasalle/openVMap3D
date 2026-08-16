@@ -130,6 +130,18 @@ describe("solveProjectorCalibration", () => {
     expect(solveProjectorCalibration(correspondences, 1920, 1080)).toBeNull();
   });
 
+  it("returns null when every image point is coincident (a 2D degeneracy)", () => {
+    // The 3D points are fine (spread over two walls) but the operator has not
+    // moved the handles: every image point sits at the same pixel. The DLT's
+    // design matrix is then rank-deficient on the 2D side too — without this
+    // guard it would hand back an arbitrary but confident-looking solve whose
+    // reprojection error was small only because the fit lives in the collapsed
+    // pixels. That must refuse, like the coplanar 3D case does.
+    const base = makeCorrespondences(1500, 1500, 960, 540);
+    const collapsed = base.map((c) => ({ ...c, image: { x: 960, y: 540 } }));
+    expect(solveProjectorCalibration(collapsed, 1920, 1080)).toBeNull();
+  });
+
   it("returns null when every reference point lies on one wall", () => {
     // Arrange — a single plane is the classic DLT degeneracy: the system
     // goes rank-deficient and the "solution" is meaningless. Catching it

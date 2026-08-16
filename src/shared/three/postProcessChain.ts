@@ -269,6 +269,18 @@ export function createPostProcessChain(deps: PostProcessChainDeps) {
         }
 
         configurePass(cached.pass, cfg, width, height, renderer.getPixelRatio(), outlineTarget);
+        // A cached pass owns render targets sized on its first instantiation;
+        // EffectComposer.setSize only reaches the passes currently in
+        // composer.passes, and this one only rejoins the chain here, after the
+        // last resize — so re-apply the size or a pass baked before a window
+        // resize would keep rendering at the stale resolution.
+        if (typeof cached.pass.setSize === "function") {
+          try {
+            cached.pass.setSize(width, height);
+          } catch {
+            // Some materials reject (0,0) framebuffers; resize next frame.
+          }
+        }
         composer.addPass(cached.pass);
       }
 

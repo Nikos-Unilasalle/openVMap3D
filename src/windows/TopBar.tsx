@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ensureOvmExtension,
   incrementFilename,
@@ -50,15 +50,22 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [filenameInput, setFilenameInput] = useState(currentFilename);
   const [isOutputOpen, setIsOutputOpen] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  // Owned so a second toast doesn't get cut short by the first's leftover
+  // timer, and cleared on unmount to avoid a setState on a dead component.
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = (msg: string, error = false) => {
     setToastMessage(msg);
     setToastError(error);
-    setTimeout(() => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => {
       setToastMessage(null);
       setToastError(false);
+      toastTimer.current = null;
     }, 3500);
   };
+
+  useEffect(() => () => clearTimeout(toastTimer.current ?? undefined), []);
 
   // Tracks the OS-level close (red X on the output window), not just our own button.
   useEffect(() => onOutputClosed(() => setIsOutputOpen(false)), []);

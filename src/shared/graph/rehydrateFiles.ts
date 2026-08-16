@@ -29,8 +29,25 @@ const BINARY_EXTENSIONS = new Set([
   "mp3", "wav", "ogg", "flac", "m4a", "aac",
 ]);
 
-export async function rehydrateFileNodesFromDisk(graph: Graph): Promise<boolean> {
-  if (!isTauri()) return false;
+/**
+ * Result of re-reading a project's file-backed nodes from disk.
+ * `attempted` is how many files were actually read (0 when the project has no
+ * file nodes, or we're running in a plain browser). `failed` counts the reads
+ * that errored. An app that wants the UI to reflect that a reload *happened*
+ * should refresh whenever `attempted > 0`, regardless of `failed` — a failed
+ * read still "did something" and should clear any loading state; treating a
+ * zero-job graph the same as an aborted one was the confusion the old boolean
+ * return caused.
+ */
+export interface RehydrateFileResult {
+  attempted: number;
+  succeeded: number;
+  failed: number;
+}
+
+export async function rehydrateFileNodesFromDisk(graph: Graph): Promise<RehydrateFileResult> {
+  const empty: RehydrateFileResult = { attempted: 0, succeeded: 0, failed: 0 };
+  if (!isTauri()) return empty;
 
   const jobs: Promise<boolean>[] = [];
   for (const node of graph.nodes) {
@@ -58,7 +75,10 @@ export async function rehydrateFileNodesFromDisk(graph: Graph): Promise<boolean>
     }
   }
 
-  if (jobs.length === 0) return false;
   const results = await Promise.all(jobs);
-  return results.some(Boolean);
+  return {
+    attempted: results.length,
+    succeeded: results.filter(Boolean).length,
+    failed: results.length - results.filter(Boolean).length,
+  };
 }
