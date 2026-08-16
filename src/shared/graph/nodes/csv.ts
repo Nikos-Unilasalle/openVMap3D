@@ -60,7 +60,12 @@ export const CSV_READER_NODE: NodeDefinition = {
       return !isNaN(num) && rawVal !== "" ? num : rawVal ?? "";
     });
 
-    const value = values.length > 0 ? Number(values[rowIndex]) || 0 : 0;
+    // Keep `value` consistent with `rowValues`: a non-numeric cell returns its
+    // raw string (not 0), so a column that isn't actually numeric doesn't
+    // silently read as a 0 for driven behaviour.
+    const rawCell = values[rowIndex];
+    const parsedCell = Number(rawCell);
+    const value = values.length > 0 ? (!isNaN(parsedCell) && rawCell !== "" ? parsedCell : (rawCell ?? 0)) : 0;
 
     return { column: values, rowValues, value };
   },

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import { TransformPatch, Viewport } from "./Viewport";
 import { Graph, NodeRegistry } from "../graph/types";
 import type { PreviewCameraPose } from "../ipc";
@@ -37,6 +37,21 @@ export function SplitViewport({
   const [isSplit, setIsSplit] = useState(false);
   const [splitPercent, setSplitPercent] = useState(50);
   const isDraggingRef = useRef(false);
+  // Held so an unmount while the splitter is pressed can remove the global
+  // window listeners — otherwise they'd linger until the next mouseup and
+  // keep calling setState on a component that no longer exists.
+  const dragHandlersRef = useRef<{ move: (e: MouseEvent) => void; up: () => void } | null>(null);
+
+  useEffect(
+    () => () => {
+      if (dragHandlersRef.current) {
+        window.removeEventListener("mousemove", dragHandlersRef.current.move);
+        window.removeEventListener("mouseup", dragHandlersRef.current.up);
+        dragHandlersRef.current = null;
+      }
+    },
+    [],
+  );
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -56,8 +71,10 @@ export function SplitViewport({
       isDraggingRef.current = false;
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
+      dragHandlersRef.current = null;
     };
 
+    dragHandlersRef.current = { move: onMouseMove, up: onMouseUp };
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
   }, []);

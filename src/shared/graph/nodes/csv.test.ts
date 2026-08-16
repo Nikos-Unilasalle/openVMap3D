@@ -46,12 +46,15 @@ describe("CSV_READER_NODE", () => {
     expect(result.value).toBe(7);
   });
 
-  test("a non-numeric cell reads as 0 in the value output, not NaN", () => {
+  test("a non-numeric cell keeps its raw string in the value output (not 0 or NaN)", () => {
+    // Matches rowValues' own convention: a non-numeric cell returns its source
+    // string rather than silently collapsing to 0, so driven behaviour isn't
+    // misled into treating text as zero.
     setCsv("csv-text", { headers: ["label"], rows: [{ label: "hello" }] });
 
     const result = CSV_READER_NODE.evaluate({ row: 0 }, { column: "label" }, { ...CTX, nodeId: "csv-text" });
 
-    expect(result.value).toBe(0);
+    expect(result.value).toBe("hello");
     expect(result.column).toEqual(["hello"]);
   });
 

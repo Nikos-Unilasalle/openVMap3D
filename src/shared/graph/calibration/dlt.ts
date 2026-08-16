@@ -244,10 +244,30 @@ export function projectWithCalibration(world: THREE.Vector3, calibration: Projec
   };
 }
 
+/**
+ * Projects a world point through a solved calibration *exactly as the render
+ * pipeline will draw it* — see `projectionMatrixFromCalibration`, which has no
+ * way to express skew. `projectWithCalibration` (used to draw the operator's
+ * reference handles) *does* fold skew in, so scoring the solve against the
+ * skew-free model keeps the reported reprojection error honest: it is the
+ * distance between where the user placed a point and where the rendered
+ * projection actually lands, not where some marginally more exact model would.
+ */
+function projectAsRendered(world: THREE.Vector3, calibration: ProjectorCalibration): Point2D | null {
+  const view = new THREE.Matrix4().compose(calibration.position, calibration.quaternion, ONE).invert();
+  const camera = world.clone().applyMatrix4(view);
+  const depth = -camera.z;
+  if (depth <= 1e-9) return null;
+  return {
+    x: (calibration.focalX * camera.x) / depth + calibration.principalX,
+    y: (-calibration.focalY * camera.y) / depth + calibration.principalY,
+  };
+}
+
 function rmsReprojectionError(correspondences: Correspondence[], calibration: ProjectorCalibration): number {
   let total = 0;
   for (const { world, image } of correspondences) {
-    const projected = projectWithCalibration(world, calibration);
+    const projected = projectAsRendered(world, calibration);
     if (!projected) return Number.POSITIVE_INFINITY;
     total += (projected.x - image.x) ** 2 + (projected.y - image.y) ** 2;
   }

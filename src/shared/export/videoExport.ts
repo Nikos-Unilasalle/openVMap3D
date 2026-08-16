@@ -59,7 +59,7 @@ export async function exportVideo(
     throw new Error("This browser/webview can't capture a canvas as a video stream");
   }
 
-  const stream = (canvas as HTMLCanvasElement & { captureStream(fps: number): MediaStream }).captureStream(0);
+  const stream = (canvas as HTMLCanvasElement & { captureStream(fps: number): MediaStream }).captureStream(opts.fps);
   const track = stream.getVideoTracks()[0] as MediaStreamTrack & { requestFrame?: () => void };
 
   const mimeType = pickSupportedMimeType();
@@ -79,18 +79,35 @@ export async function exportVideo(
 
   recorder.start();
 
+  // Pace the loop to the target fps and wait a real frame's worth between
+  // captures. captureFrame() hands a freshly-rendered canvas to the
+  // MediaRecorder, which encodes on its own schedule; a `setTimeout(0)` lets
+  // the encoder *start* but makes no guarantee the frame is actually consumed
+  // before the next one overwrites the canvas — dropping/duplicating frames,
+  // worst on busy VP9/WebM encoders. Pacing on real time (1/fps per frame) is
+  // the only reliable way to keep the stream frame-accurate.
+  const frameIntervalMs = 1000 / opts.fps;
+
   for (let i = 0; i < opts.totalFrames; i++) {
     if (opts.isCancelled?.()) break;
 
+    const frameCapturedAt = Date.now();
     await handle.captureFrame(i, opts.fps);
-    // requestFrame() is the "manual" captureStream mode's own API — without
-    // it a 0-fps stream never emits anything for the recorder to encode.
+    // requestFrame() is the "manual" captureStream mode's own API — it forces
+    // an immediate frame to be handed to the recorder rather than waiting for
+    // its next automatic tick.
     track.requestFrame?.();
     opts.onProgress?.(i + 1, opts.totalFrames);
 
-    // Hands a macrotask back to the recorder's own pipeline so it can
-    // actually pull the frame it was just handed before the next one lands.
-    await new Promise((r) => setTimeout(r, 0));
+    const elapsed = Date.now() - frameCapturedAt;
+    const remain = frameIntervalMs - elapsed;
+    if (remain > 0) {
+      await new Promise((r) => setTimeout(r, remain));
+    } else {
+      // Logging/encode time already exceeded the frame budget; yield a
+      // macrotask so the recorder's pipeline can at least flush the frame.
+      await new Promise((r) => setTimeout(r, 0));
+    }
   }
 
   recorder.stop();
