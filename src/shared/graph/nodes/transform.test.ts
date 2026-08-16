@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { LOOK_AT_NODE, PIVOT_TRANSFORM_NODE, composeNativeMatrix, composeTransform } from "./transform";
+import { markUnusedAxes } from "./vector";
 import { EvalContext } from "../types";
 
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "test" };
@@ -33,10 +34,13 @@ describe("composeTransform", () => {
     expect(m.toArray()).toEqual(new THREE.Matrix4().toArray());
   });
 
-  it("interprets -1 on any axis as no transformation (0 for location/rotation, 1 for scale)", () => {
+  it("marks unused axes and resolves them as no transformation (0 for location/rotation, 1 for scale)", () => {
     const loc = new THREE.Vector3(-1, 5, -1);
+    markUnusedAxes(loc, ["x", "z"]);
     const rot = new THREE.Vector3(1.2, -1, -1);
+    markUnusedAxes(rot, ["y", "z"]);
     const scl = new THREE.Vector3(2, -1, -1);
+    markUnusedAxes(scl, ["y", "z"]);
 
     const m = composeTransform(loc, rot, scl);
     const { position, scale } = decompose(m);
@@ -48,6 +52,25 @@ describe("composeTransform", () => {
     expect(scale.x).toBeCloseTo(2);
     expect(scale.y).toBeCloseTo(1);
     expect(scale.z).toBeCloseTo(1);
+  });
+
+  it("preserves a real -1 on a used axis instead of treating it as an unused marker", () => {
+    // location.x = -1 is a legitimate coordinate; scale.y = -1 is a flip. With
+    // no unused-axes mark, both must survive in the composed matrix — and a
+    // negative scale is a reflection, which Matrix4.compose records directly
+    // in the matrix (determinant < 0) even though decompose() folds the sign
+    // into a 180° rotation.
+    const loc = new THREE.Vector3(-1, 0, 0);
+    const rot = new THREE.Vector3(0, 0, 0);
+    const scl = new THREE.Vector3(1, -1, 1);
+
+    const m = composeTransform(loc, rot, scl);
+
+    // Translation: -1 on x must be kept.
+    expect(m.elements[12]).toBeCloseTo(-1);
+    // Reflection on y: the y-column's yy entry is -1, determinant is negative.
+    expect(m.elements[5]).toBeCloseTo(-1);
+    expect(m.determinant()).toBeLessThan(0);
   });
 });
 

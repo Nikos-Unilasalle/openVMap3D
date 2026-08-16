@@ -150,13 +150,19 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
         try {
           const blob = content instanceof Uint8Array ? new Blob([content]) : new Blob([content]);
           const url = URL.createObjectURL(blob);
-          const texture = new THREE.TextureLoader().load(url, () => {
-            state.group.traverse((c) => {
-              if (c instanceof THREE.Mesh && c.material) {
-                c.material.needsUpdate = true;
-              }
-            });
-          });
+          const texture = new THREE.TextureLoader().load(
+            url,
+            () => {
+              URL.revokeObjectURL(url);
+              state.group.traverse((c) => {
+                if (c instanceof THREE.Mesh && c.material) {
+                  c.material.needsUpdate = true;
+                }
+              });
+            },
+            undefined,
+            () => URL.revokeObjectURL(url)
+          );
           texture.wrapS = THREE.RepeatWrapping;
           texture.wrapT = THREE.RepeatWrapping;
           texture.colorSpace = THREE.SRGBColorSpace;
@@ -190,13 +196,19 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
         try {
           const blob = content instanceof Uint8Array ? new Blob([content]) : new Blob([content]);
           const url = URL.createObjectURL(blob);
-          const texture = new THREE.TextureLoader().load(url, () => {
-            state.group.traverse((c) => {
-              if (c instanceof THREE.Mesh && c.material) {
-                c.material.needsUpdate = true;
-              }
-            });
-          });
+          const texture = new THREE.TextureLoader().load(
+            url,
+            () => {
+              URL.revokeObjectURL(url);
+              state.group.traverse((c) => {
+                if (c instanceof THREE.Mesh && c.material) {
+                  c.material.needsUpdate = true;
+                }
+              });
+            },
+            undefined,
+            () => URL.revokeObjectURL(url)
+          );
           texture.wrapS = THREE.RepeatWrapping;
           texture.wrapT = THREE.RepeatWrapping;
           state.normalMap = texture;

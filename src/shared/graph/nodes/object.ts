@@ -276,13 +276,19 @@ export function buildPrimitiveDynamicParamFields(extraFields: ParamFieldDef[] = 
         try {
           const blob = content instanceof Uint8Array ? new Blob([content]) : new Blob([content]);
           const url = URL.createObjectURL(blob);
-          const texture = new THREE.TextureLoader().load(url, () => {
-            const mesh = meshCache.get(nodeId);
-            if (mesh && mesh.material) {
-              if (Array.isArray(mesh.material)) mesh.material.forEach((m) => (m.needsUpdate = true));
-              else mesh.material.needsUpdate = true;
-            }
-          });
+          const texture = new THREE.TextureLoader().load(
+            url,
+            () => {
+              URL.revokeObjectURL(url);
+              const mesh = meshCache.get(nodeId);
+              if (mesh && mesh.material) {
+                if (Array.isArray(mesh.material)) mesh.material.forEach((m) => (m.needsUpdate = true));
+                else mesh.material.needsUpdate = true;
+              }
+            },
+            undefined,
+            () => URL.revokeObjectURL(url)
+          );
           texture.wrapS = THREE.RepeatWrapping;
           texture.wrapT = THREE.RepeatWrapping;
           texture.colorSpace = THREE.SRGBColorSpace;
@@ -303,13 +309,19 @@ export function buildPrimitiveDynamicParamFields(extraFields: ParamFieldDef[] = 
         try {
           const blob = content instanceof Uint8Array ? new Blob([content]) : new Blob([content]);
           const url = URL.createObjectURL(blob);
-          const texture = new THREE.TextureLoader().load(url, () => {
-            const mesh = meshCache.get(nodeId);
-            if (mesh && mesh.material) {
-              if (Array.isArray(mesh.material)) mesh.material.forEach((m) => (m.needsUpdate = true));
-              else mesh.material.needsUpdate = true;
-            }
-          });
+          const texture = new THREE.TextureLoader().load(
+            url,
+            () => {
+              URL.revokeObjectURL(url);
+              const mesh = meshCache.get(nodeId);
+              if (mesh && mesh.material) {
+                if (Array.isArray(mesh.material)) mesh.material.forEach((m) => (m.needsUpdate = true));
+                else mesh.material.needsUpdate = true;
+              }
+            },
+            undefined,
+            () => URL.revokeObjectURL(url)
+          );
           texture.wrapS = THREE.RepeatWrapping;
           texture.wrapT = THREE.RepeatWrapping;
           state.normalMap = texture;

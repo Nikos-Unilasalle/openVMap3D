@@ -341,6 +341,14 @@ function applyVisibility(geometry: unknown, value: unknown): void {
   geometry.visible = Number.isFinite(asNumber) ? asNumber !== 0 : Boolean(value);
 }
 
+// The previous frame's per-node socket outputs, carried across calls so that a
+// connected input whose source failed or hasn't resolved yet this frame (a
+// cyclic node, a throwing node, an unknown type) still sees the last value it
+// actually produced — instead of silently falling back to a static param. This
+// is what the cyclic-node comment below has always promised but `results` is a
+// fresh Map each pass, so it needed an explicit home to survive between frames.
+let previousFrameOutputs: EvalResult | null = null;
+
 export function evaluateGraph(graph: Graph, registry: NodeRegistry, ctx: EvalContext): EvalResult {
   const { order, cyclic } = topoSort(graph);
   const results: EvalResult = new Map();
@@ -385,7 +393,13 @@ export function evaluateGraph(graph: Graph, registry: NodeRegistry, ctx: EvalCon
         connectedInputs.add(socket.id);
         inputSources.set(socket.id, conn.fromNode);
         // Priority rule: Node connection l'emporte toujours sur les keyframes!
-        inputs[socket.id] = results.get(conn.fromNode)?.[conn.fromSocket];
+        // If the source produced no value this frame (it threw, is an unknown
+        // type, or is a cyclic node not ready yet), reuse the last frame's
+        // output if we have one — never let a *connected* socket silently drop
+        // to a static param as if nothing were wired to it.
+        const fresh = results.get(conn.fromNode)?.[conn.fromSocket];
+        inputs[socket.id] =
+          fresh !== undefined ? fresh : previousFrameOutputs?.get(conn.fromNode)?.[conn.fromSocket];
       } else {
         // Unconnected socket: evaluate keyframe interpolation if keyframes exist
         const fallback = params[socket.id];
@@ -412,5 +426,6 @@ export function evaluateGraph(graph: Graph, registry: NodeRegistry, ctx: EvalCon
     }
   }
 
+  previousFrameOutputs = results;
   return results;
 }

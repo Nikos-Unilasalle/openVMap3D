@@ -1,6 +1,24 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
 
+/**
+ * Tracks which axes a VECTOR_COMPOSE_NODE left disabled. Stored out-of-band
+ * (a WeakMap keyed by the Vector3 reference) rather than poisoned into a real
+ * axis value, so a legitimate -1 on an enabled axis (e.g. a scale flip or a
+ * location z = -1) is never mistaken for "unused". The Vector3 flows through
+ * the graph by reference, so the flag survives the trip from the producer to
+ * the transform consumer.
+ */
+const unusedAxesByVector = new WeakMap<THREE.Vector3, string[]>();
+
+export function markUnusedAxes(v: THREE.Vector3, unused: string[]): void {
+  if (unused.length > 0) unusedAxesByVector.set(v, unused);
+}
+
+export function getUnusedAxes(v: THREE.Vector3): string[] {
+  return unusedAxesByVector.get(v) ?? [];
+}
+
 /** Three Values -> one Vector. What lets a single scalar (Time's seconds, a sensor reading) drive one axis of a Transform. */
 export const VECTOR_COMPOSE_NODE: NodeDefinition = {
   type: "vector/compose",
@@ -27,11 +45,23 @@ export const VECTOR_COMPOSE_NODE: NodeDefinition = {
     const valY = inputs.y !== undefined ? Number(inputs.y) : (Number(params.y) || 0);
     const valZ = inputs.z !== undefined ? Number(inputs.z) : (Number(params.z) || 0);
 
-    const x = useX ? (Number.isFinite(valX) ? valX : 0) : -1;
-    const y = useY ? (Number.isFinite(valY) ? valY : 0) : -1;
-    const z = useZ ? (Number.isFinite(valZ) ? valZ : 0) : -1;
+    const out = new THREE.Vector3(
+      useX ? (Number.isFinite(valX) ? valX : 0) : 0,
+      useY ? (Number.isFinite(valY) ? valY : 0) : 0,
+      useZ ? (Number.isFinite(valZ) ? valZ : 0) : 0,
+    );
 
-    return { out: new THREE.Vector3(x, y, z) };
+    // Which axes the user left disabled. A disabled axis must resolve to the
+    // identity value (0 for location/rotation, 1 for scale) downstream, and
+    // telling the consumer off-band (rather than poisoning a real data value
+    // like -1) lets a legitimate -1 pass through untouched — e.g. a scale flip.
+    const unused: string[] = [];
+    if (!useX) unused.push("x");
+    if (!useY) unused.push("y");
+    if (!useZ) unused.push("z");
+    markUnusedAxes(out, unused);
+
+    return { out };
   },
 };
 

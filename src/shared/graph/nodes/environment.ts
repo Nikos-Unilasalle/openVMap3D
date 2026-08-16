@@ -63,6 +63,7 @@ function loadEnvTexture(nodeId: string, filePath: string, content?: Uint8Array |
       new RGBELoader().load(
         url,
         (hdrTexture) => {
+          if (content) URL.revokeObjectURL(url);
           hdrTexture.mapping = THREE.EquirectangularReflectionMapping;
           hdrTexture.generateMipmaps = true;
           hdrTexture.minFilter = THREE.LinearMipmapLinearFilter;
@@ -71,6 +72,7 @@ function loadEnvTexture(nodeId: string, filePath: string, content?: Uint8Array |
         },
         undefined,
         (err) => {
+          if (content) URL.revokeObjectURL(url);
           console.error("RGBELoader error loading HDR file:", filePath, err);
         }
       );
@@ -78,6 +80,7 @@ function loadEnvTexture(nodeId: string, filePath: string, content?: Uint8Array |
       new EXRLoader().load(
         url,
         (exrTexture) => {
+          if (content) URL.revokeObjectURL(url);
           exrTexture.mapping = THREE.EquirectangularReflectionMapping;
           exrTexture.generateMipmaps = true;
           exrTexture.minFilter = THREE.LinearMipmapLinearFilter;
@@ -86,6 +89,7 @@ function loadEnvTexture(nodeId: string, filePath: string, content?: Uint8Array |
         },
         undefined,
         (err) => {
+          if (content) URL.revokeObjectURL(url);
           console.error("EXRLoader error loading EXR file:", filePath, err);
         }
       );
@@ -93,6 +97,7 @@ function loadEnvTexture(nodeId: string, filePath: string, content?: Uint8Array |
       new THREE.TextureLoader().load(
         url,
         (texture) => {
+          if (content) URL.revokeObjectURL(url);
           texture.mapping = THREE.EquirectangularReflectionMapping;
           texture.colorSpace = THREE.SRGBColorSpace;
           texture.generateMipmaps = true;
@@ -102,6 +107,7 @@ function loadEnvTexture(nodeId: string, filePath: string, content?: Uint8Array |
         },
         undefined,
         (err) => {
+          if (content) URL.revokeObjectURL(url);
           console.error("TextureLoader error loading env texture file:", filePath, err);
         }
       );
@@ -135,12 +141,14 @@ function loadBackgroundImageTexture(nodeId: string, filePath: string, content?: 
     new THREE.TextureLoader().load(
       url,
       (texture) => {
+        if (content) URL.revokeObjectURL(url);
         texture.colorSpace = THREE.SRGBColorSpace;
         texture.needsUpdate = true;
         state.backgroundImage = texture;
       },
       undefined,
       (err) => {
+        if (content) URL.revokeObjectURL(url);
         console.error("TextureLoader error loading background image:", filePath, err);
       }
     );

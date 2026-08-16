@@ -52,7 +52,14 @@ export const MERGE_NODE: NodeDefinition = {
     const group = getGroup(ctx.nodeId);
     group.clear();
     for (const value of Object.values(inputs)) {
-      if (value instanceof THREE.Object3D) group.add(value);
+      if (value instanceof THREE.Object3D) {
+        // group.add() re-parents the object (it reassigns value.parent). When
+        // the same output wires into two consumers, the second group.add would
+        // silently rip it out of the first — so if it is already parented
+        // somewhere else, hand this Merge its own clone and keep the socket's
+        // `owns` promise for every consumer instead of just the last one.
+        group.add(value.parent && value.parent !== group ? value.clone(true) : value);
+      }
     }
     return { geometry: group };
   },

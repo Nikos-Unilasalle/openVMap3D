@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
+import { getUnusedAxes } from "./vector";
 import { NodeDefinition } from "../types";
 
 const ZERO = new THREE.Vector3(0, 0, 0);
@@ -27,27 +28,38 @@ export function asVector3(v: unknown, fallback: THREE.Vector3): THREE.Vector3 {
   return fallback;
 }
 
+/**
+ * Which axes were disabled in a producing Compose Vector node, if any. A
+ * disabled axis means "leave this property at its identity value" — 0 for a
+ * location/rotation axis, 1 for a scale axis. Tracked off-band so a real,
+ * wanted value on a legitimately-used axis (e.g. scale -1 for a flip, or
+ * z = -1 for a location) is never mistaken for an unused axis.
+ */
+function isUnused(v: THREE.Vector3, axis: string): boolean {
+  return getUnusedAxes(v).includes(axis);
+}
+
 export function resolveLocationVector(v: THREE.Vector3): THREE.Vector3 {
   return new THREE.Vector3(
-    v.x === -1 ? 0 : v.x,
-    v.y === -1 ? 0 : v.y,
-    v.z === -1 ? 0 : v.z,
+    isUnused(v, "x") ? 0 : v.x,
+    isUnused(v, "y") ? 0 : v.y,
+    isUnused(v, "z") ? 0 : v.z,
   );
 }
 
 export function resolveRotationVector(v: THREE.Vector3): THREE.Vector3 {
   return new THREE.Vector3(
-    v.x === -1 ? 0 : v.x,
-    v.y === -1 ? 0 : v.y,
-    v.z === -1 ? 0 : v.z,
+    isUnused(v, "x") ? 0 : v.x,
+    isUnused(v, "y") ? 0 : v.y,
+    isUnused(v, "z") ? 0 : v.z,
   );
 }
 
 export function resolveScaleVector(v: THREE.Vector3): THREE.Vector3 {
   return new THREE.Vector3(
-    v.x === -1 ? 1 : v.x,
-    v.y === -1 ? 1 : v.y,
-    v.z === -1 ? 1 : v.z,
+    isUnused(v, "x") ? 1 : v.x,
+    isUnused(v, "y") ? 1 : v.y,
+    isUnused(v, "z") ? 1 : v.z,
   );
 }
 

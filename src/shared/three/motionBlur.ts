@@ -180,10 +180,14 @@ export function createMotionBlur(width: number, height: number): MotionBlur {
     );
 
     const meshes: THREE.Mesh[] = [];
+    const hooked: THREE.Mesh[] = [];
     const hidden: THREE.Object3D[] = [];
     scene.traverse((object) => {
       if (object instanceof THREE.Mesh) {
-        if (object.onBeforeRender !== velocityHook) object.onBeforeRender = velocityHook;
+        if (object.onBeforeRender !== velocityHook) {
+          object.onBeforeRender = velocityHook;
+          hooked.push(object);
+        }
         meshes.push(object);
         return;
       }
@@ -222,6 +226,11 @@ export function createMotionBlur(width: number, height: number): MotionBlur {
     renderer.setClearColor(previousClearColor, previousClearAlpha);
     renderer.setRenderTarget(previousTarget);
     for (const object of hidden) object.visible = true;
+    // Restore the render hooks we set. The meshes are cached at module level
+    // and shared with the other split viewport pane, which has its own closure
+    // (and its own local velocityHook) — leaving ours installed here would let
+    // one pane's hook read matrices written by the other, corrupting the blur.
+    for (const mesh of hooked) mesh.onBeforeRender = undefined as any;
 
     // Snapshot *after* drawing — these become "previous" for the next frame.
     for (const mesh of meshes) {

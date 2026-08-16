@@ -157,6 +157,24 @@ describe("evaluateGraph", () => {
     expect(result.get("bad")).toEqual({});
   });
 
+  test("a connected socket whose source now rejects keeps the previous frame's value instead of its static param", () => {
+    // CONST feeds ADD's `a` socket with 3. First pass: ADD sees 3 -> out 4.
+    const healthy: Graph = {
+      nodes: [node("src", "test/const", { value: 3 }), node("c", "test/add", { a: 99, b: 1 })],
+      connections: [edge("src", "out", "c", "a")],
+    };
+    expect(evaluateGraph(healthy, REGISTRY, CTX).get("c")?.out).toBe(4);
+
+    // Same topology, but `src` (same id) now throws. The connected socket must
+    // keep the last value it actually produced (3), not fall back to param 99.
+    const broken: Graph = {
+      nodes: [node("src", "test/throws"), node("c", "test/add", { a: 99, b: 1 })],
+      connections: [edge("src", "out", "c", "a")],
+    };
+    const result = evaluateGraph(broken, REGISTRY, CTX);
+    expect(result.get("c")?.out).toBe(4);
+  });
+
   test("cyclic nodes are still evaluated, not silently dropped", () => {
     const graph: Graph = {
       nodes: [node("a", "test/add"), node("b", "test/add")],

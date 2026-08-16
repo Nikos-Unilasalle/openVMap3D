@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import { EvalContext } from "../types";
 import { CLAMP_NODE, MAP_RANGE_NODE, VALUE_MATH_NODE } from "./valueMath";
 import { TRANSFORM_NODE, DECOMPOSE_MATRIX_NODE, PARENT_NODE, LOOK_AT_NODE, MATRIX_TRANSFORM_NODE, TRANSFORM_VECTOR_NODE } from "./transform";
-import { VECTOR_COMPOSE_NODE, VECTOR_MATH_NODE } from "./vector";
+import { VECTOR_COMPOSE_NODE, VECTOR_MATH_NODE, getUnusedAxes } from "./vector";
 import { COMPARE_NODE, BOOLEAN_LOGIC_NODE, TRIGGER_NODE, TOGGLE_NODE, GATE_NODE, LOGIC_BRIDGE_NODE } from "./logic";
 import { OSCILLATOR_NODE, ENVELOPE_NODE } from "./oscillator";
 import { COLOR_COMPOSE_NODE, COLOR_DECOMPOSE_NODE, COLOR_MATH_NODE } from "./color";
@@ -75,14 +75,15 @@ describe("CLAMP_NODE", () => {
 });
 
 describe("VECTOR_COMPOSE_NODE", () => {
-  test("composes vector components when enabled, and sets disabled components to -1", () => {
+  test("composes vector components when enabled, and records disabled components as unused axes", () => {
     const allEnabled = VECTOR_COMPOSE_NODE.evaluate({ x: 10, y: 20, z: 30 }, VECTOR_COMPOSE_NODE.defaultParams, CTX).out as THREE.Vector3;
     expect(allEnabled.x).toBe(10);
     expect(allEnabled.y).toBe(20);
     expect(allEnabled.z).toBe(30);
+    expect(getUnusedAxes(allEnabled)).toEqual([]);
 
     const xDisabled = VECTOR_COMPOSE_NODE.evaluate({ x: 10, y: 20, z: 30 }, { ...VECTOR_COMPOSE_NODE.defaultParams, useX: false }, CTX).out as THREE.Vector3;
-    expect(xDisabled.x).toBe(-1);
+    expect(getUnusedAxes(xDisabled)).toEqual(["x"]);
     expect(xDisabled.y).toBe(20);
     expect(xDisabled.z).toBe(30);
   });

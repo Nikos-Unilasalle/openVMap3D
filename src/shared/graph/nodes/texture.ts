@@ -82,12 +82,18 @@ export const TEXTURE_IMAGE_NODE: NodeDefinition = {
         try {
           const blob = createTextureBlob(content, path);
           const url = URL.createObjectURL(blob);
-          const texture = new THREE.TextureLoader().load(url, (loaded) => {
-            if (loaded.image?.width && loaded.image?.height) {
-              state.aspectRatio = loaded.image.width / loaded.image.height;
-            }
-            loaded.needsUpdate = true;
-          });
+          const texture = new THREE.TextureLoader().load(
+            url,
+            (loaded) => {
+              URL.revokeObjectURL(url);
+              if (loaded.image?.width && loaded.image?.height) {
+                state.aspectRatio = loaded.image.width / loaded.image.height;
+              }
+              loaded.needsUpdate = true;
+            },
+            undefined,
+            () => URL.revokeObjectURL(url)
+          );
           texture.wrapS = THREE.RepeatWrapping;
           texture.wrapT = THREE.RepeatWrapping;
           texture.colorSpace = THREE.SRGBColorSpace;
@@ -174,15 +180,21 @@ export const TEXTURE_PLANE_NODE: NodeDefinition = {
         try {
           const blob = createTextureBlob(content, path);
           const url = URL.createObjectURL(blob);
-          const texture = new THREE.TextureLoader().load(url, (loaded) => {
-            if (loaded.image?.width && loaded.image?.height) {
-              state.aspectRatio = loaded.image.width / loaded.image.height;
-            }
-            loaded.needsUpdate = true;
-            if (state.mesh?.material) {
-              (state.mesh.material as THREE.Material).needsUpdate = true;
-            }
-          });
+          const texture = new THREE.TextureLoader().load(
+            url,
+            (loaded) => {
+              URL.revokeObjectURL(url);
+              if (loaded.image?.width && loaded.image?.height) {
+                state.aspectRatio = loaded.image.width / loaded.image.height;
+              }
+              loaded.needsUpdate = true;
+              if (state.mesh?.material) {
+                (state.mesh.material as THREE.Material).needsUpdate = true;
+              }
+            },
+            undefined,
+            () => URL.revokeObjectURL(url)
+          );
           texture.wrapS = THREE.RepeatWrapping;
           texture.wrapT = THREE.RepeatWrapping;
           texture.colorSpace = THREE.SRGBColorSpace;
