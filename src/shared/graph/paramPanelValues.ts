@@ -70,7 +70,12 @@ export function paramPanelValues(
 
   const evaluatedInputs = (evaluated?.__evaluatedInputs as Record<string, unknown>) ?? {};
   for (const socketId of connectedSocketIds(graph, instance.id)) {
-    if (socketId in evaluatedInputs) {
+    // Only overlay a value that actually arrived. A connected source that
+    // produced nothing (threw, unknown type, never-resolved cycle) leaves the
+    // entry undefined; keeping an undefined here would overwrite the
+    // keyframed/param fallback the panel should still trust rather than show
+    // nothing or a wrong static value for a socket that is ostensibly driven.
+    if (socketId in evaluatedInputs && evaluatedInputs[socketId] !== undefined) {
       merged[socketId] = evaluatedInputs[socketId];
     }
   }

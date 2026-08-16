@@ -95,6 +95,12 @@ function renderValuePreview(val: unknown) {
  * NodeDefinition's socket list.
  */
 export function GraphNode({ data, selected }: { data: GraphNodeData; selected?: boolean }) {
+  // Hook must be called unconditionally (Rules of Hooks): this component renders
+  // both reroute nodes and every other node type, and the count of hooks a render
+  // invokes may not depend on `data.nodeType`. For a reroute the value is always
+  // undefined and simply unused.
+  const inspectorVal = useInspectorValue(data.nodeId);
+
   if (data.nodeType === "utility/reroute") {
     const socketType = data.inputs[0]?.type || "any";
     const dotColor = SOCKET_COLOR[socketType] || "#38bdf8";
@@ -136,7 +142,6 @@ export function GraphNode({ data, selected }: { data: GraphNodeData; selected?: 
   }
 
   const categoryColor = data.category ? CATEGORY_COLOR[data.category] : UNKNOWN_CATEGORY_COLOR;
-  const inspectorVal = useInspectorValue(data.nodeId);
 
   return (
     <div className="graph-node" style={{ borderColor: selected ? categoryColor : undefined }}>

@@ -50,9 +50,18 @@ export function evalProfileCurve(points: ProfilePoint[] | undefined | null, t: n
 
   const localT = (clampedT - p1.x) / span;
 
-  // Cubic Hermite (Catmull-Rom) interpolation for smooth curve
-  const m0 = idx > 0 ? ((p2.y - p0.y) / (p2.x - p0.x || 1)) * span : p2.y - p1.y;
-  const m1 = idx < sorted.length - 2 ? ((p3.y - p1.y) / (p3.x - p1.x || 1)) * span : p2.y - p1.y;
+  // Cubic Hermite (Catmull-Rom) interpolation for smooth curve.
+  // The denominator (p2.x - p0.x) is the full two-segment span; it can be
+  // zero when two control points share an x (same position, held vertically).
+  // Falling back to `/1` in that case isn't a valid tangent — use `span` (the
+  // current segment's width) so the tangent keeps the point cloud's own scale
+  // instead of an arbitrary unit, and let the final clamp soak up overshoot.
+  const degenerateDenominator = Math.abs(p2.x - p0.x) < 1e-9;
+  const m0 = idx > 0 ? ((p2.y - p0.y) / (degenerateDenominator ? span : p2.x - p0.x)) * span : p2.y - p1.y;
+  const m1 =
+    idx < sorted.length - 2
+      ? ((p3.y - p1.y) / (Math.abs(p3.x - p1.x) < 1e-9 ? span : p3.x - p1.x)) * span
+      : p2.y - p1.y;
 
   const t2 = localT * localT;
   const t3 = t2 * localT;

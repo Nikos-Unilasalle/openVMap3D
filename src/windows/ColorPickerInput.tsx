@@ -30,11 +30,18 @@ export function ColorPickerInput({ value, onChange }: ColorPickerInputProps) {
   const [hsv, setHsv] = useState<Hsv>(() => hexToHsv(colorHex));
   const [textValue, setTextValue] = useState(colorHex);
 
+  // Always-current hsv read by the sync effect below. The effect reacts only to
+  // external `colorHex` changes and must compare against the *latest* HSV, not
+  // the value captured when the effect last ran — putting `hsv` in the deps
+  // array instead would re-trigger the effect on every drag.
+  const hsvRef = useRef(hsv);
+  hsvRef.current = hsv;
+
   // Sync from the outside only when the incoming colour is not what our own
   // HSV state already represents; otherwise dragging into pure black/white
   // would lose the hue on the round-trip through hex.
   useEffect(() => {
-    if (hsvToHex(hsv) !== colorHex) {
+    if (hsvToHex(hsvRef.current) !== colorHex) {
       setHsv(hexToHsv(colorHex));
     }
     setTextValue(colorHex);
