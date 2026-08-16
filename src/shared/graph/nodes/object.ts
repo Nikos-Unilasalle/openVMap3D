@@ -995,9 +995,11 @@ export const OBJECT_BAR_GRAPH_NODE: NodeDefinition = {
       if (idx >= count) lState.mesh.visible = false;
     });
 
+    const safeValues = rawValues.map((v) => (Number.isFinite(v) ? v : 0));
+
     for (let i = 0; i < count; i++) {
       const barMesh = state.barsGroup.children[i] as THREE.Mesh;
-      const rawVal = rawValues[i % rawValues.length] ?? 0;
+      const rawVal = safeValues[i % rawValues.length] ?? 0;
       const barHeight = Math.max(0.001, rawVal * maxHeight);
 
       const posX = startX + i * stepWidth;

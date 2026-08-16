@@ -35,7 +35,21 @@ export function rehydrateGraphParams(graph: Graph, registry: NodeRegistry): Grap
         const value = instance.params[key];
         if (value === null || value === undefined) continue;
 
-        if (defaultValue instanceof THREE.Vector3 && !(value instanceof THREE.Vector3)) {
+        if (defaultValue instanceof THREE.Quaternion && !(value instanceof THREE.Quaternion)) {
+          if (typeof value === "object") {
+            const v = value as { x?: unknown; y?: unknown; z?: unknown; w?: unknown };
+            // Vector3 has no w, so its presence un-ambiguates a Quaternion.
+            if (Number.isFinite(Number(v.w))) {
+              params[key] = new THREE.Quaternion(
+                Number(v.x) || 0,
+                Number(v.y) || 0,
+                Number(v.z) || 0,
+                Number(v.w) || 0,
+              );
+              changed = true;
+            }
+          }
+        } else if (defaultValue instanceof THREE.Vector3 && !(value instanceof THREE.Vector3)) {
           if (typeof value === "object") {
             const v = value as { x?: unknown; y?: unknown; z?: unknown };
             params[key] = new THREE.Vector3(Number(v.x) || 0, Number(v.y) || 0, Number(v.z) || 0);

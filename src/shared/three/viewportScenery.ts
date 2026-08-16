@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { EnvironmentData } from "../graph/nodes/environment";
+import { disposeObject3D } from "../graph/nodeCaches";
 
 /**
  * The viewport's own furniture — the ground grid, the origin axes, the
@@ -118,6 +119,20 @@ export function createViewportBackground(): THREE.Texture {
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
+}
+
+/**
+ * Releases the GPU resources a viewport's corner gizmo allocated (axis lines,
+ * label sprites, origin dot). Called when the viewport unmounts — these are
+ * per-viewport objects, not shared caches, so they are safe to dispose here.
+ */
+export function disposeGizmoScene(gizmo: { gizmoScene: THREE.Scene }): void {
+  disposeObject3D(gizmo.gizmoScene);
+}
+
+/** Releases the grid, axis lines and up-arrow geometry/materials of the editor scaffold. */
+export function disposeMainSceneGridAndAxes(group: THREE.Group): void {
+  disposeObject3D(group);
 }
 
 /** Build main 3D Scene Grid & Origin Axes Helper */

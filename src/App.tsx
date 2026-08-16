@@ -650,6 +650,7 @@ function MainEditor() {
     activeCanvasRef.current = newProject.activeCanvas;
     setCurrentFrames(new Array(CANVAS_COUNT).fill(0));
     setSelectedNodeId(null);
+    setSelectedNodeIds([]);
     setEditorKey((k) => k + 1);
     if (filename) {
       setCurrentFilename(filename);

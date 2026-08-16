@@ -8,7 +8,11 @@ const OPS: Record<string, (a: number, b: number) => number> = {
   min: Math.min,
   max: Math.max,
   clamp: (a, b) => Math.min(Math.max(a, 0), b > 0 ? b : 1),
-  mod: (a, b) => (b === 0 ? 0 : ((a % b) + b) % b),
+  mod: (a, b) => {
+    if (b === 0) return 0;
+    const abs = Math.abs(b);
+    return ((a % abs) + abs) % abs;
+  },
   power: Math.pow,
 };
 

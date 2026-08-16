@@ -6,6 +6,32 @@
 import { createNodeCache } from "../graph/nodeCaches";
 
 let globalAudioCtx: AudioContext | null = null;
+let gestureListenerInstalled = false;
+
+function ensureAudioUnblocked(): void {
+  if (!globalAudioCtx) return;
+  if (globalAudioCtx.state === "running") return;
+  globalAudioCtx.resume().catch(() => {});
+}
+
+/**
+ * Web Audio starts suspended until a user gesture (the autoplay policy). The
+ * context may first be created — and resume() attempted — before any gesture,
+ * at which point the browser refuses. Install a one-shot gesture listener so
+ * the first real pointer/keyboard interaction retries, otherwise audio stays
+ * silent until a node happens to be re-evaluated after a click.
+ */
+function installFirstGestureResume(): void {
+  if (gestureListenerInstalled || typeof window === "undefined") return;
+  gestureListenerInstalled = true;
+  const wake = () => {
+    ensureAudioUnblocked();
+    window.removeEventListener("pointerdown", wake);
+    window.removeEventListener("keydown", wake);
+  };
+  window.addEventListener("pointerdown", wake, { once: false });
+  window.addEventListener("keydown", wake);
+}
 
 export function getAudioContext(): AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -17,9 +43,8 @@ export function getAudioContext(): AudioContext | null {
       globalAudioCtx = new AudioContextClass();
     }
   }
-  if (globalAudioCtx && globalAudioCtx.state === "suspended") {
-    globalAudioCtx.resume().catch(() => {});
-  }
+  installFirstGestureResume();
+  ensureAudioUnblocked();
   return globalAudioCtx;
 }
 

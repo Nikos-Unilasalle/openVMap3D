@@ -30,11 +30,14 @@ import {
   buildMainSceneGridAndAxes,
   createGizmoScene,
   createViewportBackground,
+  disposeMainSceneGridAndAxes,
+  disposeGizmoScene,
   GIZMO_ACTIVE_COLOR,
   GIZMO_X_COLOR,
   GIZMO_Y_COLOR,
   GIZMO_Z_COLOR,
 } from "./viewportScenery";
+import { disposeObject3D } from "../graph/nodeCaches";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
@@ -281,10 +284,12 @@ export function Viewport({
 
     // Editor UI Overlay Scene — holds grid, transform controls, light helpers outside of main postprocess pipeline
     const editorUiScene = new THREE.Scene();
+    let gridAndAxes: THREE.Group | null = null;
 
     // Grid & Origin Axes Helper — editor-only, never baked into the projected output
     if (!outputMode) {
-      editorUiScene.add(buildMainSceneGridAndAxes());
+      gridAndAxes = buildMainSceneGridAndAxes();
+      editorUiScene.add(gridAndAxes);
     }
 
     const perspectiveCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
@@ -1683,6 +1688,12 @@ export function Viewport({
       transformControls?.dispose();
       curveHandles.clear();
       controls.dispose();
+      // Per-viewport editor furniture (grid/axes, corner gizmo, zoom-scrub
+      // bar) is not part of the shared per-node caches — it is built fresh for
+      // this viewport and must release its GPU buffers on unmount, or every
+      // StrictMode remount / split-view toggle leaks geometry & materials.
+      if (gridAndAxes) disposeMainSceneGridAndAxes(gridAndAxes);
+      if (gizmo) disposeGizmoScene(gizmo);
       // These objects are cached per node id at module scope and outlive
       // this viewport (see nodeCaches.ts) — hand them back rather than
       // leaving them parented to a scene that's about to be thrown away.
@@ -1710,6 +1721,8 @@ export function Viewport({
         if (helper.parent) {
           helper.parent.remove(helper);
         }
+        // Light helpers own their own geometry/material; release them here.
+        disposeObject3D(helper);
       }
       activeLights.clear();
       activeLightHelpers.clear();

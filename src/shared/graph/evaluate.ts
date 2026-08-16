@@ -364,7 +364,24 @@ export function evaluateGraph(graph: Graph, registry: NodeRegistry, ctx: EvalCon
       continue;
     }
 
-    const params = { ...def.defaultParams, ...instance.params };
+    // Deep-clone the mutable values that live on the shared defaultParams (a
+    // Vector3/Color instance is common to every node of this type). A plain
+    // spread would hand each node the *same* object by reference, so any node
+    // mutating params.location in place would corrupt every other instance
+    // that didn't override it. Cloning here isolates them (keyframe
+    // interpolation below already clones its own Vector3/Color).
+    const params: Record<string, unknown> = { ...def.defaultParams, ...instance.params };
+
+    // Clone the shared mutable defaults one level deep, but only for the keys
+    // the instance did NOT override (its own object comes from IPC/graph and
+    // is already per-instance).
+    for (const key of Object.keys(def.defaultParams)) {
+      if (key in instance.params) continue;
+      const v = def.defaultParams[key];
+      if (v instanceof THREE.Vector3 || v instanceof THREE.Color || v instanceof THREE.Euler || v instanceof THREE.Quaternion) {
+        params[key] = v.clone();
+      }
+    }
 
     // Apply keyframe interpolation to params so that param-based properties
     // (location, rotation, scale, color, etc.) reflect their animated values

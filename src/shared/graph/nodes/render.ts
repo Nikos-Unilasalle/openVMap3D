@@ -67,7 +67,8 @@ export const RENDER_NODE: NodeDefinition = {
     else if (preset === "21:9 (2560x1080)") { width = 2560; height = 1080; }
 
     const aspect = width / height;
-    const frameCount = Math.max(0, Number(params.frameCount) ?? 120);
+    const n = Number(params.frameCount);
+    const frameCount = Math.max(0, Number.isFinite(n) ? n : 120);
     const fps = Math.max(1, Number(params.fps) || 30);
 
     return {
