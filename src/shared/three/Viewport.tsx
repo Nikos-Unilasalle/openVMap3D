@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { MutableRefObject, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
-import { ClockState, createClock, tickClock } from "../graph/clock";
+import { ClockState, createClock, STEP_SECONDS, tickClock } from "../graph/clock";
 import { EvalResult, evaluateGraph } from "../graph/evaluate";
 import { CAMERA_FLY_TO_NODE, CAMERA_NODE } from "../graph/nodes/camera";
 import { asVector3 } from "../graph/nodes/transform";
@@ -79,6 +79,21 @@ interface ViewportProps {
   currentFrame?: number;
   onEvaluatedResults?: (results: Map<string, Record<string, unknown>>) => void;
   isPlaying?: boolean;
+  /**
+   * Populated (by this component, into the ref the caller passed in) once
+   * the render loop is up — see videoExport.ts. `captureFrame` forces the
+   * *next* tick() to use `frameIndex/fps` for both the deterministic clock
+   * (so Time-node/oscillator/particle output matches that instant rather
+   * than real elapsed time) and keyframe evaluation, in place of whatever
+   * live playback would have used that frame, then resolves once that
+   * frame has been drawn.
+   */
+  exportHandleRef?: MutableRefObject<ViewportExportHandle | null>;
+}
+
+export interface ViewportExportHandle {
+  getCanvas: () => HTMLCanvasElement | null;
+  captureFrame: (frameIndex: number, fps: number) => Promise<void>;
 }
 
 
@@ -100,6 +115,7 @@ export function Viewport({
   currentFrame = -1,
   onEvaluatedResults,
   isPlaying = true,
+  exportHandleRef,
 }: ViewportProps) {
   const [showUiOverlay, setShowUiOverlay] = useState(true);
   const showUiOverlayRef = useRef(showUiOverlay);
@@ -107,6 +123,10 @@ export function Viewport({
 
   const currentFrameRef = useRef(currentFrame);
   currentFrameRef.current = currentFrame;
+
+  // Set by captureFrame(), read (and cleared) by the very next tick() —
+  // see ViewportExportHandle's own doc comment above.
+  const pendingCaptureRef = useRef<{ frameIndex: number; fps: number; resolve: () => void } | null>(null);
   const onEvaluatedResultsRef = useRef(onEvaluatedResults);
   onEvaluatedResultsRef.current = onEvaluatedResults;
   const isPlayingRef = useRef(isPlaying);
@@ -864,6 +884,16 @@ export function Viewport({
       resetAllParticleSimulations();
     };
 
+    if (exportHandleRef) {
+      exportHandleRef.current = {
+        getCanvas: () => renderer.domElement,
+        captureFrame: (frameIndex, fps) =>
+          new Promise<void>((resolve) => {
+            pendingCaptureRef.current = { frameIndex, fps, resolve };
+          }),
+      };
+    }
+
     snapSelectedCameraToEditorRef.current = () => {
       if (!selectedNodeIdRef.current || !onTransformChangeRef.current) return;
       const targetNode = graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current);
@@ -908,7 +938,19 @@ export function Viewport({
     }
 
     function tick() {
-      if (isPlayingRef.current) {
+      // A pending captureFrame() call wins over live playback entirely: the
+      // clock is forced to exactly frameIndex/fps (not real elapsed time —
+      // Time-node/oscillator/particle output must match that instant, not
+      // whenever this tick happened to run), and keyframe evaluation uses
+      // frameIndex directly rather than racing the currentFrame prop's own
+      // React commit.
+      const capture = pendingCaptureRef.current;
+      const exportFrameIndex = capture?.frameIndex ?? currentFrameRef.current;
+      if (capture) {
+        const stepSeconds = 1 / capture.fps;
+        const time = capture.frameIndex * stepSeconds;
+        clock = { epochMs: clock.epochMs, step: Math.round(time / STEP_SECONDS), time };
+      } else if (isPlayingRef.current) {
         clock = tickClock(clock, Date.now());
       } else {
         clock = { ...clock, step: 0 };
@@ -929,11 +971,15 @@ export function Viewport({
           nodeId: "",
           liveEditNodeId,
           renderer,
-          currentFrame: currentFrameRef.current,
+          currentFrame: exportFrameIndex,
           keyframes: graphRef.current.keyframes,
         });
       } catch (err) {
         console.error("graph evaluation failed", err);
+        if (capture) {
+          pendingCaptureRef.current = null;
+          capture.resolve();
+        }
         frameId = requestAnimationFrame(tick);
         return;
       }
@@ -1515,6 +1561,11 @@ export function Viewport({
         renderer.setViewport(12, 12, gizmoSize, gizmoSize);
         renderer.render(gizmo.gizmoScene, gizmo.gizmoCamera);
         renderer.setScissorTest(false);
+      }
+
+      if (capture) {
+        pendingCaptureRef.current = null;
+        capture.resolve();
       }
 
       frameId = requestAnimationFrame(tick);

@@ -29,7 +29,8 @@ import {
   Project,
 } from "./shared/graph/types";
 import { broadcastGraph, maximizeMainWindow, PreviewCameraPose, startBroadcasting } from "./shared/ipc";
-import { TransformPatch } from "./shared/three/Viewport";
+import { exportVideo, mimeToExtension, saveVideoBlob } from "./shared/export/videoExport";
+import { TransformPatch, Viewport, ViewportExportHandle } from "./shared/three/Viewport";
 import { SplitViewport } from "./shared/three/SplitViewport";
 import "./shared/three/viewport.css";
 import { GIZMO_SELECTABLE_TYPES, resolveGizmoTarget } from "./shared/graph/transformLookup";
@@ -220,6 +221,60 @@ function MainEditor() {
       : 120
     : 0;
   const keyframesEnabled = !!renderNodeInstance;
+  const exportFps = Math.max(1, Number(renderNodeInstance?.params?.fps) || 30);
+  const exportWidth = Math.max(1, Number(renderNodeInstance?.params?.width) || 1920);
+  const exportHeight = Math.max(1, Number(renderNodeInstance?.params?.height) || 1080);
+
+  /**
+   * A dedicated, offscreen `outputMode` Viewport mounted only while an
+   * export is running (see the JSX below) — separate from the editor's own
+   * viewport and from SplitViewport's preview pane, neither of which are
+   * guaranteed to be mounted/visible while exporting, and both of which
+   * would otherwise fight the export's own deterministic clock (see
+   * captureFrame in Viewport.tsx) with real-time playback. `exportHandleRef`
+   * is filled in by that Viewport once its render loop is up.
+   */
+  const exportHandleRef = useRef<ViewportExportHandle | null>(null);
+  const exportCancelledRef = useRef(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0);
+
+  const handleExportVideo = useCallback(async () => {
+    if (!renderNodeInstance || totalFrames <= 0) {
+      alert("Ajoute un node Render avec au moins une frame avant d'exporter.");
+      return;
+    }
+    exportCancelledRef.current = false;
+    setIsExporting(true);
+    setExportProgress(0);
+    try {
+      // Lets the hidden export Viewport's own mount effect (WebGL context,
+      // scene, first tick) finish before captureFrame is called on it.
+      await new Promise((r) => setTimeout(r, 100));
+      const handle = exportHandleRef.current;
+      if (!handle) throw new Error("La vue d'export n'est pas prête — réessaie.");
+
+      const blob = await exportVideo(handle, {
+        totalFrames,
+        fps: exportFps,
+        onProgress: (done, total) => setExportProgress(done / total),
+        isCancelled: () => exportCancelledRef.current,
+      });
+
+      const base = currentFilename.replace(/\.[^.]+$/, "") || "export";
+      const suggested = `${base}.${mimeToExtension(blob.type)}`;
+      await saveVideoBlob(blob, suggested);
+    } catch (err) {
+      // Tauri command failures reject with a plain string, not an Error, so
+      // `(err as Error).message` was reliably undefined for exactly the
+      // errors this needs to surface (a failed writeFile/dialog call).
+      console.error("Video export failed:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      alert("Échec de l'export vidéo : " + message);
+    } finally {
+      setIsExporting(false);
+    }
+  }, [renderNodeInstance, totalFrames, exportFps, currentFilename]);
 
   const [isPlaying, setIsPlaying] = useState(true);
   // Per canvas: each has its own Render node and so its own frame count, and
@@ -930,7 +985,25 @@ function MainEditor() {
         onFilenameChange={handleFilenameChange}
         onUndo={undo}
         onRedo={redo}
+        onExportVideo={keyframesEnabled ? handleExportVideo : undefined}
+        isExporting={isExporting}
+        exportProgress={exportProgress}
       />
+      {isExporting && (
+        // Off-screen (not display:none, which some webviews suspend rAF
+        // for), sized to the real export resolution so captureStream reads
+        // full-quality pixels regardless of what the editor panes show.
+        <div style={{ position: "fixed", left: -100000, top: 0, width: exportWidth, height: exportHeight }}>
+          <Viewport
+            graph={graph}
+            registry={DEFAULT_REGISTRY}
+            renderNodeId={findRenderNodeId(graph) ?? ""}
+            epochMs={epochMs}
+            outputMode
+            exportHandleRef={exportHandleRef}
+          />
+        </div>
+      )}
       <div style={{ height: `${splitPercent}%`, minHeight: 0, position: "relative" }}>
         <SplitViewport
           graph={graph}

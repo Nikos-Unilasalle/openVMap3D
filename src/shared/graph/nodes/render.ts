@@ -27,6 +27,7 @@ export const RENDER_NODE: NodeDefinition = {
   ],
   defaultParams: {
     frameCount: 120,
+    fps: 30,
     motionBlur: 0,
     resolutionPreset: "16:9 (1920x1080)",
     width: 1920,
@@ -34,6 +35,7 @@ export const RENDER_NODE: NodeDefinition = {
   },
   paramFields: [
     { id: "frameCount", label: "Frame Count", kind: "number", step: 1 },
+    { id: "fps", label: "FPS (video export)", kind: "number", step: 1 },
     {
       id: "resolutionPreset",
       label: "Aspect / Resolution",
@@ -66,6 +68,7 @@ export const RENDER_NODE: NodeDefinition = {
 
     const aspect = width / height;
     const frameCount = Math.max(0, Number(params.frameCount) ?? 120);
+    const fps = Math.max(1, Number(params.fps) || 30);
 
     return {
       geometry: inputs.geometry,
@@ -76,6 +79,7 @@ export const RENDER_NODE: NodeDefinition = {
       height,
       aspect,
       frameCount,
+      fps,
     };
   },
 };

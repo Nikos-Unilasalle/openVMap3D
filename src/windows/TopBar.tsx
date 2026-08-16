@@ -21,6 +21,11 @@ export interface TopBarProps {
   onFilenameChange: (name: string, path: string | null) => void;
   onUndo?: () => void;
   onRedo?: () => void;
+  /** Absent hides the button entirely — e.g. no Render node to read frame count/fps from. */
+  onExportVideo?: () => void;
+  isExporting?: boolean;
+  /** 0-1. */
+  exportProgress?: number;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -31,6 +36,9 @@ export const TopBar: React.FC<TopBarProps> = ({
   onFilenameChange,
   onUndo,
   onRedo,
+  onExportVideo,
+  isExporting = false,
+  exportProgress = 0,
 }) => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastError, setToastError] = useState(false);
@@ -283,6 +291,22 @@ export const TopBar: React.FC<TopBarProps> = ({
           </svg>
           {isOutputOpen ? "Close Output" : "Output"}
         </button>
+
+        {/* EXPORT VIDEO — frame-by-frame render of the whole timeline to MP4/WebM */}
+        {onExportVideo && (
+          <button
+            className="top-bar-button top-bar-button-export"
+            onClick={onExportVideo}
+            disabled={isExporting}
+            title="Exporter la timeline en vidéo (MP4 si le webview le supporte, sinon WebM)"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="23 7 16 12 23 17 23 7" />
+              <rect x="1" y="5" width="15" height="14" rx="2" />
+            </svg>
+            {isExporting ? `Export… ${Math.round(exportProgress * 100)}%` : "Export Video"}
+          </button>
+        )}
 
         {isEditingFilename ? (
           <input

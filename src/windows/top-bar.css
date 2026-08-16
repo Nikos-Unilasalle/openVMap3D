@@ -192,6 +192,23 @@
   color: #818cf8;
 }
 
+.top-bar-button-export:hover:not(:disabled) {
+  border-color: #f43f5e;
+  color: #fb7185;
+  box-shadow: 0 0 10px rgba(244, 63, 94, 0.25);
+}
+
+.top-bar-button-export:hover:not(:disabled) svg {
+  color: #fb7185;
+}
+
+.top-bar-button-export:disabled {
+  color: #fb7185;
+  border-color: #f43f5e;
+  opacity: 0.85;
+  cursor: progress;
+}
+
 .top-bar-right {
   display: flex;
   align-items: center;
