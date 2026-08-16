@@ -44,6 +44,42 @@ import { Graph, NodeRegistry } from "../graph/types";
 import type { PreviewCameraPose } from "../ipc";
 import "./viewport.css";
 
+/**
+ * Copy a light's live state onto another instance of the same type. The
+ * viewport's output pane holds its own clone of each graph light (they are
+ * cached per node id at module scope and can only have one parent — see the
+ * comment next to the clone in tick()), and this keeps that clone in step
+ * with the shared original every frame, instead of re-cloning (which would
+ * allocate a fresh shadow render target per frame).
+ */
+function copyLightState(src: THREE.Light, dst: THREE.Light) {
+  dst.color.copy(src.color);
+  dst.intensity = src.intensity;
+  dst.castShadow = src.castShadow;
+  dst.position.copy(src.position);
+  dst.quaternion.copy(src.quaternion);
+  dst.scale.copy(src.scale);
+
+  if (src instanceof THREE.PointLight && dst instanceof THREE.PointLight) {
+    dst.distance = src.distance;
+    dst.decay = src.decay;
+  }
+  if (src instanceof THREE.SpotLight && dst instanceof THREE.SpotLight) {
+    dst.distance = src.distance;
+    dst.decay = src.decay;
+    dst.angle = src.angle;
+    dst.penumbra = src.penumbra;
+  }
+
+  const srcTarget = (src as THREE.DirectionalLight | THREE.SpotLight).target;
+  const dstTarget = (dst as THREE.DirectionalLight | THREE.SpotLight).target;
+  if (srcTarget && dstTarget) {
+    dstTarget.position.copy(srcTarget.position);
+    dstTarget.updateMatrixWorld(true);
+  }
+  dst.updateMatrixWorld(true);
+}
+
 
 interface ViewportProps {
   graph: Graph;
@@ -204,10 +240,24 @@ export function Viewport({
   const isOrthographicRef = useRef(isOrthographic);
   isOrthographicRef.current = isOrthographic;
   const toggleCameraModeRef = useRef<(isOrtho: boolean) => void>(() => {});
+  const [isAxisView, setIsAxisView] = useState(false);
+  const isAxisViewRef = useRef(false);
+  const [isViewLocked, setIsViewLocked] = useState(false);
+  const isViewLockedRef = useRef(false);
+  const setViewLockRef = useRef<(locked: boolean) => void>(() => {});
 
   useEffect(() => {
     toggleCameraModeRef.current(isOrthographic);
   }, [isOrthographic]);
+
+  const toggleViewLock = () => {
+    setIsViewLocked((prev) => {
+      const next = !prev;
+      isViewLockedRef.current = next;
+      setViewLockRef.current(next);
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -305,6 +355,20 @@ export function Viewport({
 
       controls.target.set(0, 0, 0);
       controls.update();
+      // Reset leaves the fixed axis view and releases the lock.
+      isAxisSnapped = false;
+      setViewLockRef.current(false);
+      setIsViewLocked(false);
+      isAxisViewRef.current = false;
+      setIsAxisView(false);
+    };
+
+    // While the view is locked, orbit is disabled so the user can work
+    // serenely in the fixed axis view. The component toggle reaches the
+    // controls through this ref (they live in this mount-only closure).
+    setViewLockRef.current = (locked: boolean) => {
+      isViewLockedRef.current = locked;
+      controls.enableRotate = !locked;
     };
 
     let isAxisSnapped = false;
@@ -316,6 +380,8 @@ export function Viewport({
      */
     setAxisViewRef.current = (axis, sign) => {
       isAxisSnapped = true;
+      isAxisViewRef.current = true;
+      setIsAxisView(true);
       const target = controls.target.clone();
       const distance = activeCamera.position.distanceTo(target) || 5;
       const direction = new THREE.Vector3(
@@ -345,8 +411,14 @@ export function Viewport({
     }
 
     const handleOrbitStart = () => {
+      // While locked, orbit can't even start (enableRotate is off) and pan/
+      // zoom don't break the axis alignment — so they must not exit the
+      // fixed view either. Only an unlocked orbit returns to perspective.
+      if (isViewLockedRef.current) return;
       if (isAxisSnapped) {
         isAxisSnapped = false;
+        isAxisViewRef.current = false;
+        setIsAxisView(false);
         setIsOrthographic(false);
       }
     };
@@ -474,8 +546,8 @@ export function Viewport({
         return;
       }
 
-      // Gizmo mode shortcuts: T (translate), R (rotate), S (scale)
-      if (key === "t") {
+      // Gizmo mode shortcuts: G (translate), R (rotate), S (scale)
+      if (key === "g") {
         e.preventDefault();
         setTransformMode("translate");
         if (transformControls) transformControls.setMode("translate");
@@ -498,6 +570,10 @@ export function Viewport({
       } else if (key === "z") {
         e.preventDefault();
         setAxisViewRef.current?.("z", 1);
+      } else if (key === "l" && isAxisViewRef.current) {
+        // Lock the fixed axis view (toggle) — only meaningful in an X/Y/Z view.
+        e.preventDefault();
+        toggleViewLock();
       }
     }
 
@@ -1005,13 +1081,22 @@ export function Viewport({
         activeLightUUIDs.add(uuid);
 
         if (!activeLights.has(uuid)) {
-          if (!light.parent) {
-            scene.add(light);
+          // Light objects are cached per node id at module scope (see
+          // nodeCaches.ts), so the split view's two panes would otherwise
+          // fight over the single shared instance — three.js gives an
+          // Object3D exactly one parent, and whichever scene.add() ran last
+          // silently rips the light out of the other pane's scene. The
+          // output pane holds its own disposable clone instead (same rule
+          // as the geometry clones further down in tick()); it needs no
+          // stable identity, and copyLightState() below keeps it in sync.
+          const toAdd = outputMode ? light.clone() : light;
+          if (!toAdd.parent) {
+            scene.add(toAdd);
           }
-          if ((light as THREE.DirectionalLight | THREE.SpotLight).target && !(light as THREE.DirectionalLight | THREE.SpotLight).target.parent) {
-            scene.add((light as THREE.DirectionalLight | THREE.SpotLight).target);
+          if ((toAdd as THREE.DirectionalLight | THREE.SpotLight).target && !(toAdd as THREE.DirectionalLight | THREE.SpotLight).target.parent) {
+            scene.add((toAdd as THREE.DirectionalLight | THREE.SpotLight).target);
           }
-          activeLights.set(uuid, light);
+          activeLights.set(uuid, toAdd);
 
           if (!outputMode) {
             let helper: THREE.Object3D | null = null;
@@ -1032,6 +1117,14 @@ export function Viewport({
               activeLightHelpers.set(uuid, helper);
             }
           }
+        }
+
+        // Keep the output pane's clone in step with the shared original
+        // (color, intensity, transform, spot/point params, aim target) so
+        // live edits still show up in the preview pane.
+        const sceneLight = activeLights.get(uuid);
+        if (outputMode && sceneLight && sceneLight !== light) {
+          copyLightState(light, sceneLight);
         }
 
         const helper = activeLightHelpers.get(uuid);
@@ -1292,7 +1385,7 @@ export function Viewport({
           (transformControls.object?.userData?.isCurvePointHandle ||
             transformControls.object?.userData?.isCurveCentroidHandle);
         const frozenIndices = isDraggingHandle ? selectedPointIndices : null;
-        curveHandles.sync(curvePoints, spaceMatrix, selectedPointIndices, frozenIndices, !isLatticeNode);
+        curveHandles.sync(curvePoints, spaceMatrix, selectedPointIndices, frozenIndices, !isLatticeNode, camera, host.clientHeight);
       } else if (curveHandles.count() > 0) {
         curveHandles.clear();
         curvePointsNodeId = null;
@@ -1595,6 +1688,31 @@ export function Viewport({
       // leaving them parented to a scene that's about to be thrown away.
       sceneContents.clear();
       editorHelpers.clear();
+      // Lights get the same hand-back treatment as the geometry above:
+      // without it a cached light would keep pointing at this dead scene,
+      // and the next viewport's `!light.parent` guard would refuse to add
+      // it — the very "lights stay off after closing the split view" bug.
+      // In outputMode the entries are this pane's own disposable clones;
+      // detach those too and free their shadow render targets.
+      for (const [, light] of activeLights) {
+        if (light.parent === scene) {
+          scene.remove(light);
+        }
+        const target = (light as THREE.DirectionalLight | THREE.SpotLight).target;
+        if (target && target.parent === scene) {
+          scene.remove(target);
+        }
+        if (outputMode) {
+          light.dispose();
+        }
+      }
+      for (const helper of activeLightHelpers.values()) {
+        if (helper.parent) {
+          helper.parent.remove(helper);
+        }
+      }
+      activeLights.clear();
+      activeLightHelpers.clear();
       postChain.dispose();
       viewportBackground.dispose();
       motionBlurEffect.dispose();
@@ -1754,6 +1872,35 @@ export function Viewport({
               </button>
             ))}
           </div>
+          {isAxisView && (
+            <button
+              type="button"
+              className={`viewport-hud-button ${isViewLocked ? "viewport-hud-button-active" : ""}`}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: isViewLocked ? "#38bdf8" : "#cbd5e1",
+                backgroundColor: isViewLocked ? "rgba(56, 189, 248, 0.15)" : undefined,
+                borderColor: isViewLocked ? "#38bdf8" : undefined,
+              }}
+              onClick={toggleViewLock}
+              title={
+                isViewLocked
+                  ? "Unlock view — orbit re-enabled"
+                  : "Lock view — disable orbit (work serenely in this fixed view)"
+              }
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="4" y="11" width="16" height="10" rx="2" />
+                {isViewLocked ? (
+                  <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                ) : (
+                  <path d="M8 11V7a4 4 0 0 1 7.9-3.6" />
+                )}
+              </svg>
+            </button>
+          )}
           <button
             type="button"
             className="viewport-hud-button"

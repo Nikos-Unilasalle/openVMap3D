@@ -39,6 +39,8 @@ import { GraphEditor } from "./windows/GraphEditor";
 import { OutputWindow } from "./windows/OutputWindow";
 import { parseVector3, ParamPanel } from "./windows/ParamPanel";
 import { TimelineBar } from "./windows/TimelineBar";
+import { TimelineDrawer } from "./windows/TimelineDrawer";
+import { KeyframeClipboardItem } from "./windows/timelineUtils";
 import { TopBar } from "./windows/TopBar";
 
 function node(id: string, type: string, position: { x: number; y: number }, params: Record<string, unknown> = {}): NodeInstance {
@@ -170,6 +172,9 @@ function MainEditor() {
   );
   const [activeCanvas, setActiveCanvas] = useState(0);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+  const [isTimelineDrawerOpen, setIsTimelineDrawerOpen] = useState(false);
+  const [timelineDrawerHeight, setTimelineDrawerHeight] = useState(280);
   const [splitPercent, setSplitPercent] = useState(50);
   const [currentFilename, setCurrentFilename] = useState("project_v1.ovm");
   const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
@@ -211,6 +216,17 @@ function MainEditor() {
       return index;
     });
     setSelectedNodeId(null);
+    setSelectedNodeIds([]);
+  }, []);
+
+  const handleSelectNode = useCallback((id: string | null) => {
+    setSelectedNodeId(id);
+    setSelectedNodeIds(id ? [id] : []);
+  }, []);
+
+  const handleSelectNodes = useCallback((ids: string[]) => {
+    setSelectedNodeIds(ids);
+    setSelectedNodeId(ids[0] ?? null);
   }, []);
 
   const renderNodeInstance = graph.nodes.find((n) => n.type === "render");
@@ -381,6 +397,9 @@ function MainEditor() {
         if (keyframesEnabled) {
           setIsPlaying((prev) => !prev);
         }
+      } else if (!isInput && (e.key === "t" || e.key === "T") && !isCmdOrCtrl) {
+        e.preventDefault();
+        setIsTimelineDrawerOpen((prev) => !prev);
       }
     }
     window.addEventListener("keydown", handleKeyDown);
@@ -949,6 +968,195 @@ function MainEditor() {
     [selectedNodeId, setGraphWithHistory],
   );
 
+  const onBatchMoveKeyframes = useCallback(
+    (moves: { nodeId: string; paramKey: string; oldFrame: number; newFrame: number }[]) => {
+      if (moves.length === 0) return;
+      setGraphWithHistory((prevGraph) => {
+        const currentKeyframes = prevGraph.keyframes || {};
+        const nextStore = { ...currentKeyframes };
+
+        const byNodeParam: Record<string, Record<string, { oldFrame: number; newFrame: number }[]>> = {};
+        for (const m of moves) {
+          if (!byNodeParam[m.nodeId]) byNodeParam[m.nodeId] = {};
+          if (!byNodeParam[m.nodeId][m.paramKey]) byNodeParam[m.nodeId][m.paramKey] = [];
+          byNodeParam[m.nodeId][m.paramKey].push(m);
+        }
+
+        let modified = false;
+        for (const [nodeId, paramsMap] of Object.entries(byNodeParam)) {
+          const nodeKeys = nextStore[nodeId] ? { ...nextStore[nodeId] } : {};
+          for (const [paramKey, moveList] of Object.entries(paramsMap)) {
+            const list = nodeKeys[paramKey] || [];
+            const oldFrames = new Set(moveList.map((m) => m.oldFrame));
+            const moveMap = new Map(moveList.map((m) => [m.oldFrame, m.newFrame]));
+
+            const movingKfs: Keyframe[] = [];
+            const remainingKfs: Keyframe[] = [];
+
+            for (const kf of list) {
+              if (oldFrames.has(kf.frame)) {
+                const newFrame = moveMap.get(kf.frame)!;
+                movingKfs.push({ ...kf, frame: newFrame });
+                modified = true;
+              } else {
+                remainingKfs.push(kf);
+              }
+            }
+
+            const newFrames = new Set(movingKfs.map((k) => k.frame));
+            const cleanRemaining = remainingKfs.filter((k) => !newFrames.has(k.frame));
+            const combined = [...cleanRemaining, ...movingKfs].sort((a, b) => a.frame - b.frame);
+            nodeKeys[paramKey] = combined;
+          }
+          nextStore[nodeId] = nodeKeys;
+        }
+
+        if (!modified) return prevGraph;
+        return { ...prevGraph, keyframes: nextStore };
+      }, `keyframes:batch_move:${moves.length}`);
+    },
+    [setGraphWithHistory],
+  );
+
+  const onBatchDeleteKeyframes = useCallback(
+    (targets: { nodeId: string; paramKey: string; frame: number }[]) => {
+      if (targets.length === 0) return;
+      setGraphWithHistory((prevGraph) => {
+        const currentKeyframes = prevGraph.keyframes || {};
+        const nextStore = { ...currentKeyframes };
+
+        const byNodeParam: Record<string, Record<string, Set<number>>> = {};
+        for (const t of targets) {
+          if (!byNodeParam[t.nodeId]) byNodeParam[t.nodeId] = {};
+          if (!byNodeParam[t.nodeId][t.paramKey]) byNodeParam[t.nodeId][t.paramKey] = new Set();
+          byNodeParam[t.nodeId][t.paramKey].add(t.frame);
+        }
+
+        for (const [nodeId, paramsMap] of Object.entries(byNodeParam)) {
+          if (!nextStore[nodeId]) continue;
+          const nodeKeys = { ...nextStore[nodeId] };
+          for (const [paramKey, framesSet] of Object.entries(paramsMap)) {
+            const list = nodeKeys[paramKey] || [];
+            const filtered = list.filter((k) => !framesSet.has(k.frame));
+            if (filtered.length > 0) {
+              nodeKeys[paramKey] = filtered;
+            } else {
+              delete nodeKeys[paramKey];
+            }
+          }
+          if (Object.keys(nodeKeys).length > 0) {
+            nextStore[nodeId] = nodeKeys;
+          } else {
+            delete nextStore[nodeId];
+          }
+        }
+
+        return { ...prevGraph, keyframes: nextStore };
+      }, `keyframes:batch_delete:${targets.length}`);
+    },
+    [setGraphWithHistory],
+  );
+
+  const onBatchDuplicateKeyframes = useCallback(
+    (duplicates: { nodeId: string; paramKey: string; sourceFrame: number; targetFrame: number }[]) => {
+      if (duplicates.length === 0) return;
+      setGraphWithHistory((prevGraph) => {
+        const currentKeyframes = prevGraph.keyframes || {};
+        const nextStore = { ...currentKeyframes };
+
+        for (const { nodeId, paramKey, sourceFrame, targetFrame } of duplicates) {
+          const nodeKeys = nextStore[nodeId] ? { ...nextStore[nodeId] } : {};
+          const list = nodeKeys[paramKey] ? [...nodeKeys[paramKey]] : [];
+          const sourceKf = list.find((k) => k.frame === sourceFrame);
+          if (!sourceKf) continue;
+
+          const newKf: Keyframe = {
+            ...sourceKf,
+            frame: targetFrame,
+            value: JSON.parse(JSON.stringify(sourceKf.value)),
+          };
+          const filtered = list.filter((k) => k.frame !== targetFrame);
+          nodeKeys[paramKey] = [...filtered, newKf].sort((a, b) => a.frame - b.frame);
+          nextStore[nodeId] = nodeKeys;
+        }
+
+        return { ...prevGraph, keyframes: nextStore };
+      }, `keyframes:batch_duplicate:${duplicates.length}`);
+    },
+    [setGraphWithHistory],
+  );
+
+  const onBatchUpdateEasing = useCallback(
+    (targets: { nodeId: string; paramKey: string; frame: number }[], easeIn: EasingType, easeOut: EasingType) => {
+      if (targets.length === 0) return;
+      setGraphWithHistory((prevGraph) => {
+        const currentKeyframes = prevGraph.keyframes || {};
+        const nextStore = { ...currentKeyframes };
+
+        const targetMap = new Map<string, boolean>();
+        for (const t of targets) {
+          targetMap.set(`${t.nodeId}::${t.paramKey}::${t.frame}`, true);
+        }
+
+        for (const nodeId of Object.keys(nextStore)) {
+          const nodeKeys = { ...nextStore[nodeId] };
+          let nodeModified = false;
+          for (const [paramKey, list] of Object.entries(nodeKeys)) {
+            let paramModified = false;
+            const nextList = list.map((kf) => {
+              if (targetMap.has(`${nodeId}::${paramKey}::${kf.frame}`)) {
+                paramModified = true;
+                return { ...kf, easeIn, easeOut };
+              }
+              return kf;
+            });
+            if (paramModified) {
+              nodeKeys[paramKey] = nextList;
+              nodeModified = true;
+            }
+          }
+          if (nodeModified) {
+            nextStore[nodeId] = nodeKeys;
+          }
+        }
+
+        return { ...prevGraph, keyframes: nextStore };
+      }, `keyframes:batch_easing:${targets.length}`);
+    },
+    [setGraphWithHistory],
+  );
+
+  const onPasteKeyframes = useCallback(
+    (items: KeyframeClipboardItem[], targetBaseFrame: number) => {
+      if (items.length === 0) return;
+      setGraphWithHistory((prevGraph) => {
+        const currentKeyframes = prevGraph.keyframes || {};
+        const nextStore = { ...currentKeyframes };
+
+        for (const item of items) {
+          const nodeId = item.nodeId;
+          if (!nodeId) continue;
+          const targetFrame = Math.max(0, targetBaseFrame + item.relativeFrame);
+          const nodeKeys = nextStore[nodeId] ? { ...nextStore[nodeId] } : {};
+          const list = nodeKeys[item.paramKey] ? [...nodeKeys[item.paramKey]] : [];
+
+          const newKf: Keyframe = {
+            frame: targetFrame,
+            value: JSON.parse(JSON.stringify(item.value)),
+            easeIn: item.easeIn,
+            easeOut: item.easeOut,
+          };
+          const filtered = list.filter((k) => k.frame !== targetFrame);
+          nodeKeys[item.paramKey] = [...filtered, newKf].sort((a, b) => a.frame - b.frame);
+          nextStore[nodeId] = nodeKeys;
+        }
+
+        return { ...prevGraph, keyframes: nextStore };
+      }, `keyframes:paste:${items.length}`);
+    },
+    [setGraphWithHistory],
+  );
+
   const onToggleMarker = useCallback((frame: number) => {
     setGraphWithHistory((prevGraph) => {
       const currentMarkers = prevGraph.markers || [];
@@ -988,6 +1196,8 @@ function MainEditor() {
         onExportVideo={keyframesEnabled ? handleExportVideo : undefined}
         isExporting={isExporting}
         exportProgress={exportProgress}
+        isTimelineOpen={isTimelineDrawerOpen}
+        onToggleTimeline={() => setIsTimelineDrawerOpen((prev) => !prev)}
       />
       {isExporting && (
         // Off-screen (not display:none, which some webviews suspend rAF
@@ -1011,7 +1221,7 @@ function MainEditor() {
           renderNodeId={findRenderNodeId(graph) ?? ""}
           epochMs={epochMs}
           selectedNodeId={selectedNodeId}
-          onSelectNode={setSelectedNodeId}
+          onSelectNode={handleSelectNode}
           onTransformChange={onTransformChange}
           onTransformStart={onTransformStart}
           onCameraChange={onPreviewCameraChange}
@@ -1053,20 +1263,50 @@ function MainEditor() {
           />
         )}
       </div>
-      <TimelineBar
+      {!isTimelineDrawerOpen && (
+        <TimelineBar
+          currentFrame={currentFrame}
+          totalFrames={totalFrames}
+          isPlaying={isPlaying}
+          keyframesEnabled={keyframesEnabled}
+          selectedKeyframes={selectedKeyframesRecord}
+          markers={graph.markers ?? []}
+          onToggleMarker={onToggleMarker}
+          onMoveMarker={onMoveMarker}
+          onMoveKeyframe={onMoveKeyframe}
+          onUpdateKeyframeEasing={onUpdateKeyframeEasing}
+          onDeleteKeyframe={onDeleteKeyframe}
+          onFrameChange={setCurrentFrame}
+          onTogglePlay={() => setIsPlaying((p) => !p)}
+          onSplitHandleMouseDown={onSplitHandleMouseDown}
+          isDrawerOpen={isTimelineDrawerOpen}
+          onToggleDrawer={() => setIsTimelineDrawerOpen((prev) => !prev)}
+        />
+      )}
+      <TimelineDrawer
+        isOpen={isTimelineDrawerOpen}
+        onClose={() => setIsTimelineDrawerOpen(false)}
         currentFrame={currentFrame}
         totalFrames={totalFrames}
         isPlaying={isPlaying}
         keyframesEnabled={keyframesEnabled}
-        selectedKeyframes={selectedKeyframesRecord}
+        graph={graph}
+        registry={DEFAULT_REGISTRY}
+        selectedNodeIds={selectedNodeIds}
+        onSelectNode={handleSelectNode}
+        onFrameChange={setCurrentFrame}
+        onTogglePlay={() => setIsPlaying((p) => !p)}
+        onToggleKeyframe={onToggleKeyframe}
+        onBatchMoveKeyframes={onBatchMoveKeyframes}
+        onBatchDeleteKeyframes={onBatchDeleteKeyframes}
+        onBatchDuplicateKeyframes={onBatchDuplicateKeyframes}
+        onBatchUpdateEasing={onBatchUpdateEasing}
+        onPasteKeyframes={onPasteKeyframes}
         markers={graph.markers ?? []}
         onToggleMarker={onToggleMarker}
         onMoveMarker={onMoveMarker}
-        onMoveKeyframe={onMoveKeyframe}
-        onUpdateKeyframeEasing={onUpdateKeyframeEasing}
-        onDeleteKeyframe={onDeleteKeyframe}
-        onFrameChange={setCurrentFrame}
-        onTogglePlay={() => setIsPlaying((p) => !p)}
+        drawerHeight={timelineDrawerHeight}
+        onDrawerHeightChange={setTimelineDrawerHeight}
         onSplitHandleMouseDown={onSplitHandleMouseDown}
       />
       <div style={{ flex: 1, minHeight: 0 }}>
@@ -1075,8 +1315,10 @@ function MainEditor() {
           graph={graph}
           registry={DEFAULT_REGISTRY}
           onGraphChange={onGraphChange}
-          onSelectNode={setSelectedNodeId}
+          onSelectNode={handleSelectNode}
           selectedNodeId={selectedNodeId}
+          onSelectNodes={handleSelectNodes}
+          selectedNodeIds={selectedNodeIds}
           canvasCount={CANVAS_COUNT}
           activeCanvas={activeCanvas}
           emptyCanvases={canvases.map(isCanvasEmpty)}

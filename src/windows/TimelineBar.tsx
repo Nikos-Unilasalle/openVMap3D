@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { EasingType } from "../shared/graph/types";
+import { EasingPopover } from "./EasingPopover";
 import "./timeline-bar.css";
 
 export interface KeyframeDataAtFrame {
@@ -23,73 +24,9 @@ interface TimelineBarProps {
   onFrameChange: (frame: number) => void;
   onTogglePlay: () => void;
   onSplitHandleMouseDown: (e: React.MouseEvent) => void;
+  isDrawerOpen?: boolean;
+  onToggleDrawer?: () => void;
 }
-
-const EASING_OPTIONS: { type: EasingType; label: string; icon: React.ReactNode }[] = [
-  {
-    type: "smooth",
-    label: "Smooth (Bézier)",
-    icon: (
-      <svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <path d="M 2 12 C 7 12, 11 2, 16 2" />
-      </svg>
-    ),
-  },
-  {
-    type: "linear",
-    label: "Linear (Constant)",
-    icon: (
-      <svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <line x1="2" y1="12" x2="16" y2="2" />
-      </svg>
-    ),
-  },
-  {
-    type: "hold",
-    label: "Hold (Step)",
-    icon: (
-      <svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <path d="M 2 12 L 14 12 L 14 2 L 16 2" />
-      </svg>
-    ),
-  },
-  {
-    type: "expo",
-    label: "Expo (Exponential)",
-    icon: (
-      <svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <path d="M 2 12 C 10 12, 14 8, 16 2" />
-      </svg>
-    ),
-  },
-  {
-    type: "back",
-    label: "Back (Overshoot)",
-    icon: (
-      <svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <path d="M 2 12 C 6 15, 11 -2, 16 2" />
-      </svg>
-    ),
-  },
-  {
-    type: "bounce",
-    label: "Bounce",
-    icon: (
-      <svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <path d="M 2 12 C 4 2, 8 2, 9 12 C 11 6, 13 6, 14 12 L 16 12" />
-      </svg>
-    ),
-  },
-  {
-    type: "elastic",
-    label: "Elastic (Spring)",
-    icon: (
-      <svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <path d="M 2 12 C 5 1, 7 15, 10 5 C 12 14, 14 11, 16 2" />
-      </svg>
-    ),
-  },
-];
 
 function renderKeyframeGlyph(easeIn: EasingType = "smooth", easeOut: EasingType = "smooth") {
   if (easeOut === "hold") {
@@ -156,6 +93,8 @@ export function TimelineBar({
   onFrameChange,
   onTogglePlay,
   onSplitHandleMouseDown,
+  isDrawerOpen = false,
+  onToggleDrawer,
 }: TimelineBarProps) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [hoverFrame, setHoverFrame] = useState<number | null>(null);
@@ -508,6 +447,23 @@ export function TimelineBar({
           )}
         </div>
 
+        {onToggleDrawer && (
+          <button
+            type="button"
+            className={`timeline-drawer-toggle-btn ${isDrawerOpen ? "active" : ""}`}
+            onClick={onToggleDrawer}
+            title={isDrawerOpen ? "Collapse timeline (T)" : "Open advanced timeline (T)"}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              {isDrawerOpen ? (
+                <polyline points="6 9 12 15 18 9" />
+              ) : (
+                <polyline points="18 15 12 9 6 15" />
+              )}
+            </svg>
+          </button>
+        )}
+
         <div className="timeline-total-badge" title="Total frame count">
           {keyframesEnabled ? `${totalFrames} f` : "∞"}
         </div>
@@ -515,88 +471,21 @@ export function TimelineBar({
 
       {/* Right-click Easing Popover Modal */}
       {easingPopover && (
-        <div className="easing-popover-backdrop" onClick={() => setEasingPopover(null)}>
-          <div
-            className="easing-popover-modal"
-            style={{ left: `${easingPopover.x}px`, top: `${easingPopover.y}px` }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="easing-popover-header">
-              <div className="easing-popover-title">
-                <span className="kf-badge">Keyframe {easingPopover.frame}</span>
-                <span className="kf-params">{easingPopover.paramKeys.join(", ")}</span>
-              </div>
-              <button
-                type="button"
-                className="easing-popover-close"
-                onClick={() => setEasingPopover(null)}
-                title="Close (Esc)"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="easing-popover-link-toggle">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={easingPopover.isLinked}
-                  onChange={(e) =>
-                    setEasingPopover((prev) => (prev ? { ...prev, isLinked: e.target.checked } : null))
-                  }
-                />
-                <span>🔗 Link In & Out (Symmetrical)</span>
-              </label>
-            </div>
-
-            <div className="easing-popover-section">
-              <div className="easing-section-label">IN (Arrival at keyframe)</div>
-              <div className="easing-buttons-grid">
-                {EASING_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.type}
-                    type="button"
-                    className={`easing-btn ${easingPopover.easeIn === opt.type ? "active" : ""}`}
-                    onClick={() => handleSelectEasing("in", opt.type)}
-                    title={opt.label}
-                  >
-                    <span className="easing-icon">{opt.icon}</span>
-                    <span className="easing-text">{opt.type}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="easing-popover-section">
-              <div className="easing-section-label">OUT (Departure from keyframe)</div>
-              <div className="easing-buttons-grid">
-                {EASING_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.type}
-                    type="button"
-                    className={`easing-btn ${easingPopover.easeOut === opt.type ? "active" : ""}`}
-                    onClick={() => handleSelectEasing("out", opt.type)}
-                    title={opt.label}
-                  >
-                    <span className="easing-icon">{opt.icon}</span>
-                    <span className="easing-text">{opt.type}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="easing-popover-footer">
-              <button
-                type="button"
-                className="easing-delete-btn"
-                onClick={handleDeleteCurrentKeyframe}
-                title="Delete this keyframe"
-              >
-                🗑 Delete Keyframe
-              </button>
-            </div>
-          </div>
-        </div>
+        <EasingPopover
+          x={easingPopover.x}
+          y={easingPopover.y}
+          badge={`Keyframe ${easingPopover.frame}`}
+          subtitle={easingPopover.paramKeys.join(", ")}
+          easeIn={easingPopover.easeIn}
+          easeOut={easingPopover.easeOut}
+          isLinked={easingPopover.isLinked}
+          onToggleLinked={(linked) =>
+            setEasingPopover((prev) => (prev ? { ...prev, isLinked: linked } : null))
+          }
+          onSelectEasing={handleSelectEasing}
+          onDelete={handleDeleteCurrentKeyframe}
+          onClose={() => setEasingPopover(null)}
+        />
       )}
     </div>
   );

@@ -191,6 +191,8 @@ interface GraphEditorProps {
   onGraphChange?: (graph: Graph) => void;
   onSelectNode: (nodeId: string | null) => void;
   selectedNodeId?: string | null;
+  onSelectNodes?: (nodeIds: string[]) => void;
+  selectedNodeIds?: string[];
   /** How many canvases the document holds — the selector draws one tab each. Omit to hide the selector entirely. */
   canvasCount?: number;
   /** Index of the canvas this editor is showing. */
@@ -206,6 +208,8 @@ function GraphEditorContent({
   onGraphChange,
   onSelectNode,
   selectedNodeId,
+  onSelectNodes,
+  selectedNodeIds: _selectedNodeIds,
   canvasCount,
   activeCanvas = 0,
   emptyCanvases,
@@ -607,13 +611,17 @@ function GraphEditorContent({
 
   const onSelectionChange = useCallback(
     ({ nodes: selectedNodes }: { nodes: Node<GraphNodeData>[] }) => {
+      const ids = selectedNodes.map((n) => n.id);
+      onSelectNodes?.(ids);
       if (selectedNodes.length === 1) {
         onSelectNode(selectedNodes[0].id);
       } else if (selectedNodes.length === 0) {
         onSelectNode(null);
+      } else {
+        onSelectNode(selectedNodes[0].id);
       }
     },
-    [onSelectNode],
+    [onSelectNode, onSelectNodes],
   );
 
   const [spawnCursorPos, setSpawnCursorPos] = useState<{ x: number; y: number }>({ x: 300, y: 180 });
@@ -622,19 +630,21 @@ function GraphEditorContent({
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node<GraphNodeData>) => {
       onSelectNode(node.id);
+      onSelectNodes?.([node.id]);
     },
-    [onSelectNode],
+    [onSelectNode, onSelectNodes],
   );
   const onPaneClick = useCallback(
     (event: React.MouseEvent) => {
       onSelectNode(null);
+      onSelectNodes?.([]);
       if (event && typeof event.clientX === "number") {
         const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
         spawnCursorPosRef.current = flowPos;
         setSpawnCursorPos(flowPos);
       }
     },
-    [onSelectNode, screenToFlowPosition],
+    [onSelectNode, onSelectNodes, screenToFlowPosition],
   );
 
   const addNode = useCallback(

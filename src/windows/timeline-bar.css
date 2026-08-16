@@ -170,12 +170,12 @@
 }
 
 .timeline-keyframe-diamond.selected .kf-glyph-svg {
-  filter: drop-shadow(0 0 5px rgba(118, 197, 96, 0.95));
+  filter: none;
 }
 
 .kf-glyph-svg {
   display: block;
-  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6));
+  filter: none;
 }
 
 /* 1px narrow white playhead cursor visually, with 24px wide invisible grab hit box */
@@ -222,6 +222,38 @@
   z-index: 35;
 }
 
+.timeline-drawer-toggle-btn {
+  position: absolute;
+  right: 48px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #38bdf8;
+  border-radius: 4px;
+  width: 22px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 30;
+  transition: all 0.15s ease;
+}
+
+.timeline-drawer-toggle-btn:hover {
+  background: #334155;
+  color: #ffffff;
+  border-color: #38bdf8;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.4);
+}
+
+.timeline-drawer-toggle-btn.active {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #38bdf8;
+}
+
 /* Total Frame Count Badge directly touching the right edge, gray text */
 .timeline-total-badge {
   position: absolute;
@@ -239,6 +271,8 @@
   z-index: 30;
   line-height: 1;
 }
+
+
 
 /* ==========================================================================
    Easing Popover Modal (Right Click on Keyframe)

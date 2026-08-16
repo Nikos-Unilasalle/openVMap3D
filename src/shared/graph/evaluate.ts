@@ -357,6 +357,19 @@ export function evaluateGraph(graph: Graph, registry: NodeRegistry, ctx: EvalCon
     }
 
     const params = { ...def.defaultParams, ...instance.params };
+
+    // Apply keyframe interpolation to params so that param-based properties
+    // (location, rotation, scale, color, etc.) reflect their animated values
+    // during evaluation — not just in the param panel.  Without this, the
+    // param panel shows the interpolated value but the viewport reads the
+    // static stored value, so the 3D scene never moves.
+    const kfStore = ctx.keyframes || graph.keyframes;
+    const frame = ctx.currentFrame ?? -1;
+    if (kfStore && frame >= 0 && kfStore[nodeId]) {
+      for (const paramKey of Object.keys(params)) {
+        params[paramKey] = evaluateKeyframeValue(kfStore, nodeId, paramKey, frame, params[paramKey]);
+      }
+    }
     const nodeConnections = graph.connections.filter((c) => c.toNode === nodeId);
     const socketDefs = def.dynamicInputs ? def.dynamicInputs(nodeConnections) : def.inputs;
     const inputs: Record<string, unknown> = {};

@@ -26,6 +26,8 @@ export interface TopBarProps {
   isExporting?: boolean;
   /** 0-1. */
   exportProgress?: number;
+  isTimelineOpen?: boolean;
+  onToggleTimeline?: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -39,6 +41,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   onExportVideo,
   isExporting = false,
   exportProgress = 0,
+  isTimelineOpen = false,
+  onToggleTimeline,
 }) => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastError, setToastError] = useState(false);
@@ -265,6 +269,21 @@ export const TopBar: React.FC<TopBarProps> = ({
           </div>
         )}
 
+        {/* TIMELINE — advanced keyframe dope sheet drawer */}
+        {onToggleTimeline && (
+          <button
+            className={`top-bar-button${isTimelineOpen ? " top-bar-button-output-active" : ""}`}
+            onClick={onToggleTimeline}
+            title={isTimelineOpen ? "Close Timeline (T)" : "Open advanced Timeline (T)"}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="2" y="4" width="20" height="16" rx="2" />
+              <path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M8 16h8" />
+            </svg>
+            Timeline
+          </button>
+        )}
+
         {/* SHORTCUTS — keyboard shortcuts reference popup */}
         <button
           className="top-bar-button top-bar-button-shortcuts"
@@ -298,7 +317,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             className="top-bar-button top-bar-button-export"
             onClick={onExportVideo}
             disabled={isExporting}
-            title="Exporter la timeline en vidéo (MP4 si le webview le supporte, sinon WebM)"
+            title="Export timeline to video (MP4 if the webview supports it, otherwise WebM)"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polygon points="23 7 16 12 23 17 23 7" />

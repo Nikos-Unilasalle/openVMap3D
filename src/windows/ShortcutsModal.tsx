@@ -75,9 +75,15 @@ const SHORTCUT_SECTIONS: ShortcutSection[] = [
   {
     category: "Timeline & Keyframe Animation",
     items: [
+      { keys: ["T"], description: "Toggle Advanced Timeline Drawer (Open / Close)" },
       { keys: ["Space"], description: "Play / Pause timeline playback" },
-      { keys: ["M"], description: "Add or remove Marker on active frame / hovered marker" },
-      { keys: ["K"], description: "Add keyframe for selected parameter (in ParamPanel)" },
+      { keys: ["←", "→"], description: "Previous / Next frame (Shift + Arrow: 10 frames)" },
+      { keys: ["J", "K"], description: "Jump to Previous / Next keyframe" },
+      { keys: ["M"], description: "Add or remove Marker on active frame" },
+      { keys: ["⌘", "D"], description: "Duplicate selected keyframes" },
+      { keys: ["⌘", "C"], description: "Copy selected keyframes" },
+      { keys: ["⌘", "V"], description: "Paste keyframes at playhead" },
+      { keys: ["Delete"], description: "Delete selected keyframes" },
       { keys: ["Drag Playhead"], description: "Scrub timeline animation frames" },
     ],
   },

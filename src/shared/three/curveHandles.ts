@@ -13,8 +13,7 @@ import * as THREE from "three";
  * along, because they are children of the same transform.
  */
 
-const HANDLE_RADIUS = 0.08;
-const HANDLE_SEGMENTS = 12;
+const HANDLE_SIZE_PX = 4;
 const HANDLE_COLOR = 0x84cc16;
 const HANDLE_SELECTED_COLOR = 0x38bdf8;
 /** Screen-space pick radius. A world-space one would be unclickable zoomed out and grab half the scene zoomed in. */
@@ -30,7 +29,9 @@ export interface CurvePointHandles {
     spaceMatrix: THREE.Matrix4,
     selectedIndices: Set<number> | number[] | number | null,
     frozenIndices: Set<number> | number[] | number | null,
-    showLine?: boolean
+    showLine?: boolean,
+    camera?: THREE.PerspectiveCamera | THREE.OrthographicCamera,
+    viewportHeightPx?: number
   ): void;
   /** Remove and dispose every handle. */
   clear(): void;
@@ -87,11 +88,14 @@ export function createCurvePointHandles(): CurvePointHandles {
   function build(count: number) {
     clear();
     for (let idx = 0; idx < count; idx++) {
+      // A flat 1x1 quad, scaled to a constant HANDLE_SIZE_PX on screen and
+      // billboarded toward the camera each frame — a 4px marker that never
+      // turns into an edge-on sliver when the curve is rotated.
       const mesh = new THREE.Mesh(
-        new THREE.SphereGeometry(HANDLE_RADIUS, HANDLE_SEGMENTS, HANDLE_SEGMENTS),
+        new THREE.PlaneGeometry(1, 1),
         // depthTest off so a handle buried inside the tube it belongs to is
         // still visible and clickable.
-        new THREE.MeshBasicMaterial({ color: HANDLE_COLOR, depthTest: false }),
+        new THREE.MeshBasicMaterial({ color: HANDLE_COLOR, depthTest: false, side: THREE.DoubleSide }),
       );
       mesh.renderOrder = HANDLE_RENDER_ORDER;
       mesh.userData.isCurvePointHandle = true;
@@ -118,7 +122,7 @@ export function createCurvePointHandles(): CurvePointHandles {
   return {
     group,
 
-    sync(points, spaceMatrix, selectedIndices, frozenIndices, showLine = true) {
+    sync(points, spaceMatrix, selectedIndices, frozenIndices, showLine = true, camera, viewportHeightPx = 0) {
       if (points.length !== handles.length) build(points.length);
 
       const selectedSet = toSet(selectedIndices);
@@ -134,13 +138,41 @@ export function createCurvePointHandles(): CurvePointHandles {
         1 / (Math.abs(spaceScale.z) > EPSILON ? spaceScale.z : 1),
       );
 
+      // World size of one HANDLE_SIZE_PX at the handle's depth, so every
+      // quad renders at exactly 4px whatever its distance from the camera.
+      const handleWorld = new THREE.Vector3();
+      const halfFov = camera instanceof THREE.PerspectiveCamera ? THREE.MathUtils.degToRad(camera.fov) / 2 : 0;
+      const orthoFrustumHeight =
+        camera instanceof THREE.OrthographicCamera
+          ? (camera.top - camera.bottom) / Math.max(camera.zoom, EPSILON)
+          : 0;
+
       points.forEach((point, idx) => {
         const handle = handles[idx];
         if (!handle) return;
         // The handle being dragged owns its own position for the duration of
         // the drag — the graph is one frame behind it.
         if (!frozenSet.has(idx)) handle.position.copy(point);
-        handle.scale.copy(counterScale);
+        if (camera) {
+          handle.getWorldPosition(handleWorld);
+          let sizeWorld = 1;
+          if (camera instanceof THREE.PerspectiveCamera) {
+            const distance = Math.max(handleWorld.distanceTo(camera.position), EPSILON);
+            sizeWorld =
+              viewportHeightPx > 0
+                ? (2 * Math.tan(halfFov) * distance * HANDLE_SIZE_PX) / viewportHeightPx
+                : HANDLE_SIZE_PX / 50;
+          } else if (camera instanceof THREE.OrthographicCamera) {
+            sizeWorld =
+              viewportHeightPx > 0
+                ? (orthoFrustumHeight * HANDLE_SIZE_PX) / viewportHeightPx
+                : HANDLE_SIZE_PX / 50;
+          }
+          handle.lookAt(camera.position);
+          handle.scale.set(sizeWorld * counterScale.x, sizeWorld * counterScale.y, counterScale.z);
+        } else {
+          handle.scale.copy(counterScale);
+        }
         (handle.material as THREE.MeshBasicMaterial).color.setHex(
           selectedSet.has(idx) ? HANDLE_SELECTED_COLOR : HANDLE_COLOR,
         );

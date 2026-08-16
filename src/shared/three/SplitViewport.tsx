@@ -122,12 +122,10 @@ export function SplitViewport({
       <div
         onMouseDown={handleMouseDown}
         style={{
-          width: "6px",
+          width: "2px",
           height: "100%",
           cursor: "col-resize",
-          backgroundColor: "#1e293b",
-          borderLeft: "1px solid #334155",
-          borderRight: "1px solid #334155",
+          backgroundColor: "#000000",
           zIndex: 20,
           flexShrink: 0,
         }}
