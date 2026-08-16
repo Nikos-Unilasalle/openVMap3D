@@ -83,12 +83,28 @@ export type GizmoTarget =
 
 const NATIVE_TRANSFORM_TYPES = new Set<string>(GIZMO_SELECTABLE_TYPES);
 
-export function resolveGizmoTarget(graph: Graph, objectNodeId: string): GizmoTarget | null {
+export function resolveGizmoTarget(graph: Graph, objectNodeId: string, depth = 0): GizmoTarget | null {
   const connection = graph.connections.find((c) => c.toNode === objectNodeId && c.toSocket === "matrix");
   const source = connection ? graph.nodes.find((n) => n.id === connection.fromNode) : undefined;
 
   if (source?.type === TRANSFORM_NODE.type) {
-    return { kind: "absolute", transformNodeId: source.id };
+    // A plain Transform node is only safe to drag directly when none of its
+    // own channels are wired — dragging it there writes straight into its
+    // location/rotation/scale params, which is exactly what its evaluate
+    // reads back (see transform.ts). But a wired channel (e.g. Rotation fed
+    // by a Compose Vector with an axis disabled via the -1 sentinel) means
+    // that channel's param is ignored at evaluate time — a drag can still
+    // move the object on screen, so it silently looked "broken", not
+    // read-only. Falling through to the object's own native pose below
+    // (composeNativeMatrix's base, with this Transform node's resolved
+    // output composed on top as the delta — same as any other non-Transform
+    // matrix source) keeps every unwired channel, and every disabled axis
+    // that folds to identity, directly draggable again.
+    const channelWired = (socket: string) =>
+      graph.connections.some((c) => c.toNode === source.id && c.toSocket === socket);
+    if (!channelWired("location") && !channelWired("rotation") && !channelWired("scale")) {
+      return { kind: "absolute", transformNodeId: source.id };
+    }
   }
 
   if (source?.type === MATRIX_TRANSFORM_NODE.type) {
@@ -99,6 +115,25 @@ export function resolveGizmoTarget(graph: Graph, objectNodeId: string): GizmoTar
   const objectNode = graph.nodes.find((n) => n.id === objectNodeId);
   if (objectNode && NATIVE_TRANSFORM_TYPES.has(objectNode.type)) {
     return { kind: "native", objectNodeId, deltaSourceNodeId: connection?.fromNode ?? null };
+  }
+
+  // A pure geometry modifier (Subdivide, Array, ...) owns no location/
+  // rotation/scale of its own and passes the source mesh's pose through
+  // untouched — its output is drawn at exactly the source's matrix, never
+  // its own. Selecting one used to do nothing at all (not "native", nothing
+  // wired to `matrix` either), even though the object on screen is right
+  // there and looks selected. Deferring to whatever feeds its `geometry`
+  // input resolves to the node that actually owns the pose, same as if that
+  // upstream node had been selected directly — one hop further than the
+  // matrix-chain walk above goes, but bounded (`depth`) against a cyclic
+  // graph looping forever.
+  if (depth < 8) {
+    const geometryConnection = graph.connections.find(
+      (c) => c.toNode === objectNodeId && c.toSocket === "geometry",
+    );
+    if (geometryConnection) {
+      return resolveGizmoTarget(graph, geometryConnection.fromNode, depth + 1);
+    }
   }
 
   return null;

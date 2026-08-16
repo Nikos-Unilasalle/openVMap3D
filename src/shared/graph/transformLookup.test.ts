@@ -103,6 +103,40 @@ describe("resolveGizmoTarget", () => {
   });
 });
 
+describe("resolveGizmoTarget — a Transform node with a wired channel defers that object to its own native pose", () => {
+  it("stays absolute when the Transform node is fully unwired", () => {
+    const graph: Graph = {
+      nodes: [node("t1", "transform"), node("box1", "object/box")],
+      connections: [wire("t1", "matrix", "box1", "matrix")],
+    };
+    expect(resolveGizmoTarget(graph, "box1")).toEqual({ kind: "absolute", transformNodeId: "t1" });
+  });
+
+  it("falls to native (object's own pose, Transform node as delta) when rotation is wired", () => {
+    const graph: Graph = {
+      nodes: [node("vec1", "vector/compose"), node("t1", "transform"), node("box1", "object/box")],
+      connections: [wire("vec1", "out", "t1", "rotation"), wire("t1", "matrix", "box1", "matrix")],
+    };
+    expect(resolveGizmoTarget(graph, "box1")).toEqual({
+      kind: "native",
+      objectNodeId: "box1",
+      deltaSourceNodeId: "t1",
+    });
+  });
+
+  it("falls to native when only location or only scale is wired too", () => {
+    const graphLoc: Graph = {
+      nodes: [node("vec1", "vector/compose"), node("t1", "transform"), node("box1", "object/box")],
+      connections: [wire("vec1", "out", "t1", "location"), wire("t1", "matrix", "box1", "matrix")],
+    };
+    expect(resolveGizmoTarget(graphLoc, "box1")).toEqual({
+      kind: "native",
+      objectNodeId: "box1",
+      deltaSourceNodeId: "t1",
+    });
+  });
+});
+
 describe("GIZMO_SELECTABLE_TYPES", () => {
   it("lists the primitive object node types", () => {
     expect(GIZMO_SELECTABLE_TYPES).toEqual([
@@ -131,5 +165,68 @@ describe("GIZMO_SELECTABLE_TYPES", () => {
       "calibration/grid",
       "modifier/lattice",
     ]);
+  });
+});
+
+describe("resolveGizmoTarget — pure geometry modifiers defer to their source", () => {
+  it("a Subdivide node (no native pose, no matrix input) resolves to what feeds its geometry input", () => {
+    const graph: Graph = {
+      nodes: [node("box1", "object/box"), node("sub1", "modifier/subdivide")],
+      connections: [wire("box1", "geometry", "sub1", "geometry")],
+    };
+
+    const result = resolveGizmoTarget(graph, "sub1");
+
+    expect(result).toEqual({ kind: "native", objectNodeId: "box1", deltaSourceNodeId: null });
+  });
+
+  it("still prefers an explicit Transform wired into the modifier's own matrix, if one exists", () => {
+    const graph: Graph = {
+      nodes: [node("box1", "object/box"), node("sub1", "modifier/subdivide"), node("t1", "transform")],
+      connections: [
+        wire("box1", "geometry", "sub1", "geometry"),
+        wire("t1", "matrix", "sub1", "matrix"),
+      ],
+    };
+
+    const result = resolveGizmoTarget(graph, "sub1");
+
+    expect(result).toEqual({ kind: "absolute", transformNodeId: "t1" });
+  });
+
+  it("chains through more than one pass-through modifier", () => {
+    const graph: Graph = {
+      nodes: [node("box1", "object/box"), node("sub1", "modifier/subdivide"), node("sub2", "modifier/subdivide")],
+      connections: [
+        wire("box1", "geometry", "sub1", "geometry"),
+        wire("sub1", "geometry", "sub2", "geometry"),
+      ],
+    };
+
+    const result = resolveGizmoTarget(graph, "sub2");
+
+    expect(result).toEqual({ kind: "native", objectNodeId: "box1", deltaSourceNodeId: null });
+  });
+
+  it("gives up (null) rather than looping forever on a cyclic geometry chain", () => {
+    const graph: Graph = {
+      nodes: [node("sub1", "modifier/subdivide"), node("sub2", "modifier/subdivide")],
+      connections: [
+        wire("sub1", "geometry", "sub2", "geometry"),
+        wire("sub2", "geometry", "sub1", "geometry"),
+      ],
+    };
+
+    expect(() => resolveGizmoTarget(graph, "sub1")).not.toThrow();
+    expect(resolveGizmoTarget(graph, "sub1")).toBeNull();
+  });
+
+  it("a node with no geometry input wired and no native pose still resolves to nothing", () => {
+    const graph: Graph = {
+      nodes: [node("sub1", "modifier/subdivide")],
+      connections: [],
+    };
+
+    expect(resolveGizmoTarget(graph, "sub1")).toBeNull();
   });
 });
