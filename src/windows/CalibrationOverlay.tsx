@@ -70,7 +70,7 @@ export function CalibrationOverlay({ graph, cameraNodeId, storedPicks, mode, onC
     return (
       <div ref={containerRef} className="calibration-overlay">
         <div className="calibration-overlay-warning">
-          Mode Calibré : Branchez une node Room Corner sur Ref Points pour afficher la grille de calage.
+          Calibrated Mode: Connect a Room Corner node to Ref Points to display calibration handles.
         </div>
       </div>
     );

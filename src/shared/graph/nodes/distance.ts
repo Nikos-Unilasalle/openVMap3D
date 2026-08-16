@@ -190,7 +190,7 @@ function isSameOrNested(a: THREE.Object3D, b: THREE.Object3D): boolean {
 export const PROXIMITY_OBJECT_NODE: NodeDefinition = {
   type: "object/proximity",
   label: "Proximity Object",
-  category: "structure",
+  category: "math",
   inputs: [
     { id: "target", label: "Target (Object / Vector / Matrix)", type: "any" },
     { id: "candidates", label: "Candidates", type: "any" },

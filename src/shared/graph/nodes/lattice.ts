@@ -548,7 +548,7 @@ function asNumber(v: unknown, fallback: number): number {
 export const LATTICE_DEFORM_NODE: NodeDefinition = {
   type: "modifier/lattice",
   label: "Lattice Deform",
-  category: "structure",
+  category: "transform",
   inputs: [
     { id: "geometry", label: "Geometry", type: "geometry", owns: true },
     { id: "matrix", label: "Matrix", type: "matrix" },

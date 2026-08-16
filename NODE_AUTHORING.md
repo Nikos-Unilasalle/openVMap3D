@@ -90,11 +90,22 @@ on its param panel when selected. Use one of these exactly (from
 | `time`        | Time / Animation    |
 | `logic`       | Logic               |
 | `io`          | I/O                 |
+| `instance`    | Instance            |
+| `curve`       | Curve / Path        |
+| `object`      | Object              |
+| `lighting`    | Lighting & Shadows  |
+| `texture`     | Texture             |
+| `text`        | Text                |
+| `list`        | List                |
+| `compose`     | Compose             |
 | `physics`     | Physics             |
 | `particles`   | Particles           |
+| `postprocess` | Post-Process & FX   |
 | `post`        | Post-render 2D      |
 | `calibration` | Calibration         |
-| `converter`   | Converter            |
+| `converter`   | Converter           |
+| `sound`       | Sound / Audio       |
+| `utility`     | Utility             |
 
 Pick the one matching BIBLE.md's catalog section for your node — if BIBLE.md
 lists it under "Logic", use `category: "logic"`. Two exceptions:

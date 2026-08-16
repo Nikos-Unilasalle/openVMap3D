@@ -1,4 +1,4 @@
-import { EvalResult } from "./evaluate";
+import { evaluateKeyframeValue, EvalResult } from "./evaluate";
 import { Graph, NodeDefinition, NodeInstance } from "./types";
 
 /**
@@ -48,9 +48,25 @@ export function paramPanelValues(
   instance: NodeInstance,
   def: NodeDefinition,
   results: EvalResult | null,
+  currentFrame?: number,
 ): Record<string, unknown> {
   const evaluated = results?.get(instance.id) ?? null;
   const merged: Record<string, unknown> = { ...def.defaultParams, ...instance.params };
+
+  if (graph.keyframes && currentFrame !== undefined && currentFrame >= 0) {
+    const nodeKeyframes = graph.keyframes[instance.id];
+    if (nodeKeyframes) {
+      for (const paramKey of Object.keys(merged)) {
+        merged[paramKey] = evaluateKeyframeValue(
+          graph.keyframes,
+          instance.id,
+          paramKey,
+          currentFrame,
+          merged[paramKey],
+        );
+      }
+    }
+  }
 
   const evaluatedInputs = (evaluated?.__evaluatedInputs as Record<string, unknown>) ?? {};
   for (const socketId of connectedSocketIds(graph, instance.id)) {

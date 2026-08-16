@@ -115,6 +115,27 @@ describe("paramPanelValues", () => {
     expect(values.scale).toBeInstanceOf(THREE.Vector3);
     expect((values.scale as THREE.Vector3).x).toBe(1);
   });
+
+  test("shows interpolated keyframe values when keyframes exist and currentFrame is provided", () => {
+    const instance = emptyInstance({ rotation: new THREE.Vector3(0, 0, 0) });
+    const graph: Graph = {
+      nodes: [instance],
+      connections: [],
+      keyframes: {
+        empty1: {
+          "rotation.x": [
+            { frame: 0, value: 0 },
+            { frame: 100, value: 180 },
+          ],
+        },
+      },
+    };
+
+    // At frame 50 -> rotation.x should be 90 (midpoint)
+    const values = paramPanelValues(graph, instance, OBJECT_EMPTY_NODE, null, 50);
+    expect(values.rotation).toBeInstanceOf(THREE.Vector3);
+    expect((values.rotation as THREE.Vector3).x).toBeCloseTo(90);
+  });
 });
 
 describe("connectedSocketIds", () => {

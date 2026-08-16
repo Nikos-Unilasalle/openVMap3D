@@ -96,8 +96,8 @@ Les prises de connexion (sockets) sont identifiees par des codes couleur normali
 | Empty | `object/empty` | matrix | geometry, matrix | Objet cible invisible servant de repère spatial, de pivot ou de cible d'éclairage. |
 | OBJ Model | `object/obj` | matrix, file | geometry, matrix | Importateur de fichiers 3D au format Wavefront `.obj` avec gestion des sous-objets. |
 | 3D Grid | `calibration/grid` | matrix | geometry, matrix | Grille de repère spatial 3D manipulable au gizmo, avec dimensions et subdivisions configurables. |
-| Lattice Deform | `modifier/lattice` | geometry, matrix, strength, points, bulge, twist, taper, bend, shearX, shearZ | geometry, matrix, cage | Cage de déformation 3D volumétrique (Free-Form Deformation type Blender) avec cage filaire et modulateurs. |
 | Merge | `structure/merge` | item1..item8 (dynamique) | geometry | Fusionne jusqu'à 8 flux géométriques en une seule hiérarchie de scène. |
+| Render | `render` | geometry, environment, postprocess, motionBlur | geometry, environment, postprocess | Sortie terminale et configuration de rendu (résolution, framerate, motion blur). |
 
 ### Courbes et Trajectoires (Three.js Curves)
 
@@ -108,6 +108,7 @@ Les prises de connexion (sockets) sont identifiees par des codes couleur normali
 | Curve to Mesh | `curve/to_mesh` | curve, thickness, startProgress, endProgress, texture, normal, color, emissive... | geometry, matrix | Génère un tube 3D balayé avec début/fin paramétrables (0-100%), profil d'épaisseur variable et matériaux PBR. |
 | Follow Path | `curve/sample` | curve, progress (0-1), up | position, tangent, matrix, rotation | Échantillonne la position, le vecteur tangentiel et la matrice d'orientation le long d'une courbe. |
 | Curve Deform | `curve/deform` | geometry, curve, progress, stretch | geometry, matrix | Modificateur de déformation courbant un maillage 3D le long d'une trajectoire selon les repères de Frenet. |
+| Lattice Deform | `modifier/lattice` | geometry, matrix, strength, points, bulge, twist, taper, bend, shearX, shearZ | geometry, matrix, cage | Cage de déformation 3D volumétrique (Free-Form Deformation type Blender) avec cage filaire et modulateurs. |
 
 ### Camera, Calibration DLT et Transitions
 
@@ -145,6 +146,7 @@ Les prises de connexion (sockets) sont identifiees par des codes couleur normali
 | Get Instance | `instance/get` | geometry, index | geometry, matrix | Extrait la géométrie et la matrice d'une instance spécifique par son index. |
 | Instances to List | `instance/to_list` | geometry | list | Convertit les matrices de toutes les instances d'un objet en une liste de matrices. |
 | Geometry Transform | `instance/geom_transform` | geometry, matrix | geometry | Applique une transformation matricielle directement sur les sommets (baking géométrique). |
+| Spawner | `structure/spawn` | support, items | geometry | Distribue et instancie des objets 3D de manière aléatoire sur la surface triangulée d'un maillage. |
 
 ### Systeme de Particules
 
@@ -282,12 +284,12 @@ Les prises de connexion (sockets) sont identifiees par des codes couleur normali
 | Text Trim | `text/trim` | Supprime les espaces superflus en début et fin de chaîne. |
 | Text Compare | `text/compare` | Compare l'égalité de deux chaînes de caractères. |
 
-### Organisation et Multi-Canevas
+### Utilitaires et Organisation de Graphe
 
 | Node | Type | Description |
 | :--- | :--- | :--- |
-| Reroute | `structure/reroute` | Point de dérivation compact pour organiser et clarifier le câblage du graphe. |
-| Canvas Go To | `structure/canvas_goto`| Bascule automatiquement l'affichage vers l'un des 8 canevas du projet lors d'un trigger. |
+| Reroute | `utility/reroute` | Point de dérivation compact pour organiser et clarifier le câblage du graphe. |
+| Canvas Go To | `canvas/goto`| Bascule automatiquement l'affichage vers l'un des canevas du projet lors d'un trigger. |
 
 ---
 

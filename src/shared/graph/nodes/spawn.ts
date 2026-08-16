@@ -136,7 +136,7 @@ function extractItems(rawItems: unknown): THREE.Object3D[] {
 export const SPAWN_NODE: NodeDefinition = {
   type: "structure/spawn",
   label: "Spawner",
-  category: "structure",
+  category: "instance",
   inputs: [
     { id: "support", label: "Support (Surface)", type: "geometry" },
     { id: "items", label: "Items to Spawn", type: "any", owns: true },

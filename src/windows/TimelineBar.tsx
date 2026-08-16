@@ -1,18 +1,144 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { EasingType } from "../shared/graph/types";
 import "./timeline-bar.css";
+
+export interface KeyframeDataAtFrame {
+  paramKeys: string[];
+  easeIn?: EasingType;
+  easeOut?: EasingType;
+}
 
 interface TimelineBarProps {
   currentFrame: number;
   totalFrames: number;
   isPlaying: boolean;
   keyframesEnabled: boolean;
-  selectedKeyframeFrames?: number[];
+  selectedKeyframes?: Record<number, KeyframeDataAtFrame>;
   markers?: number[];
   onToggleMarker?: (frame: number) => void;
   onMoveMarker?: (oldFrame: number, newFrame: number) => void;
+  onMoveKeyframe?: (oldFrame: number, newFrame: number) => void;
+  onUpdateKeyframeEasing?: (frame: number, easeIn: EasingType, easeOut: EasingType) => void;
+  onDeleteKeyframe?: (frame: number) => void;
   onFrameChange: (frame: number) => void;
   onTogglePlay: () => void;
   onSplitHandleMouseDown: (e: React.MouseEvent) => void;
+}
+
+const EASING_OPTIONS: { type: EasingType; label: string; icon: React.ReactNode }[] = [
+  {
+    type: "smooth",
+    label: "Smooth (Bézier)",
+    icon: (
+      <svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M 2 12 C 7 12, 11 2, 16 2" />
+      </svg>
+    ),
+  },
+  {
+    type: "linear",
+    label: "Linear (Constant)",
+    icon: (
+      <svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <line x1="2" y1="12" x2="16" y2="2" />
+      </svg>
+    ),
+  },
+  {
+    type: "hold",
+    label: "Hold (Step)",
+    icon: (
+      <svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M 2 12 L 14 12 L 14 2 L 16 2" />
+      </svg>
+    ),
+  },
+  {
+    type: "expo",
+    label: "Expo (Exponential)",
+    icon: (
+      <svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M 2 12 C 10 12, 14 8, 16 2" />
+      </svg>
+    ),
+  },
+  {
+    type: "back",
+    label: "Back (Overshoot)",
+    icon: (
+      <svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M 2 12 C 6 15, 11 -2, 16 2" />
+      </svg>
+    ),
+  },
+  {
+    type: "bounce",
+    label: "Bounce",
+    icon: (
+      <svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M 2 12 C 4 2, 8 2, 9 12 C 11 6, 13 6, 14 12 L 16 12" />
+      </svg>
+    ),
+  },
+  {
+    type: "elastic",
+    label: "Elastic (Spring)",
+    icon: (
+      <svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M 2 12 C 5 1, 7 15, 10 5 C 12 14, 14 11, 16 2" />
+      </svg>
+    ),
+  },
+];
+
+function renderKeyframeGlyph(easeIn: EasingType = "smooth", easeOut: EasingType = "smooth") {
+  if (easeOut === "hold") {
+    // Square hold glyph
+    return (
+      <svg width="12" height="12" viewBox="0 0 12 12" className="kf-glyph-svg">
+        <rect x="2.5" y="2.5" width="7" height="7" rx="1" fill="#76C560" stroke="#0f172a" strokeWidth="1" />
+      </svg>
+    );
+  }
+  if (easeIn === "linear" && easeOut === "linear") {
+    // Circle linear glyph
+    return (
+      <svg width="12" height="12" viewBox="0 0 12 12" className="kf-glyph-svg">
+        <circle cx="6" cy="6" r="3.5" fill="#76C560" stroke="#0f172a" strokeWidth="1" />
+      </svg>
+    );
+  }
+  if (easeIn !== "smooth" && easeOut === "smooth") {
+    // Left-arrowhead / Ease-In glyph
+    return (
+      <svg width="12" height="12" viewBox="0 0 12 12" className="kf-glyph-svg">
+        <polygon points="6,1.5 1.5,6 6,10.5 8.5,6" fill="#76C560" stroke="#0f172a" strokeWidth="1" />
+      </svg>
+    );
+  }
+  if (easeIn === "smooth" && easeOut !== "smooth") {
+    // Right-arrowhead / Ease-Out glyph
+    return (
+      <svg width="12" height="12" viewBox="0 0 12 12" className="kf-glyph-svg">
+        <polygon points="6,1.5 10.5,6 6,10.5 3.5,6" fill="#76C560" stroke="#0f172a" strokeWidth="1" />
+      </svg>
+    );
+  }
+  if (easeIn === "bounce" || easeOut === "bounce" || easeIn === "elastic" || easeOut === "elastic") {
+    // Wavy diamond glyph
+    return (
+      <svg width="12" height="12" viewBox="0 0 12 12" className="kf-glyph-svg">
+        <polygon points="6,1 11,6 6,11 1,6" fill="#76C560" stroke="#0f172a" strokeWidth="1" />
+        <path d="M 4 6 Q 6 4 8 6" stroke="#0f172a" strokeWidth="1.2" fill="none" />
+      </svg>
+    );
+  }
+  // Standard symmetrical diamond
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" className="kf-glyph-svg">
+      <polygon points="6,1 11,6 6,11 1,6" fill="#76C560" stroke="#0f172a" strokeWidth="1" />
+    </svg>
+  );
 }
 
 export function TimelineBar({
@@ -20,10 +146,13 @@ export function TimelineBar({
   totalFrames,
   isPlaying,
   keyframesEnabled,
-  selectedKeyframeFrames = [],
+  selectedKeyframes = {},
   markers = [],
   onToggleMarker,
   onMoveMarker,
+  onMoveKeyframe,
+  onUpdateKeyframeEasing,
+  onDeleteKeyframe,
   onFrameChange,
   onTogglePlay,
   onSplitHandleMouseDown,
@@ -35,6 +164,18 @@ export function TimelineBar({
   const [isTimelineHovered, setIsTimelineHovered] = useState(false);
   const [hoveredMarkerFrame, setHoveredMarkerFrame] = useState<number | null>(null);
   const [dragMarkerState, setDragMarkerState] = useState<{ oldFrame: number; dragFrame: number } | null>(null);
+  const [dragKeyframeState, setDragKeyframeState] = useState<{ oldFrame: number; dragFrame: number } | null>(null);
+
+  // Easing Popover State
+  const [easingPopover, setEasingPopover] = useState<{
+    frame: number;
+    paramKeys: string[];
+    easeIn: EasingType;
+    easeOut: EasingType;
+    isLinked: boolean;
+    x: number;
+    y: number;
+  } | null>(null);
 
   const calculateFrameFromEvent = useCallback(
     (e: React.MouseEvent | MouseEvent): { frame: number; x: number } | null => {
@@ -64,7 +205,12 @@ export function TimelineBar({
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (!isTimelineHovered || !keyframesEnabled || !onToggleMarker) return;
+      if (easingPopover && e.key === "Escape") {
+        setEasingPopover(null);
+        return;
+      }
+
+      if (!isTimelineHovered || !keyframesEnabled) return;
       const activeEl = document.activeElement;
       const isInput =
         activeEl &&
@@ -74,7 +220,7 @@ export function TimelineBar({
           (activeEl as HTMLElement).isContentEditable);
       if (isInput) return;
 
-      if (e.key === "m" || e.key === "M") {
+      if ((e.key === "m" || e.key === "M") && onToggleMarker) {
         e.preventDefault();
         if (hoveredMarkerFrame !== null) {
           onToggleMarker(hoveredMarkerFrame);
@@ -86,7 +232,7 @@ export function TimelineBar({
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isTimelineHovered, keyframesEnabled, currentFrame, hoveredMarkerFrame, onToggleMarker]);
+  }, [isTimelineHovered, keyframesEnabled, currentFrame, hoveredMarkerFrame, onToggleMarker, easingPopover]);
 
   const handlePointerDownTrack = (e: React.MouseEvent) => {
     if (e.metaKey || e.ctrlKey) {
@@ -95,6 +241,8 @@ export function TimelineBar({
       return;
     }
     if (!keyframesEnabled || totalFrames <= 0) return;
+    if (e.button !== 0) return; // Only left click for scrubbing
+
     e.stopPropagation();
     setIsScrubbing(true);
     const res = calculateFrameFromEvent(e);
@@ -117,6 +265,7 @@ export function TimelineBar({
 
   const handleMarkerMouseDown = (e: React.MouseEvent, oldFrame: number) => {
     e.stopPropagation();
+    if (e.button !== 0) return;
     if (!keyframesEnabled || !onMoveMarker) return;
 
     setDragMarkerState({ oldFrame, dragFrame: oldFrame });
@@ -143,6 +292,69 @@ export function TimelineBar({
     window.addEventListener("mouseup", onPointerUp);
   };
 
+  const handleKeyframeMouseDown = (e: React.MouseEvent, oldFrame: number) => {
+    e.stopPropagation();
+    if (e.button !== 0) return; // Left button only for drag / select
+    if (!keyframesEnabled) return;
+
+    onFrameChange(oldFrame);
+
+    let hasMoved = false;
+    let latestFrame = oldFrame;
+    const startX = e.clientX;
+
+    const onPointerMove = (moveEvent: MouseEvent) => {
+      if (Math.abs(moveEvent.clientX - startX) > 3) {
+        hasMoved = true;
+      }
+      if (hasMoved) {
+        const res = calculateFrameFromEvent(moveEvent);
+        if (res && res.frame !== latestFrame) {
+          latestFrame = res.frame;
+          setDragKeyframeState({ oldFrame, dragFrame: latestFrame });
+          onFrameChange(latestFrame);
+        }
+      }
+    };
+
+    const onPointerUp = () => {
+      window.removeEventListener("mousemove", onPointerMove);
+      window.removeEventListener("mouseup", onPointerUp);
+      setDragKeyframeState(null);
+      if (hasMoved && latestFrame !== oldFrame && onMoveKeyframe) {
+        onMoveKeyframe(oldFrame, latestFrame);
+      }
+    };
+
+    window.addEventListener("mousemove", onPointerMove);
+    window.addEventListener("mouseup", onPointerUp);
+  };
+
+  const handleKeyframeContextMenu = (e: React.MouseEvent, frame: number, data: KeyframeDataAtFrame) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!keyframesEnabled) return;
+
+    onFrameChange(frame);
+
+    const targetRect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = Math.max(160, Math.min(window.innerWidth - 160, targetRect.left + targetRect.width / 2));
+    const y = Math.max(10, targetRect.top - 180);
+
+    const initialIn = data.easeIn || "smooth";
+    const initialOut = data.easeOut || "smooth";
+
+    setEasingPopover({
+      frame,
+      paramKeys: data.paramKeys,
+      easeIn: initialIn,
+      easeOut: initialOut,
+      isLinked: initialIn === initialOut,
+      x,
+      y,
+    });
+  };
+
   const handleMouseMoveTrack = (e: React.MouseEvent) => {
     if (!keyframesEnabled || totalFrames <= 0) return;
     const res = calculateFrameFromEvent(e);
@@ -156,8 +368,33 @@ export function TimelineBar({
     if (!isScrubbing) setHoverFrame(null);
   };
 
+  const handleSelectEasing = (direction: "in" | "out", newType: EasingType) => {
+    if (!easingPopover) return;
+    let nextIn = easingPopover.easeIn;
+    let nextOut = easingPopover.easeOut;
+
+    if (direction === "in") {
+      nextIn = newType;
+      if (easingPopover.isLinked) nextOut = newType;
+    } else {
+      nextOut = newType;
+      if (easingPopover.isLinked) nextIn = newType;
+    }
+
+    setEasingPopover((prev) => (prev ? { ...prev, easeIn: nextIn, easeOut: nextOut } : null));
+    onUpdateKeyframeEasing?.(easingPopover.frame, nextIn, nextOut);
+  };
+
+  const handleDeleteCurrentKeyframe = () => {
+    if (!easingPopover) return;
+    onDeleteKeyframe?.(easingPopover.frame);
+    setEasingPopover(null);
+  };
+
   const progressPct = totalFrames > 1 ? (Math.max(0, Math.min(totalFrames - 1, currentFrame)) / (totalFrames - 1)) * 100 : 0;
   const oneFramePct = totalFrames > 1 ? (1 / (totalFrames - 1)) * 100 : 1;
+
+  const keyframeFrames = Object.keys(selectedKeyframes).map(Number).sort((a, b) => a - b);
 
   return (
     <div
@@ -170,12 +407,12 @@ export function TimelineBar({
       }}
       onMouseEnter={() => setIsTimelineHovered(true)}
       onMouseLeave={() => setIsTimelineHovered(false)}
-      title={isCmdPressed ? "Maintenez et glissez pour redimensionner la hauteur du canevas" : undefined}
+      title={isCmdPressed ? "Hold and drag to resize canvas split height" : undefined}
     >
       <div
         className="timeline-split-resize-handle"
         onMouseDown={onSplitHandleMouseDown}
-        title="Glisser ou Cmd+Glisser pour redimensionner les fenêtres"
+        title="Drag or Cmd+Drag to resize workspace viewports"
       />
 
       <div className="timeline-bar-inner">
@@ -184,7 +421,7 @@ export function TimelineBar({
           className={`timeline-play-btn ${!keyframesEnabled ? "disabled" : ""}`}
           onClick={onTogglePlay}
           disabled={!keyframesEnabled}
-          title={keyframesEnabled ? (isPlaying ? "Pause animation" : "Play animation") : "Keyframes désactivées (Pas de node Render)"}
+          title={keyframesEnabled ? (isPlaying ? "Pause animation" : "Play animation") : "Keyframes disabled (No Render node in canvas)"}
         >
           {keyframesEnabled ? (isPlaying ? "⏸" : "▶") : "⏸"}
         </button>
@@ -199,7 +436,7 @@ export function TimelineBar({
           <div className="timeline-track-bg" />
           <div className="timeline-track-fill" style={{ width: `${progressPct}%` }} />
 
-          {/* Visual markers (small 1px horizontal bar under blue track line, draggable with live preview) */}
+          {/* Visual markers */}
           {keyframesEnabled &&
             totalFrames > 0 &&
             markers.map((markerFrame) => {
@@ -221,23 +458,35 @@ export function TimelineBar({
                   onMouseEnter={() => setHoveredMarkerFrame(markerFrame)}
                   onMouseLeave={() => setHoveredMarkerFrame((h) => (h === markerFrame ? null : h))}
                   onMouseDown={(e) => handleMarkerMouseDown(e, markerFrame)}
-                  title={`Marqueur (Frame ${displayFrame}) - Appuyer sur 'm' au survol pour supprimer, ou glisser pour déplacer`}
+                  title={`Marker (Frame ${displayFrame}) - Press 'm' on hover to delete, or drag to move`}
                 />
               );
             })}
 
-          {/* Green keyframe ticks for the selected node */}
+          {/* Interactive keyframe diamonds with easing glyphs & drag preview */}
           {keyframesEnabled &&
             totalFrames > 0 &&
-            selectedKeyframeFrames.map((kfFrame) => {
-              const kfPct = totalFrames > 1 ? (Math.max(0, Math.min(totalFrames - 1, kfFrame)) / (totalFrames - 1)) * 100 : 0;
+            keyframeFrames.map((kfFrame) => {
+              const data = selectedKeyframes[kfFrame] || { paramKeys: [] };
+              const displayFrame =
+                dragKeyframeState && dragKeyframeState.oldFrame === kfFrame
+                  ? dragKeyframeState.dragFrame
+                  : kfFrame;
+              const kfPct = totalFrames > 1 ? (Math.max(0, Math.min(totalFrames - 1, displayFrame)) / (totalFrames - 1)) * 100 : 0;
+              const isDragging = dragKeyframeState && dragKeyframeState.oldFrame === kfFrame;
+              const isSelected = currentFrame === displayFrame;
+
               return (
                 <div
                   key={kfFrame}
-                  className="timeline-keyframe-marker"
+                  className={`timeline-keyframe-diamond ${isDragging ? "dragging" : ""} ${isSelected ? "selected" : ""}`}
                   style={{ left: `${kfPct}%` }}
-                  title={`Keyframe at frame ${kfFrame}`}
-                />
+                  onMouseDown={(e) => handleKeyframeMouseDown(e, kfFrame)}
+                  onContextMenu={(e) => handleKeyframeContextMenu(e, kfFrame, data)}
+                  title={`Keyframe at Frame ${displayFrame} (${data.paramKeys.join(", ")})\nIn: ${data.easeIn || "smooth"} | Out: ${data.easeOut || "smooth"}\n• Left click + drag to move\n• Right click to edit interpolation`}
+                >
+                  {renderKeyframeGlyph(data.easeIn, data.easeOut)}
+                </div>
               );
             })}
 
@@ -259,10 +508,96 @@ export function TimelineBar({
           )}
         </div>
 
-        <div className="timeline-total-badge" title="Nombre total de frames">
+        <div className="timeline-total-badge" title="Total frame count">
           {keyframesEnabled ? `${totalFrames} f` : "∞"}
         </div>
       </div>
+
+      {/* Right-click Easing Popover Modal */}
+      {easingPopover && (
+        <div className="easing-popover-backdrop" onClick={() => setEasingPopover(null)}>
+          <div
+            className="easing-popover-modal"
+            style={{ left: `${easingPopover.x}px`, top: `${easingPopover.y}px` }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="easing-popover-header">
+              <div className="easing-popover-title">
+                <span className="kf-badge">Keyframe {easingPopover.frame}</span>
+                <span className="kf-params">{easingPopover.paramKeys.join(", ")}</span>
+              </div>
+              <button
+                type="button"
+                className="easing-popover-close"
+                onClick={() => setEasingPopover(null)}
+                title="Close (Esc)"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="easing-popover-link-toggle">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={easingPopover.isLinked}
+                  onChange={(e) =>
+                    setEasingPopover((prev) => (prev ? { ...prev, isLinked: e.target.checked } : null))
+                  }
+                />
+                <span>🔗 Link In & Out (Symmetrical)</span>
+              </label>
+            </div>
+
+            <div className="easing-popover-section">
+              <div className="easing-section-label">IN (Arrival at keyframe)</div>
+              <div className="easing-buttons-grid">
+                {EASING_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.type}
+                    type="button"
+                    className={`easing-btn ${easingPopover.easeIn === opt.type ? "active" : ""}`}
+                    onClick={() => handleSelectEasing("in", opt.type)}
+                    title={opt.label}
+                  >
+                    <span className="easing-icon">{opt.icon}</span>
+                    <span className="easing-text">{opt.type}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="easing-popover-section">
+              <div className="easing-section-label">OUT (Departure from keyframe)</div>
+              <div className="easing-buttons-grid">
+                {EASING_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.type}
+                    type="button"
+                    className={`easing-btn ${easingPopover.easeOut === opt.type ? "active" : ""}`}
+                    onClick={() => handleSelectEasing("out", opt.type)}
+                    title={opt.label}
+                  >
+                    <span className="easing-icon">{opt.icon}</span>
+                    <span className="easing-text">{opt.type}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="easing-popover-footer">
+              <button
+                type="button"
+                className="easing-delete-btn"
+                onClick={handleDeleteCurrentKeyframe}
+                title="Delete this keyframe"
+              >
+                🗑 Delete Keyframe
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

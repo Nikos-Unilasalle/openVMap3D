@@ -106,19 +106,6 @@
   pointer-events: none;
 }
 
-/* Green keyframe ticks (min 1px width) for selected node on timeline track */
-.timeline-keyframe-marker {
-  position: absolute;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 2px;
-  height: 9px;
-  background-color: #76C560;
-  box-shadow: 0 0 4px rgba(118, 197, 96, 0.9);
-  pointer-events: none;
-  z-index: 27;
-}
-
 /* Visual marker (horizontal bar under 1px blue track line, 1 frame wide, 1px height, flat style without shadow) */
 .timeline-visual-marker {
   position: absolute;
@@ -154,6 +141,41 @@
 .timeline-visual-marker.dragging {
   cursor: grabbing;
   background-color: #ffffff;
+}
+
+/* Interactive Keyframe Diamond on the track */
+.timeline-keyframe-diamond {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  pointer-events: auto;
+  z-index: 29;
+  transition: transform 0.1s ease;
+}
+
+.timeline-keyframe-diamond:hover {
+  transform: translate(-50%, -50%) scale(1.25);
+}
+
+.timeline-keyframe-diamond.dragging {
+  cursor: grabbing;
+  transform: translate(-50%, -50%) scale(1.35);
+  z-index: 31;
+}
+
+.timeline-keyframe-diamond.selected .kf-glyph-svg {
+  filter: drop-shadow(0 0 5px rgba(118, 197, 96, 0.95));
+}
+
+.kf-glyph-svg {
+  display: block;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6));
 }
 
 /* 1px narrow white playhead cursor visually, with 24px wide invisible grab hit box */
@@ -216,4 +238,198 @@
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
   z-index: 30;
   line-height: 1;
+}
+
+/* ==========================================================================
+   Easing Popover Modal (Right Click on Keyframe)
+   ========================================================================== */
+
+.easing-popover-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 99999;
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(1px);
+}
+
+.easing-popover-modal {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 12px;
+  width: 320px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  color: #f1f5f9;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  animation: easingPopoverIn 0.15s ease-out;
+  user-select: none;
+}
+
+@keyframes easingPopoverIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -95%) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -100%) scale(1);
+  }
+}
+
+.easing-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #1e293b;
+}
+
+.easing-popover-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.kf-badge {
+  background: #76C560;
+  color: #0f172a;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.kf-params {
+  font-size: 11px;
+  color: #94a3b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 170px;
+}
+
+.easing-popover-close {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.1s ease;
+}
+
+.easing-popover-close:hover {
+  color: #f87171;
+  background: #1e293b;
+}
+
+.easing-popover-link-toggle {
+  margin-bottom: 10px;
+  font-size: 11px;
+  color: #cbd5e1;
+}
+
+.easing-popover-link-toggle label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.easing-popover-link-toggle input[type="checkbox"] {
+  accent-color: #38bdf8;
+  cursor: pointer;
+}
+
+.easing-popover-section {
+  margin-bottom: 10px;
+}
+
+.easing-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #38bdf8;
+  margin-bottom: 6px;
+}
+
+.easing-buttons-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.easing-btn {
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #94a3b8;
+  border-radius: 5px;
+  padding: 4px 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.easing-btn:hover {
+  background: #334155;
+  color: #f8fafc;
+  border-color: #64748b;
+}
+
+.easing-btn.active {
+  background: #0369a1;
+  border-color: #38bdf8;
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.4);
+}
+
+.easing-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 14px;
+}
+
+.easing-text {
+  font-size: 9px;
+  text-transform: capitalize;
+}
+
+.easing-popover-footer {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #1e293b;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.easing-delete-btn {
+  background: transparent;
+  border: 1px solid #475569;
+  color: #f87171;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.easing-delete-btn:hover {
+  background: #7f1d1d;
+  border-color: #ef4444;
+  color: #ffffff;
 }

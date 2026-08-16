@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { CAMERA_FLY_TO_NODE, CAMERA_NODE } from "./shared/graph/nodes/camera";
 import { DEFAULT_REGISTRY } from "./shared/graph/nodes";
@@ -18,6 +18,7 @@ import {
 import {
   CANVAS_COUNT,
   Connection,
+  EasingType,
   emptyGraph,
   Graph,
   isCanvasEmpty,
@@ -750,18 +751,148 @@ function MainEditor() {
 
   const selectedParamValues =
     selectedInstance && selectedDef
-      ? paramPanelValues(graph, selectedInstance, selectedDef, evaluatedResults)
+      ? paramPanelValues(
+          graph,
+          selectedInstance,
+          selectedDef,
+          evaluatedResults,
+          keyframesEnabled ? currentFrame : undefined
+        )
       : {};
 
-  const selectedKeyframeFrames = selectedNodeId && graph.keyframes?.[selectedNodeId]
-    ? Array.from(
-        new Set(
-          Object.values(graph.keyframes[selectedNodeId])
-            .flat()
-            .map((k) => k.frame)
-        )
-      ).sort((a, b) => a - b)
-    : [];
+  const selectedKeyframesRecord = useMemo(() => {
+    const map: Record<number, { paramKeys: string[]; easeIn?: EasingType; easeOut?: EasingType }> = {};
+    if (selectedNodeId && graph.keyframes?.[selectedNodeId]) {
+      for (const [paramKey, list] of Object.entries(graph.keyframes[selectedNodeId])) {
+        for (const kf of list) {
+          if (!map[kf.frame]) {
+            map[kf.frame] = {
+              paramKeys: [paramKey],
+              easeIn: kf.easeIn || "smooth",
+              easeOut: kf.easeOut || "smooth",
+            };
+          } else {
+            if (!map[kf.frame].paramKeys.includes(paramKey)) {
+              map[kf.frame].paramKeys.push(paramKey);
+            }
+          }
+        }
+      }
+    }
+    return map;
+  }, [selectedNodeId, graph.keyframes]);
+
+  const onMoveKeyframe = useCallback(
+    (oldFrame: number, newFrame: number) => {
+      if (!selectedNodeId) return;
+      setGraphWithHistory((prevGraph) => {
+        const currentKeyframes = prevGraph.keyframes || {};
+        const nodeKeys = currentKeyframes[selectedNodeId];
+        if (!nodeKeys) return prevGraph;
+
+        const nextNodeKeys: Record<string, Keyframe[]> = {};
+        let modified = false;
+
+        for (const [paramKey, list] of Object.entries(nodeKeys)) {
+          const kfToMove = list.find((k) => k.frame === oldFrame);
+          if (!kfToMove) {
+            nextNodeKeys[paramKey] = list;
+            continue;
+          }
+
+          modified = true;
+          const remaining = list.filter((k) => k.frame !== oldFrame && k.frame !== newFrame);
+          const movedKf: Keyframe = {
+            ...kfToMove,
+            frame: newFrame,
+          };
+          nextNodeKeys[paramKey] = [...remaining, movedKf].sort((a, b) => a.frame - b.frame);
+        }
+
+        if (!modified) return prevGraph;
+
+        return {
+          ...prevGraph,
+          keyframes: {
+            ...currentKeyframes,
+            [selectedNodeId]: nextNodeKeys,
+          },
+        };
+      }, `keyframe:move:${oldFrame}->${newFrame}`);
+    },
+    [selectedNodeId, setGraphWithHistory],
+  );
+
+  const onUpdateKeyframeEasing = useCallback(
+    (frame: number, easeIn: EasingType, easeOut: EasingType) => {
+      if (!selectedNodeId) return;
+      setGraphWithHistory((prevGraph) => {
+        const currentKeyframes = prevGraph.keyframes || {};
+        const nodeKeys = currentKeyframes[selectedNodeId];
+        if (!nodeKeys) return prevGraph;
+
+        const nextNodeKeys: Record<string, Keyframe[]> = {};
+        let modified = false;
+
+        for (const [paramKey, list] of Object.entries(nodeKeys)) {
+          const nextList = list.map((kf) => {
+            if (kf.frame === frame) {
+              modified = true;
+              return { ...kf, easeIn, easeOut };
+            }
+            return kf;
+          });
+          nextNodeKeys[paramKey] = nextList;
+        }
+
+        if (!modified) return prevGraph;
+
+        return {
+          ...prevGraph,
+          keyframes: {
+            ...currentKeyframes,
+            [selectedNodeId]: nextNodeKeys,
+          },
+        };
+      }, `keyframe:easing:${frame}`);
+    },
+    [selectedNodeId, setGraphWithHistory],
+  );
+
+  const onDeleteKeyframe = useCallback(
+    (frame: number) => {
+      if (!selectedNodeId) return;
+      setGraphWithHistory((prevGraph) => {
+        const currentKeyframes = prevGraph.keyframes || {};
+        const nodeKeys = currentKeyframes[selectedNodeId];
+        if (!nodeKeys) return prevGraph;
+
+        const nextNodeKeys: Record<string, Keyframe[]> = {};
+        let hasAny = false;
+
+        for (const [paramKey, list] of Object.entries(nodeKeys)) {
+          const filtered = list.filter((k) => k.frame !== frame);
+          if (filtered.length > 0) {
+            nextNodeKeys[paramKey] = filtered;
+            hasAny = true;
+          }
+        }
+
+        const nextStore = { ...currentKeyframes };
+        if (hasAny) {
+          nextStore[selectedNodeId] = nextNodeKeys;
+        } else {
+          delete nextStore[selectedNodeId];
+        }
+
+        return {
+          ...prevGraph,
+          keyframes: nextStore,
+        };
+      }, `keyframe:delete:${frame}`);
+    },
+    [selectedNodeId, setGraphWithHistory],
+  );
 
   const onToggleMarker = useCallback((frame: number) => {
     setGraphWithHistory((prevGraph) => {
@@ -854,10 +985,13 @@ function MainEditor() {
         totalFrames={totalFrames}
         isPlaying={isPlaying}
         keyframesEnabled={keyframesEnabled}
-        selectedKeyframeFrames={selectedKeyframeFrames}
+        selectedKeyframes={selectedKeyframesRecord}
         markers={graph.markers ?? []}
         onToggleMarker={onToggleMarker}
         onMoveMarker={onMoveMarker}
+        onMoveKeyframe={onMoveKeyframe}
+        onUpdateKeyframeEasing={onUpdateKeyframeEasing}
+        onDeleteKeyframe={onDeleteKeyframe}
         onFrameChange={setCurrentFrame}
         onTogglePlay={() => setIsPlaying((p) => !p)}
         onSplitHandleMouseDown={onSplitHandleMouseDown}

@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { Connection, EvalContext, Graph, Keyframe, KeyframeStore, NodeRegistry } from "./types";
+import { Connection, EasingType, EvalContext, Graph, Keyframe, KeyframeStore, NodeRegistry } from "./types";
 
 export interface TopoResult {
   /** Node ids in dependency order — safe to evaluate front to back. */
@@ -8,13 +8,159 @@ export interface TopoResult {
   cyclic: string[];
 }
 
+function bounceEaseOut(p: number): number {
+  const n1 = 7.5625;
+  const d1 = 2.75;
+  let x = p;
+  if (x < 1 / d1) {
+    return n1 * x * x;
+  }
+  if (x < 2 / d1) {
+    return n1 * (x -= 1.5 / d1) * x + 0.75;
+  }
+  if (x < 2.5 / d1) {
+    return n1 * (x -= 2.25 / d1) * x + 0.9375;
+  }
+  return n1 * (x -= 2.625 / d1) * x + 0.984375;
+}
+
+function bounceEaseIn(p: number): number {
+  return 1 - bounceEaseOut(1 - p);
+}
+
+function elasticEaseOut(p: number): number {
+  if (p <= 0) return 0;
+  if (p >= 1) return 1;
+  const c4 = (2 * Math.PI) / 3;
+  return Math.pow(2, -10 * p) * Math.sin((p * 10 - 0.75) * c4) + 1;
+}
+
+function elasticEaseIn(p: number): number {
+  if (p <= 0) return 0;
+  if (p >= 1) return 1;
+  const c4 = (2 * Math.PI) / 3;
+  return -Math.pow(2, 10 * p - 10) * Math.sin((p * 10 - 10.75) * c4);
+}
+
+function backEaseOut(p: number): number {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2);
+}
+
+function backEaseIn(p: number): number {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return c3 * Math.pow(p, 3) - c1 * Math.pow(p, 2);
+}
+
+function backEaseInOut(p: number): number {
+  const c1 = 1.70158;
+  const c2 = c1 * 1.525;
+  return p < 0.5
+    ? (Math.pow(2 * p, 2) * ((c2 + 1) * 2 * p - c2)) / 2
+    : (Math.pow(2 * p - 2, 2) * ((c2 + 1) * (p * 2 - 2) + c2) + 2) / 2;
+}
+
+function expoEaseOut(p: number): number {
+  return p >= 1 ? 1 : 1 - Math.pow(2, -10 * p);
+}
+
+function expoEaseIn(p: number): number {
+  return p <= 0 ? 0 : Math.pow(2, 10 * p - 10);
+}
+
+function expoEaseInOut(p: number): number {
+  if (p <= 0) return 0;
+  if (p >= 1) return 1;
+  return p < 0.5
+    ? Math.pow(2, 20 * p - 10) / 2
+    : (2 - Math.pow(2, -20 * p + 10)) / 2;
+}
+
+function sineEaseOut(p: number): number {
+  return Math.sin((p * Math.PI) / 2);
+}
+
+function sineEaseIn(p: number): number {
+  return 1 - Math.cos((p * Math.PI) / 2);
+}
+
+function sineEaseInOut(p: number): number {
+  return (1 - Math.cos(Math.PI * p)) / 2;
+}
+
+export function computeSegmentEasing(t: number, easeOut?: EasingType, easeIn?: EasingType): number {
+  const clampedT = Math.max(0, Math.min(1, t));
+  const outType = easeOut || "smooth";
+  const inType = easeIn || "smooth";
+
+  if (outType === "hold") {
+    return clampedT >= 1 ? 1 : 0;
+  }
+
+  // 1. Symmetrical / identical easing cases
+  if (outType === inType) {
+    switch (outType) {
+      case "linear":
+        return clampedT;
+      case "smooth":
+        return sineEaseInOut(clampedT);
+      case "expo":
+        return clampedT < 0.5 ? Math.pow(2, 20 * clampedT - 10) / 2 : (2 - Math.pow(2, -20 * clampedT + 10)) / 2;
+      case "back":
+        return backEaseInOut(clampedT);
+      case "bounce":
+        return bounceEaseOut(clampedT);
+      case "elastic":
+        return elasticEaseOut(clampedT);
+    }
+  }
+
+  // 2. Specific expressive arrival on K2 (easeIn)
+  if (inType === "bounce" && outType !== "bounce") {
+    return bounceEaseOut(clampedT);
+  }
+  if (inType === "elastic" && outType !== "elastic") {
+    return elasticEaseOut(clampedT);
+  }
+  if (inType === "back" && outType !== "back") {
+    return backEaseOut(clampedT);
+  }
+
+  // 3. Specific expressive departure from K1 (easeOut)
+  if (outType === "bounce") {
+    return bounceEaseIn(clampedT);
+  }
+  if (outType === "elastic") {
+    return elasticEaseIn(clampedT);
+  }
+  if (outType === "back") {
+    return backEaseIn(clampedT);
+  }
+
+  // 4. Standard smooth / linear / expo mixtures
+  if (outType === "linear" && inType === "smooth") {
+    return sineEaseOut(clampedT);
+  }
+  if (outType === "smooth" && inType === "linear") {
+    return sineEaseIn(clampedT);
+  }
+  if (inType === "expo") {
+    return expoEaseOut(clampedT);
+  }
+  if (outType === "expo") {
+    return expoEaseIn(clampedT);
+  }
+
+  return sineEaseInOut(clampedT);
+}
+
 /**
- * Non-linear sinusoidal easing interpolation between two keyframe values.
- * t = (frame - f1) / (f2 - f1)
- * ease = (1 - cos(pi * t)) / 2
+ * Keyframe value interpolation respecting In and Out easing curves.
  */
-export function interpolateValue(v1: any, v2: any, t: number): any {
-  const ease = (1 - Math.cos(Math.PI * Math.min(1, Math.max(0, t)))) / 2;
+export function interpolateValue(v1: any, v2: any, t: number, easeOut?: EasingType, easeIn?: EasingType): any {
+  const ease = computeSegmentEasing(t, easeOut, easeIn);
 
   if (typeof v1 === "number" && typeof v2 === "number") {
     return v1 + (v2 - v1) * ease;
@@ -73,7 +219,7 @@ function evaluateKeyframeList(list: Keyframe[], currentFrame: number, fallback: 
     if (currentFrame >= k1.frame && currentFrame <= k2.frame) {
       if (k1.frame === k2.frame) return k1.value;
       const t = (currentFrame - k1.frame) / (k2.frame - k1.frame);
-      return interpolateValue(k1.value, k2.value, t);
+      return interpolateValue(k1.value, k2.value, t, k1.easeOut, k2.easeIn);
     }
   }
 

@@ -20,7 +20,8 @@ export type NodeCategory =
   | "text"
   | "texture"
   | "time"
-  | "transform";
+  | "transform"
+  | "utility";
 
 /** Palette/section display order — alphabetically sorted. */
 export const CATEGORY_ORDER: NodeCategory[] = [
@@ -45,6 +46,7 @@ export const CATEGORY_ORDER: NodeCategory[] = [
   "texture",
   "time",
   "transform",
+  "utility",
 ];
 
 export const CATEGORY_LABEL: Record<NodeCategory, string> = {
@@ -69,6 +71,7 @@ export const CATEGORY_LABEL: Record<NodeCategory, string> = {
   texture: "Texture",
   time: "Time / Animation",
   transform: "Transform",
+  utility: "Utility",
 };
 
 /**
@@ -96,6 +99,7 @@ export const CATEGORY_COLOR: Record<NodeCategory, string> = {
   texture: "#2dd4bf",
   time: "#ec4899",
   transform: "#a855f7",
+  utility: "#64748b",
 };
 
 export const UNKNOWN_CATEGORY_COLOR = "#6b7280";

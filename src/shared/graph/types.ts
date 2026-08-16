@@ -202,9 +202,20 @@ export interface Connection {
   toSocket: string;
 }
 
+export type EasingType =
+  | "smooth"
+  | "linear"
+  | "hold"
+  | "expo"
+  | "back"
+  | "bounce"
+  | "elastic";
+
 export interface Keyframe {
   frame: number;
   value: any;
+  easeIn?: EasingType;
+  easeOut?: EasingType;
 }
 
 /** Keyframes store keyed by nodeId -> paramKey -> array of Keyframe sorted by frame ascending. */

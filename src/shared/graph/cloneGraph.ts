@@ -1,8 +1,9 @@
 import * as THREE from "three";
-import { Graph, NodeInstance } from "./types";
+import { Graph, KeyframeStore, NodeInstance } from "./types";
 
 /**
- * Deep-copies a graph while keeping its THREE instances *as instances*.
+ * Deep-copies a graph while keeping its THREE instances *as instances*,
+ * along with its keyframes and markers.
  *
  * The obvious `JSON.parse(JSON.stringify(graph))` does not: it flattens a
  * THREE.Vector3 into a plain `{x, y, z}` and a THREE.Color into `{r, g, b}`.
@@ -41,6 +42,23 @@ export function cloneParams(params: Record<string, unknown>): Record<string, unk
   return cloned;
 }
 
+export function cloneKeyframes(store?: KeyframeStore): KeyframeStore | undefined {
+  if (!store) return undefined;
+  const cloned: KeyframeStore = {};
+  for (const [nodeId, paramMap] of Object.entries(store)) {
+    cloned[nodeId] = {};
+    for (const [paramKey, list] of Object.entries(paramMap)) {
+      cloned[nodeId][paramKey] = list.map((kf) => ({
+        frame: kf.frame,
+        value: cloneParamValue(kf.value),
+        easeIn: kf.easeIn,
+        easeOut: kf.easeOut,
+      }));
+    }
+  }
+  return cloned;
+}
+
 function cloneNode(node: NodeInstance): NodeInstance {
   return {
     id: node.id,
@@ -54,5 +72,7 @@ export function cloneGraph(graph: Graph): Graph {
   return {
     nodes: graph.nodes.map(cloneNode),
     connections: graph.connections.map((c) => ({ ...c })),
+    keyframes: cloneKeyframes(graph.keyframes),
+    markers: graph.markers ? [...graph.markers] : undefined,
   };
 }

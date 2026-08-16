@@ -3,7 +3,7 @@ import { NodeDefinition } from "../types";
 import { fbm1D, fbm3D } from "../../math/noise";
 import { asVector3 } from "./transform";
 
-function asNumber(v: unknown, fallback: number): number {
+export function asNumber(v: unknown, fallback: number): number {
   if (typeof v === "number" && Number.isFinite(v)) return v;
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;

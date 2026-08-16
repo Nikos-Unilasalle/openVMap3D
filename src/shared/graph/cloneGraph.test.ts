@@ -82,4 +82,34 @@ describe("cloneGraph", () => {
     expect(cloned.connections).toEqual(graph.connections);
     expect(cloned.connections[0]).not.toBe(graph.connections[0]);
   });
+
+  test("preserves keyframes and markers across undo snapshots", () => {
+    const graph: Graph = {
+      nodes: [{ id: "a", type: "transform", position: { x: 0, y: 0 }, params: {} }],
+      connections: [],
+      keyframes: {
+        a: {
+          "rotation.x": [
+            { frame: 0, value: 0, easeIn: "smooth", easeOut: "bounce" },
+            { frame: 60, value: 180, easeIn: "bounce", easeOut: "smooth" },
+          ],
+        },
+      },
+      markers: [0, 30, 60],
+    };
+
+    const cloned = cloneGraph(graph);
+    expect(cloned.keyframes).toBeDefined();
+    expect(cloned.keyframes?.a?.["rotation.x"]).toHaveLength(2);
+    expect(cloned.keyframes?.a?.["rotation.x"][0].value).toBe(0);
+    expect(cloned.keyframes?.a?.["rotation.x"][0].easeOut).toBe("bounce");
+    expect(cloned.markers).toEqual([0, 30, 60]);
+
+    // Mutation of cloned should not affect original
+    cloned.keyframes!.a["rotation.x"][0].frame = 99;
+    cloned.markers!.push(120);
+
+    expect(graph.keyframes!.a["rotation.x"][0].frame).toBe(0);
+    expect(graph.markers).toEqual([0, 30, 60]);
+  });
 });
