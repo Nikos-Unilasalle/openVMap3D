@@ -3,6 +3,8 @@
  * FFT spectrum analysers, synth oscillators, filters, and microphone streams.
  */
 
+import { createNodeCache } from "../graph/nodeCaches";
+
 let globalAudioCtx: AudioContext | null = null;
 
 export function getAudioContext(): AudioContext | null {
@@ -29,7 +31,19 @@ export interface PlayerState {
   isPlaying: boolean;
 }
 
-const playerCache = new Map<string, PlayerState>();
+const playerCache = createNodeCache<PlayerState>((state) => {
+  if (state.loadedPath) {
+    try {
+      URL.revokeObjectURL(state.loadedPath);
+    } catch {}
+  }
+  try {
+    state.audioEl.pause();
+    state.audioEl.src = "";
+  } catch {}
+  state.sourceNode?.disconnect();
+  state.gainNode?.disconnect();
+});
 
 export function getOrCreatePlayer(nodeId: string): PlayerState {
   const existing = playerCache.get(nodeId);
@@ -81,14 +95,24 @@ export interface AnalyserState {
   dataArray: Uint8Array;
 }
 
-const analyserCache = new Map<string, AnalyserState>();
+const analyserCache = createNodeCache<AnalyserState>((state) => {
+  try {
+    state.analyser.disconnect();
+  } catch {}
+});
 
 export function getOrCreateAnalyser(nodeId: string, fftSize = 128): AnalyserState | null {
   const ctx = getAudioContext();
   if (!ctx) return null;
 
   let state = analyserCache.get(nodeId);
-  if (!state || state.analyser.fftSize !== fftSize) {
+  if (state && state.analyser.fftSize !== fftSize) {
+    try {
+      state.analyser.disconnect();
+    } catch {}
+    state = undefined;
+  }
+  if (!state) {
     const analyser = ctx.createAnalyser();
     analyser.fftSize = fftSize;
     analyser.smoothingTimeConstant = 0.8;
@@ -105,7 +129,15 @@ export interface MicState {
   gainNode?: GainNode;
 }
 
-const micCache = new Map<string, MicState>();
+const micCache = createNodeCache<MicState>((state) => {
+  try {
+    state.sourceNode?.disconnect();
+  } catch {}
+  try {
+    state.gainNode?.disconnect();
+  } catch {}
+  if (state.stream) state.stream.getTracks().forEach((track) => track.stop());
+});
 
 export function getOrCreateMic(nodeId: string): MicState {
   let existing = micCache.get(nodeId);
@@ -144,7 +176,19 @@ export interface SynthState {
   isPlaying: boolean;
 }
 
-const synthCache = new Map<string, SynthState>();
+const synthCache = createNodeCache<SynthState>((state) => {
+  try {
+    state.osc?.stop();
+  } catch {}
+  try {
+    state.osc?.disconnect();
+  } catch {}
+  try {
+    state.gainNode?.disconnect();
+  } catch {}
+  state.osc = undefined;
+  state.isPlaying = false;
+});
 
 export function getOrCreateSynth(nodeId: string): SynthState {
   let existing = synthCache.get(nodeId);
@@ -161,7 +205,7 @@ export interface PeakState {
   isBeat: boolean;
 }
 
-const peakCache = new Map<string, PeakState>();
+const peakCache = createNodeCache<PeakState>();
 
 export function getOrCreatePeakDetector(nodeId: string): PeakState {
   let existing = peakCache.get(nodeId);

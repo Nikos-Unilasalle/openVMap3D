@@ -50,8 +50,8 @@ export const AUDIO_PLAYER_NODE: NodeDefinition = {
     const audioEl = player.audioEl;
 
     const playInput = inputs.play !== undefined ? Number(inputs.play) > 0 : false;
-    const volume = Math.max(0, Math.min(1, inputs.volume !== undefined ? Number(inputs.volume) : Number(params.volume) ?? 1));
-    const rate = Math.max(0.25, Math.min(4, inputs.playbackRate !== undefined ? Number(inputs.playbackRate) : Number(params.playbackRate) ?? 1));
+    const volume = Math.max(0, Math.min(1, inputs.volume !== undefined ? Number(inputs.volume) : Number(params.volume) || 1));
+    const rate = Math.max(0.25, Math.min(4, inputs.playbackRate !== undefined ? Number(inputs.playbackRate) : Number(params.playbackRate) || 1));
     const loop = params.loop !== undefined ? Boolean(params.loop) : true;
 
     audioEl.loop = loop;
@@ -297,8 +297,8 @@ export const AUDIO_SYNTH_NODE: NodeDefinition = {
     const synthState = getOrCreateSynth(ctx.nodeId);
     const ctxWeb = getAudioContext();
 
-    const freq = Math.max(20, Math.min(20000, inputs.frequency !== undefined ? Number(inputs.frequency) : Number(params.frequency) ?? 440));
-    const volume = Math.max(0, Math.min(1, inputs.volume !== undefined ? Number(inputs.volume) : Number(params.volume) ?? 0.5));
+    const freq = Math.max(20, Math.min(20000, inputs.frequency !== undefined ? Number(inputs.frequency) : Number(params.frequency) || 440));
+    const volume = Math.max(0, Math.min(1, inputs.volume !== undefined ? Number(inputs.volume) : Number(params.volume) || 0.5));
     const gate = inputs.trigger !== undefined ? Number(inputs.trigger) > 0 : true;
     const waveform = (params.waveform as OscillatorType) || "sine";
 

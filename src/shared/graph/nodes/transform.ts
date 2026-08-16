@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { NodeDefinition } from "../types";
 
 const ZERO = new THREE.Vector3(0, 0, 0);
@@ -166,7 +167,7 @@ export function extractPositionFromInput(val: unknown, fallback: THREE.Vector3):
   return asVector3(val, fallback);
 }
 
-const groupCache = new Map<string, THREE.Group>();
+const groupCache = createNodeCache<THREE.Group>(disposeObject3D);
 function getGroup(nodeId: string): THREE.Group {
   let group = groupCache.get(nodeId);
   if (!group) {
