@@ -197,3 +197,22 @@ input, textarea, [contenteditable="true"], .drag-number-editing, .param-text-inp
   border-color: #38bdf8;
   color: #0b1220;
 }
+
+/* Selection Box & Selected Nodes Highlight */
+.react-flow__selection {
+  background: rgba(56, 189, 248, 0.06) !important;
+  border: 1px solid rgba(56, 189, 248, 0.5) !important;
+  border-radius: 4px;
+}
+
+.graph-node.selected,
+.react-flow__node.selected .graph-node {
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.3), 0 4px 16px rgba(0, 0, 0, 0.35) !important;
+}
+
+.graph-node-reroute.selected,
+.react-flow__node.selected .graph-node-reroute {
+  outline: 1.5px solid #38bdf8 !important;
+  outline-offset: 1px;
+}

@@ -18,8 +18,9 @@ import {
   useViewport,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import * as THREE from "three";
 import { DEFAULT_PICKS } from "../shared/graph/calibration/picks";
+import { getGraphClipboard, setGraphClipboard } from "../shared/graph/clipboard";
+import { cloneKeyframes, cloneParams, cloneParamValue } from "../shared/graph/cloneGraph";
 import { findCompatibleSocket, segmentIntersectsRect } from "../shared/graph/insertOnWire";
 import { SOCKET_COLOR } from "../shared/graph/sockets";
 import { Connection, Graph, KeyframeStore, NodeInstance, NodeRegistry } from "../shared/graph/types";
@@ -56,24 +57,6 @@ function SpawnCursorMarker({ position }: { position: { x: number; y: number } })
       </svg>
     </div>
   );
-}
-
-function cloneDefaultParams(defaultParams: Record<string, unknown>): Record<string, unknown> {
-  const cloned: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(defaultParams)) {
-    if (value instanceof THREE.Color) {
-      cloned[key] = value.clone();
-    } else if (value instanceof THREE.Vector3) {
-      cloned[key] = value.clone();
-    } else if (value instanceof THREE.Matrix4) {
-      cloned[key] = value.clone();
-    } else if (typeof value === "object" && value !== null) {
-      cloned[key] = JSON.parse(JSON.stringify(value));
-    } else {
-      cloned[key] = value;
-    }
-  }
-  return cloned;
 }
 
 const NODE_TYPES = { graphNode: GraphNode };
@@ -237,6 +220,21 @@ function GraphEditorContent({
   const [nodes, setNodes] = useNodesState(initialNodes);
   const [edges, setEdges] = useEdgesState(useMemo(() => toFlowEdges(graph, initialNodes), [graph, initialNodes]));
 
+  /**
+   * Which node ids are currently selected, mirrored outside React state.
+   *
+   * The graph-sync effect below (position/param reconciliation, triggered
+   * whenever `graph` changes) needs to know this too, so it can carry
+   * selection forward instead of dropping it — but reading it off whatever
+   * `prevNodes` snapshot that effect's own setNodes happens to be holding is
+   * not safe: StrictMode double-invokes effects in dev, and one of the two
+   * invocations can run against a snapshot taken *before* a marquee-select's
+   * setNodes call had applied, silently reverting the selection a box-drag
+   * had just computed. Updated synchronously in onNodesChange, so it is
+   * never behind the change that produced it.
+   */
+  const selectedIdsRef = useRef<Set<string>>(new Set());
+
   const connectingHandleRef = useRef<{
     nodeId: string;
     handleId: string;
@@ -260,13 +258,21 @@ function GraphEditorContent({
       const prevIds = prevNodes.map((n) => n.id).join(",");
       const nextIds = nextNodes.map((n) => n.id).join(",");
       if (prevIds !== nextIds) {
-        return nextNodes;
+        return nextNodes.map((n) => ({ ...n, selected: selectedIdsRef.current.has(n.id) }));
       }
       return prevNodes.map((fn) => {
         const graphNode = graph.nodes.find((gn) => gn.id === fn.id);
         if (!graphNode) return fn;
         return {
           ...fn,
+          // Sourced from the ref, not `fn.selected` off `prevNodes`: this
+          // effect's own setNodes call can run — twice, under StrictMode's
+          // deliberate double-invoke — against a `prevNodes` snapshot taken
+          // *before* a marquee-select's own setNodes had applied, silently
+          // reverting the selection a box-drag had just computed. The ref is
+          // updated synchronously inside onNodesChange, so it can't be
+          // behind whatever snapshot this effect happens to be holding.
+          selected: selectedIdsRef.current.has(fn.id),
           position: graphNode.position,
           data: {
             ...fn.data,
@@ -300,11 +306,18 @@ function GraphEditorContent({
 
   const onNodesChange = useCallback(
     (changes: NodeChange<Node<GraphNodeData>>[]) => {
+      for (const change of changes) {
+        if (change.type === "select") {
+          if (change.selected) selectedIdsRef.current.add(change.id);
+          else selectedIdsRef.current.delete(change.id);
+        } else if (change.type === "remove") {
+          selectedIdsRef.current.delete(change.id);
+        }
+      }
       const next = applyNodeChanges(changes, nodes);
       setNodes(next);
-      commit(next, edges);
     },
-    [commit, edges, nodes, setNodes],
+    [nodes, setNodes],
   );
 
   const onEdgesChange = useCallback(
@@ -325,6 +338,7 @@ function GraphEditorContent({
       // and any other way a node can leave are covered by the same rule
       // rather than each needing to remember to call it.
       const deletedIds = new Set(deletedNodes.map((n) => n.id));
+      for (const id of deletedIds) selectedIdsRef.current.delete(id);
 
       const nextNodes = nodes.filter((n) => !deletedIds.has(n.id));
       const nextEdges = edges.filter((e) => !deletedIds.has(e.source) && !deletedIds.has(e.target));
@@ -517,68 +531,89 @@ function GraphEditorContent({
   );
 
   const onNodeDragStop = useCallback(
-    (event: unknown, draggedNode: Node<GraphNodeData>) => {
-      if (!(event instanceof MouseEvent) || !event.shiftKey) return;
+    (event: unknown, draggedNode: Node<GraphNodeData>, draggedNodes?: Node<GraphNodeData>[]) => {
+      if (event instanceof MouseEvent && event.shiftKey) {
+        const nodesById = new Map(nodes.map((n) => [n.id, n]));
+        const dimensionsOf = (n: Node<GraphNodeData>) => ({
+          width: n.measured?.width ?? DEFAULT_NODE_WIDTH,
+          height: n.measured?.height ?? DEFAULT_NODE_HEIGHT,
+        });
+        const draggedRect = { x: draggedNode.position.x, y: draggedNode.position.y, ...dimensionsOf(draggedNode) };
 
-      const nodesById = new Map(nodes.map((n) => [n.id, n]));
-      const dimensionsOf = (n: Node<GraphNodeData>) => ({
-        width: n.measured?.width ?? DEFAULT_NODE_WIDTH,
-        height: n.measured?.height ?? DEFAULT_NODE_HEIGHT,
+        const anchor = (n: Node<GraphNodeData>, side: "source" | "target") => {
+          const { width, height } = dimensionsOf(n);
+          return { x: n.position.x + (side === "source" ? width : 0), y: n.position.y + height / 2 };
+        };
+
+        const candidate = edges.find((edge) => {
+          if (edge.source === draggedNode.id || edge.target === draggedNode.id) return false;
+          const sourceNode = nodesById.get(edge.source);
+          const targetNode = nodesById.get(edge.target);
+          if (!sourceNode || !targetNode) return false;
+          return segmentIntersectsRect(anchor(sourceNode, "source"), anchor(targetNode, "target"), draggedRect);
+        });
+        if (candidate) {
+          const sourceSocket = nodesById.get(candidate.source)?.data.outputs.find((s) => s.id === candidate.sourceHandle);
+          const targetSocket = nodesById.get(candidate.target)?.data.inputs.find((s) => s.id === candidate.targetHandle);
+          if (sourceSocket && targetSocket) {
+            const inSocket = findCompatibleSocket(draggedNode.data.inputs, sourceSocket.type);
+            const outSocket = findCompatibleSocket(draggedNode.data.outputs, targetSocket.type);
+            if (inSocket && outSocket) {
+              const beforeEdge: Edge = {
+                id: `${candidate.source}.${candidate.sourceHandle}->${draggedNode.id}.${inSocket.id}`,
+                source: candidate.source,
+                sourceHandle: candidate.sourceHandle,
+                target: draggedNode.id,
+                targetHandle: inSocket.id,
+                style: candidate.style,
+              };
+              const afterEdge: Edge = {
+                id: `${draggedNode.id}.${outSocket.id}->${candidate.target}.${candidate.targetHandle}`,
+                source: draggedNode.id,
+                sourceHandle: outSocket.id,
+                target: candidate.target,
+                targetHandle: candidate.targetHandle,
+                style: { stroke: edgeColor(nodes, draggedNode.id, outSocket.id), strokeWidth: EDGE_STROKE_WIDTH },
+              };
+
+              const nextEdges = [
+                ...edges.filter(
+                  (e) => e.id !== candidate.id && !(e.target === draggedNode.id && e.targetHandle === inSocket.id),
+                ),
+                beforeEdge,
+                afterEdge,
+              ];
+              const nextNodes = refreshDynamicSockets(nodes, nextEdges, graph.nodes, registry);
+              setNodes(nextNodes);
+              setEdges(nextEdges);
+              commit(nextNodes, nextEdges);
+              return;
+            }
+          }
+        }
+      }
+
+      // Commit dragged positions for all dragged nodes
+      const allDragged = draggedNodes && draggedNodes.length > 0 ? draggedNodes : [draggedNode];
+      const draggedMap = new Map(allDragged.map((n) => [n.id, n.position]));
+      const updatedNodes = graph.nodes.map((n) => {
+        const newPos = draggedMap.get(n.id);
+        return newPos ? { ...n, position: { x: newPos.x, y: newPos.y } } : n;
       });
-      const draggedRect = { x: draggedNode.position.x, y: draggedNode.position.y, ...dimensionsOf(draggedNode) };
-
-      const anchor = (n: Node<GraphNodeData>, side: "source" | "target") => {
-        const { width, height } = dimensionsOf(n);
-        return { x: n.position.x + (side === "source" ? width : 0), y: n.position.y + height / 2 };
-      };
-
-      const candidate = edges.find((edge) => {
-        if (edge.source === draggedNode.id || edge.target === draggedNode.id) return false;
-        const sourceNode = nodesById.get(edge.source);
-        const targetNode = nodesById.get(edge.target);
-        if (!sourceNode || !targetNode) return false;
-        return segmentIntersectsRect(anchor(sourceNode, "source"), anchor(targetNode, "target"), draggedRect);
-      });
-      if (!candidate) return;
-
-      const sourceSocket = nodesById.get(candidate.source)?.data.outputs.find((s) => s.id === candidate.sourceHandle);
-      const targetSocket = nodesById.get(candidate.target)?.data.inputs.find((s) => s.id === candidate.targetHandle);
-      if (!sourceSocket || !targetSocket) return;
-
-      const inSocket = findCompatibleSocket(draggedNode.data.inputs, sourceSocket.type);
-      const outSocket = findCompatibleSocket(draggedNode.data.outputs, targetSocket.type);
-      if (!inSocket || !outSocket) return;
-
-      const beforeEdge: Edge = {
-        id: `${candidate.source}.${candidate.sourceHandle}->${draggedNode.id}.${inSocket.id}`,
-        source: candidate.source,
-        sourceHandle: candidate.sourceHandle,
-        target: draggedNode.id,
-        targetHandle: inSocket.id,
-        style: candidate.style,
-      };
-      const afterEdge: Edge = {
-        id: `${draggedNode.id}.${outSocket.id}->${candidate.target}.${candidate.targetHandle}`,
-        source: draggedNode.id,
-        sourceHandle: outSocket.id,
-        target: candidate.target,
-        targetHandle: candidate.targetHandle,
-        style: { stroke: edgeColor(nodes, draggedNode.id, outSocket.id), strokeWidth: EDGE_STROKE_WIDTH },
-      };
-
-      const nextEdges = [
-        ...edges.filter(
-          (e) => e.id !== candidate.id && !(e.target === draggedNode.id && e.targetHandle === inSocket.id),
-        ),
-        beforeEdge,
-        afterEdge,
-      ];
-      const nextNodes = refreshDynamicSockets(nodes, nextEdges, graph.nodes, registry);
-      setNodes(nextNodes);
-      setEdges(nextEdges);
-      commit(nextNodes, nextEdges);
+      onGraphChange?.(toGraph(updatedNodes, nodes, edges, graph.keyframes, graph.markers));
     },
-    [commit, edges, graph.nodes, nodes, registry, setEdges, setNodes],
+    [commit, edges, graph.keyframes, graph.markers, graph.nodes, nodes, onGraphChange, registry, setEdges, setNodes],
+  );
+
+  const onSelectionChange = useCallback(
+    ({ nodes: selectedNodes }: { nodes: Node<GraphNodeData>[] }) => {
+      if (selectedNodes.length === 1) {
+        onSelectNode(selectedNodes[0].id);
+      } else if (selectedNodes.length === 0) {
+        onSelectNode(null);
+      }
+    },
+    [onSelectNode],
   );
 
   const [spawnCursorPos, setSpawnCursorPos] = useState<{ x: number; y: number }>({ x: 300, y: 180 });
@@ -616,7 +651,7 @@ function GraphEditorContent({
       const instance: NodeInstance = {
         id,
         type,
-        params: cloneDefaultParams(def.defaultParams || {}),
+        params: cloneParams(def.defaultParams || {}),
         position,
       };
 
@@ -702,7 +737,7 @@ function GraphEditorContent({
           const emptyInstance: NodeInstance = {
             id: emptyId,
             type: "object/empty",
-            params: cloneDefaultParams(emptyDef.defaultParams || {}),
+            params: cloneParams(emptyDef.defaultParams || {}),
             position: emptyPos,
           };
           const emptyFlowNode: Node<GraphNodeData> = {
@@ -745,8 +780,6 @@ function GraphEditorContent({
     [graph, nodes, edges, pendingWireConnection, onGraphChange, registry, setNodes, setEdges],
   );
 
-  const clipboardRef = useRef<{ nodes: NodeInstance[]; connections: Connection[] } | null>(null);
-
   const getSelectedNodeInstances = useCallback(() => {
     const selectedFlowNodes = nodes.filter((n) => n.selected);
     if (selectedFlowNodes.length > 0) {
@@ -768,25 +801,37 @@ function GraphEditorContent({
       (c) => selectedIds.has(c.fromNode) && selectedIds.has(c.toNode),
     );
 
-    clipboardRef.current = {
-      nodes: JSON.parse(JSON.stringify(selected)),
-      connections: JSON.parse(JSON.stringify(internalConnections)),
-    };
-  }, [getSelectedNodeInstances, graph.connections]);
+    const relevantKeyframes: KeyframeStore = {};
+    if (graph.keyframes) {
+      for (const id of selectedIds) {
+        if (graph.keyframes[id]) {
+          relevantKeyframes[id] = graph.keyframes[id];
+        }
+      }
+    }
+
+    setGraphClipboard({
+      nodes: selected,
+      connections: internalConnections,
+      keyframes: relevantKeyframes,
+    });
+  }, [getSelectedNodeInstances, graph.connections, graph.keyframes]);
 
   const pasteClipboard = useCallback(() => {
-    if (!clipboardRef.current || clipboardRef.current.nodes.length === 0) return;
+    const clip = getGraphClipboard();
+    if (!clip || clip.nodes.length === 0) return;
 
-    const { nodes: clipNodes, connections: clipConns } = clipboardRef.current;
+    const { nodes: clipNodes, connections: clipConns, keyframes: clipKeyframes } = clip;
     const idMap = new Map<string, string>();
 
     const newInstances: NodeInstance[] = clipNodes.map((n: NodeInstance) => {
       const newId = crypto.randomUUID();
       idMap.set(n.id, newId);
       return {
-        ...JSON.parse(JSON.stringify(n)),
         id: newId,
+        type: n.type,
         position: { x: n.position.x + 30, y: n.position.y + 30 },
+        params: cloneParams(n.params),
       };
     });
 
@@ -797,6 +842,24 @@ function GraphEditorContent({
       toNode: idMap.get(c.toNode)!,
       toSocket: c.toSocket,
     }));
+
+    const nextKeyframes: KeyframeStore = graph.keyframes ? cloneKeyframes(graph.keyframes)! : {};
+    if (clipKeyframes) {
+      for (const [oldId, paramMap] of Object.entries(clipKeyframes)) {
+        const newId = idMap.get(oldId);
+        if (newId) {
+          nextKeyframes[newId] = {};
+          for (const [paramKey, list] of Object.entries(paramMap)) {
+            nextKeyframes[newId][paramKey] = list.map((kf) => ({
+              frame: kf.frame,
+              value: cloneParamValue(kf.value),
+              easeIn: kf.easeIn,
+              easeOut: kf.easeOut,
+            }));
+          }
+        }
+      }
+    }
 
     const newFlowNodes: Node<GraphNodeData>[] = newInstances.map((instance) => {
       const def = registry.get(instance.type);
@@ -820,25 +883,41 @@ function GraphEditorContent({
     const unselectedPrevNodes = nodes.map((n) => ({ ...n, selected: false }));
     const nextFlowNodes = [...unselectedPrevNodes, ...newFlowNodes];
 
+    const newEdges: Edge[] = newConnections.map((c) => ({
+      id: c.id,
+      source: c.fromNode,
+      sourceHandle: c.fromSocket,
+      target: c.toNode,
+      targetHandle: c.toSocket,
+      style: {
+        stroke: edgeColor(nextFlowNodes, c.fromNode, c.fromSocket),
+        strokeWidth: EDGE_STROKE_WIDTH,
+      },
+    }));
+
     const nextGraph: Graph = {
       nodes: [...graph.nodes, ...newInstances],
       connections: [...graph.connections, ...newConnections],
-      keyframes: graph.keyframes,
+      keyframes: nextKeyframes,
       markers: graph.markers,
     };
 
     setNodes(nextFlowNodes);
+    setEdges((prevEdges) => [...prevEdges, ...newEdges]);
     onGraphChange?.(nextGraph);
 
     if (newInstances.length === 1) {
       onSelectNode(newInstances[0].id);
     }
 
-    clipboardRef.current = {
+    setGraphClipboard({
       nodes: newInstances,
       connections: newConnections,
-    };
-  }, [graph, nodes, onGraphChange, onSelectNode, registry, setNodes]);
+      keyframes: clipKeyframes ? Object.fromEntries(
+        newInstances.map((inst) => [inst.id, nextKeyframes[inst.id] ?? {}])
+      ) : undefined,
+    });
+  }, [graph, nodes, onGraphChange, onSelectNode, registry, setEdges, setNodes]);
 
   const duplicateSelected = useCallback(() => {
     copySelected();
@@ -928,11 +1007,13 @@ function GraphEditorContent({
           onNodeDragStop={onNodeDragStop}
           onNodeClick={onNodeClick}
           onPaneClick={onPaneClick}
+          onSelectionChange={onSelectionChange}
           selectionOnDrag
           selectionMode={SelectionMode.Partial}
           multiSelectionKeyCode={["Shift", "Meta", "Control"]}
-          selectionKeyCode={["Shift", "Meta", "Control"]}
+          selectionKeyCode={null}
           panOnDrag={[1, 2]}
+          panOnScroll={false}
           fitView
           fitViewOptions={{ padding: 0.25 }}
           colorMode="dark"

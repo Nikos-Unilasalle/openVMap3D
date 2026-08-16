@@ -70,14 +70,6 @@ function expoEaseIn(p: number): number {
   return p <= 0 ? 0 : Math.pow(2, 10 * p - 10);
 }
 
-function expoEaseInOut(p: number): number {
-  if (p <= 0) return 0;
-  if (p >= 1) return 1;
-  return p < 0.5
-    ? Math.pow(2, 20 * p - 10) / 2
-    : (2 - Math.pow(2, -20 * p + 10)) / 2;
-}
-
 function sineEaseOut(p: number): number {
   return Math.sin((p * Math.PI) / 2);
 }
