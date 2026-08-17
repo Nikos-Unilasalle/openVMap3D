@@ -49,6 +49,12 @@ export interface EvalContext {
    * or in contexts that don't arbitrate one (tests, a headless evaluate call).
    */
   activeCameraPose?: { matrix: THREE.Matrix4; fov: number } | null;
+  /**
+   * The render node's output resolution (width × height in px) — what defines
+   * the scene's coordinate space. HUD (hub/*) nodes position their elements in
+   * these pixels. Absent when there is no render node, or in a headless call.
+   */
+  renderSize?: { width: number; height: number };
   /** Active animation current frame index. */
   currentFrame?: number;
   /** Active keyframe store. */

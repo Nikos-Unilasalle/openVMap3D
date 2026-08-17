@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { NodeDefinition } from "../types";
 import { createNodeCache } from "../nodeCaches";
 import { asVector3, composeNativeMatrix } from "./transform";
@@ -754,5 +755,130 @@ export const CURVE_DEFORM_NODE: NodeDefinition = {
     }
 
     return primitiveOutputs(state.mesh);
+  },
+};
+
+/** 6. Curves to Mesh (List) Node — extrudes every curve in a list and merges them into one mesh. */
+export const CURVES_TO_MESH_NODE: NodeDefinition = {
+  type: "curve/to_mesh_list",
+  label: "Curves to Mesh (List)",
+  category: "curve",
+  inputs: [
+    { id: "curves", label: "Curves (List)", type: "list" },
+    { id: "thickness", label: "Thickness", type: "value" },
+    { id: "startProgress", label: "Start %", type: "value" },
+    { id: "endProgress", label: "End %", type: "value" },
+    ...COMMON_PRIMITIVE_INPUTS,
+  ],
+  outputs: [...COMMON_PRIMITIVE_OUTPUTS],
+  defaultParams: {
+    visible: 1,
+    location: new THREE.Vector3(0, 0, 0),
+    rotation: new THREE.Vector3(0, 0, 0),
+    scale: new THREE.Vector3(1, 1, 1),
+    thickness: 0.15,
+    startProgress: 0.0,
+    endProgress: 1.0,
+    tubularSegments: 64,
+    radialSegments: 12,
+    color: new THREE.Color(0x38bdf8),
+    emissive: new THREE.Color(0x000000),
+    emissiveIntensity: 1.0,
+    shadeless: false,
+    roughness: 0.4,
+    metalness: 0.1,
+    wireframe: false,
+    opacity: 1.0,
+    uvScaleX: 1,
+    uvScaleY: 1,
+    uvOffsetX: 0,
+    uvOffsetY: 0,
+    profile: DEFAULT_PROFILE_POINTS,
+    doubleSided: true,
+  },
+  dynamicParamFields: () => [
+    { id: "visible", label: "Visible", kind: "boolean", group: "Transform" },
+    { id: "location", label: "Location", kind: "vector", group: "Transform" },
+    { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true, group: "Transform" },
+    { id: "scale", label: "Scale", kind: "vector", group: "Transform" },
+    { id: "thickness", label: "Base Thickness", kind: "number", step: 0.02, group: "Geometry" },
+    { id: "startProgress", label: "Start %", kind: "number", step: 0.01, group: "Geometry" },
+    { id: "endProgress", label: "End %", kind: "number", step: 0.01, group: "Geometry" },
+    { id: "tubularSegments", label: "Length Segments", kind: "number", step: 4, group: "Geometry" },
+    { id: "radialSegments", label: "Radial Sides", kind: "number", step: 1, group: "Geometry" },
+    { id: "doubleSided", label: "Double Sided", kind: "boolean", group: "Geometry" },
+    { id: "profile", label: "Thickness Profile", kind: "curve_profile", group: "Profile" },
+    { id: "color", label: "Color (fallback)", kind: "color", group: "Material" },
+    { id: "emissive", label: "Emissive (Glow)", kind: "color", group: "Material" },
+    { id: "emissiveIntensity", label: "Emissive Intensity", kind: "number", step: 0.1, group: "Material" },
+    { id: "shadeless", label: "Shadeless (Unlit)", kind: "boolean", group: "Material" },
+    { id: "roughness", label: "Roughness", kind: "number", step: 0.05, group: "Material" },
+    { id: "metalness", label: "Metalness", kind: "number", step: 0.05, group: "Material" },
+    { id: "wireframe", label: "Wireframe", kind: "boolean", group: "Material" },
+    { id: "opacity", label: "Opacity", kind: "number", step: 0.05, group: "Material" },
+    { id: "uvScaleX", label: "UV Scale X", kind: "number", step: 0.1, group: "Texture & UV" },
+    { id: "uvScaleY", label: "UV Scale Y", kind: "number", step: 0.1, group: "Texture & UV" },
+    { id: "uvOffsetX", label: "UV Offset X", kind: "number", step: 0.05, group: "Texture & UV" },
+    { id: "uvOffsetY", label: "UV Offset Y", kind: "number", step: 0.05, group: "Texture & UV" },
+  ],
+  evaluate: (inputs, params, ctx) => {
+    const state = getState(ctx.nodeId);
+
+    const curves = Array.isArray(inputs.curves)
+      ? (inputs.curves as unknown[]).filter((c): c is THREE.Curve<THREE.Vector3> => c instanceof THREE.Curve)
+      : [];
+
+    if (!state.mesh) {
+      const mat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, side: THREE.DoubleSide });
+      const mesh = new THREE.Mesh(new THREE.BufferGeometry(), mat);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.userData.nodeId = ctx.nodeId;
+      state.mesh = mesh;
+      state.ownMaterial = mat;
+    }
+    const mesh = state.mesh;
+
+    const thickness = inputs.thickness !== undefined ? asNumber(inputs.thickness, 0.15) : asNumber(params.thickness, 0.15);
+    const startProgress = Math.max(0, Math.min(1, inputs.startProgress !== undefined ? asNumber(inputs.startProgress, 0.0) : asNumber(params.startProgress, 0.0)));
+    const endProgress = Math.max(0, Math.min(1, inputs.endProgress !== undefined ? asNumber(inputs.endProgress, 1.0) : asNumber(params.endProgress, 1.0)));
+    const tubularSegments = Math.max(8, Math.round(asNumber(params.tubularSegments, 64)));
+    const radialSegments = Math.max(3, Math.round(asNumber(params.radialSegments, 12)));
+    const profile = (Array.isArray(params.profile) ? params.profile : DEFAULT_PROFILE_POINTS) as ProfilePoint[];
+
+    const signature = JSON.stringify([
+      curves.map((c) => c.toJSON()),
+      tubularSegments,
+      radialSegments,
+      thickness,
+      profile,
+      startProgress,
+      endProgress,
+    ]);
+    if (signature !== state.geometrySignature) {
+      state.geometrySignature = signature;
+      mesh.geometry.dispose();
+      if (curves.length === 0) {
+        mesh.geometry = new THREE.BufferGeometry();
+      } else {
+        const geoms = curves.map((c) =>
+          createVariableThicknessTubeGeometry(c, tubularSegments, radialSegments, thickness, profile, false, startProgress, endProgress)
+        );
+        mesh.geometry = mergeGeometries(geoms, false) ?? new THREE.BufferGeometry();
+      }
+    }
+
+    if (ctx.nodeId !== ctx.liveEditNodeId) {
+      const wiredMatrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix.clone() : new THREE.Matrix4();
+      mesh.matrixAutoUpdate = false;
+      mesh.matrix.copy(composeNativeMatrix(wiredMatrix, params.location, params.rotation, params.scale));
+    }
+
+    const matParams = extractMaterialParams(inputs, params);
+    const texParams = extractTextureParams(inputs, params, ctx.nodeId);
+    const side = Boolean(params.doubleSided ?? true) ? THREE.DoubleSide : THREE.FrontSide;
+    applyMaterialParams(mesh, matParams, side, texParams);
+
+    return primitiveOutputs(mesh);
   },
 };

@@ -98,8 +98,8 @@ describe("resolveGizmoTarget", () => {
   });
 
   it("returns null for a node type not in GIZMO_SELECTABLE_TYPES at all", () => {
-    const graph: Graph = { nodes: [node("merge1", "structure/merge")], connections: [] };
-    expect(resolveGizmoTarget(graph, "merge1")).toBeNull();
+    const graph: Graph = { nodes: [node("osc1", "value/oscillator")], connections: [] };
+    expect(resolveGizmoTarget(graph, "osc1")).toBeNull();
   });
 });
 
@@ -155,7 +155,10 @@ describe("GIZMO_SELECTABLE_TYPES", () => {
       "object/obj",
       "object/text",
       "curve/to_mesh",
+      "curve/to_mesh_list",
+      "curve/svg_solid",
       "curve/deform",
+      "structure/merge",
       "object/empty",
       "texture/plane",
       "light/directional",

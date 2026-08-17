@@ -100,14 +100,23 @@ describe("CAMERA_NODE manual mode", () => {
     expect(pos.z).toBeCloseTo(-2);
   });
 
-  test("accepts external matrix input to override camera pose", () => {
-    const customMat = new THREE.Matrix4().makeTranslation(10, 20, 30);
-    const res = CAMERA_NODE.evaluate({ matrix: customMat }, CAMERA_NODE.defaultParams, CTX);
+  test("composes an external matrix input as a delta on top of its own pose", () => {
+    // The "native" convention every object follows: location/rotation are the
+    // base, and whatever is wired into `matrix` (Compose Matrix, Wiggle, …) is
+    // a delta applied on top — not a wholesale replacement, which would kill
+    // the gizmo and the camera's own location/rotation params.
+    const location = new THREE.Vector3(1, 2, 3);
+    const delta = new THREE.Matrix4().makeTranslation(10, 20, 30);
+    const res = CAMERA_NODE.evaluate(
+      { location, rotation: new THREE.Vector3(0, 0, 0), matrix: delta },
+      CAMERA_NODE.defaultParams,
+      CTX,
+    );
     const pos = new THREE.Vector3().setFromMatrixPosition(res.matrix as THREE.Matrix4);
 
-    expect(pos.x).toBeCloseTo(10);
-    expect(pos.y).toBeCloseTo(20);
-    expect(pos.z).toBeCloseTo(30);
+    expect(pos.x).toBeCloseTo(11);
+    expect(pos.y).toBeCloseTo(22);
+    expect(pos.z).toBeCloseTo(33);
   });
 });
 

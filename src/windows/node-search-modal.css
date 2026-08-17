@@ -76,6 +76,12 @@
   flex-direction: column;
   gap: 3px;
   max-height: 400px;
+  /* Hide the scrollbar while keeping the list scrollable. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.node-search-list::-webkit-scrollbar {
+  display: none;
 }
 
 .node-search-item {

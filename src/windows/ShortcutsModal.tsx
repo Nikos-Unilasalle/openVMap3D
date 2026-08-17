@@ -121,7 +121,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
             </svg>
             <div>
               <h2 className="shortcuts-modal-title">Keyboard Shortcuts</h2>
-              <p className="shortcuts-modal-subtitle">Quick reference guide for openVMap 3D</p>
+              <p className="shortcuts-modal-subtitle">Quick reference guide for Tsuji</p>
             </div>
           </div>
           <button type="button" className="shortcuts-modal-close" onClick={onClose} title="Close (Esc)">

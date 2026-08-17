@@ -5,6 +5,7 @@ import { TransformControls } from "three/examples/jsm/controls/TransformControls
 import { ClockState, createClock, STEP_SECONDS, tickClock } from "../graph/clock";
 import { EvalResult, evaluateGraph } from "../graph/evaluate";
 import { CAMERA_FLY_TO_NODE, CAMERA_NODE } from "../graph/nodes/camera";
+import { HubElement } from "../graph/nodes/hub";
 import { asVector3 } from "../graph/nodes/transform";
 import { resetAllParticleSimulations } from "../graph/particleRuntime";
 import { resolveCurveEditTarget } from "../graph/curveLookup";
@@ -47,18 +48,99 @@ import { Graph, NodeRegistry } from "../graph/types";
 import type { PreviewCameraPose } from "../ipc";
 import "./viewport.css";
 
+// HUD elements are CSS/DOM overlays, which video export (which captures the
+// WebGL canvas) would otherwise omit. These helpers redraw each element onto a
+// 2D canvas so the export includes the HUD.
+const exportImageCache = new Map<string, HTMLImageElement>();
+function getExportImage(url: string): HTMLImageElement | null {
+  let img = exportImageCache.get(url);
+  if (!img) {
+    img = new Image();
+    img.src = url;
+    exportImageCache.set(url, img);
+  }
+  return img.complete && img.naturalWidth > 0 ? img : null;
+}
+
+function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+  const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
+function drawHubElement(ctx: CanvasRenderingContext2D, el: HubElement): void {
+  if (!el.visible || el.cssOpacity <= 0) return;
+  ctx.save();
+  ctx.translate(el.x, el.y);
+  ctx.rotate((el.rotation * Math.PI) / 180);
+  ctx.globalAlpha = el.cssOpacity;
+
+  if (el.imageUrl) {
+    const img = getExportImage(el.imageUrl);
+    if (img) {
+      const w = (el.imageWidth ?? 200) * el.scale;
+      const h = w / Math.max(1, img.naturalWidth / Math.max(1, img.naturalHeight));
+      ctx.save();
+      roundRectPath(ctx, -w / 2, -h / 2, w, h, el.borderRadius);
+      ctx.clip();
+      ctx.drawImage(img, -w / 2, -h / 2, w, h);
+      ctx.restore();
+      if (el.borderColor) {
+        ctx.strokeStyle = el.borderColor;
+        ctx.lineWidth = el.borderWidth;
+        roundRectPath(ctx, -w / 2, -h / 2, w, h, el.borderRadius);
+        ctx.stroke();
+      }
+    }
+  } else {
+    const fontSize = Math.max(1, el.fontSize * el.scale);
+    ctx.font = `${fontSize}px ${el.fontFamily}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const tw = ctx.measureText(el.text).width;
+    const bh = fontSize * 1.2 + 8;
+    const bw = tw + 20;
+    if (el.backgroundColor) {
+      ctx.fillStyle = el.backgroundColor;
+      roundRectPath(ctx, -bw / 2, -bh / 2, bw, bh, el.borderRadius);
+      ctx.fill();
+    }
+    if (el.borderColor) {
+      ctx.strokeStyle = el.borderColor;
+      ctx.lineWidth = el.borderWidth;
+      roundRectPath(ctx, -bw / 2, -bh / 2, bw, bh, el.borderRadius);
+      ctx.stroke();
+    }
+    if (el.textShadow) {
+      const m = el.textShadow.match(/(-?[\d.]+)px\s+(-?[\d.]+)px\s+(-?[\d.]+)px\s+(.*)$/);
+      if (m) {
+        ctx.shadowOffsetX = parseFloat(m[1]);
+        ctx.shadowOffsetY = parseFloat(m[2]);
+        ctx.shadowBlur = parseFloat(m[3]);
+        ctx.shadowColor = m[4].trim();
+      }
+    }
+    ctx.fillStyle = el.color;
+    ctx.fillText(el.text, 0, 0);
+  }
+  ctx.restore();
+}
+
 /**
  * Copy a light's live state onto another instance of the same type. The
  * viewport's output pane holds its own clone of each graph light (they are
- * cached per node id at module scope and can only have one parent — see the
- * comment next to the clone in tick()), and this keeps that clone in step
+ * cached per node id at module scope and can only have one parent — see the * comment next to the clone in tick()), and this keeps that clone in step
  * with the shared original every frame, instead of re-cloning (which would
  * allocate a fresh shadow render target per frame).
  */
 function copyLightState(src: THREE.Light, dst: THREE.Light) {
   dst.color.copy(src.color);
-  dst.intensity = src.intensity;
-  dst.castShadow = src.castShadow;
+  dst.intensity = src.intensity;  dst.castShadow = src.castShadow;
   dst.position.copy(src.position);
   dst.quaternion.copy(src.quaternion);
   dst.scale.copy(src.scale);
@@ -151,6 +233,8 @@ interface ViewportProps {
   currentFrame?: number;
   onEvaluatedResults?: (results: Map<string, Record<string, unknown>>) => void;
   isPlaying?: boolean;
+  /** Fired continuously while dragging the 2D HUD gizmo on the camera view — writes the element's position/rotation/scale back to its hub node. */
+  onHubChange?: (nodeId: string, patch: Partial<{ x: number; y: number; rotation: number; scale: number }>) => void;
   /**
    * Populated (by this component, into the ref the caller passed in) once
    * the render loop is up — see videoExport.ts. `captureFrame` forces the
@@ -188,6 +272,7 @@ export function Viewport({
   onEvaluatedResults,
   isPlaying = true,
   exportHandleRef,
+  onHubChange,
 }: ViewportProps) {
   const [showUiOverlay, setShowUiOverlay] = useState(true);
   const showUiOverlayRef = useRef(showUiOverlay);
@@ -212,12 +297,73 @@ export function Viewport({
   const isCameraViewRef = useRef(isCameraView);
   isCameraViewRef.current = isCameraView;
 
+  const [hubElements, setHubElements] = useState<HubElement[]>([]);
+  const hubSigRef = useRef<string>("");
+  // The render node's output resolution — HUD elements are positioned in these
+  // pixels. Non-null means a render node exists (which enables the HUD).
+  const [renderSize, setRenderSize] = useState<{ width: number; height: number } | null>(null);
+  const renderSizeRef = useRef<{ width: number; height: number } | null>(null);
+  // Whether the render node's holdout is on (blacks out the area outside the render frame).
+  const holdoutRef = useRef(false);
+
+  const hubDragRef = useRef<{
+    mode: "move" | "rotate" | "size";
+    startClientX: number;
+    startClientY: number;
+    originClientX: number;
+    originClientY: number;
+    baseX: number;
+    baseY: number;
+    baseRot: number;
+    baseScale: number;
+  } | null>(null);
+  // Set once a drag actually moves the pointer — used to distinguish a real
+  // drag from a plain click so a drag doesn't also trigger select.
+  const hubDragMovedRef = useRef(false);
+
   const [marqueeBox, setMarqueeBox] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
 
   const onToggleSplitViewRef = useRef(onToggleSplitView);
   onToggleSplitViewRef.current = onToggleSplitView;
   const snapSelectedCameraToEditorRef = useRef<() => void>(() => {});
   const cameraGuideRef = useRef<HTMLDivElement>(null);
+
+  // Drives the 2D HUD gizmo: window-level pointermove/up translate a drag on a
+  // selected hub element into x/y (move) or rotation (rotate) patches.
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const drag = hubDragRef.current;
+      const nodeId = selectedNodeIdRef.current;
+      if (!drag || !nodeId || !onHubChange || !hostRef.current) return;
+      const rect = hostRef.current.getBoundingClientRect();
+      const rs = renderSizeRef.current;
+      if (!rs) return;
+      if (drag.mode === "move") {
+        hubDragMovedRef.current = true;
+        // Pointer delta in viewport px, scaled to the render-node resolution.
+        const nx = drag.baseX + ((e.clientX - drag.startClientX) / rect.width) * rs.width;
+        const ny = drag.baseY + ((e.clientY - drag.startClientY) / rect.height) * rs.height;
+        onHubChange(nodeId, { x: nx, y: ny });
+      } else if (drag.mode === "rotate") {
+        const angle = Math.atan2(e.clientY - drag.originClientY, e.clientX - drag.originClientX) * (180 / Math.PI);
+        const startAngle = Math.atan2(drag.startClientY - drag.originClientY, drag.startClientX - drag.originClientX) * (180 / Math.PI);
+        const rot = (drag.baseRot + angle - startAngle + 360) % 360;
+        onHubChange(nodeId, { rotation: rot });
+      } else {
+        const ns = Math.max(0.05, Math.min(4, drag.baseScale + (e.clientX - drag.startClientX) / 200));
+        onHubChange(nodeId, { scale: ns });
+      }
+    };
+    const onUp = () => {
+      hubDragRef.current = null;
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, [onHubChange]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -305,6 +451,11 @@ export function Viewport({
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     host.appendChild(renderer.domElement);
+
+    // Composite canvas for video export: the WebGL frame + the 2D HUD overlay,
+    // since MediaRecorder can only capture a canvas, not the CSS HUD.
+    const exportCanvas = document.createElement("canvas");
+    const exportCtx = exportCanvas.getContext("2d");
 
     const viewportBackground = createViewportBackground();
     const scene = new THREE.Scene();
@@ -1005,7 +1156,7 @@ export function Viewport({
 
     if (exportHandleRef) {
       exportHandleRef.current = {
-        getCanvas: () => renderer.domElement,
+        getCanvas: () => exportCanvas,
         captureFrame: (frameIndex, fps) =>
           new Promise<void>((resolve) => {
             pendingCaptureRef.current = { frameIndex, fps, resolve };
@@ -1093,6 +1244,13 @@ export function Viewport({
 
       let results;
       try {
+        // Feed the previous frame's render resolution to hub/* nodes so they
+        // can default their pixel positions to the scene centre.
+        const prevRender = renderNodeIdRef.current && latestResults ? latestResults.get(renderNodeIdRef.current) : undefined;
+        const renderSize =
+          prevRender && typeof prevRender.width === "number" && typeof prevRender.height === "number"
+            ? { width: prevRender.width as number, height: prevRender.height as number }
+            : undefined;
         results = evaluateGraph(graphRef.current, registryRef.current, {
           time: clock.time,
           step: clock.step,
@@ -1100,6 +1258,7 @@ export function Viewport({
           liveEditNodeId,
           renderer,
           activeCameraPose,
+          renderSize,
           currentFrame: exportFrameIndex,
           keyframes: graphRef.current.keyframes,
         });
@@ -1236,6 +1395,43 @@ export function Viewport({
       const activeCameraResult = resolveActiveCameraResult(results, graphRef.current);
 
       const cameraResult = activeCameraResult;
+
+      // The render node defines the scene's coordinate space (its output
+      // resolution) and its presence is what enables the 2D HUD overlay.
+      const hubRenderResult = renderNodeIdRef.current ? results.get(renderNodeIdRef.current) : undefined;
+      const rs =
+        hubRenderResult && typeof hubRenderResult.width === "number" && typeof hubRenderResult.height === "number"
+          ? { width: hubRenderResult.width as number, height: hubRenderResult.height as number }
+          : null;
+      if (
+        (rs === null) !== (renderSizeRef.current === null) ||
+        (rs && renderSizeRef.current && (rs.width !== renderSizeRef.current.width || rs.height !== renderSizeRef.current.height))
+      ) {
+        renderSizeRef.current = rs;
+        setRenderSize(rs);
+      }
+
+      // Keep the export canvas at the render-node resolution (not the live
+      // viewport size) so captureStream produces a full-resolution video.
+      if (rs && exportCtx && (exportCanvas.width !== rs.width || exportCanvas.height !== rs.height)) {
+        exportCanvas.width = Math.round(rs.width);
+        exportCanvas.height = Math.round(rs.height);
+      }
+
+      // Collect HUD elements produced by hub/* nodes this frame. Only re-render
+      // React when their serialized appearance actually changed (text/style, or
+      // an active animation moving opacity/transform), so idle frames don't churn.
+      const collectedHub: HubElement[] = [];
+      for (const [, res] of results.entries()) {
+        const hud = res.hud;
+        if (hud && typeof hud === "object") collectedHub.push(hud as HubElement);
+      }
+      const hubSig = JSON.stringify(collectedHub);
+      if (hubSigRef.current !== hubSig) {
+        hubSigRef.current = hubSig;
+        setHubElements(collectedHub);
+      }
+
       if (cameraResult && typeof cameraResult.projectionType === "string") {
         const wantsOrtho = cameraResult.projectionType === "orthographic";
         if (wantsOrtho !== isOrthographicRef.current) {
@@ -1296,6 +1492,16 @@ export function Viewport({
           controls.update();
         }
         restoreProjection();
+      }
+
+      // Holdout: when the render node's holdout is on, the clear colour is
+      // opaque black, so anything not drawn by the scene (the letterbox around
+      // the render frame) is black instead of the editor background.
+      const renderOut = renderNodeIdRef.current ? results.get(renderNodeIdRef.current) : undefined;
+      const holdoutEnabled = !!renderOut?.holdout;
+      if (holdoutRef.current !== holdoutEnabled) {
+        holdoutRef.current = holdoutEnabled;
+        renderer.setClearColor(holdoutEnabled ? 0x000000 : 0x000000, holdoutEnabled ? 1 : 0);
       }
 
       // Sync corner Gizmo camera orientation with main camera — derived from
@@ -1696,6 +1902,32 @@ export function Viewport({
       }
 
       if (capture) {
+        // Composite the WebGL frame + the 2D HUD overlay onto the export
+        // canvas, which is what MediaRecorder actually captures.
+        if (exportCtx) {
+          const src = renderer.domElement;
+          exportCtx.clearRect(0, 0, exportCanvas.width, exportCanvas.height);
+          // Scale the (possibly dpr-sized) WebGL frame to fill the export
+          // canvas, preserving aspect.
+          const scale = Math.min(
+            exportCanvas.width / Math.max(1, src.width),
+            exportCanvas.height / Math.max(1, src.height),
+          );
+          const dw = src.width * scale;
+          const dh = src.height * scale;
+          const dx = (exportCanvas.width - dw) / 2;
+          const dy = (exportCanvas.height - dh) / 2;
+          exportCtx.drawImage(src, dx, dy, dw, dh);
+          const rs = renderSizeRef.current;
+          if (rs && rs.width > 0 && rs.height > 0) {
+            const sx = exportCanvas.width / rs.width;
+            const sy = exportCanvas.height / rs.height;
+            exportCtx.save();
+            exportCtx.scale(sx, sy);
+            for (const el of collectedHub) drawHubElement(exportCtx, el);
+            exportCtx.restore();
+          }
+        }
         pendingCaptureRef.current = null;
         capture.resolve();
       }
@@ -1971,7 +2203,7 @@ export function Viewport({
                 color: isSplitView ? "#38bdf8" : "#cbd5e1",
               }}
               onClick={onToggleSplitView}
-              title={isSplitView ? "Close Split View (Shift+Tab)" : "Open Split View (Shift+Tab)"}
+              title="Cycle View: Viewport / Split / Camera (Shift+Tab)"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -2024,6 +2256,121 @@ export function Viewport({
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* 2D HUD overlay — shown over the camera view whenever a render node
+          exists (its resolution defines the elements' pixel coordinate space).
+          Renders hub/* node outputs as absolutely-positioned CSS over the frame. */}
+      {(outputMode || isCameraView) && renderSize && hubElements.length > 0 && (
+        <div className="viewport-hub-overlay">
+          {hubElements.map((el) => (
+            <div
+              key={el.id}
+              className={"viewport-hub-element" + (el.id === selectedNodeId ? " viewport-hub-element-selected" : "")}
+              style={{
+                left: `${(el.x / renderSize.width) * 100}%`,
+                top: `${(el.y / renderSize.height) * 100}%`,
+                fontFamily: el.fontFamily,
+                fontSize: `${el.fontSize * el.scale}px`,
+                color: el.color,
+                textShadow: el.textShadow ?? undefined,
+                background: el.backgroundColor ?? undefined,
+                border: el.borderColor ? `${el.borderWidth}px solid ${el.borderColor}` : undefined,
+                borderRadius: `${el.borderRadius}px`,
+                boxShadow: el.shadow ?? undefined,
+                opacity: el.cssOpacity,
+                transform: el.transform,
+                filter: el.filter,
+                display: el.visible ? "block" : "none",
+                pointerEvents: onSelectNode ? "auto" : "none",
+                cursor: el.id === selectedNodeId ? "default" : "pointer",
+                padding: el.imageUrl ? 0 : undefined,
+              }}
+              onPointerDown={(e) => {
+                // Drag directly on the element to move it (no move handle).
+                if (!onHubChange || !hostRef.current) return;
+                e.stopPropagation();
+                hubDragMovedRef.current = false;
+                hubDragRef.current = {
+                  mode: "move",
+                  startClientX: e.clientX,
+                  startClientY: e.clientY,
+                  originClientX: 0,
+                  originClientY: 0,
+                  baseX: el.x,
+                  baseY: el.y,
+                  baseRot: el.rotation,
+                  baseScale: el.scale,
+                };
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                // A real drag shouldn't also select the node.
+                if (hubDragMovedRef.current) {
+                  hubDragMovedRef.current = false;
+                  return;
+                }
+                onSelectNode?.(el.id);
+              }}
+            >
+              {el.imageUrl ? (
+                <img
+                  src={el.imageUrl}
+                  alt=""
+                  draggable={false}
+                  className="viewport-hub-element-img"
+                  style={{ width: `${(el.imageWidth ?? 200) * el.scale}px`, borderRadius: `${el.borderRadius}px` }}
+                />
+              ) : (
+                el.text
+              )}
+              {el.id === selectedNodeId && onHubChange && (
+                <>
+                  <div
+                    className="viewport-hub-gizmo-rotate"
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      if (!hostRef.current) return;
+                      const rect = hostRef.current.getBoundingClientRect();
+                      const rs = renderSizeRef.current;
+                      hubDragRef.current = {
+                        mode: "rotate",
+                        startClientX: e.clientX,
+                        startClientY: e.clientY,
+                        originClientX: rect.left + (el.x / (rs?.width ?? 1)) * rect.width,
+                        originClientY: rect.top + (el.y / (rs?.height ?? 1)) * rect.height,
+                        baseX: el.x,
+                        baseY: el.y,
+                        baseRot: el.rotation,
+                        baseScale: el.scale,
+                      };
+                    }}
+                    title="Drag to rotate"
+                  />
+                  <div
+                    className="viewport-hub-gizmo-size"
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      if (!hostRef.current) return;
+                      hubDragRef.current = {
+                        mode: "size",
+                        startClientX: e.clientX,
+                        startClientY: e.clientY,
+                        originClientX: 0,
+                        originClientY: 0,
+                        baseX: el.x,
+                        baseY: el.y,
+                        baseRot: el.rotation,
+                        baseScale: el.scale,
+                      };
+                    }}
+                    title="Drag to resize"
+                  />
+                </>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>

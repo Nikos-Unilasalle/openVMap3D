@@ -35,14 +35,66 @@ describe("MERGE_NODE", () => {
   });
 
   test("dynamicInputs always offers exactly one socket past the last connected one", () => {
-    // "visible" leads every geometry node's inputs (see evaluate.ts) — the
-    // growing In N sockets follow it.
-    expect(MERGE_NODE.dynamicInputs?.([]).map((s) => s.id)).toEqual(["visible", "in0"]);
+    // "visible", "matrix" and the material sockets lead the geometry inputs
+    // (see evaluate.ts) — the growing In N sockets follow them.
+    expect(MERGE_NODE.dynamicInputs?.([]).map((s) => s.id)).toEqual([
+      "visible",
+      "matrix",
+      "material",
+      "texture",
+      "normal",
+      "uvScale",
+      "uvOffset",
+      "in0",
+    ]);
     expect(
       MERGE_NODE.dynamicInputs?.([
         { id: "c0", fromNode: "box", fromSocket: "geometry", toNode: "merge", toSocket: "in0" },
       ]).map((s) => s.id),
-    ).toEqual(["visible", "in0", "in1"]);
+    ).toEqual(["visible", "matrix", "material", "texture", "normal", "uvScale", "uvOffset", "in0", "in1"]);
+  });
+
+  test("overrideMaterials applies material params to every descendant mesh", () => {
+    const a = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial({ color: 0x0000ff }));
+    const b = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial({ color: 0x00ff00 }));
+    const result = MERGE_NODE.evaluate(
+      { in0: a, in1: b },
+      { overrideMaterials: 1, color: new THREE.Color(0xff0000) },
+      CTX,
+    ).geometry as THREE.Group;
+
+    for (const child of result.children) {
+      expect(((child as THREE.Mesh).material as THREE.MeshStandardMaterial).color.getHex()).toBe(0xff0000);
+    }
+  });
+
+  test("overrideMaterials off leaves child materials untouched", () => {
+    const a = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial({ color: 0x0000ff }));
+    MERGE_NODE.evaluate({ in0: a }, { overrideMaterials: 0, color: new THREE.Color(0xff0000) }, CTX);
+    expect((a.material as THREE.MeshStandardMaterial).color.getHex()).toBe(0x0000ff);
+  });
+
+  test("connecting a material socket overrides materials even without the toggle", () => {
+    const a = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial({ color: 0x0000ff }));
+    const mat = { color: new THREE.Color(0xff0000), roughness: 0.5, opacity: 1.0 };
+    MERGE_NODE.evaluate(
+      { in0: a, material: mat },
+      { overrideMaterials: 0 },
+      { ...CTX, connectedInputs: new Set(["material"]) },
+    );
+    expect((a.material as THREE.MeshStandardMaterial).color.getHex()).toBe(0xff0000);
+  });
+
+  test("connecting a texture socket also triggers the override", () => {
+    const a = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial({ color: 0x0000ff }));
+    const texture = new THREE.Texture();
+    texture.image = { width: 1, height: 1 };
+    MERGE_NODE.evaluate(
+      { in0: a, texture },
+      { overrideMaterials: 0, color: new THREE.Color(0x00ff00) },
+      { ...CTX, connectedInputs: new Set(["texture"]) },
+    );
+    expect((a.material as THREE.MeshStandardMaterial).map).toBe(texture);
   });
 
   test("end to end through evaluateGraph: two Box nodes into Merge into Render both survive", () => {

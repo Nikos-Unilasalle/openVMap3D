@@ -17,6 +17,7 @@ export function NodeSearchModal({ registry, onSelectNodeType, onClose }: NodeSea
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const selectedItemRef = useRef<HTMLDivElement>(null);
 
   const availableNodes = useMemo(() => {
     return Array.from(registry.values());
@@ -40,6 +41,12 @@ export function NodeSearchModal({ registry, onSelectNodeType, onClose }: NodeSea
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  // Keep the keyboard selection visible: when arrow navigation moves past the
+  // list's viewport, scroll the selected item into view.
+  useEffect(() => {
+    selectedItemRef.current?.scrollIntoView({ block: "nearest" });
+  }, [selectedIndex, filteredNodes.length]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
@@ -95,6 +102,7 @@ export function NodeSearchModal({ registry, onSelectNodeType, onClose }: NodeSea
               return (
                 <div
                   key={nodeDef.type}
+                  ref={isSelected ? selectedItemRef : undefined}
                   className={`node-search-item ${isSelected ? "active" : ""}`}
                   onClick={() => {
                     onSelectNodeType(nodeDef.type);

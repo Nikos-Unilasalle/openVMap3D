@@ -23,7 +23,7 @@ pub fn open_output_window(
 
     let mut builder =
         WebviewWindowBuilder::new(&app, "output", WebviewUrl::App("index.html#/output".into()))
-            .title("openVmap Output");
+            .title("Tsuji Output");
 
     builder = if fullscreen {
         builder

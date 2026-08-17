@@ -4,6 +4,7 @@ export type NodeCategory =
   | "compose"
   | "converter"
   | "curve"
+  | "hub"
   | "instance"
   | "io"
   | "lighting"
@@ -29,6 +30,7 @@ export const CATEGORY_ORDER: NodeCategory[] = [
   "compose",
   "converter",
   "curve",
+  "hub",
   "instance",
   "io",
   "lighting",
@@ -54,6 +56,7 @@ export const CATEGORY_LABEL: Record<NodeCategory, string> = {
   compose: "Compose",
   converter: "Converter",
   curve: "Curve / Path",
+  hub: "HUD",
   instance: "Instance",
   io: "I/O",
   lighting: "Lighting & Shadows",
@@ -82,6 +85,7 @@ export const CATEGORY_COLOR: Record<NodeCategory, string> = {
   compose: "#0ea5e9",
   converter: "#10b981",
   curve: "#84cc16",
+  hub: "#f472b6",
   instance: "#14b8a6",
   io: "#6366f1",
   lighting: "#f59e0b",

@@ -798,6 +798,15 @@ function MainEditor() {
     });
   };
 
+  const handleHubChange = (nodeId: string, patch: Partial<{ x: number; y: number; rotation: number; scale: number }>) => {
+    setGraph((prevGraph) => ({
+      ...prevGraph,
+      nodes: prevGraph.nodes.map((n) =>
+        n.id === nodeId ? { ...n, params: { ...n.params, ...patch } } : n,
+      ),
+    }));
+  };
+
   const onSplitHandleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     draggingSplit.current = true;
@@ -1232,6 +1241,7 @@ function MainEditor() {
           currentFrame={keyframesEnabled ? currentFrame : -1}
           onEvaluatedResults={onEvaluatedResults}
           isPlaying={isPlaying}
+          onHubChange={handleHubChange}
         />
         {needsTransformHint && (
           <div className="viewport-hint">Wire a Transform node into this object's Matrix to move it</div>

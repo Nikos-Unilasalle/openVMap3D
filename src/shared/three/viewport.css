@@ -137,3 +137,61 @@
   z-index: 6;
   white-space: nowrap;
 }
+
+/* 2D HUD overlay — rendered over the camera view from hub/* nodes. */
+.viewport-hub-overlay {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 30;
+}
+
+.viewport-hub-element {
+  position: absolute;
+  line-height: 1.2;
+  padding: 4px 10px;
+  white-space: pre;
+  will-change: transform, opacity, filter;
+}
+
+/* 2D HUD gizmo handles — children of the selected hub element, positioned on
+   its frame: rotate (blue) top-left, size (green) bottom-right. Moving is done
+   by dragging the element body directly. */
+.viewport-hub-gizmo-rotate,
+.viewport-hub-gizmo-size {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  z-index: 1;
+}
+
+.viewport-hub-gizmo-rotate {
+  left: -9px;
+  top: -9px;
+  background: #38bdf8;
+  cursor: grab;
+}
+
+.viewport-hub-gizmo-size {
+  right: -9px;
+  bottom: -9px;
+  background: #22c55e;
+  cursor: nwse-resize;
+}
+
+.viewport-hub-element-selected {
+  outline: 1px dashed rgba(244, 114, 182, 0.9);
+  outline-offset: 3px;
+}
+
+.viewport-hub-element-img {
+  display: block;
+  max-width: none;
+  user-select: none;
+  pointer-events: none;
+}
+

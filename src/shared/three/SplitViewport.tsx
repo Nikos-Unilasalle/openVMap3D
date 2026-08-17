@@ -17,6 +17,7 @@ interface SplitViewportProps {
   currentFrame?: number;
   onEvaluatedResults?: (results: Map<string, Record<string, unknown>>) => void;
   isPlaying?: boolean;
+  onHubChange?: (nodeId: string, patch: Partial<{ x: number; y: number; rotation: number; scale: number }>) => void;
 }
 
 export function SplitViewport({
@@ -33,8 +34,15 @@ export function SplitViewport({
   currentFrame,
   onEvaluatedResults,
   isPlaying,
+  onHubChange,
 }: SplitViewportProps) {
-  const [isSplit, setIsSplit] = useState(false);
+  // Shift+Tab cycles the layout: viewport (free orbit) -> split (editor +
+  // camera preview) -> full camera view -> viewport -> ...
+  type ViewMode = "viewport" | "split" | "camera";
+  const [viewMode, setViewMode] = useState<ViewMode>("viewport");
+  const cycleMode = useCallback(() => {
+    setViewMode((m) => (m === "viewport" ? "split" : m === "split" ? "camera" : "viewport"));
+  }, []);
   const [splitPercent, setSplitPercent] = useState(50);
   const isDraggingRef = useRef(false);
   // Held so an unmount while the splitter is pressed can remove the global
@@ -79,7 +87,8 @@ export function SplitViewport({
     window.addEventListener("mouseup", onMouseUp);
   }, []);
 
-  if (!isSplit) {
+  if (viewMode === "viewport" || viewMode === "camera") {
+    const outputMode = viewMode === "camera";
     return (
       <div id="split-viewport-container" style={{ width: "100%", height: "100%", position: "relative" }}>
         <Viewport
@@ -87,6 +96,7 @@ export function SplitViewport({
           registry={registry}
           renderNodeId={renderNodeId}
           epochMs={epochMs}
+          outputMode={outputMode}
           selectedNodeId={selectedNodeId}
           onSelectNode={onSelectNode}
           onTransformChange={onTransformChange}
@@ -94,10 +104,11 @@ export function SplitViewport({
           onCameraChange={onCameraChange}
           previewCameraPose={previewCameraPose}
           isSplitView={false}
-          onToggleSplitView={() => setIsSplit(true)}
+          onToggleSplitView={cycleMode}
           currentFrame={currentFrame}
           onEvaluatedResults={onEvaluatedResults}
           isPlaying={isPlaying}
+          onHubChange={onHubChange}
         />
       </div>
     );
@@ -129,10 +140,11 @@ export function SplitViewport({
           onCameraChange={onCameraChange}
           previewCameraPose={previewCameraPose}
           isSplitView={true}
-          onToggleSplitView={() => setIsSplit(false)}
+          onToggleSplitView={cycleMode}
           currentFrame={currentFrame}
           onEvaluatedResults={onEvaluatedResults}
           isPlaying={isPlaying}
+          onHubChange={onHubChange}
         />
       </div>
 
@@ -157,10 +169,13 @@ export function SplitViewport({
           renderNodeId={renderNodeId}
           epochMs={epochMs}
           outputMode={true}
+          selectedNodeId={selectedNodeId}
+          onSelectNode={onSelectNode}
           previewCameraPose={previewCameraPose}
           currentFrame={currentFrame}
           onEvaluatedResults={onEvaluatedResults}
           isPlaying={isPlaying}
+          onHubChange={onHubChange}
         />
       </div>
     </div>

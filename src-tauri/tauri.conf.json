@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "openVmap",
+  "productName": "Tsuji",
   "version": "0.1.0",
   "identifier": "com.nikos.openvmap",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "openVmap",
+        "title": "Tsuji",
         "width": 1280,
         "height": 800,
         "maximized": true

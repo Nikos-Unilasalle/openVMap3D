@@ -32,6 +32,7 @@ export const RENDER_NODE: NodeDefinition = {
     resolutionPreset: "16:9 (1920x1080)",
     width: 1920,
     height: 1080,
+    holdout: false,
   },
   paramFields: [
     { id: "frameCount", label: "Frame Count", kind: "number", step: 1 },
@@ -52,6 +53,7 @@ export const RENDER_NODE: NodeDefinition = {
     },
     { id: "width", label: "Width (px)", kind: "number", step: 1 },
     { id: "height", label: "Height (px)", kind: "number", step: 1 },
+    { id: "holdout", label: "Holdout (mask outside camera view)", kind: "boolean" },
     { id: "motionBlur", label: "Motion Blur", kind: "number", step: 0.05 },
   ],
   evaluate: (inputs, params) => {
@@ -76,6 +78,7 @@ export const RENDER_NODE: NodeDefinition = {
       environment: inputs.environment,
       postprocess: inputs.postprocess,
       motionBlur: Math.max(0, Math.min(1, numberInput(inputs.motionBlur, params.motionBlur, 0))),
+      holdout: Boolean(params.holdout),
       width,
       height,
       aspect,
