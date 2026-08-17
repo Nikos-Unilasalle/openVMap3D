@@ -131,6 +131,7 @@ export function SplitViewport({
           isSplitView={true}
           onToggleSplitView={() => setIsSplit(false)}
           currentFrame={currentFrame}
+          onEvaluatedResults={onEvaluatedResults}
           isPlaying={isPlaying}
         />
       </div>
@@ -158,6 +159,7 @@ export function SplitViewport({
           outputMode={true}
           previewCameraPose={previewCameraPose}
           currentFrame={currentFrame}
+          onEvaluatedResults={onEvaluatedResults}
           isPlaying={isPlaying}
         />
       </div>

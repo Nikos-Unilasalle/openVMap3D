@@ -84,6 +84,39 @@ function copyLightState(src: THREE.Light, dst: THREE.Light) {
 }
 
 
+/**
+ * The camera result currently driving the output — the same arbitration the
+ * render loop uses to decide whose matrix positions the view: an active Fly
+ * To wins over every Camera node, then the first active Camera, then the
+ * first Camera regardless of its Active toggle. Extracted so the *previous*
+ * frame's answer can be fed back into the next evaluation (see
+ * EvalContext.activeCameraPose) without duplicating the rules.
+ */
+function resolveActiveCameraResult(
+  results: Map<string, Record<string, unknown>>,
+  graph: Graph,
+): Record<string, unknown> | undefined {
+  for (const node of graph.nodes) {
+    if (node.type !== CAMERA_FLY_TO_NODE.type) continue;
+    const res = results.get(node.id);
+    if (res && res.active !== 0 && res.active !== false) return res;
+  }
+
+  const cameraNodes = graph.nodes.filter((n) => n.type === CAMERA_NODE.type);
+  for (const node of cameraNodes) {
+    const res = results.get(node.id);
+    if (res && res.active !== 0 && res.active !== false) return res;
+  }
+  if (cameraNodes.length > 0) return results.get(cameraNodes[0].id);
+  return undefined;
+}
+
+function activeCameraPoseFrom(result: Record<string, unknown> | undefined): { matrix: THREE.Matrix4; fov: number } | null {
+  if (!result || !(result.matrix instanceof THREE.Matrix4)) return null;
+  return { matrix: result.matrix, fov: typeof result.fov === "number" ? result.fov : 50 };
+}
+
+
 interface ViewportProps {
   graph: Graph;
   registry: NodeRegistry;
@@ -1049,6 +1082,15 @@ export function Viewport({
       // any given frame runs, no extra bookkeeping needed.
       const liveEditNodeId = transformControls?.dragging ? attachedObjectNodeId : null;
 
+      // The active camera from last frame, so a Fly To with no wired Camera A
+      // can lift off from the current view instead of the origin. Resolved
+      // from the previous results (there is no "active" answer until a frame
+      // has been evaluated) — one frame of lag on a flight's *start* pose,
+      // which is imperceptible.
+      const activeCameraPose = latestResults
+        ? activeCameraPoseFrom(resolveActiveCameraResult(latestResults, graphRef.current))
+        : null;
+
       let results;
       try {
         results = evaluateGraph(graphRef.current, registryRef.current, {
@@ -1057,6 +1099,7 @@ export function Viewport({
           nodeId: "",
           liveEditNodeId,
           renderer,
+          activeCameraPose,
           currentFrame: exportFrameIndex,
           keyframes: graphRef.current.keyframes,
         });
@@ -1189,31 +1232,8 @@ export function Viewport({
       // node's presence or mode, since it's for building/inspecting the
       // scene, not for judging alignment — that judgment only means
       // anything against the actual projected output (see OutputWindow).
-      // Prioritize Fly To if active or in flight, then fallback to Camera nodes
-      const flyToNodes = graphRef.current.nodes.filter((n: { type: string; id: string }) => n.type === CAMERA_FLY_TO_NODE.type);
-      let activeFlyToResult: Record<string, unknown> | undefined;
-      for (const node of flyToNodes) {
-        const res = results.get(node.id);
-        if (res && res.active !== 0 && res.active !== false) {
-          activeFlyToResult = res;
-          break;
-        }
-      }
-
-      let activeCameraResult = activeFlyToResult;
-      if (!activeCameraResult) {
-        const cameraNodes = graphRef.current.nodes.filter((n: { type: string; id: string }) => n.type === CAMERA_NODE.type);
-        for (const node of cameraNodes) {
-          const res = results.get(node.id);
-          if (res && res.active !== 0 && res.active !== false) {
-            activeCameraResult = res;
-            break;
-          }
-        }
-        if (!activeCameraResult && cameraNodes.length > 0) {
-          activeCameraResult = results.get(cameraNodes[0].id);
-        }
-      }
+      // Prioritize Fly To if active or in flight, then fallback to Camera nodes.
+      const activeCameraResult = resolveActiveCameraResult(results, graphRef.current);
 
       const cameraResult = activeCameraResult;
       if (cameraResult && typeof cameraResult.projectionType === "string") {

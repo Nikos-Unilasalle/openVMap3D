@@ -392,6 +392,60 @@ describe("CAMERA_FLY_TO_NODE", () => {
     expect(endResult.isFinished).toBe(1);
   });
 
+  test("with no Camera A wired, lifts off from the active camera pose in ctx", () => {
+    const activePose = {
+      matrix: new THREE.Matrix4().makeTranslation(3, 4, 5),
+      fov: 42,
+    };
+    const camB = new THREE.Matrix4().makeTranslation(10, 0, 0);
+
+    const ctx: EvalContext = {
+      time: 0,
+      step: 0,
+      nodeId: "fly-no-start",
+      activeCameraPose: activePose,
+      connectedInputs: new Set(["progress"]),
+    };
+
+    const start = CAMERA_FLY_TO_NODE.evaluate(
+      { cameraB: camB, progress: 0 },
+      CAMERA_FLY_TO_NODE.defaultParams,
+      ctx,
+    );
+
+    const pos = new THREE.Vector3().setFromMatrixPosition(start.matrix as THREE.Matrix4);
+    expect(pos.x).toBeCloseTo(3);
+    expect(pos.y).toBeCloseTo(4);
+    expect(pos.z).toBeCloseTo(5);
+    expect(start.fov).toBeCloseTo(42);
+  });
+
+  test("latches the start pose at flight onset so it doesn't chase its own output", () => {
+    const camA = { matrix: new THREE.Matrix4().makeTranslation(0, 0, 0), fov: 50 };
+    const camB = new THREE.Matrix4().makeTranslation(10, 0, 0);
+    const ctx: EvalContext = { time: 0, step: 0, nodeId: "fly-latch" };
+
+    // Rising edge at t=0: the start pose (the active camera) is latched here.
+    CAMERA_FLY_TO_NODE.evaluate(
+      { cameraB: camB, trigger: 1 },
+      { ...CAMERA_FLY_TO_NODE.defaultParams, duration: 2.0, arcHeight: 0 },
+      { ...ctx, activeCameraPose: camA },
+    );
+
+    // Mid-flight the active camera is now this node's own previous output —
+    // simulate the feedback with a wildly different pose. The start must stay
+    // latched at camA, not jump toward it.
+    const mid = CAMERA_FLY_TO_NODE.evaluate(
+      { cameraB: camB, trigger: 1 },
+      { ...CAMERA_FLY_TO_NODE.defaultParams, duration: 2.0, arcHeight: 0 },
+      { ...ctx, time: 1.0, step: 60, activeCameraPose: { matrix: new THREE.Matrix4().makeTranslation(100, 100, 100), fov: 50 } },
+    );
+
+    const midPos = new THREE.Vector3().setFromMatrixPosition(mid.matrix as THREE.Matrix4);
+    // t=1.0 of a 2.0s flight is progress 0.5 → halfway between camA (0) and camB (10).
+    expect(midPos.x).toBeCloseTo(5);
+  });
+
   test("triggers flight on rising edge and advances with simulation time", () => {
     const camA = new THREE.Matrix4().makeTranslation(0, 0, 0);
     const camB = new THREE.Matrix4().makeTranslation(20, 0, 0);
@@ -724,5 +778,51 @@ describe("CAMERA_FLY_TO_NODE landing hand-off", () => {
 
     expect(consumeCameraHandoffRequest()).toBeNull();
     expect(landed.active).toBe(1);
+  });
+
+  test("stays parked (active) on the landing frame until the hand-off is applied", () => {
+    // The 1-frame viewport artifact: Fly To used to drop out of contention on
+    // the landing frame, a frame before activateCameraNode made the target
+    // active, so the view flashed back to the start camera. It must stay
+    // active (parked at the destination) while the hand-off is still queued.
+    consumeCameraHandoffRequest();
+    const graph = handoffGraph();
+    const landed = flyAndLand(graph).get("fly")!;
+    expect(landed.active).toBe(1);
+    expect(landed.progress).toBeCloseTo(1);
+
+    // Apply the hand-off the same way App.activateCameraNode does, then the
+    // node must step aside — after the short park buffer has run out.
+    const isCam = (t: string) => t === CAMERA_NODE.type || t === CAMERA_FLY_TO_NODE.type;
+    const applied: Graph = {
+      ...graph,
+      nodes: graph.nodes.map((n) => {
+        if (n.id === "camB") return { ...n, params: { ...n.params, active: true } };
+        if (isCam(n.type)) return { ...n, params: { ...n.params, active: false } };
+        return n;
+      }),
+    };
+
+    // Still parked for the first couple of frames after the hand-off (the
+    // "offset léger" so the switch doesn't cut the settling movement).
+    expect(evaluateGraph(applied, DEFAULT_REGISTRY, { time: 5, step: 300, nodeId: "" }).get("fly")!.active).toBe(1);
+
+    const after = evaluateGraph(applied, DEFAULT_REGISTRY, { time: 8, step: 480, nodeId: "" }).get("fly")!;
+    expect(after.active).toBe(0);
+  });
+
+  test("stays parked on landing even when a previous hand-off left params.active=false", () => {
+    // A Fly To node that has been handed off before carries `params.active:
+    // false` in its saved params (activateCameraNode writes it). The parking
+    // signal must come from the landing itself, not from params.active —
+    // otherwise it relinquishes a frame early and the viewport flashes back.
+    consumeCameraHandoffRequest();
+    const graph = handoffGraph();
+    const fly = graph.nodes.find((n) => n.id === "fly")!;
+    fly.params.active = false;
+
+    const landed = flyAndLand(graph).get("fly")!;
+    expect(landed.active).toBe(1);
+    expect(landed.progress).toBeCloseTo(1);
   });
 });

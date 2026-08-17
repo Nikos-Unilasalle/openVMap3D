@@ -347,7 +347,29 @@ interface FlyToState {
    * Progress param — still 0 — and snapped the camera back to Camera A.
    */
   landed?: boolean;
+  /**
+   * Frozen at the moment a flight begins (or on first evaluation for a
+   * progress-driven flight) when no Camera A is wired — see evaluate. Kept
+   * separate so a wired Camera A still tracks live.
+   */
+  startPose?: { position: THREE.Vector3; quaternion: THREE.Quaternion; fov: number };
+  /**
+   * Frames the node keeps itself "parked" (active, showing the destination)
+   * after landing while a hand-off is being applied. A small buffer so the
+   * active-camera switch lands a moment after the movement has fully settled,
+   * rather than on the exact landing frame where the transition can read as a
+   * one-frame jump. Decremented each landed frame.
+   */
+  parkFrames?: number;
 }
+
+/**
+ * How long a landing Fly To stays parked (active) after a hand-off is queued,
+ * before it hands the view over to the target camera. A small value in frames
+ * — enough to ride out the async activateCameraNode/graph-broadcast round-trip
+ * without a visible cut, short enough not to feel laggy.
+ */
+const FLY_TO_PARK_FRAMES = 3;
 
 // createNodeCache, not a bare Map: node ids are stable (saved into .ovm,
 // restored identically by undo), so an unregistered cache lets a deleted
@@ -407,7 +429,11 @@ export const CAMERA_FLY_TO_NODE: NodeDefinition = {
     }
 
     const defaultTargetPos = new THREE.Vector3(5, 3, 5);
-    const poseA = extractCameraPose(inputs.cameraA, DEFAULT_LOCATION);
+    // With no Camera A wired, lift off from wherever the active camera already
+    // is (resolved by the viewport into ctx.activeCameraPose) instead of the
+    // origin — that's the common case of "fly to B from my current view".
+    const hasCameraA = inputs.cameraA !== undefined && inputs.cameraA !== null;
+    const poseA = extractCameraPose(hasCameraA ? inputs.cameraA : ctx.activeCameraPose, DEFAULT_LOCATION);
     const poseB = extractCameraPose(inputs.cameraB, defaultTargetPos);
 
     const isTriggered = toBoolean(inputs.trigger !== undefined ? inputs.trigger : params.trigger);
@@ -419,8 +445,20 @@ export const CAMERA_FLY_TO_NODE: NodeDefinition = {
       state.handedOff = false;
       state.startTime = nowSec;
       state.startSimTime = ctx.time;
+      // With no wired Camera A the start is the active camera — but that
+      // camera becomes this very node once the flight is underway, so reading
+      // it live each frame would make the flight chase its own output. Freeze
+      // the start pose at the moment the flight begins instead.
+      state.startPose = hasCameraA ? undefined : { position: poseA.position.clone(), quaternion: poseA.quaternion.clone(), fov: poseA.fov };
     }
     state.lastTrigger = isTriggered;
+
+    // A progress-driven flight has no rising edge to latch on — capture once.
+    if (!hasCameraA && !state.startPose) {
+      state.startPose = { position: poseA.position.clone(), quaternion: poseA.quaternion.clone(), fov: poseA.fov };
+    }
+
+    const startPose = hasCameraA ? poseA : (state.startPose ?? poseA);
 
     const duration = Math.max(0.01, inputs.duration !== undefined ? Number(inputs.duration) : Number(params.duration ?? 2.0));
     const arcHeight = inputs.arcHeight !== undefined ? Number(inputs.arcHeight) : Number(params.arcHeight ?? 1.0);
@@ -456,15 +494,15 @@ export const CAMERA_FLY_TO_NODE: NodeDefinition = {
     const e = evaluateFlyToEasing(rawProgress, easingType);
 
     // Position interpolation with parabolic lift
-    const pos = new THREE.Vector3().lerpVectors(poseA.position, poseB.position, e);
+    const pos = new THREE.Vector3().lerpVectors(startPose.position, poseB.position, e);
     const arcLift = 4.0 * e * (1.0 - e) * arcHeight;
     pos.y += arcLift;
 
     // Quaternion slerp orientation
-    const quat = poseA.quaternion.clone().slerp(poseB.quaternion, e);
+    const quat = startPose.quaternion.clone().slerp(poseB.quaternion, e);
 
     // FOV interpolation
-    const fov = poseA.fov * (1.0 - e) + poseB.fov * e;
+    const fov = startPose.fov * (1.0 - e) + poseB.fov * e;
 
     const matrix = new THREE.Matrix4().compose(pos, quat, ONE);
 
@@ -488,10 +526,32 @@ export const CAMERA_FLY_TO_NODE: NodeDefinition = {
     const handoffTarget = ctx.inputSources?.get("cameraB");
     const canHandOff = switchOnFinish && handoffTarget !== undefined;
 
-    if (state.landed && canHandOff && !state.handedOff) {
+    // The frame the flight lands, the hand-off is only *requested* here — it is
+    // applied by activateCameraNode on the next frame (it writes the target's
+    // `active` and broadcasts the graph through React state). Dropping out of
+    // contention a frame early makes the viewport flash back to the previous
+    // camera for one frame. So stay parked (active) on the landing frame, then
+    // step aside once the hand-off has gone through.
+    //
+    // `justRequestedHandoff` (rather than checking `params.active`, which a
+    // previous hand-off leaves set to false on this very node) is what says
+    // "the hand-off for this landing is still queued, keep showing the
+    // destination".
+    const wasHandedOff = state.handedOff === true;
+    if (state.landed && canHandOff && !wasHandedOff) {
       state.handedOff = true;
+      state.parkFrames = FLY_TO_PARK_FRAMES;
       requestCameraHandoff(handoffTarget!);
     }
+
+    // Ride out the async hand-off: keep the node parked (showing the
+    // destination) for a few frames after the flight lands, so the active
+    // camera switch to the target lands a beat after the movement has fully
+    // settled instead of on the exact landing frame.
+    if (state.landed && (state.parkFrames ?? 0) > 0) {
+      state.parkFrames = (state.parkFrames ?? 0) - 1;
+    }
+    const parked = (state.parkFrames ?? 0) > 0;
 
     // Only in charge of the output camera while there is a reason to be:
     // mid-flight, driven by a wired Progress, scrubbed by hand on the param,
@@ -503,7 +563,7 @@ export const CAMERA_FLY_TO_NODE: NodeDefinition = {
     const isActive =
       isProgressDriven ||
       state.isFlying === true ||
-      (state.landed ? !canHandOff : rawProgress > 0);
+      (state.landed ? !canHandOff || parked : rawProgress > 0);
 
     const helper = buildCameraHelperGeometry(fov, isActive);
     helper.traverse((child) => {

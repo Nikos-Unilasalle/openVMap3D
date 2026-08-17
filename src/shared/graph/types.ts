@@ -41,6 +41,14 @@ export interface EvalContext {
    * rather than throwing.
    */
   renderer?: THREE.WebGLRenderer;
+  /**
+   * The pose of the camera currently driving the output, resolved from the
+   * previous frame's results — a node like Fly To reads it so a flight with
+   * no wired Camera A starts from wherever the active camera already is
+   * rather than the origin. Absent (or null) when there is no active camera,
+   * or in contexts that don't arbitrate one (tests, a headless evaluate call).
+   */
+  activeCameraPose?: { matrix: THREE.Matrix4; fov: number } | null;
   /** Active animation current frame index. */
   currentFrame?: number;
   /** Active keyframe store. */
