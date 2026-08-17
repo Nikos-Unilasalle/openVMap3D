@@ -8,6 +8,9 @@ import { createNodeCache } from "../graph/nodeCaches";
 let globalAudioCtx: AudioContext | null = null;
 let gestureListenerInstalled = false;
 
+/** Players that want to play but whose AudioContext is (or was) suspended. Retried on the first user gesture, when the autoplay policy is relaxed. */
+const pendingPlayers = new Set<PlayerState>();
+
 function ensureAudioUnblocked(): void {
   if (!globalAudioCtx) return;
   if (globalAudioCtx.state === "running") return;
@@ -18,19 +21,59 @@ function ensureAudioUnblocked(): void {
  * Web Audio starts suspended until a user gesture (the autoplay policy). The
  * context may first be created — and resume() attempted — before any gesture,
  * at which point the browser refuses. Install a one-shot gesture listener so
- * the first real pointer/keyboard interaction retries, otherwise audio stays
- * silent until a node happens to be re-evaluated after a click.
+ * the first real pointer/keyboard interaction retries: resume the context and
+ * then kick off every player that wanted to play but was parked while
+ * suspended. Without this, audio stays silent in stricter environments (the
+ * Tauri WKWebView) until a node happens to be re-evaluated after a click.
+ *
+ * The plays are kicked off *synchronously* inside the gesture handler (not
+ * after awaiting resume()): WKWebView only treats a play() as user-gesture
+ * approved when it runs within the gesture's own call stack.
  */
 function installFirstGestureResume(): void {
   if (gestureListenerInstalled || typeof window === "undefined") return;
   gestureListenerInstalled = true;
   const wake = () => {
     ensureAudioUnblocked();
+    for (const p of pendingPlayers) {
+      p.audioEl.play().catch(() => {});
+    }
+    pendingPlayers.clear();
     window.removeEventListener("pointerdown", wake);
     window.removeEventListener("keydown", wake);
+    window.removeEventListener("mousedown", wake);
+    window.removeEventListener("touchstart", wake);
   };
-  window.addEventListener("pointerdown", wake, { once: false });
+  window.addEventListener("pointerdown", wake);
   window.addEventListener("keydown", wake);
+  window.addEventListener("mousedown", wake);
+  window.addEventListener("touchstart", wake);
+}
+
+/** Stop a media-element player and drop any pending retry for it. */
+export function requestPause(player: PlayerState): void {
+  pendingPlayers.delete(player);
+  player.audioEl.pause();
+}
+
+/**
+ * Start a media-element player. If the AudioContext is running this just plays;
+ * if it is suspended (autoplay policy, before any gesture) the context is
+ * resumed and the play parked so it can be retried on the first real user
+ * gesture. Attempts play immediately either way — the resume makes the sound
+ * start as soon as the policy allows instead of waiting for a later gesture.
+ */
+export function requestPlay(player: PlayerState): void {
+  const ctx = globalAudioCtx;
+  if (ctx) {
+    if (ctx.state !== "running") {
+      ctx.resume().catch(() => {});
+      pendingPlayers.add(player);
+    }
+    player.audioEl.play().catch(() => {});
+  } else {
+    player.audioEl.play().catch(() => {});
+  }
 }
 
 export function getAudioContext(): AudioContext | null {
@@ -54,6 +97,10 @@ export interface PlayerState {
   gainNode?: GainNode;
   loadedPath?: string;
   isPlaying: boolean;
+  /** Last value of the Trigger input — used to detect the rising edge (one-shot start). */
+  lastTrigger?: boolean;
+  /** A trigger-driven playback is running to completion: the trigger can't re-fire and the Play input is ignored until the sound ends. */
+  triggerLocked?: boolean;
 }
 
 const playerCache = createNodeCache<PlayerState>((state) => {
@@ -91,6 +138,16 @@ export function getOrCreatePlayer(nodeId: string): PlayerState {
         } as unknown as HTMLAudioElement);
 
   audioEl.crossOrigin = "anonymous";
+
+  // Some WebViews won't start an <audio> element (even through a Web Audio
+  // MediaElementSource) until it is actually in the document — a detached
+  // `new Audio()` can sit silently forever. Attach it hidden.
+  if (typeof document !== "undefined" && document.body) {
+    audioEl.style.display = "none";
+    audioEl.setAttribute("hidden", "");
+    audioEl.muted = false;
+    document.body.appendChild(audioEl);
+  }
 
   const state: PlayerState = {
     audioEl,

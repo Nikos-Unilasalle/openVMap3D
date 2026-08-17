@@ -6,6 +6,8 @@ import {
   getOrCreatePeakDetector,
   getOrCreatePlayer,
   getOrCreateSynth,
+  requestPause,
+  requestPlay,
 } from "../../audio/audioStore";
 import { NodeDefinition } from "../types";
 
@@ -16,6 +18,7 @@ export const AUDIO_PLAYER_NODE: NodeDefinition = {
   category: "sound",
   inputs: [
     { id: "play", label: "Play", type: "value" },
+    { id: "trigger", label: "Trigger", type: "value" },
     { id: "volume", label: "Volume", type: "value" },
     { id: "playbackRate", label: "Speed", type: "value" },
     { id: "seek", label: "Seek (s)", type: "value" },
@@ -33,11 +36,24 @@ export const AUDIO_PLAYER_NODE: NodeDefinition = {
       label: "Audio File",
       kind: "file",
       accept: [".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac"],
-      onLoaded: (nodeId, _path, content) => {
+      onLoaded: (nodeId, path, content) => {
         const player = getOrCreatePlayer(nodeId);
-        const blob = new Blob([content], { type: "audio/mpeg" });
+        const ext = path.split(".").pop()?.toLowerCase() ?? "";
+        const mime: Record<string, string> = {
+          mp3: "audio/mpeg",
+          wav: "audio/wav",
+          ogg: "audio/ogg",
+          flac: "audio/flac",
+          m4a: "audio/mp4",
+          aac: "audio/aac",
+        };
+        const blob = new Blob([content], { type: mime[ext] || "audio/mpeg" });
         const url = URL.createObjectURL(blob);
+        // Preload + force a load now so a later play() starts instantly instead
+        // of buffering the whole file on the trigger's rising edge.
+        player.audioEl.preload = "auto";
         player.audioEl.src = url;
+        player.audioEl.load();
         player.loadedPath = url;
       },
     },
@@ -69,12 +85,35 @@ export const AUDIO_PLAYER_NODE: NodeDefinition = {
       }
     }
 
-    if (playInput && audioEl.paused && audioEl.src) {
-      audioEl.play().catch(() => {});
+    // Trigger: a rising edge (0 -> 1) starts the sound from the beginning and
+    // plays it to completion. While that playback is running the trigger is
+    // inactive — holding it at 1 (or re-pulsing it) does not restart until the
+    // sound has actually ended.
+    const trigger = inputs.trigger !== undefined ? Number(inputs.trigger) > 0 : false;
+    const risingTrigger = trigger && !player.lastTrigger;
+    player.lastTrigger = trigger;
+
+    if (risingTrigger && audioEl.src) {
+      audioEl.currentTime = 0;
+      requestPlay(player);
       player.isPlaying = true;
-    } else if (!playInput && !audioEl.paused) {
-      audioEl.pause();
-      player.isPlaying = false;
+      player.triggerLocked = true;
+    }
+
+    if (player.triggerLocked) {
+      audioEl.onended = () => {
+        player.triggerLocked = false;
+        player.isPlaying = false;
+      };
+    } else {
+      audioEl.onended = null;
+      if (playInput && audioEl.paused && audioEl.src) {
+        requestPlay(player);
+        player.isPlaying = true;
+      } else if (!playInput && !audioEl.paused) {
+        requestPause(player);
+        player.isPlaying = false;
+      }
     }
 
     return {

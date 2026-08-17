@@ -1,6 +1,7 @@
 import * as THREE from "three";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { EvalContext } from "../types";
+import { getOrCreatePlayer } from "../../audio/audioStore";
 import { CLAMP_NODE, MAP_RANGE_NODE, VALUE_MATH_NODE } from "./valueMath";
 import { TRANSFORM_NODE, DECOMPOSE_MATRIX_NODE, PARENT_NODE, LOOK_AT_NODE, MATRIX_TRANSFORM_NODE, TRANSFORM_VECTOR_NODE } from "./transform";
 import { VECTOR_COMPOSE_NODE, VECTOR_MATH_NODE, getUnusedAxes } from "./vector";
@@ -511,6 +512,51 @@ describe("SOUND NODES", () => {
   test("audio player node evaluation fallback", () => {
     const res = AUDIO_PLAYER_NODE.evaluate({ play: 0, volume: 0.8 }, AUDIO_PLAYER_NODE.defaultParams, { ...CTX, nodeId: "sound-player-1" });
     expect(res.volume).toBe(0);
+  });
+
+  test("audio player trigger plays once to completion and ignores a held trigger", () => {
+    const nodeId = "sound-trigger-1";
+    const player = getOrCreatePlayer(nodeId);
+
+    const play = vi.fn(() => Promise.resolve());
+    const pause = vi.fn();
+    const mockAudio = {
+      src: "blob:track",
+      paused: true,
+      currentTime: 0,
+      duration: 10,
+      loop: false,
+      volume: 1,
+      playbackRate: 1,
+      play,
+      pause,
+      onended: null as (() => void) | null,
+      style: {},
+      setAttribute: () => {},
+    };
+    player.audioEl = mockAudio as unknown as HTMLAudioElement;
+
+    // Rising edge -> starts playback from the beginning.
+    AUDIO_PLAYER_NODE.evaluate({ trigger: 1 }, AUDIO_PLAYER_NODE.defaultParams, { ...CTX, nodeId });
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(mockAudio.currentTime).toBe(0);
+
+    // Held at 1 while playing -> no restart (trigger inactive).
+    mockAudio.paused = false;
+    AUDIO_PLAYER_NODE.evaluate({ trigger: 1 }, AUDIO_PLAYER_NODE.defaultParams, { ...CTX, nodeId });
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(player.triggerLocked).toBe(true);
+
+    // Sound reaches the end -> trigger unlocks.
+    mockAudio.paused = true;
+    mockAudio.onended?.();
+    expect(player.triggerLocked).toBe(false);
+
+    // Release, then a fresh rising edge starts it again.
+    AUDIO_PLAYER_NODE.evaluate({ trigger: 0 }, AUDIO_PLAYER_NODE.defaultParams, { ...CTX, nodeId });
+    mockAudio.paused = true;
+    AUDIO_PLAYER_NODE.evaluate({ trigger: 1 }, AUDIO_PLAYER_NODE.defaultParams, { ...CTX, nodeId });
+    expect(play).toHaveBeenCalledTimes(2);
   });
 
   test("audio spectrum node fallback spectrum generation", () => {

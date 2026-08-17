@@ -90,6 +90,13 @@ function buildCameraHelperGeometry(fov: number, isActive: boolean): THREE.Group 
   const frustum = new THREE.LineSegments(lineGeo, lineMat);
   group.add(frustum);
 
+  // Mark every piece as editor-only so the viewport hides it in the output /
+  // camera view — a camera must not be rendered into the film (see the
+  // `userData.isHelper` visibility toggle in Viewport.tsx).
+  group.traverse((child) => {
+    child.userData.isHelper = true;
+  });
+
   return group;
 }
 

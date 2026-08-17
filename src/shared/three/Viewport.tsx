@@ -1555,10 +1555,14 @@ export function Viewport({
         host.clientHeight,
       );
 
-      // Toggle helper visibility (AxesHelper / Empty crosshairs / Light target helpers)
+      // Toggle helper visibility (AxesHelper / Empty crosshairs / camera
+      // frustums / Light target helpers). Hidden in the output window *and* in
+      // the editor's camera view, so a camera isn't rendered into the film and
+      // the "look through camera" preview matches exactly what gets recorded.
+      const hideSceneHelpers = outputMode || isCameraViewRef.current;
       scene.traverse((obj) => {
         if (obj.userData?.isHelper || obj instanceof THREE.AxesHelper || obj instanceof THREE.CameraHelper) {
-          obj.visible = !outputMode;
+          obj.visible = !hideSceneHelpers;
         }
       });
 
