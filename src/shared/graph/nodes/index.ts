@@ -62,6 +62,7 @@ import { CURVE_DEFORM_NODE, CURVE_FROM_POINTS_NODE, CURVE_PRIMITIVE_NODE, CURVE_
 import { LATTICE_DEFORM_NODE } from "./lattice";
 import { SUBDIVIDE_NODE } from "./subdivide";
 import { WIGGLE_NODE, WIGGLE_NUMBER_NODE, WIGGLE_VECTOR_NODE } from "./wiggle";
+import { MATERIAL_NODE } from "./material";
 
 /** The starter catalogue — grows node by node; BIBLE.md has the full target list. */
 export const STARTER_NODES = [
@@ -195,6 +196,7 @@ export const STARTER_NODES = [
   WIGGLE_NODE,
   WIGGLE_NUMBER_NODE,
   WIGGLE_VECTOR_NODE,
+  MATERIAL_NODE,
 ];
 
 export const DEFAULT_REGISTRY = createRegistry(STARTER_NODES);
@@ -237,3 +239,4 @@ export * from "./curve";
 export * from "./lattice";
 export * from "./subdivide";
 export * from "./wiggle";
+export * from "./material";

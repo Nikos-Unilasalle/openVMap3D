@@ -19,10 +19,30 @@ export type SocketType =
   | "geometry"
   | "texture"
   | "curve"
+  | "material"
   | "list"
   | "text"
   | "postprocess"
   | "any";
+
+/**
+ * The plain material descriptor a `material` socket carries. Deliberately not
+ * a live THREE.Material: a material is *described* by a node and *consumed* by
+ * an object that still owns its own mesh, texture and side — so the value is a
+ * small pure data object, not a shared GPU resource. Field-for-field the same
+ * shape as object.ts's MaterialParams, so it drops straight into
+ * applyMaterialParams.
+ */
+export interface MaterialValue {
+  color: THREE.Color;
+  emissive: THREE.Color;
+  emissiveIntensity: number;
+  shadeless: boolean;
+  roughness: number;
+  metalness: number;
+  wireframe: boolean;
+  opacity: number;
+}
 
 /** The runtime value a socket of each type actually carries during evaluation. */
 export interface SocketValueMap {
@@ -34,6 +54,7 @@ export interface SocketValueMap {
   geometry: THREE.Object3D;
   texture: THREE.Texture;
   curve: THREE.Curve<THREE.Vector3>;
+  material: MaterialValue;
   list: unknown[];
   text: string;
   postprocess: unknown[];
@@ -73,6 +94,7 @@ export const SOCKET_COLOR: Record<SocketType, string> = {
   geometry: "#22c55e",
   texture: "#2dd4bf",
   curve: "#84cc16",
+  material: "#d97706",
   list: "#94a3b8",
   text: "#f97316",
   postprocess: "#c084fc",

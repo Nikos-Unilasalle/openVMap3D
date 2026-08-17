@@ -260,7 +260,6 @@ export const CHART_AXIS_NODE: NodeDefinition = {
     { id: "maxHeight", label: "Max Height", type: "value" },
     { id: "width", label: "Grid Width", type: "value" },
     { id: "matrix", label: "Matrix", type: "matrix" },
-    { id: "color", label: "Color", type: "color" },
   ],
   outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: {
@@ -607,6 +606,27 @@ export const SCATTER_PLOT_NODE: NodeDefinition = {
 interface PointCloudState {
   points: THREE.Points;
   material: THREE.PointsMaterial;
+  /** Everything the last build was computed from — a static cloud skips the per-frame rebuild entirely. */
+  last?: {
+    file: unknown;
+    x: unknown;
+    y: unknown;
+    z: unknown;
+    colors: unknown;
+    pointSize: number;
+    scaleX: number;
+    scaleY: number;
+    scaleZ: number;
+    emissive: number;
+    fallback: number;
+  };
+  /** The resolved arrays last handed back as outputs, reused while `last` still matches. */
+  built?: {
+    xValues: number[];
+    yValues: number[];
+    zValues: number[];
+    colors: THREE.Color[];
+  };
 }
 
 const pointCloudCache = createNodeCache<PointCloudState>((s) => {
@@ -646,7 +666,6 @@ export const POINT_CLOUD_NODE: NodeDefinition = {
     { id: "scaleY", label: "Scale Y", type: "value" },
     { id: "scaleZ", label: "Scale Z", type: "value" },
     { id: "matrix", label: "Matrix", type: "matrix" },
-    { id: "color", label: "Fallback Color", type: "color" },
   ],
   outputs: [
     ...COMMON_PRIMITIVE_OUTPUTS,
@@ -665,6 +684,7 @@ export const POINT_CLOUD_NODE: NodeDefinition = {
     scaleY: 1,
     scaleZ: 1,
     color: new THREE.Color(0x38bdf8),
+    emissiveIntensity: 1.0,
   },
   // Loading a .xyz file is the same "the file IS the dataset" shape as CSV
   // Reader (see csv.ts) — no column to pick, so the file field's onLoaded
@@ -690,6 +710,7 @@ export const POINT_CLOUD_NODE: NodeDefinition = {
     { id: "scaleY", label: "Scale Y", kind: "number", step: 0.1 },
     { id: "scaleZ", label: "Scale Z", kind: "number", step: 0.1 },
     { id: "color", label: "Fallback Color", kind: "color" },
+    { id: "emissiveIntensity", label: "Emissive Intensity", kind: "number", step: 0.1 },
   ],
   evaluate: (inputs, params, ctx) => {
     const state = pointCloudState(ctx.nodeId);
@@ -709,19 +730,46 @@ export const POINT_CLOUD_NODE: NodeDefinition = {
     const yValues = useFile ? fileData!.y : inputY;
     const zValues = useFile ? fileData!.z : inputZ;
 
-    const inputColors = toColorList(inputs.colors);
-    const fileColors = useFile && fileData!.colors ? fileData!.colors.map(([r, g, b]) => new THREE.Color(r, g, b)) : [];
-    const activeColors = inputColors.length > 0 ? inputColors : fileColors;
-
-    const fallbackColor = inputs.color instanceof THREE.Color ? inputs.color : asColor(params.color, new THREE.Color(0x38bdf8));
-
-    const count = Math.max(xValues.length, yValues.length, zValues.length);
+    const fallbackColor = asColor(params.color, new THREE.Color(0x38bdf8));
     const pointSize = Math.max(0.001, numberInput(inputs.pointSize, params.pointSize, 0.05));
     const scaleX = numberInput(inputs.scaleX, params.scaleX, 1);
     const scaleY = numberInput(inputs.scaleY, params.scaleY, 1);
     const scaleZ = numberInput(inputs.scaleZ, params.scaleZ, 1);
+    const emissiveIntensity = Math.max(0, numberInput(undefined, params.emissiveIntensity, 1.0));
 
     state.material.size = pointSize;
+
+    const fallbackHex = fallbackColor.getHex();
+    const last = state.last;
+    const unchanged =
+      !!last &&
+      last.file === fileData &&
+      last.x === inputs.xValues &&
+      last.y === inputs.yValues &&
+      last.z === inputs.zValues &&
+      last.colors === inputs.colors &&
+      last.pointSize === pointSize &&
+      last.scaleX === scaleX &&
+      last.scaleY === scaleY &&
+      last.scaleZ === scaleZ &&
+      last.emissive === emissiveIntensity &&
+      last.fallback === fallbackHex;
+
+    if (unchanged && state.built) {
+      return {
+        ...primitiveOutputs(state.points),
+        xValues: state.built.xValues,
+        yValues: state.built.yValues,
+        zValues: state.built.zValues,
+        colors: state.built.colors,
+      };
+    }
+
+    const inputColors = toColorList(inputs.colors);
+    const fileColors = useFile && fileData!.colors ? fileData!.colors.map(([r, g, b]) => new THREE.Color(r, g, b)) : [];
+    const activeColors = inputColors.length > 0 ? inputColors : fileColors;
+
+    const count = Math.max(xValues.length, yValues.length, zValues.length);
 
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
@@ -731,9 +779,9 @@ export const POINT_CLOUD_NODE: NodeDefinition = {
       positions[i * 3 + 2] = (zValues[i % Math.max(1, zValues.length)] ?? 0) * scaleZ;
 
       const c = activeColors.length > 0 ? activeColors[i % activeColors.length] : fallbackColor;
-      colors[i * 3] = c.r;
-      colors[i * 3 + 1] = c.g;
-      colors[i * 3 + 2] = c.b;
+      colors[i * 3] = c.r * emissiveIntensity;
+      colors[i * 3 + 1] = c.g * emissiveIntensity;
+      colors[i * 3 + 2] = c.b * emissiveIntensity;
     }
 
     state.points.geometry.dispose();
@@ -742,12 +790,29 @@ export const POINT_CLOUD_NODE: NodeDefinition = {
     geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
     state.points.geometry = geometry;
 
+    const colorsOut = activeColors.length > 0 ? activeColors : Array.from({ length: count }, () => fallbackColor);
+
+    state.last = {
+      file: fileData,
+      x: inputs.xValues,
+      y: inputs.yValues,
+      z: inputs.zValues,
+      colors: inputs.colors,
+      pointSize,
+      scaleX,
+      scaleY,
+      scaleZ,
+      emissive: emissiveIntensity,
+      fallback: fallbackHex,
+    };
+    state.built = { xValues, yValues, zValues, colors: colorsOut };
+
     return {
       ...primitiveOutputs(state.points),
       xValues,
       yValues,
       zValues,
-      colors: activeColors.length > 0 ? activeColors : Array.from({ length: count }, () => fallbackColor),
+      colors: colorsOut,
     };
   },
 };

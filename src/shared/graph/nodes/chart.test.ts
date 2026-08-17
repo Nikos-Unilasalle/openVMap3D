@@ -160,4 +160,33 @@ describe("POINT_CLOUD_NODE", () => {
 
     expect(result.xValues).toEqual([10, 20]);
   });
+
+  test("reuses the same geometry across frames while the data is unchanged", () => {
+    setXyz("cloud-reuse", { x: [1, 2, 3], y: [4, 5, 6], z: [7, 8, 9], colors: null });
+
+    const first = POINT_CLOUD_NODE.evaluate({}, POINT_CLOUD_NODE.defaultParams, { ...CTX, nodeId: "cloud-reuse" });
+    const firstGeom = (first.geometry as THREE.Points).geometry;
+
+    const second = POINT_CLOUD_NODE.evaluate({}, POINT_CLOUD_NODE.defaultParams, { ...CTX, nodeId: "cloud-reuse" });
+    const secondGeom = (second.geometry as THREE.Points).geometry;
+
+    expect(secondGeom).toBe(firstGeom);
+  });
+
+  test("rebuilds the geometry when the transform scale changes", () => {
+    setXyz("cloud-rescale", { x: [1, 2, 3], y: [4, 5, 6], z: [7, 8, 9], colors: null });
+
+    const first = POINT_CLOUD_NODE.evaluate({}, POINT_CLOUD_NODE.defaultParams, { ...CTX, nodeId: "cloud-rescale" });
+    const firstGeom = (first.geometry as THREE.Points).geometry;
+
+    const rescaled = POINT_CLOUD_NODE.evaluate(
+      {},
+      { ...POINT_CLOUD_NODE.defaultParams, scaleX: 2 },
+      { ...CTX, nodeId: "cloud-rescale" },
+    );
+    const rescaledGeom = (rescaled.geometry as THREE.Points).geometry;
+
+    expect(rescaledGeom).not.toBe(firstGeom);
+    expect((rescaledGeom.getAttribute("position") as THREE.BufferAttribute).getX(0)).toBe(2);
+  });
 });

@@ -147,7 +147,6 @@ export const TEXTURE_PLANE_NODE: NodeDefinition = {
   inputs: [
     { id: "texture", label: "Texture", type: "texture" },
     { id: "matrix", label: "Matrix", type: "matrix" },
-    { id: "color", label: "Color Tint", type: "color" },
     { id: "uvScale", label: "UV Scale", type: "vector" },
     { id: "uvOffset", label: "UV Offset", type: "vector" },
   ],

@@ -15,7 +15,7 @@ describe("TEXTURE NODES", () => {
   it("TEXTURE_PLANE_NODE creates 3D plane mesh with texture mapping", () => {
     const tex = new THREE.Texture();
     const res = TEXTURE_PLANE_NODE.evaluate(
-      { texture: tex, color: new THREE.Color(0xff0000) },
+      { texture: tex },
       TEXTURE_PLANE_NODE.defaultParams,
       CTX
     );

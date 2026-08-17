@@ -4,7 +4,7 @@ import { CAMERA_FLY_TO_NODE, CAMERA_NODE } from "./shared/graph/nodes/camera";
 import { DEFAULT_REGISTRY } from "./shared/graph/nodes";
 import { findRenderNodeId } from "./shared/graph/nodes/render";
 import { rehydrateFileNodesFromDisk } from "./shared/graph/rehydrateFiles";
-import { cloneGraph } from "./shared/graph/cloneGraph";
+import { cloneGraph, cloneParamValue } from "./shared/graph/cloneGraph";
 import { consumeCameraHandoffRequest } from "./shared/graph/cameraHandoffStore";
 import { consumeCanvasSwitchRequest } from "./shared/graph/canvasSwitchStore";
 import { disposeNodeCaches } from "./shared/graph/nodeCaches";
@@ -696,13 +696,13 @@ function MainEditor() {
           : prevGraph.keyframes;
 
       let nextParams = { ...instance.params };
-      if (value instanceof THREE.Vector3) {
-        nextParams[paramId] = value.clone();
-      } else if (typeof value === "object" && value !== null) {
-        nextParams[paramId] = JSON.parse(JSON.stringify(value));
-      } else {
-        nextParams[paramId] = value;
-      }
+      // Preserve THREE instances instead of JSON-round-tripping them: a
+      // THREE.Color (the Color node's `color`, an Environment's `background`,
+      // ...) flattened to a plain {r,g,b} fails every node's `instanceof`
+      // guard and silently falls back to its default (white for the Color
+      // node). cloneParamValue clones the same classes the undo/clipboard
+      // path already protects (Vector3, Color, Quaternion, Matrix4, Euler).
+      nextParams[paramId] = cloneParamValue(value);
 
       // A lattice's control points are stored as absolute positions, so the
       // grid they describe has to be rebuilt when its dimensions change —

@@ -386,7 +386,7 @@ describe("OBJECT PRIMITIVES", () => {
 
   test("text object evaluation", () => {
     const color = new THREE.Color(1, 0, 0);
-    const res = OBJECT_TEXT_NODE.evaluate({ text: "Test Text", font: "monospace", fontSize: 96, color }, OBJECT_TEXT_NODE.defaultParams, CTX).geometry as THREE.Mesh;
+    const res = OBJECT_TEXT_NODE.evaluate({ text: "Test Text", font: "monospace", fontSize: 96 }, { ...OBJECT_TEXT_NODE.defaultParams, color }, CTX).geometry as THREE.Mesh;
     expect(res).toBeInstanceOf(THREE.Mesh);
     const mat = Array.isArray(res.material) ? (res.material[0] as THREE.MeshStandardMaterial) : (res.material as THREE.MeshStandardMaterial);
     expect(mat.color.r).toBe(1);
@@ -602,7 +602,7 @@ describe("PRIMITIVES & MATERIAL PROPERTIES (DISC, SHADELESS)", () => {
   });
 
   test("OBJECT_BOX_NODE applies MeshBasicMaterial when shadeless is true", () => {
-    const res = OBJECT_BOX_NODE.evaluate({ shadeless: 1 }, OBJECT_BOX_NODE.defaultParams, { ...CTX, nodeId: "box-shadeless" });
+    const res = OBJECT_BOX_NODE.evaluate({}, { ...OBJECT_BOX_NODE.defaultParams, shadeless: 1 }, { ...CTX, nodeId: "box-shadeless" });
     const mesh = res.geometry as THREE.Mesh;
     const mat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
     expect(mat.type).toBe("MeshBasicMaterial");

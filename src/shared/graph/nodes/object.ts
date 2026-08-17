@@ -101,7 +101,26 @@ export interface MaterialParams {
   opacity: number;
 }
 
+function materialParamsFromValue(v: unknown): MaterialParams | null {
+  if (typeof v !== "object" || v === null) return null;
+  const m = v as Record<string, unknown>;
+  if (!("color" in m) && !("roughness" in m) && !("opacity" in m)) return null;
+  return {
+    color: asColor(m.color, new THREE.Color(0xffffff)),
+    emissive: asColor(m.emissive, new THREE.Color(0x000000)),
+    emissiveIntensity: Math.max(0, numberInput(m.emissiveIntensity, undefined, 1.0)),
+    shadeless: toBoolean(m.shadeless),
+    roughness: numberInput(m.roughness, undefined, 0.4),
+    metalness: numberInput(m.metalness, undefined, 0.1),
+    wireframe: toBoolean(m.wireframe),
+    opacity: Math.min(1, Math.max(0, numberInput(m.opacity, undefined, 1.0))),
+  };
+}
+
 export function extractMaterialParams(inputs: Record<string, unknown>, params: Record<string, unknown>): MaterialParams {
+  const connected = materialParamsFromValue(inputs.material);
+  if (connected) return connected;
+
   const color = asColor(inputs.color, asColor(params.color, new THREE.Color(0xffffff)));
   const emissive = asColor(inputs.emissive, asColor(params.emissive, new THREE.Color(0x000000)));
   const emissiveIntensity = Math.max(0, numberInput(inputs.emissiveIntensity, params.emissiveIntensity, 1.0));
@@ -203,16 +222,9 @@ export const COMMON_PRIMITIVE_INPUTS = [
   { id: "texture", label: "Texture Map", type: "texture" as const },
   { id: "normal", label: "Normal Map", type: "texture" as const },
   { id: "matrix", label: "Matrix", type: "matrix" as const },
-  { id: "color", label: "Color", type: "color" as const },
-  { id: "emissive", label: "Emissive Color", type: "color" as const },
-  { id: "emissiveIntensity", label: "Emissive Intensity", type: "value" as const },
+  { id: "material", label: "Material", type: "material" as const },
   { id: "uvScale", label: "UV Scale", type: "vector" as const },
   { id: "uvOffset", label: "UV Offset", type: "vector" as const },
-  { id: "shadeless", label: "Shadeless", type: "value" as const },
-  { id: "roughness", label: "Roughness", type: "value" as const },
-  { id: "metalness", label: "Metalness", type: "value" as const },
-  { id: "wireframe", label: "Wireframe", type: "value" as const },
-  { id: "opacity", label: "Opacity", type: "value" as const },
 ];
 
 export const COMMON_PRIMITIVE_OUTPUTS = [
@@ -237,7 +249,7 @@ export function primitiveOutputs(object: THREE.Object3D): Record<string, unknown
   return { geometry: object, matrix: object.matrix.clone() };
 }
 
-const COMMON_MATERIAL_PARAM_FIELDS: ParamFieldDef[] = [
+export const COMMON_MATERIAL_PARAM_FIELDS: ParamFieldDef[] = [
   { id: "color", label: "Color (fallback)", kind: "color", group: "Material" },
   { id: "emissive", label: "Emissive (Glow)", kind: "color", group: "Material" },
   { id: "emissiveIntensity", label: "Emissive Intensity", kind: "number", step: 0.1, group: "Material" },

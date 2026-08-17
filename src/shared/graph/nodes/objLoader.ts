@@ -1,10 +1,9 @@
 import * as THREE from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { NodeDefinition } from "../types";
-import { toBoolean } from "../sockets";
 import { createNodeCache } from "../nodeCaches";
 import { composeNativeMatrix } from "./transform";
-import { COMMON_PRIMITIVE_OUTPUTS, primitiveOutputs } from "./object";
+import { COMMON_PRIMITIVE_OUTPUTS, extractMaterialParams, primitiveOutputs } from "./object";
 
 interface ObjState {
   group: THREE.Group;
@@ -39,22 +38,6 @@ function getOrCreateObjState(nodeId: string): ObjState {
   return state;
 }
 
-function asColor(v: unknown, fallback: THREE.Color): THREE.Color {
-  if (v instanceof THREE.Color) return v;
-  if (typeof v === "object" && v !== null && "r" in v && "g" in v && "b" in v) {
-    const { r, g, b } = v as { r: number; g: number; b: number };
-    return new THREE.Color(r, g, b);
-  }
-  if (typeof v === "string" || typeof v === "number") {
-    try {
-      return new THREE.Color(v as any);
-    } catch {
-      return fallback;
-    }
-  }
-  return fallback;
-}
-
 /**
  * OBJ Model node — imports 3D .OBJ models with UV texture mapping, normal maps,
  * UV tiling/offset scaling, and PBR/Shadeless material controls.
@@ -67,14 +50,9 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
     { id: "diffuse", label: "Diffuse Map", type: "texture" },
     { id: "normal", label: "Normal Map", type: "texture" },
     { id: "matrix", label: "Matrix", type: "matrix" },
-    { id: "color", label: "Color", type: "color" },
-    { id: "shadeless", label: "Shadeless", type: "value" },
+    { id: "material", label: "Material", type: "material" },
     { id: "uvScale", label: "UV Scale", type: "vector" },
     { id: "uvOffset", label: "UV Offset", type: "vector" },
-    { id: "roughness", label: "Roughness", type: "value" },
-    { id: "metalness", label: "Metalness", type: "value" },
-    { id: "wireframe", label: "Wireframe", type: "value" },
-    { id: "opacity", label: "Opacity", type: "value" },
   ],
   outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: {
@@ -241,10 +219,11 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
       group.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
     }
 
-    const color = asColor(inputs.color, asColor(params.color, new THREE.Color(0xffffff)));
-    const shadeless = toBoolean(inputs.shadeless !== undefined ? inputs.shadeless : params.shadeless ?? 0);
-    const wireframe = toBoolean(inputs.wireframe !== undefined ? inputs.wireframe : params.wireframe ?? 0);
-    const opacity = Math.min(1, Math.max(0, inputs.opacity !== undefined ? Number(inputs.opacity) : Number(params.opacity) ?? 1.0));
+    const matParams = extractMaterialParams(inputs, params);
+    const color = matParams.color;
+    const shadeless = matParams.shadeless;
+    const wireframe = matParams.wireframe;
+    const opacity = matParams.opacity;
     const isTransparent = opacity < 0.999;
 
     let scaleX = Number(params.uvScaleX) || 1;
@@ -261,8 +240,8 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
       offsetY = inputs.uvOffset.y;
     }
 
-    const roughness = Math.max(0, Math.min(1, inputs.roughness !== undefined ? Number(inputs.roughness) : Number(params.roughness) ?? 0.5));
-    const metalness = Math.max(0, Math.min(1, inputs.metalness !== undefined ? Number(inputs.metalness) : Number(params.metalness) ?? 0.1));
+    const roughness = Math.max(0, Math.min(1, matParams.roughness));
+    const metalness = Math.max(0, Math.min(1, matParams.metalness));
 
     const inputDiffuse = inputs.diffuse instanceof THREE.Texture && inputs.diffuse.image ? inputs.diffuse : null;
     const inputNormal = inputs.normal instanceof THREE.Texture && inputs.normal.image ? inputs.normal : null;
