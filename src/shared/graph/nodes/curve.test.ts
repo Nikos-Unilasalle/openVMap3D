@@ -48,6 +48,23 @@ describe("CURVE NODES", () => {
     expect(resCircle.curve).toBeInstanceOf(THREE.Curve);
   });
 
+  it("CURVE_FROM_POINTS_NODE closed emits a closed curve", () => {
+    const res = CURVE_FROM_POINTS_NODE.evaluate(
+      {
+        points: [
+          new THREE.Vector3(0, 0, 0),
+          new THREE.Vector3(2, 0, 0),
+          new THREE.Vector3(2, 2, 0),
+          new THREE.Vector3(0, 2, 0),
+        ],
+      },
+      { type: "catmull", closed: true },
+      CTX
+    );
+    const curve = res.curve as THREE.CatmullRomCurve3;
+    expect(curve.closed).toBe(true);
+  });
+
   it("createVariableThicknessTubeGeometry builds buffer geometry with positions and normals", () => {
     const pts = [
       new THREE.Vector3(0, 0, 0),
@@ -74,7 +91,9 @@ describe("CURVE NODES", () => {
       CTX
     );
 
-    const mesh = res.geometry as THREE.Mesh;
+    const group = res.geometry as THREE.Group;
+    expect(group).toBeInstanceOf(THREE.Group);
+    const mesh = group.children[0] as THREE.Mesh;
     expect(mesh).toBeInstanceOf(THREE.Mesh);
     expect(mesh.geometry).toBeInstanceOf(THREE.BufferGeometry);
   });
@@ -91,7 +110,7 @@ describe("CURVE NODES", () => {
       CURVE_TO_MESH_NODE.defaultParams,
       { time: 0, step: 0, nodeId: "curve-full" }
     );
-    const fullMesh = full.geometry as THREE.Mesh;
+    const fullMesh = (full.geometry as THREE.Group).children[0] as THREE.Mesh;
     fullMesh.geometry.computeBoundingBox();
     const fullMaxX = fullMesh.geometry.boundingBox!.max.x;
     expect(fullMaxX).toBeCloseTo(10, 0);
@@ -101,7 +120,7 @@ describe("CURVE NODES", () => {
       CURVE_TO_MESH_NODE.defaultParams,
       { time: 0, step: 0, nodeId: "curve-trimmed" }
     );
-    const trimmedMesh = trimmed.geometry as THREE.Mesh;
+    const trimmedMesh = (trimmed.geometry as THREE.Group).children[0] as THREE.Mesh;
     trimmedMesh.geometry.computeBoundingBox();
     expect(trimmedMesh.geometry.boundingBox!.min.x).toBeGreaterThan(1.5);
     expect(trimmedMesh.geometry.boundingBox!.max.x).toBeLessThan(7.5);
@@ -218,20 +237,20 @@ describe("CURVE_TO_MESH_NODE geometry caching", () => {
 
   it("keeps the same geometry when nothing it depends on changed", () => {
     const first = CURVE_TO_MESH_NODE.evaluate({ curve }, CURVE_TO_MESH_NODE.defaultParams, ctx);
-    const firstGeometry = (first.geometry as THREE.Mesh).geometry;
+    const firstGeometry = ((first.geometry as THREE.Group).children[0] as THREE.Mesh).geometry;
     // A fresh Curve instance with the same definition, as the upstream node
     // hands back every frame — identity must not be what triggers a rebuild.
     const sameCurve = new THREE.CatmullRomCurve3([new THREE.Vector3(-1, 0, 0), new THREE.Vector3(1, 0, 0)]);
     const second = CURVE_TO_MESH_NODE.evaluate({ curve: sameCurve }, CURVE_TO_MESH_NODE.defaultParams, ctx);
 
-    expect((second.geometry as THREE.Mesh).geometry).toBe(firstGeometry);
+    expect(((second.geometry as THREE.Group).children[0] as THREE.Mesh).geometry).toBe(firstGeometry);
   });
 
   it("rebuilds when a shape parameter changes", () => {
     // The mesh instance is reused, so the geometry it held has to be captured
     // before the second evaluate swaps it out.
     const before = CURVE_TO_MESH_NODE.evaluate({ curve }, CURVE_TO_MESH_NODE.defaultParams, ctx);
-    const beforeGeometry = (before.geometry as THREE.Mesh).geometry;
+    const beforeGeometry = ((before.geometry as THREE.Group).children[0] as THREE.Mesh).geometry;
 
     const after = CURVE_TO_MESH_NODE.evaluate(
       { curve },
@@ -239,17 +258,212 @@ describe("CURVE_TO_MESH_NODE geometry caching", () => {
       ctx
     );
 
-    expect((after.geometry as THREE.Mesh).geometry).not.toBe(beforeGeometry);
+    expect(((after.geometry as THREE.Group).children[0] as THREE.Mesh).geometry).not.toBe(beforeGeometry);
   });
 
   it("rebuilds when the curve itself moves", () => {
     const before = CURVE_TO_MESH_NODE.evaluate({ curve }, CURVE_TO_MESH_NODE.defaultParams, ctx);
-    const beforeGeometry = (before.geometry as THREE.Mesh).geometry;
+    const beforeGeometry = ((before.geometry as THREE.Group).children[0] as THREE.Mesh).geometry;
 
     const moved = new THREE.CatmullRomCurve3([new THREE.Vector3(-1, 0, 0), new THREE.Vector3(1, 4, 0)]);
     const after = CURVE_TO_MESH_NODE.evaluate({ curve: moved }, CURVE_TO_MESH_NODE.defaultParams, ctx);
 
-    expect((after.geometry as THREE.Mesh).geometry).not.toBe(beforeGeometry);
+    expect(((after.geometry as THREE.Group).children[0] as THREE.Mesh).geometry).not.toBe(beforeGeometry);
+  });
+});
+
+describe("CURVE_TO_MESH_NODE surface mode", () => {
+  const ctx: EvalContext = { time: 0, step: 0, nodeId: "curve-surface-1" };
+  const closedCurve = new THREE.CatmullRomCurve3(
+    [
+      new THREE.Vector3(-2, 0, -2),
+      new THREE.Vector3(2, 0, -2),
+      new THREE.Vector3(2, 0, 2),
+      new THREE.Vector3(-2, 0, 2),
+    ],
+    true
+  );
+
+  it("adds a filled surface mesh to the group when surface is on and the curve is closed", () => {
+    const res = CURVE_TO_MESH_NODE.evaluate(
+      { curve: closedCurve },
+      { ...CURVE_TO_MESH_NODE.defaultParams, surface: true, depth: 0.5 },
+      ctx
+    );
+    const group = res.geometry as THREE.Group;
+    expect(group.children).toHaveLength(2);
+    const surface = group.children[1] as THREE.Mesh;
+    expect(surface).toBeInstanceOf(THREE.Mesh);
+    expect(surface.geometry.attributes.position.count).toBeGreaterThan(3);
+    // Depth is real: the solid spans ~0.5 along the loop's normal (here +Y).
+    surface.geometry.computeBoundingBox();
+    const bb = surface.geometry.boundingBox!;
+    expect(bb.max.y - bb.min.y).toBeCloseTo(0.5, 1);
+  });
+
+  it("hides the tube when surface is on and Show Curve is off", () => {
+    const res = CURVE_TO_MESH_NODE.evaluate(
+      { curve: closedCurve },
+      { ...CURVE_TO_MESH_NODE.defaultParams, surface: true, showCurve: false },
+      ctx
+    );
+    const group = res.geometry as THREE.Group;
+    expect(group.children[0].visible).toBe(false);
+    expect(group.children[1].visible).toBe(true);
+  });
+
+  it("does not build a surface when the curve is open", () => {
+    const openCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-2, 0, -2),
+      new THREE.Vector3(2, 0, -2),
+      new THREE.Vector3(2, 0, 2),
+    ]);
+    const res = CURVE_TO_MESH_NODE.evaluate(
+      { curve: openCurve },
+      { ...CURVE_TO_MESH_NODE.defaultParams, surface: true },
+      ctx
+    );
+    expect((res.geometry as THREE.Group).children).toHaveLength(1);
+  });
+
+  it("Closed checkbox closes the built-in fallback curve (so Surface can build)", () => {
+    // No curve wired → uses its own pointsList; Closed now shapes it.
+    const open = CURVE_TO_MESH_NODE.evaluate(
+      {},
+      { ...CURVE_TO_MESH_NODE.defaultParams, closed: false, surface: true },
+      ctx
+    );
+    expect((open.geometry as THREE.Group).children).toHaveLength(1);
+
+    const closed = CURVE_TO_MESH_NODE.evaluate(
+      {},
+      { ...CURVE_TO_MESH_NODE.defaultParams, closed: true, surface: true },
+      ctx
+    );
+    expect((closed.geometry as THREE.Group).children).toHaveLength(2);
+  });
+
+  it("laplacian surface mode follows a non-planar boundary instead of flattening it", () => {
+    // A boundary that lifts out of the plane: z is not constant.
+    const boundary = [
+      new THREE.Vector3(-2, -2, 0),
+      new THREE.Vector3(2, -2, 0),
+      new THREE.Vector3(2, 2, 3),
+      new THREE.Vector3(-2, 2, 3),
+    ];
+    const curve = new THREE.CatmullRomCurve3(boundary, true);
+
+    const res = CURVE_TO_MESH_NODE.evaluate(
+      { curve },
+      { ...CURVE_TO_MESH_NODE.defaultParams, surface: true, surfaceMode: "laplacian", surfaceRings: 6, surfaceIterations: 80 },
+      ctx
+    );
+    const group = res.geometry as THREE.Group;
+    const surface = group.children[1] as THREE.Mesh;
+    expect(surface).toBeInstanceOf(THREE.Mesh);
+    // The relaxed surface interpolates the boundary, so its z range spans the
+    // boundary's z range (0..3) rather than collapsing to a single plane.
+    const pos = surface.geometry.attributes.position;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (let i = 0; i < pos.count; i++) {
+      const z = pos.getZ(i);
+      if (z < minZ) minZ = z;
+      if (z > maxZ) maxZ = z;
+    }
+    expect(minZ).toBeLessThan(0.5);
+    expect(maxZ).toBeGreaterThan(2.5);
+    expect(surface.geometry.index).not.toBeNull();
+  });
+
+  it("planar laplacian surface has consistent, non-flipped normals (no dark disc at the centre)", () => {
+    const boundary = [
+      new THREE.Vector3(-2, -2, 0),
+      new THREE.Vector3(2, -2, 0),
+      new THREE.Vector3(2, 2, 0),
+      new THREE.Vector3(-2, 2, 0),
+    ];
+    const curve = new THREE.CatmullRomCurve3(boundary, true);
+    const res = CURVE_TO_MESH_NODE.evaluate(
+      { curve },
+      { ...CURVE_TO_MESH_NODE.defaultParams, surface: true, surfaceMode: "laplacian", surfaceRings: 6, surfaceIterations: 60 },
+      ctx
+    );
+    const surface = (res.geometry as THREE.Group).children[1] as THREE.Mesh;
+    const normals = surface.geometry.attributes.normal;
+    // Every normal should point along +Z (a flat surface): all roughly parallel.
+    for (let i = 0; i < normals.count; i++) {
+      expect(normals.getZ(i)).toBeGreaterThan(0.99);
+    }
+  });
+
+  it("applies an independent surface material via the surfaceMaterial socket", () => {
+    const surfMat = { color: new THREE.Color(0xff0000), roughness: 0.9, opacity: 1.0 };
+    const res = CURVE_TO_MESH_NODE.evaluate(
+      { curve: closedCurve, surfaceMaterial: surfMat },
+      { ...CURVE_TO_MESH_NODE.defaultParams, surface: true },
+      ctx
+    );
+    const group = res.geometry as THREE.Group;
+    const surface = group.children[1] as THREE.Mesh;
+    expect((surface.material as THREE.MeshStandardMaterial).color.getHex()).toBe(0xff0000);
+  });
+
+  it("routes the diffuse texture to the curve when surface is off, and to the surface when it is on", () => {
+    const texture = new THREE.Texture();
+    texture.image = { width: 1, height: 1 };
+
+    // Surface off → the curve carries the texture.
+    const off = CURVE_TO_MESH_NODE.evaluate(
+      { curve: closedCurve, texture },
+      { ...CURVE_TO_MESH_NODE.defaultParams, surface: false },
+      ctx
+    );
+    const offGroup = off.geometry as THREE.Group;
+    expect(((offGroup.children[0] as THREE.Mesh).material as THREE.MeshStandardMaterial).map).toBe(texture);
+
+    // Surface on → the texture moves to the surface; the curve has none.
+    const on = CURVE_TO_MESH_NODE.evaluate(
+      { curve: closedCurve, texture },
+      { ...CURVE_TO_MESH_NODE.defaultParams, surface: true },
+      ctx
+    );
+    const onGroup = on.geometry as THREE.Group;
+    expect(((onGroup.children[0] as THREE.Mesh).material as THREE.MeshStandardMaterial).map).toBeNull();
+    expect(((onGroup.children[1] as THREE.Mesh).material as THREE.MeshStandardMaterial).map).toBe(texture);
+  });
+});
+
+describe("curve preview line geometry output", () => {
+  const ctx: EvalContext = { time: 0, step: 0, nodeId: "curve-preview-1" };
+
+  it("Curve from Points exposes the curve as a dark-gray preview line", () => {
+    const res = CURVE_FROM_POINTS_NODE.evaluate(
+      {
+        points: [
+          new THREE.Vector3(0, 0, 0),
+          new THREE.Vector3(1, 2, 0),
+          new THREE.Vector3(2, 0, 0),
+        ],
+      },
+      { type: "catmull" },
+      ctx
+    );
+    const line = res.geometry as THREE.Line;
+    expect(line).toBeInstanceOf(THREE.Line);
+    expect(line.geometry.attributes.position.count).toBeGreaterThan(8);
+    expect((line.material as THREE.LineBasicMaterial).color.getHex()).toBe(0x9ca3af);
+  });
+
+  it("Curve Primitive exposes the curve as a preview line", () => {
+    const res = CURVE_PRIMITIVE_NODE.evaluate(
+      {},
+      { primitiveType: "circle", radius: 2 },
+      ctx
+    );
+    const line = res.geometry as THREE.Line;
+    expect(line).toBeInstanceOf(THREE.Line);
+    expect(line.geometry.attributes.position.count).toBeGreaterThan(8);
   });
 });
 

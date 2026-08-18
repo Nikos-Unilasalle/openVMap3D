@@ -1621,7 +1621,10 @@ export function Viewport({
           (transformControls.object?.userData?.isCurvePointHandle ||
             transformControls.object?.userData?.isCurveCentroidHandle);
         const frozenIndices = isDraggingHandle ? selectedPointIndices : null;
-        curveHandles.sync(curvePoints, spaceMatrix, selectedPointIndices, frozenIndices, !isLatticeNode, camera, host.clientHeight);
+        // Curve-from-points draws its own dark-gray curve via a geometry output
+        // (see curve.ts), so skip the straight control-polygon line here.
+        const hideStraightLine = isLatticeNode || curveNode?.type === "curve/from_points";
+        curveHandles.sync(curvePoints, spaceMatrix, selectedPointIndices, frozenIndices, !hideStraightLine, camera, host.clientHeight);
       } else if (curveHandles.count() > 0) {
         curveHandles.clear();
         curvePointsNodeId = null;

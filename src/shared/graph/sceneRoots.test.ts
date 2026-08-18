@@ -135,6 +135,10 @@ describe("resolveSceneRoots", () => {
     expect(roots([node("t1", "transform"), node("v1", "value/constant")])).toEqual([]);
   });
 
+  test("a curve node's preview geometry makes it a root", () => {
+    expect(roots([node("c1", "curve/from_points")])).toEqual(["c1"]);
+  });
+
   test("an unknown node type is ignored rather than throwing", () => {
     expect(roots([node("mystery", "not/a/real/node")])).toEqual([]);
   });

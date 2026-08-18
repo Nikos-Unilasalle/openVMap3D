@@ -18,9 +18,21 @@ interface SvgState {
   /** The scale/normalize transform applied last — see evaluate's rebuild guard. */
   transformed?: THREE.Curve<THREE.Vector3>[];
   lastKey?: string;
+  /** Cached gray preview lines (one per curve) so the SVG shows in the viewport. */
+  preview?: THREE.Group;
+  previewSignature?: string;
 }
 
-const svgCache = createNodeCache<SvgState>();
+const svgCache = createNodeCache<SvgState>((s) => {
+  if (s.preview) {
+    s.preview.traverse((child) => {
+      if (child instanceof THREE.Line) {
+        child.geometry.dispose();
+        (child.material as THREE.Material).dispose();
+      }
+    });
+  }
+});
 
 function getSvgState(nodeId: string): SvgState {
   let state = svgCache.get(nodeId);
@@ -29,6 +41,50 @@ function getSvgState(nodeId: string): SvgState {
     svgCache.set(nodeId, state);
   }
   return state;
+}
+
+/** Dark-gray preview line color, matching the other curve nodes. */
+const SVG_PREVIEW_COLOR = 0x9ca3af;
+
+/** Applies the node's native pose to its preview/solid, skipping while the gizmo drags. */
+function applySvgPose(
+  obj: THREE.Object3D,
+  inputs: Record<string, unknown>,
+  params: Record<string, unknown>,
+  ctx: { nodeId: string; liveEditNodeId?: string | null },
+): void {
+  if (ctx.nodeId !== ctx.liveEditNodeId) {
+    obj.matrixAutoUpdate = false;
+    obj.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+  }
+}
+
+/**
+ * Returns a cached Group of gray polyline previews — one per closed point loop —
+ * so a curve-generating node's `geometry` is visible in the viewport. Rebuilt
+ * only when `sig` changes.
+ */
+function svgPreviewGroup(state: SvgState, loops: THREE.Vector3[][], sig: string): THREE.Group {
+  if (!state.preview) state.preview = new THREE.Group();
+  if (sig !== state.previewSignature) {
+    state.previewSignature = sig;
+    for (const child of [...state.preview.children]) {
+      state.preview.remove(child);
+      if (child instanceof THREE.Line) {
+        child.geometry.dispose();
+        (child.material as THREE.Material).dispose();
+      }
+    }
+    for (const pts of loops) {
+      if (pts.length < 2) continue;
+      const line = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(pts),
+        new THREE.LineBasicMaterial({ color: SVG_PREVIEW_COLOR }),
+      );
+      state.preview.add(line);
+    }
+  }
+  return state.preview;
 }
 
 function num(v: unknown, fallback: unknown): number {
@@ -122,15 +178,19 @@ export const SVG_TO_CURVES_NODE: NodeDefinition = {
   type: "curve/svg",
   label: "SVG to Curves",
   category: "curve",
-  inputs: [],
+  inputs: [{ id: "matrix", label: "Matrix", type: "matrix" }],
   outputs: [
     { id: "curve", label: "Curve (first)", type: "curve" },
     { id: "curves", label: "Curves (list)", type: "list" },
+    { id: "geometry", label: "Curve Preview", type: "geometry" },
   ],
   defaultParams: {
     filePath: "",
-    scale: 1,
+    svgScale: 1,
     normalize: false,
+    location: new THREE.Vector3(0, 0, 0),
+    rotation: new THREE.Vector3(0, 0, 0),
+    scale: new THREE.Vector3(1, 1, 1),
   },
   dynamicParamFields: () => [
     {
@@ -147,16 +207,20 @@ export const SVG_TO_CURVES_NODE: NodeDefinition = {
           state.curves = [];
         }
         state.transformed = undefined;
+        state.previewSignature = undefined;
       },
     },
-    { id: "scale", label: "Scale", kind: "number", step: 0.1 },
+    { id: "svgScale", label: "Scale", kind: "number", step: 0.1 },
     { id: "normalize", label: "Normalize (fit unit box)", kind: "boolean" },
+    { id: "location", label: "Location", kind: "vector", group: "Transform" },
+    { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true, group: "Transform" },
+    { id: "scale", label: "Scale", kind: "vector", group: "Transform" },
   ],
-  evaluate: (_inputs, params, ctx) => {
+  evaluate: (inputs, params, ctx) => {
     const state = getSvgState(ctx.nodeId);
     const raw = state.curves;
 
-    const scale = Math.max(0, num(params.scale, 1));
+    const scale = Math.max(0, num(params.svgScale, 1));
     const normalize = Boolean(params.normalize);
 
     let s = scale;
@@ -186,14 +250,19 @@ export const SVG_TO_CURVES_NODE: NodeDefinition = {
 
     const key = `${scale}:${normalize}:${raw.length}`;
     if (state.transformed && state.lastKey === key) {
-      return { curve: state.transformed[0] ?? null, curves: state.transformed };
+      const preview = svgPreviewGroup(state, state.transformed.map((c) => c.getPoints(128)), key);
+      applySvgPose(preview, inputs, params, ctx);
+      return { curve: state.transformed[0] ?? null, curves: state.transformed, geometry: preview };
     }
 
     const transformed = raw.map((c) => transformCurve3(c, s, ox, oy));
     state.transformed = transformed;
     state.lastKey = key;
 
-    return { curve: transformed[0] ?? null, curves: transformed };
+    const preview = svgPreviewGroup(state, transformed.map((c) => c.getPoints(128)), key);
+    applySvgPose(preview, inputs, params, ctx);
+
+    return { curve: transformed[0] ?? null, curves: transformed, geometry: preview };
   },
 };
 
@@ -257,12 +326,22 @@ interface SvgSolidState {
   mesh?: THREE.Mesh;
   ownMaterial?: THREE.Material;
   geometrySignature?: string;
+  group?: THREE.Group;
+  previewSignature?: string;
 }
 
 const svgSolidCache = createNodeCache<SvgSolidState>((s) => {
   if (s.mesh) {
     s.mesh.geometry.dispose();
     if (s.ownMaterial) s.ownMaterial.dispose();
+  }
+  if (s.group) {
+    s.group.traverse((child) => {
+      if (child instanceof THREE.Line) {
+        child.geometry.dispose();
+        (child.material as THREE.Material).dispose();
+      }
+    });
   }
 });
 
@@ -331,6 +410,7 @@ export const SVG_TO_SOLID_NODE: NodeDefinition = {
           state.shapes = [];
         }
         state.geometrySignature = undefined;
+        state.previewSignature = undefined;
       },
     },
     { id: "svgScale", label: "Scale", kind: "number", step: 0.1 },
@@ -441,15 +521,44 @@ export const SVG_TO_SOLID_NODE: NodeDefinition = {
       }
     }
 
-    if (ctx.nodeId !== ctx.liveEditNodeId) {
-      mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+    // The mesh sits at identity; a stable parent group carries the native pose
+    // and also holds a gray outline preview so the curve is visible in 3D.
+    if (!state.group) {
+      state.group = new THREE.Group();
+      state.group.userData.nodeId = ctx.nodeId;
     }
+    const group = state.group;
+    if (mesh.parent !== group) group.add(mesh);
+
+    // Preview outline from the shape contours, in the same SVG->world space the
+    // solid geometry was baked in (x*s+ox, -y*s+oy, z=0). Only rebuilt when the
+    // transform or shape set changes.
+    const previewSig = JSON.stringify([s, ox, oy, shapes.length]);
+    if (previewSig !== state.previewSignature) {
+      state.previewSignature = previewSig;
+      for (const child of [...group.children]) {
+        if (child !== mesh && child instanceof THREE.Line) {
+          group.remove(child);
+          child.geometry.dispose();
+          (child.material as THREE.Material).dispose();
+        }
+      }
+      for (const shape of shapes) {
+        const pts = shape.getPoints(64).map((p) => new THREE.Vector3(p.x * s + ox, -p.y * s + oy, 0));
+        const line = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(pts),
+          new THREE.LineBasicMaterial({ color: SVG_PREVIEW_COLOR }),
+        );
+        group.add(line);
+      }
+    }
+
+    applySvgPose(group, inputs, params, ctx);
 
     const matParams = extractMaterialParams(inputs, params);
     const texParams = extractTextureParams(inputs, params, ctx.nodeId);
     applyMaterialParams(mesh, matParams, THREE.DoubleSide, texParams);
 
-    return primitiveOutputs(mesh);
+    return primitiveOutputs(group);
   },
 };

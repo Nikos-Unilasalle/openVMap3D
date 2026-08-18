@@ -54,37 +54,46 @@ export interface TextureParams {
   offsetY: number;
 }
 
+/** `prefix` + `key` with the first letter of key capitalised — "surface" + "color" → "surfaceColor". */
+export function prefixedParamKey(prefix: string, key: string): string {
+  return prefix ? `${prefix}${key.charAt(0).toUpperCase()}${key.slice(1)}` : key;
+}
+
 export function extractTextureParams(
   inputs: Record<string, unknown>,
   params: Record<string, unknown>,
-  nodeId: string
+  nodeId: string,
+  prefix = ""
 ): TextureParams {
   const state = getOrCreatePrimitiveTextureState(nodeId);
+  const p = (key: string) => prefixedParamKey(prefix, key);
 
-  const inputDiffuse = inputs.texture instanceof THREE.Texture && inputs.texture.image ? inputs.texture : null;
-  const inputNormal = inputs.normal instanceof THREE.Texture && inputs.normal.image ? inputs.normal : null;
+  const diffuseVal = inputs[p("texture")];
+  const normalVal = inputs[p("normal")];
+  const inputDiffuse = diffuseVal instanceof THREE.Texture && diffuseVal.image ? diffuseVal : null;
+  const inputNormal = normalVal instanceof THREE.Texture && normalVal.image ? normalVal : null;
 
   const activeDiffuse = inputDiffuse || state.textureMap || null;
   const activeNormal = inputNormal || state.normalMap || null;
 
-  let scaleX = Number(params.uvScaleX);
+  let scaleX = Number(params[p("uvScaleX")]);
   if (!Number.isFinite(scaleX)) scaleX = 1;
-  let scaleY = Number(params.uvScaleY);
+  let scaleY = Number(params[p("uvScaleY")]);
   if (!Number.isFinite(scaleY)) scaleY = 1;
 
-  if (inputs.uvScale instanceof THREE.Vector3) {
-    scaleX = inputs.uvScale.x;
-    scaleY = inputs.uvScale.y;
+  if (inputs[p("uvScale")] instanceof THREE.Vector3) {
+    scaleX = (inputs[p("uvScale")] as THREE.Vector3).x;
+    scaleY = (inputs[p("uvScale")] as THREE.Vector3).y;
   }
 
-  let offsetX = Number(params.uvOffsetX);
+  let offsetX = Number(params[p("uvOffsetX")]);
   if (!Number.isFinite(offsetX)) offsetX = 0;
-  let offsetY = Number(params.uvOffsetY);
+  let offsetY = Number(params[p("uvOffsetY")]);
   if (!Number.isFinite(offsetY)) offsetY = 0;
 
-  if (inputs.uvOffset instanceof THREE.Vector3) {
-    offsetX = inputs.uvOffset.x;
-    offsetY = inputs.uvOffset.y;
+  if (inputs[p("uvOffset")] instanceof THREE.Vector3) {
+    offsetX = (inputs[p("uvOffset")] as THREE.Vector3).x;
+    offsetY = (inputs[p("uvOffset")] as THREE.Vector3).y;
   }
 
   return { activeDiffuse, activeNormal, scaleX, scaleY, offsetX, offsetY };
@@ -117,18 +126,24 @@ function materialParamsFromValue(v: unknown): MaterialParams | null {
   };
 }
 
-export function extractMaterialParams(inputs: Record<string, unknown>, params: Record<string, unknown>): MaterialParams {
-  const connected = materialParamsFromValue(inputs.material);
+export function extractMaterialParams(
+  inputs: Record<string, unknown>,
+  params: Record<string, unknown>,
+  prefix = ""
+): MaterialParams {
+  const p = (key: string) => prefixedParamKey(prefix, key);
+
+  const connected = materialParamsFromValue(inputs[p("material")]);
   if (connected) return connected;
 
-  const color = asColor(inputs.color, asColor(params.color, new THREE.Color(0xffffff)));
-  const emissive = asColor(inputs.emissive, asColor(params.emissive, new THREE.Color(0x000000)));
-  const emissiveIntensity = Math.max(0, numberInput(inputs.emissiveIntensity, params.emissiveIntensity, 1.0));
-  const shadeless = toBoolean(inputs.shadeless !== undefined ? inputs.shadeless : params.shadeless ?? 0);
-  const roughness = numberInput(inputs.roughness, params.roughness, 0.4);
-  const metalness = numberInput(inputs.metalness, params.metalness, 0.1);
-  const wireframe = toBoolean(inputs.wireframe !== undefined ? inputs.wireframe : params.wireframe ?? 0);
-  const opacity = Math.min(1, Math.max(0, numberInput(inputs.opacity, params.opacity, 1.0)));
+  const color = asColor(inputs[p("color")], asColor(params[p("color")], new THREE.Color(0xffffff)));
+  const emissive = asColor(inputs[p("emissive")], asColor(params[p("emissive")], new THREE.Color(0x000000)));
+  const emissiveIntensity = Math.max(0, numberInput(inputs[p("emissiveIntensity")], params[p("emissiveIntensity")], 1.0));
+  const shadeless = toBoolean(inputs[p("shadeless")] !== undefined ? inputs[p("shadeless")] : params[p("shadeless")] ?? 0);
+  const roughness = numberInput(inputs[p("roughness")], params[p("roughness")], 0.4);
+  const metalness = numberInput(inputs[p("metalness")], params[p("metalness")], 0.1);
+  const wireframe = toBoolean(inputs[p("wireframe")] !== undefined ? inputs[p("wireframe")] : params[p("wireframe")] ?? 0);
+  const opacity = Math.min(1, Math.max(0, numberInput(inputs[p("opacity")], params[p("opacity")], 1.0)));
 
   return { color, emissive, emissiveIntensity, shadeless, roughness, metalness, wireframe, opacity };
 }
@@ -259,6 +274,20 @@ export const COMMON_MATERIAL_PARAM_FIELDS: ParamFieldDef[] = [
   { id: "wireframe", label: "Wireframe", kind: "boolean", group: "Material" },
   { id: "opacity", label: "Opacity", kind: "number", step: 0.05, group: "Material" },
 ];
+
+/**
+ * A second, independent set of material params (for a node that needs to style
+ * two objects differently, e.g. a curve and its surface): every field of
+ * `COMMON_MATERIAL_PARAM_FIELDS` with a `prefix`ed id and a new group. Keys line
+ * up with `extractMaterialParams(..., prefix)`.
+ */
+export function prefixedMaterialParamFields(prefix: string, group: string): ParamFieldDef[] {
+  return COMMON_MATERIAL_PARAM_FIELDS.map((f) => ({
+    ...f,
+    id: prefixedParamKey(prefix, f.id),
+    group,
+  }));
+}
 
 /**
  * The object's own initial pose — see composeNativeMatrix in transform.ts.

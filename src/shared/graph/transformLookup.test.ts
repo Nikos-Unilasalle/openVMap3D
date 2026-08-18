@@ -59,6 +59,13 @@ describe("resolveGizmoTarget", () => {
     });
   });
 
+  it("curve nodes (from_points, primitive, svg) resolve to a native target", () => {
+    for (const type of ["curve/from_points", "curve/primitive", "curve/svg", "curve/svg_solid"]) {
+      const graph: Graph = { nodes: [node("c1", type)], connections: [] };
+      expect(resolveGizmoTarget(graph, "c1")).toEqual({ kind: "native", objectNodeId: "c1", deltaSourceNodeId: null });
+    }
+  });
+
   it("falls through to a native target when the wired source is not a Transform or Matrix Transform node — the wired node becomes the delta", () => {
     // Arrange — a Look At node also outputs a matrix, but isn't editable via location/rotation/scale
     const graph: Graph = {
@@ -156,6 +163,9 @@ describe("GIZMO_SELECTABLE_TYPES", () => {
       "object/text",
       "curve/to_mesh",
       "curve/to_mesh_list",
+      "curve/from_points",
+      "curve/primitive",
+      "curve/svg",
       "curve/svg_solid",
       "curve/deform",
       "structure/merge",

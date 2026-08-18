@@ -11,6 +11,19 @@ describe("SVG_TO_CURVES_NODE", () => {
     expect(res.curve).toBeNull();
     expect((res.curves as unknown[]).length).toBe(0);
   });
+
+  test("exposes a preview group as geometry carrying the native pose", () => {
+    const res = SVG_TO_CURVES_NODE.evaluate(
+      { matrix: new THREE.Matrix4().makeTranslation(3, 0, 0) },
+      { ...SVG_TO_CURVES_NODE.defaultParams, location: new THREE.Vector3(1, 0, 0) },
+      { ...CTX, nodeId: "svg-preview" }
+    );
+    const preview = res.geometry as THREE.Group;
+    expect(preview).toBeInstanceOf(THREE.Group);
+    // matrix = base(location) × delta(matrix input) → x translation = 4.
+    const pos = new THREE.Vector3().setFromMatrixPosition(preview.matrix);
+    expect(pos.x).toBeCloseTo(4);
+  });
 });
 
 describe("pathToCurve3", () => {
