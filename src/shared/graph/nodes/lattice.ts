@@ -300,11 +300,20 @@ export function evaluateLatticeControlPoint(
     z += z * bulgeAmount;
   }
 
-  // 4. Bend: arc bending along the deform axis
+  // 4. Bend: arc bending along the deform axis. Pivots around the lattice's
+  // centre (h ∈ [-0.5, 0.5]) so the cage curves symmetrically instead of
+  // translating up the deform axis (the old (h + 0.5) lifted the bottom to 0).
   if (config.bend !== 0) {
-    const bendAngle = (config.bend * Math.PI * 0.5) * (h + 0.5);
-    const arcRadius = config.sizeY / Math.max(0.01, Math.abs(config.bend * Math.PI * 0.5));
-    if (config.deformAxis === "y") {
+    const bendAngle = (config.bend * Math.PI * 0.5) * h;
+    const axisLength =
+      config.deformAxis === "y" ? config.sizeY : config.deformAxis === "z" ? config.sizeZ : config.sizeX;
+    const arcRadius = axisLength / Math.max(0.01, Math.abs(config.bend * Math.PI * 0.5));
+    if (config.deformAxis === "x") {
+      const curvedY = (Math.cos(bendAngle) - 1.0) * arcRadius;
+      const curvedX = Math.sin(bendAngle) * arcRadius;
+      y += curvedY;
+      x = curvedX;
+    } else if (config.deformAxis === "y") {
       const curvedX = (Math.cos(bendAngle) - 1.0) * arcRadius;
       const curvedY = Math.sin(bendAngle) * arcRadius;
       x += curvedX;

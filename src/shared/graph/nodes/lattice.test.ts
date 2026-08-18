@@ -78,6 +78,50 @@ describe("LATTICE DEFORM NODE", () => {
     expect(ptTop.z).toBeCloseTo(1.0, 1);
   });
 
+  it("bend curves symmetrically around the centre without lifting the lattice in Y", () => {
+    const bendConfig: LatticeGridConfig = {
+      ...baseConfig,
+      bend: 1.0,
+    };
+    // deformAxis = y, so the bend pivot is the lattice centre (h = v).
+    const ptTop = evaluateLatticeControlPoint(0.5, 0.5, 0.5, bendConfig, 0);
+    const ptBot = evaluateLatticeControlPoint(0.5, -0.5, 0.5, bendConfig, 0);
+
+    // The Y extent stays centred on 0 — no rise.
+    expect((ptTop.y + ptBot.y) / 2).toBeCloseTo(0, 5);
+    expect(ptTop.y).toBeGreaterThan(0);
+    expect(ptBot.y).toBeLessThan(0);
+    // And it actually curves laterally.
+    expect(Math.abs(ptTop.x)).toBeGreaterThan(0.01);
+  });
+
+  it("bend on the X axis curves without translating the lattice along X", () => {
+    const bendConfig: LatticeGridConfig = { ...baseConfig, deformAxis: "x", bend: 1.0 };
+    // deformAxis = x, so h = u; the X extent must stay centred on 0.
+    const near = evaluateLatticeControlPoint(0.5, 0.5, 0.5, bendConfig, 0);
+    const far = evaluateLatticeControlPoint(-0.5, 0.5, 0.5, bendConfig, 0);
+    expect((near.x + far.x) / 2).toBeCloseTo(0, 5);
+    expect(Math.abs(near.y)).toBeGreaterThan(0.01);
+  });
+
+  it("none of the deformations translate the lattice along the deform axis", () => {
+    const cases: Record<string, Partial<LatticeGridConfig>> = {
+      taper: { taper: -0.4 },
+      twist: { twist: 90 },
+      bulge: { bulge: 0.5 },
+      shearX: { shearX: 0.5 },
+      shearZ: { shearZ: 0.5 },
+      bend: { bend: 1.0 },
+    };
+    for (const [name, patch] of Object.entries(cases)) {
+      const cfg: LatticeGridConfig = { ...baseConfig, ...patch };
+      const top = evaluateLatticeControlPoint(0.5, 0.5, 0.5, cfg, 0);
+      const bot = evaluateLatticeControlPoint(0.5, -0.5, 0.5, cfg, 0);
+      // deformAxis = y: the Y extent must stay centred on 0 for every modulator.
+      expect((top.y + bot.y) / 2, `${name} lifts the lattice`).toBeCloseTo(0, 3);
+    }
+  });
+
   it("applies bulge deformation expanding the center", () => {
     const bulgeConfig: LatticeGridConfig = {
       ...baseConfig,
