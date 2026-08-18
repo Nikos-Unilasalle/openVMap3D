@@ -136,10 +136,12 @@ export const BOOLEAN_NODE: NodeDefinition = {
     }
 
     // Clone + bake each shape's world transform so the CSG happens in world
-    // space — the two shapes meet wherever you actually positioned them.
-    const brushA = new Brush(srcA.geometry.clone());
+    // space — the two shapes meet wherever you actually positioned them. Pass
+    // each shape's material so, with useGroups on, faces that came from object
+    // 2 keep object 2's material (the result carries a material array).
+    const brushA = new Brush(srcA.geometry.clone(), srcA.material);
     brushA.geometry.applyMatrix4(srcA.matrixWorld);
-    const brushB = new Brush(srcB.geometry.clone());
+    const brushB = new Brush(srcB.geometry.clone(), srcB.material);
     brushB.geometry.applyMatrix4(srcB.matrixWorld);
 
     try {
@@ -149,13 +151,16 @@ export const BOOLEAN_NODE: NodeDefinition = {
       const geometry = result.geometry;
 
       if (!state.mesh) {
-        state.mesh = new THREE.Mesh(geometry, srcA.material);
+        state.mesh = new THREE.Mesh(geometry, useGroups ? result.material : srcA.material);
         state.mesh.castShadow = true;
         state.mesh.receiveShadow = true;
       } else {
         disposeGeometry(state.mesh.geometry);
         state.mesh.geometry = geometry;
-        state.mesh.material = srcA.material;
+        // useGroups → the library hands back a per-input material array, so
+        // faces from object 2 inherit object 2's material; otherwise a single
+        // material (object 1's) applies to the whole result.
+        state.mesh.material = useGroups ? result.material : srcA.material;
       }
       // The result is already positioned (both inputs baked) — local identity.
       state.mesh.matrixAutoUpdate = false;

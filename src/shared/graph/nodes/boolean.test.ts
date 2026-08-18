@@ -6,8 +6,8 @@ import { BOOLEAN_NODE } from "./boolean";
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "boolean-test" };
 
 /** A box at a world position, driven the same way an object node drives its mesh (matrixAutoUpdate off). */
-function boxAt(x: number): THREE.Mesh {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
+function boxAt(x: number, material?: THREE.Material): THREE.Mesh {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material ?? new THREE.MeshStandardMaterial());
   mesh.matrixAutoUpdate = false;
   mesh.matrix.makeTranslation(x, 0, 0);
   mesh.updateMatrixWorld(true);
@@ -101,5 +101,22 @@ describe("BOOLEAN_NODE", () => {
     );
     // The result must be recomputed, not a stale cache hit.
     expect((r2.geometry as THREE.Mesh).geometry).not.toBe(g1);
+  });
+
+  it("inherits each shape's material on the faces it contributed (useGroups)", () => {
+    const a = boxAt(0, new THREE.MeshStandardMaterial({ color: 0xff0000 }));
+    const b = boxAt(0.5, new THREE.MeshStandardMaterial({ color: 0x00ff00 }));
+    const res = BOOLEAN_NODE.evaluate(
+      { geometry: a, boolean: b, operation: "add" },
+      BOOLEAN_NODE.defaultParams,
+      CTX,
+    );
+    const mesh = res.geometry as THREE.Mesh;
+    // With useGroups on, the result carries a per-input material array and the
+    // geometry keeps groups so faces from object 2 use object 2's material.
+    expect(Array.isArray(mesh.material)).toBe(true);
+    const mats = mesh.material as THREE.Material[];
+    expect(mats.length).toBeGreaterThanOrEqual(2);
+    expect(mesh.geometry.groups.length).toBeGreaterThan(0);
   });
 });
