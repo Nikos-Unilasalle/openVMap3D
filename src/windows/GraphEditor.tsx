@@ -23,6 +23,7 @@ import { getGraphClipboard, setGraphClipboard } from "../shared/graph/clipboard"
 import { cloneKeyframes, cloneParams, cloneParamValue } from "../shared/graph/cloneGraph";
 import { findCompatibleSocket, segmentIntersectsRect } from "../shared/graph/insertOnWire";
 import { isGraphZone, setInputZone } from "../shared/graph/inputZoneStore";
+import { randomId } from "../shared/randomId";
 import { SOCKET_COLOR } from "../shared/graph/sockets";
 import { Connection, Graph, KeyframeStore, NodeInstance, NodeRegistry } from "../shared/graph/types";
 import { GraphNode, GraphNodeData } from "./GraphNode";
@@ -478,7 +479,7 @@ function GraphEditorContent({
         event.stopPropagation();
 
         const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-        const id = crypto.randomUUID();
+        const id = randomId();
 
         const rerouteDef = registry.get("utility/reroute");
         if (!rerouteDef) return;
@@ -652,7 +653,7 @@ function GraphEditorContent({
     (type: string) => {
       const def = registry.get(type);
       if (!def) return;
-      const id = crypto.randomUUID();
+      const id = randomId();
 
       const currentSpawnPos = spawnCursorPosRef.current;
       const position = pendingWireConnection
@@ -743,7 +744,7 @@ function GraphEditorContent({
       if ((type === "light/directional" || type === "light/spot") && !pendingWireConnection) {
         const emptyDef = registry.get("object/empty");
         if (emptyDef) {
-          const emptyId = crypto.randomUUID();
+          const emptyId = randomId();
           const emptyPos = { x: position.x - 260, y: position.y };
           const emptyInstance: NodeInstance = {
             id: emptyId,
@@ -837,7 +838,7 @@ function GraphEditorContent({
       const idMap = new Map<string, string>();
 
       const newInstances: NodeInstance[] = clipNodes.map((n: NodeInstance) => {
-        const newId = crypto.randomUUID();
+        const newId = randomId();
         idMap.set(n.id, newId);
         return {
           id: newId,
