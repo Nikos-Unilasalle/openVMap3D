@@ -54,4 +54,28 @@ describe("BOOLEAN_NODE", () => {
     const bb = mesh.geometry.boundingBox!;
     expect(bb.max.x - bb.min.x).toBeLessThan(1.5);
   });
+
+  it("re-runs CSG when a source's vertices change in place (vertex animation)", () => {
+    const a = boxAt(0);
+    const b = boxAt(0.5);
+    const r1 = BOOLEAN_NODE.evaluate(
+      { geometry: a, boolean: b, operation: "intersect" },
+      BOOLEAN_NODE.defaultParams,
+      CTX,
+    );
+    const g1 = (r1.geometry as THREE.Mesh).geometry;
+
+    // Mutate b's vertices in place — same geometry uuid, as a deforming source.
+    const pos = b.geometry.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < pos.count; i++) pos.setX(i, pos.getX(i) + 5);
+    pos.needsUpdate = true;
+
+    const r2 = BOOLEAN_NODE.evaluate(
+      { geometry: a, boolean: b, operation: "intersect" },
+      BOOLEAN_NODE.defaultParams,
+      CTX,
+    );
+    // The result must be recomputed, not a stale cache hit.
+    expect((r2.geometry as THREE.Mesh).geometry).not.toBe(g1);
+  });
 });

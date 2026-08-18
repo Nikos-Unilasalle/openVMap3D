@@ -39,6 +39,30 @@ function disposeGeometry(g: THREE.BufferGeometry): void {
   g.dispose();
 }
 
+/**
+ * A cheap FNV-1a over the raw bytes of a position attribute. Animating a source
+ * mesh at the *vertex* level (a deform feeding this node) mutates positions in
+ * place and keeps the same geometry uuid, so a uuid-only cache signature would
+ * wrongly reuse the stale CSG result and freeze the animation. Hashing the
+ * positions detects that change for a small per-evaluate cost (still far
+ * cheaper than re-running the CSG).
+ */
+function hashPositions(attr: THREE.BufferAttribute | THREE.InterleavedBufferAttribute | undefined): string {
+  const arr = attr?.array as ArrayLike<number> | undefined;
+  if (!arr) return "none";
+  const view = new DataView(
+    (arr as Float32Array).buffer,
+    (arr as Float32Array).byteOffset,
+    (arr as Float32Array).byteLength,
+  );
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < view.byteLength; i++) {
+    hash ^= view.getUint8(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16);
+}
+
 const OPERATIONS: Record<string, number> = { add: ADDITION, subtract: SUBTRACTION, intersect: INTERSECTION };
 
 /**
@@ -95,8 +119,10 @@ export const BOOLEAN_NODE: NodeDefinition = {
       operation,
       useGroups,
       srcA.geometry.uuid,
+      hashPositions(srcA.geometry.attributes.position),
       [...srcA.matrixWorld.elements],
       srcB.geometry.uuid,
+      hashPositions(srcB.geometry.attributes.position),
       [...srcB.matrixWorld.elements],
     ]);
     if (state.mesh && state.lastSignature === signature) {
