@@ -245,16 +245,22 @@ export const SPAWN_NODE: NodeDefinition = {
       // Select item to clone
       const sourceItem = items[i % items.length];
       const instance = sourceItem.clone(true);
-      // The item's *world* pose — same reasoning as collectTriangles: a
-      // graph-driven item's `matrix` is the truth, but a curve-to-mesh (or any
+      // The item's *world* rotation & scale — same reasoning as collectTriangles:
+      // a graph-driven item's matrix is the truth, but a curve-to-mesh (or any
       // modifier) hands back a GROUP whose pose lives on the group, and
       // extractItems flattens that group into its identity-matrix children. So
-      // reading `sourceItem.matrix` would drop the modifier's gizmo. Reading the
-      // forced matrixWorld captures the full chain (group × child).
+      // reading sourceItem.matrix would drop the modifier's gizmo. We decompose
+      // the forced matrixWorld and keep rotation/scale (the shape's orientation
+      // and size) but DROP the item's world position — each copy sits on the
+      // support surface rather than being pushed off it by where the item
+      // happens to be in the scene.
       sourceItem.updateWorldMatrix(true, false, true);
-      const sourceMatrix = sourceItem.matrixWorld.clone();
+      const itemPos = new THREE.Vector3();
+      const itemQuat = new THREE.Quaternion();
+      const itemScale = new THREE.Vector3();
+      sourceItem.matrixWorld.decompose(itemPos, itemQuat, itemScale);
 
-      // Orientation & Rotation
+      // Orientation & Rotation (surface normal × variation × item's own rotation)
       const finalQuat = new THREE.Quaternion();
       if (alignToNormal) {
         finalQuat.setFromUnitVectors(UP, worldNorm);
@@ -265,21 +271,18 @@ export const SPAWN_NODE: NodeDefinition = {
       const rz = (prng() - 0.5) * 2 * rotZVarRad;
       const varQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz));
 
-      finalQuat.multiply(varQuat);
+      finalQuat.multiply(varQuat).multiply(itemQuat);
 
-      // Scale multiplier
+      // Scale multiplier × item's own scale
       const scaleVal = scaleMin + prng() * (scaleMax - scaleMin);
-      const spawnScale = new THREE.Vector3(scaleVal, scaleVal, scaleVal);
+      const spawnScale = new THREE.Vector3(scaleVal, scaleVal, scaleVal).multiply(itemScale);
 
-      // Compose surface placement matrix
+      // Compose surface placement matrix (no item translation)
       const spawnMatrix = new THREE.Matrix4().compose(worldPos, finalQuat, spawnScale);
 
-      // Combine surface placement with item's own local transform (location, rotation, scale)
-      const finalMatrix = new THREE.Matrix4().multiplyMatrices(spawnMatrix, sourceMatrix);
-
       instance.matrixAutoUpdate = false;
-      instance.matrix.copy(finalMatrix);
-      finalMatrix.decompose(instance.position, instance.quaternion, instance.scale);
+      instance.matrix.copy(spawnMatrix);
+      spawnMatrix.decompose(instance.position, instance.quaternion, instance.scale);
 
       group.add(instance);
     }
