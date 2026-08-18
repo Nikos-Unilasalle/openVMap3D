@@ -55,6 +55,30 @@ describe("BOOLEAN_NODE", () => {
     expect(bb.max.x - bb.min.x).toBeLessThan(1.5);
   });
 
+  it("re-runs CSG when a source's pose (matrix) changes, even with a stale matrixWorld", () => {
+    const a = boxAt(0);
+    const b = boxAt(0.5);
+    const r1 = BOOLEAN_NODE.evaluate(
+      { geometry: a, boolean: b, operation: "intersect" },
+      BOOLEAN_NODE.defaultParams,
+      CTX,
+    );
+    const g1 = (r1.geometry as THREE.Mesh).geometry;
+
+    // Animate b's pose the way a graph-driven mesh is driven: matrix set via
+    // matrix.copy() (matrixAutoUpdate off), leaving matrixWorld *stale*. The
+    // boolean must force the recompute to see the new pose.
+    b.matrix.makeTranslation(4, 0, 0);
+
+    const r2 = BOOLEAN_NODE.evaluate(
+      { geometry: a, boolean: b, operation: "intersect" },
+      BOOLEAN_NODE.defaultParams,
+      CTX,
+    );
+    // The result must be recomputed, not a stale cache hit.
+    expect((r2.geometry as THREE.Mesh).geometry).not.toBe(g1);
+  });
+
   it("re-runs CSG when a source's vertices change in place (vertex animation)", () => {
     const a = boxAt(0);
     const b = boxAt(0.5);

@@ -107,8 +107,14 @@ export const BOOLEAN_NODE: NodeDefinition = {
       return primitiveOutputs(inputA);
     }
 
-    srcA.updateWorldMatrix(true, false);
-    srcB.updateWorldMatrix(true, false);
+    // Recompute the source's world matrix with `force` — see lattice.ts's note:
+    // a source feeding a modifier is no longer drawn itself, so its matrixWorld
+    // is never refreshed, and updateWorldMatrix is a silent no-op on a
+    // graph-driven mesh (matrixAutoUpdate off, matrix set via matrix.copy())
+    // unless forced. Reading the stale value froze the boolean at the source's
+    // old pose, which is exactly why the result didn't animate.
+    srcA.updateWorldMatrix(true, false, true);
+    srcB.updateWorldMatrix(true, false, true);
 
     const operation = String(inputs.operation ?? params.operation ?? "subtract");
     const useGroups = Boolean(params.useGroups);
