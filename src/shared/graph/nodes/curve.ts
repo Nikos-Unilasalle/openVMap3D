@@ -588,29 +588,104 @@ export const CURVE_PRIMITIVE_NODE: NodeDefinition = {
   },
   dynamicParamFields: () => [
     ...curveTransformFields(),
-    { id: "primitiveType", label: "Shape", kind: "select", options: ["helix", "circle", "line", "rectangle"] },
+    {
+      id: "primitiveType",
+      label: "Shape",
+      kind: "select",
+      options: ["helix", "circle", "ellipse", "heart", "star", "polygon", "diamond", "rectangle", "arch", "line", "wave"],
+    },
     { id: "radius", label: "Radius / Size", kind: "number", step: 0.1 },
     { id: "height", label: "Height", kind: "number", step: 0.2 },
-    { id: "turns", label: "Turns", kind: "number", step: 0.5 },
+    { id: "turns", label: "Turns / Sides / Cycles", kind: "number", step: 0.5 },
   ],
   evaluate: (inputs, params, ctx) => {
     const shape = String(params.primitiveType || "helix");
     const radius = inputs.radius !== undefined ? asNumber(inputs.radius, 1.5) : asNumber(params.radius, 1.5);
     const height = inputs.height !== undefined ? asNumber(inputs.height, 3.0) : asNumber(params.height, 3.0);
     const turns = inputs.turns !== undefined ? asNumber(inputs.turns, 3.0) : asNumber(params.turns, 3.0);
+    const steps = 64;
 
     let curve: THREE.Curve<THREE.Vector3>;
 
     if (shape === "circle") {
-      const steps = 64;
       const pts: THREE.Vector3[] = [];
       for (let i = 0; i <= steps; i++) {
         const theta = (i / steps) * Math.PI * 2;
         pts.push(new THREE.Vector3(Math.cos(theta) * radius, 0, Math.sin(theta) * radius));
       }
       curve = new THREE.CatmullRomCurve3(pts, true);
+    } else if (shape === "ellipse") {
+      const rx = radius;
+      const rz = height / 2 || radius;
+      const pts: THREE.Vector3[] = [];
+      for (let i = 0; i <= steps; i++) {
+        const theta = (i / steps) * Math.PI * 2;
+        pts.push(new THREE.Vector3(Math.cos(theta) * rx, 0, Math.sin(theta) * rz));
+      }
+      curve = new THREE.CatmullRomCurve3(pts, true);
+    } else if (shape === "heart") {
+      const s = radius / 16;
+      const pts: THREE.Vector3[] = [];
+      for (let i = 0; i <= steps; i++) {
+        const t = (i / steps) * Math.PI * 2;
+        const x = 16 * Math.pow(Math.sin(t), 3);
+        const z = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+        pts.push(new THREE.Vector3(x * s, 0, z * s));
+      }
+      curve = new THREE.CatmullRomCurve3(pts, true);
+    } else if (shape === "star") {
+      const points = Math.max(3, Math.round(turns || 5));
+      const inner = radius * 0.5;
+      const path = new THREE.CurvePath<THREE.Vector3>();
+      for (let i = 0; i < points * 2; i++) {
+        const r = i % 2 === 0 ? radius : inner;
+        const theta = (i / (points * 2)) * Math.PI * 2 - Math.PI / 2;
+        const a = new THREE.Vector3(Math.cos(theta) * r, 0, Math.sin(theta) * r);
+        const next = (i + 1) % (points * 2);
+        const nr = next % 2 === 0 ? radius : inner;
+        const ntheta = (next / (points * 2)) * Math.PI * 2 - Math.PI / 2;
+        const b = new THREE.Vector3(Math.cos(ntheta) * nr, 0, Math.sin(ntheta) * nr);
+        path.add(new THREE.LineCurve3(a, b));
+      }
+      curve = path;
+    } else if (shape === "polygon") {
+      const sides = Math.max(3, Math.round(turns || 6));
+      const path = new THREE.CurvePath<THREE.Vector3>();
+      for (let i = 0; i < sides; i++) {
+        const theta = (i / sides) * Math.PI * 2 - Math.PI / 2;
+        const a = new THREE.Vector3(Math.cos(theta) * radius, 0, Math.sin(theta) * radius);
+        const nt = ((i + 1) / sides) * Math.PI * 2 - Math.PI / 2;
+        const b = new THREE.Vector3(Math.cos(nt) * radius, 0, Math.sin(nt) * radius);
+        path.add(new THREE.LineCurve3(a, b));
+      }
+      curve = path;
+    } else if (shape === "diamond") {
+      const hw = radius;
+      const hh = height / 2 || radius;
+      const path = new THREE.CurvePath<THREE.Vector3>();
+      path.add(new THREE.LineCurve3(new THREE.Vector3(0, 0, hh), new THREE.Vector3(hw, 0, 0)));
+      path.add(new THREE.LineCurve3(new THREE.Vector3(hw, 0, 0), new THREE.Vector3(0, 0, -hh)));
+      path.add(new THREE.LineCurve3(new THREE.Vector3(0, 0, -hh), new THREE.Vector3(-hw, 0, 0)));
+      path.add(new THREE.LineCurve3(new THREE.Vector3(-hw, 0, 0), new THREE.Vector3(0, 0, hh)));
+      curve = path;
+    } else if (shape === "arch") {
+      const pts: THREE.Vector3[] = [];
+      for (let i = 0; i <= steps; i++) {
+        const theta = (i / steps) * Math.PI;
+        pts.push(new THREE.Vector3(Math.cos(theta) * radius, 0, Math.sin(theta) * radius));
+      }
+      curve = new THREE.CatmullRomCurve3(pts, false);
     } else if (shape === "line") {
       curve = new THREE.LineCurve3(new THREE.Vector3(0, -height / 2, 0), new THREE.Vector3(0, height / 2, 0));
+    } else if (shape === "wave") {
+      const cycles = Math.max(0.5, turns || 2);
+      const pts: THREE.Vector3[] = [];
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const theta = t * cycles * Math.PI * 2;
+        pts.push(new THREE.Vector3(Math.sin(theta) * radius, 0, -height / 2 + height * t));
+      }
+      curve = new THREE.CatmullRomCurve3(pts, false);
     } else if (shape === "rectangle") {
       const path = new THREE.CurvePath<THREE.Vector3>();
       const hw = radius;
@@ -622,10 +697,10 @@ export const CURVE_PRIMITIVE_NODE: NodeDefinition = {
       curve = path;
     } else {
       // Helix / Spiral
-      const steps = Math.max(32, Math.round(turns * 32));
+      const stepsH = Math.max(32, Math.round(turns * 32));
       const pts: THREE.Vector3[] = [];
-      for (let i = 0; i <= steps; i++) {
-        const t = i / steps;
+      for (let i = 0; i <= stepsH; i++) {
+        const t = i / stepsH;
         const theta = t * turns * Math.PI * 2;
         const y = (t - 0.5) * height;
         pts.push(new THREE.Vector3(Math.cos(theta) * radius, y, Math.sin(theta) * radius));

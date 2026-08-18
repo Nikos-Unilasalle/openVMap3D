@@ -49,6 +49,20 @@ describe("CURVE NODES", () => {
     expect(resCircle.curve).toBeInstanceOf(THREE.Curve);
   });
 
+  it("CURVE_PRIMITIVE_NODE builds every shape", () => {
+    for (const shape of ["ellipse", "heart", "star", "polygon", "diamond", "arch", "wave", "rectangle", "line"]) {
+      const res = CURVE_PRIMITIVE_NODE.evaluate(
+        {},
+        { primitiveType: shape, radius: 2, height: 3, turns: 5 },
+        CTX
+      );
+      const curve = res.curve as THREE.Curve<THREE.Vector3>;
+      expect(curve, shape).toBeInstanceOf(THREE.Curve);
+      expect(curve.getPoint(0)).toBeInstanceOf(THREE.Vector3);
+      expect(curve.getPoint(1)).toBeInstanceOf(THREE.Vector3);
+    }
+  });
+
   it("CURVE_FROM_POINTS_NODE closed emits a closed curve", () => {
     const res = CURVE_FROM_POINTS_NODE.evaluate(
       {
