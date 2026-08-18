@@ -108,4 +108,29 @@ describe("material input priority", () => {
     expect(mesh2.material).toBeInstanceOf(THREE.MeshStandardMaterial);
     expect(mesh2.material).not.toBeInstanceOf(THREE.MeshPhysicalMaterial);
   });
+
+  it("a textured material stays opaque when the texture has no alpha (so it shows through glass)", () => {
+    const tex = new THREE.Texture();
+    tex.image = { data: new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255]) };
+    const out = OBJECT_BOX_NODE.evaluate(
+      { texture: tex },
+      { ...OBJECT_BOX_NODE.defaultParams, opacity: 1 },
+      CTX,
+    );
+    const mat = (out.geometry as THREE.Mesh).material as THREE.MeshStandardMaterial;
+    expect(mat.map).toBe(tex);
+    expect(mat.transparent).toBe(false);
+  });
+
+  it("a textured material stays transparent when the texture carries alpha (PNG alpha)", () => {
+    const tex = new THREE.Texture();
+    tex.image = { data: new Uint8Array([255, 0, 0, 255, 0, 255, 0, 128]) };
+    const out = OBJECT_BOX_NODE.evaluate(
+      { texture: tex },
+      { ...OBJECT_BOX_NODE.defaultParams, opacity: 1 },
+      CTX,
+    );
+    const mat = (out.geometry as THREE.Mesh).material as THREE.MeshStandardMaterial;
+    expect(mat.transparent).toBe(true);
+  });
 });

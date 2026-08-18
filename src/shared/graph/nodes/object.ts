@@ -56,6 +56,67 @@ export interface TextureParams {
   offsetY: number;
 }
 
+/**
+ * Whether a diffuse texture actually carries transparent pixels. A material
+ * must be `transparent` for PNG alpha to show, but marking it so for *every*
+ * textured material would push those objects into three.js's transparent pass —
+ * and the transmission buffer only renders opaque objects, so textured objects
+ * would silently vanish behind glass. The check is one-time per texture.
+ */
+const textureAlphaCache = new WeakMap<THREE.Texture, boolean>();
+
+function textureHasAlpha(tex: THREE.Texture): boolean {
+  const cached = textureAlphaCache.get(tex);
+  if (cached !== undefined) return cached;
+
+  let hasAlpha = false;
+  const img = tex.image as unknown;
+  try {
+    if (img && typeof img === "object" && "data" in img) {
+      const data = (img as { data: ArrayLike<number> }).data;
+      if (data && typeof data.length === "number") {
+        for (let i = 3; i < data.length; i += 4) {
+          if (data[i] < 255) {
+            hasAlpha = true;
+            break;
+          }
+        }
+      }
+    } else if (typeof document !== "undefined" && img) {
+      const el = img as {
+        width?: number;
+        height?: number;
+        videoWidth?: number;
+        videoHeight?: number;
+        getContext?: (type: string, opts?: object) => { getImageData: (x: number, y: number, w: number, h: number) => { data: ArrayLike<number> } } | null;
+      };
+      const w = el.width || el.videoWidth || 0;
+      const h = el.height || el.videoHeight || 0;
+      if (w > 0 && h > 0) {
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        if (ctx) {
+          ctx.drawImage(img as CanvasImageSource, 0, 0);
+          const data = ctx.getImageData(0, 0, w, h).data;
+          for (let i = 3; i < data.length; i += 4) {
+            if (data[i] < 255) {
+              hasAlpha = true;
+              break;
+            }
+          }
+        }
+      }
+    }
+  } catch {
+    hasAlpha = false;
+  }
+
+  textureAlphaCache.set(tex, hasAlpha);
+  return hasAlpha;
+}
+
 /** `prefix` + `key` with the first letter of key capitalised — "surface" + "color" → "surfaceColor". */
 export function prefixedParamKey(prefix: string, key: string): string {
   return prefix ? `${prefix}${key.charAt(0).toUpperCase()}${key.slice(1)}` : key;
@@ -164,7 +225,8 @@ export function applyMaterialParams(
   defaultSide: THREE.Side = THREE.FrontSide,
   texParams?: TextureParams
 ) {
-  const isTransparent = matParams.opacity < 0.999 || (texParams?.activeDiffuse ? true : false);
+  const isTransparent =
+    matParams.opacity < 0.999 || (texParams?.activeDiffuse ? textureHasAlpha(texParams.activeDiffuse) : false);
 
   if (matParams.shadeless) {
     if (!(mesh.material instanceof THREE.MeshBasicMaterial)) {
@@ -356,6 +418,7 @@ export function buildPrimitiveDynamicParamFields(extraFields: ParamFieldDef[] = 
             url,
             () => {
               URL.revokeObjectURL(url);
+              textureAlphaCache.delete(texture);
               const mesh = meshCache.get(nodeId);
               if (mesh && mesh.material) {
                 if (Array.isArray(mesh.material)) mesh.material.forEach((m) => (m.needsUpdate = true));
