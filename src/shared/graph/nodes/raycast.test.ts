@@ -108,4 +108,34 @@ describe("demo_raycast.tsuji", () => {
     const mergeRes = results.get(mergeNode!.id)!;
     expect(mergeRes.geometry).toBeInstanceOf(THREE.Group);
   });
+
+  it("markers land exactly on the ray endpoints (positions list not overridden by posX/Y/Z defaults)", () => {
+    initBvhRaycast();
+    const text = readFileSync("demos/demo_raycast.tsuji", "utf8");
+    const graph = deserializeGraph(text, DEFAULT_REGISTRY);
+    const results = evaluateGraph(graph, DEFAULT_REGISTRY, { time: 0.5, step: 1, nodeId: "demo2" } as never);
+
+    const burstNode = graph.nodes.find((n) => n.type === "physics/ray-burst")!;
+    const markerNode = graph.nodes.find((n) => n.type === "structure/instance-transform")!;
+    const burstRes = results.get(burstNode.id)!;
+    const markerRes = results.get(markerNode.id)!;
+
+    const line = burstRes.geometry as THREE.LineSegments;
+    const arr = (line.geometry.attributes.position as THREE.BufferAttribute).array as Float32Array;
+    const markerGroup = markerRes.geometry as THREE.Group;
+    expect(markerGroup.children.length).toBeGreaterThan(0);
+
+    let onEnds = 0;
+    for (const w of markerGroup.children) {
+      if (!(w instanceof THREE.Group)) continue;
+      const pos = new THREE.Vector3().setFromMatrixPosition(w.matrix);
+      let best = Infinity;
+      for (let i = 1; i < line.geometry.attributes.position.count; i += 2) {
+        const d = (pos.x - arr[i * 3]) ** 2 + (pos.y - arr[i * 3 + 1]) ** 2 + (pos.z - arr[i * 3 + 2]) ** 2;
+        if (d < best) best = d;
+      }
+      if (best < 1e-6) onEnds++;
+    }
+    expect(onEnds).toBe(markerGroup.children.length);
+  });
 });

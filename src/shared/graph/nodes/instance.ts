@@ -274,6 +274,15 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
     const mode = String(params.mode || "relative");
     const usesIndividualPivot = String(params.pivot || "shared") === "individual";
 
+    // evaluateGraph fills unconnected sockets with their defaultParams value,
+    // so `inputs.posX === 0` looks identical to a genuinely wired 0. Only a
+    // socket that actually has a wire may override the positions/rotations/
+    // scales list base — otherwise a positions list would always lose to the
+    // posX/posY/posZ defaults. See EvalContext.connectedInputs.
+    const hasWire = (id: string): boolean =>
+      ctx.connectedInputs ? ctx.connectedInputs.has(id) : inputs[id] !== undefined;
+    const wired = (id: string): unknown => (hasWire(id) ? inputs[id] : undefined);
+
     const paramPX = Number(params.posX) || 0;
     const paramPY = Number(params.posY) || 0;
     const paramPZ = Number(params.posZ) || 0;
@@ -326,9 +335,9 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
           : new THREE.Vector3(0, 0, 0);
 
         const posOffset = new THREE.Vector3(
-          resolveScalarOrListItem(inputs.posX, i, targetIndex, basePos.x + paramPX),
-          resolveScalarOrListItem(inputs.posY, i, targetIndex, basePos.y + paramPY),
-          resolveScalarOrListItem(inputs.posZ, i, targetIndex, basePos.z + paramPZ),
+          resolveScalarOrListItem(wired("posX"), i, targetIndex, basePos.x + paramPX),
+          resolveScalarOrListItem(wired("posY"), i, targetIndex, basePos.y + paramPY),
+          resolveScalarOrListItem(wired("posZ"), i, targetIndex, basePos.z + paramPZ),
         );
 
         // Rotation offset (Euler angles in degrees)
@@ -340,9 +349,9 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
           : new THREE.Vector3(0, 0, 0);
 
         const rotOffset = new THREE.Vector3(
-          resolveScalarOrListItem(inputs.rotX, i, targetIndex, baseRot.x + paramRX),
-          resolveScalarOrListItem(inputs.rotY, i, targetIndex, baseRot.y + paramRY),
-          resolveScalarOrListItem(inputs.rotZ, i, targetIndex, baseRot.z + paramRZ),
+          resolveScalarOrListItem(wired("rotX"), i, targetIndex, baseRot.x + paramRX),
+          resolveScalarOrListItem(wired("rotY"), i, targetIndex, baseRot.y + paramRY),
+          resolveScalarOrListItem(wired("rotZ"), i, targetIndex, baseRot.z + paramRZ),
         );
 
         // Scale
@@ -354,9 +363,9 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
           : new THREE.Vector3(1, 1, 1);
 
         const scaleVal = new THREE.Vector3(
-          resolveScalarOrListItem(inputs.scaleX, i, targetIndex, baseScale.x * paramSX),
-          resolveScalarOrListItem(inputs.scaleY, i, targetIndex, baseScale.y * paramSY),
-          resolveScalarOrListItem(inputs.scaleZ, i, targetIndex, baseScale.z * paramSZ),
+          resolveScalarOrListItem(wired("scaleX"), i, targetIndex, baseScale.x * paramSX),
+          resolveScalarOrListItem(wired("scaleY"), i, targetIndex, baseScale.y * paramSY),
+          resolveScalarOrListItem(wired("scaleZ"), i, targetIndex, baseScale.z * paramSZ),
         );
 
         const deltaMat = new THREE.Matrix4();
