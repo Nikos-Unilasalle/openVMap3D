@@ -23,6 +23,7 @@ describe("CURVE_TO_LINE_NODE", () => {
       { curve },
       {
         ...CURVE_TO_LINE_NODE.defaultParams,
+        dashRatio: 0,
         linewidth: 6,
         dashed: true,
         dashSize: 2,
@@ -36,7 +37,7 @@ describe("CURVE_TO_LINE_NODE", () => {
     const mat = line.material as LineMaterial;
     expect(mat.linewidth).toBe(6);
     expect(mat.dashed).toBe(true);
-    expect(mat.dashSize).toBe(2);
+    expect(mat.dashSize).toBe(2); // raw fallback when dashRatio is 0
     expect(mat.gapSize).toBe(1);
     expect((mat.color as THREE.Color).getHex()).toBe(0xff0000);
     expect(mat.uniforms.opacity.value).toBeCloseTo(0.5);
@@ -83,5 +84,31 @@ describe("CURVE_TO_LINE_NODE", () => {
     const mat = (res.geometry as Line2).material as LineMaterial;
     expect((mat.color as THREE.Color).getHex()).toBe(0x00ff00);
     expect(mat.uniforms.opacity.value).toBeCloseTo(0.7);
+  });
+
+  it("dash ratios are relative to the curve length and emissive brightens the colour", () => {
+    const curve = new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0, 0), new THREE.Vector3(10, 0, 0)]);
+    const res = CURVE_TO_LINE_NODE.evaluate(
+      { curve },
+      {
+        ...CURVE_TO_LINE_NODE.defaultParams,
+        dashed: true,
+        dashRatio: 0.2,
+        gapRatio: 0.1,
+        emissive: new THREE.Color(0x00ff00),
+        emissiveIntensity: 0.5,
+        color: new THREE.Color(0xff0000),
+      },
+      CTX,
+    );
+    const mat = (res.geometry as Line2).material as LineMaterial;
+    // curve length 10 → dash = 0.2 * 10 = 2, gap = 0.1 * 10 = 1.
+    expect(mat.dashSize).toBeCloseTo(2, 3);
+    expect(mat.gapSize).toBeCloseTo(1, 3);
+    // colour = red + 0.5 * green.
+    const c = mat.color as THREE.Color;
+    expect(c.r).toBeCloseTo(1, 3);
+    expect(c.g).toBeCloseTo(0.5, 3);
+    expect(c.b).toBeCloseTo(0, 3);
   });
 });
