@@ -53,9 +53,15 @@ describe("RAY_BURST_NODE", () => {
     expect(res.geometry).toBeInstanceOf(THREE.LineSegments);
     const hits = res.hits as number[];
     const hitPoints = res.hitPoints as THREE.Vector3[];
+    const rayOrigins = res.rayOrigins as THREE.Vector3[];
     expect(hits.length).toBe(50);
     expect(hitPoints.length).toBeGreaterThan(0);
     expect(hitPoints.length + hits.filter((h) => h === 0).length).toBe(50);
+    expect(rayOrigins.length).toBe(50);
+    // Every origin sits on the radius sphere around the centre.
+    for (const o of rayOrigins) {
+      expect(o.length()).toBeCloseTo(3, 1);
+    }
     const line = res.geometry as THREE.LineSegments;
     const posAttr = line.geometry.attributes.position as THREE.BufferAttribute;
     expect(posAttr.count).toBe(50 * 2);

@@ -163,6 +163,7 @@ export const RAY_BURST_NODE: NodeDefinition = {
   ],
   outputs: [
     { id: "geometry", label: "Rays (Lines)", type: "geometry" },
+    { id: "rayOrigins", label: "Ray Origins", type: "list" },
     { id: "hitPoints", label: "Hit Points", type: "list" },
     { id: "hitNormals", label: "Hit Normals", type: "list" },
     { id: "hits", label: "Hits (0/1)", type: "list" },
@@ -257,6 +258,7 @@ export const RAY_BURST_NODE: NodeDefinition = {
     const attr = lineGeometry.attributes.position as THREE.BufferAttribute;
     const arr = attr.array as Float32Array;
 
+    const rayOrigins: THREE.Vector3[] = [];
     const hitPoints: THREE.Vector3[] = [];
     const hitNormals: THREE.Vector3[] = [];
     const hits: number[] = [];
@@ -266,6 +268,7 @@ export const RAY_BURST_NODE: NodeDefinition = {
     for (let i = 0; i < count; i++) {
       const rotated = state.baseDirs[i].clone().applyAxisAngle(state.axes[i], time * rotateRad);
       const rayOrigin = origin.clone().add(rotated);
+      rayOrigins.push(rayOrigin.clone());
 
       let end: THREE.Vector3;
       if (object) {
@@ -300,6 +303,7 @@ export const RAY_BURST_NODE: NodeDefinition = {
 
     return {
       geometry: line,
+      rayOrigins,
       hitPoints,
       hitNormals,
       hits,
