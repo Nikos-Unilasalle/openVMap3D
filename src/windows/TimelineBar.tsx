@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { EasingType } from "../shared/graph/types";
+import { setInputZone } from "../shared/graph/inputZoneStore";
 import { EasingPopover } from "./EasingPopover";
 import "./timeline-bar.css";
 
@@ -344,8 +345,14 @@ export function TimelineBar({
           onSplitHandleMouseDown(e);
         }
       }}
-      onMouseEnter={() => setIsTimelineHovered(true)}
-      onMouseLeave={() => setIsTimelineHovered(false)}
+      onMouseEnter={() => {
+        setIsTimelineHovered(true);
+        setInputZone("timeline");
+      }}
+      onMouseLeave={() => {
+        setIsTimelineHovered(false);
+        setInputZone(null);
+      }}
       title={isCmdPressed ? "Hold and drag to resize canvas split height" : undefined}
     >
       <div

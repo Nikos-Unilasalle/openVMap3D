@@ -7,6 +7,7 @@ import { rehydrateFileNodesFromDisk } from "./shared/graph/rehydrateFiles";
 import { cloneGraph, cloneParamValue } from "./shared/graph/cloneGraph";
 import { consumeCameraHandoffRequest } from "./shared/graph/cameraHandoffStore";
 import { consumeCanvasSwitchRequest } from "./shared/graph/canvasSwitchStore";
+import { isGraphZone } from "./shared/graph/inputZoneStore";
 import { disposeNodeCaches } from "./shared/graph/nodeCaches";
 import { rehydrateGraphParams } from "./shared/graph/rehydrateParams";
 import { connectedSocketIds, paramPanelValues } from "./shared/graph/paramPanelValues";
@@ -397,7 +398,7 @@ function MainEditor() {
         if (keyframesEnabled) {
           setIsPlaying((prev) => !prev);
         }
-      } else if (!isInput && (e.key === "t" || e.key === "T") && !isCmdOrCtrl) {
+      } else if (!isInput && (e.key === "t" || e.key === "T") && !isCmdOrCtrl && !isGraphZone()) {
         e.preventDefault();
         setIsTimelineDrawerOpen((prev) => !prev);
       }

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CATEGORY_COLOR, UNKNOWN_CATEGORY_COLOR } from "../shared/graph/categories";
+import { isTimelineZone, setInputZone } from "../shared/graph/inputZoneStore";
 import { EasingType, Graph, NodeRegistry } from "../shared/graph/types";
 import {
   copyKeyframesToClipboard,
@@ -170,6 +171,20 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
   const drawerTopRef = useRef(0);
   const isResizingSplitterRef = useRef(false);
   const [isResizingDrawer, setIsResizingDrawer] = useState(false);
+
+  // On open, default the zoom so the scene's frames spread across the whole
+  // visible timeline width (rather than the fixed 6px/frame).
+  useEffect(() => {
+    if (!isOpen) return;
+    const timer = setTimeout(() => {
+      const vp = gridViewportRef.current;
+      if (vp && totalFrames > 0) {
+        setPixelsPerFrame(Math.max(0.5, (vp.clientWidth - 30) / totalFrames));
+      }
+    }, 50);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
   // Compute active nodes to display
   const displayedNodes = useMemo(() => {
@@ -506,6 +521,9 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
         return;
       }
+      // Timeline shortcuts only act while the cursor is over the timeline, so a
+      // Delete/select-all aimed at the canvas doesn't touch keyframes.
+      if (!isTimelineZone()) return;
 
       if (e.key === " " || e.code === "Space") {
         e.preventDefault();
@@ -601,6 +619,8 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
       ref={drawerRootRef}
       className={`timeline-drawer-root ${isResizingDrawer ? "resizing" : ""} ${isOpen ? "open" : "closed"}`}
       style={{ height: `${drawerHeight}px` }}
+      onMouseEnter={() => setInputZone("timeline")}
+      onMouseLeave={() => setInputZone(null)}
       onClick={() => {
         if (contextMenu) setContextMenu(null);
       }}

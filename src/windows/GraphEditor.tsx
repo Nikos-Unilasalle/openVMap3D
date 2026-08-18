@@ -22,6 +22,7 @@ import { DEFAULT_PICKS } from "../shared/graph/calibration/picks";
 import { getGraphClipboard, setGraphClipboard } from "../shared/graph/clipboard";
 import { cloneKeyframes, cloneParams, cloneParamValue } from "../shared/graph/cloneGraph";
 import { findCompatibleSocket, segmentIntersectsRect } from "../shared/graph/insertOnWire";
+import { isGraphZone, setInputZone } from "../shared/graph/inputZoneStore";
 import { SOCKET_COLOR } from "../shared/graph/sockets";
 import { Connection, Graph, KeyframeStore, NodeInstance, NodeRegistry } from "../shared/graph/types";
 import { GraphNode, GraphNodeData } from "./GraphNode";
@@ -827,23 +828,26 @@ function GraphEditorContent({
     });
   }, [getSelectedNodeInstances, graph.connections, graph.keyframes]);
 
-  const pasteClipboard = useCallback(() => {
-    const clip = getGraphClipboard();
-    if (!clip || clip.nodes.length === 0) return;
+  const pasteClipboard = useCallback(
+    (offset = true) => {
+      const clip = getGraphClipboard();
+      if (!clip || clip.nodes.length === 0) return;
 
-    const { nodes: clipNodes, connections: clipConns, keyframes: clipKeyframes } = clip;
-    const idMap = new Map<string, string>();
+      const { nodes: clipNodes, connections: clipConns, keyframes: clipKeyframes } = clip;
+      const idMap = new Map<string, string>();
 
-    const newInstances: NodeInstance[] = clipNodes.map((n: NodeInstance) => {
-      const newId = crypto.randomUUID();
-      idMap.set(n.id, newId);
-      return {
-        id: newId,
-        type: n.type,
-        position: { x: n.position.x + 30, y: n.position.y + 30 },
-        params: cloneParams(n.params),
-      };
-    });
+      const newInstances: NodeInstance[] = clipNodes.map((n: NodeInstance) => {
+        const newId = crypto.randomUUID();
+        idMap.set(n.id, newId);
+        return {
+          id: newId,
+          type: n.type,
+          position: offset
+            ? { x: n.position.x + 30, y: n.position.y + 30 }
+            : { x: n.position.x, y: n.position.y },
+          params: cloneParams(n.params),
+        };
+      });
 
     const newConnections: Connection[] = clipConns.map((c: Connection) => ({
       id: `${idMap.get(c.fromNode)}.${c.fromSocket}->${idMap.get(c.toNode)}.${c.toSocket}`,
@@ -931,11 +935,16 @@ function GraphEditorContent({
 
   const duplicateSelected = useCallback(() => {
     copySelected();
-    pasteClipboard();
+    pasteClipboard(false);
   }, [copySelected, pasteClipboard]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Node-tree shortcuts only apply while the cursor is over the canvas —
+      // otherwise a Delete aimed at the timeline's keyframes would also eat a
+      // selected node (and vice-versa). See inputZoneStore.ts.
+      if (!isGraphZone()) return;
+
       const activeEl = document.activeElement;
       const isInput =
         activeEl &&
@@ -979,11 +988,32 @@ function GraphEditorContent({
       } else if (isCmdOrCtrl && !isShift && code === "KeyV") {
         e.preventDefault();
         pasteClipboard();
+      } else if (isCmdOrCtrl && !isShift && code === "KeyA") {
+        e.preventDefault();
+        setNodes((nds) => nds.map((n) => ({ ...n, selected: true })));
+      } else if (e.key === "Delete" || e.key === "Backspace") {
+        const selNodes = nodes.filter((n) => n.selected);
+        const selEdges = edges.filter((ed) => ed.selected);
+        if (selNodes.length > 0 || selEdges.length > 0) {
+          e.preventDefault();
+          if (selNodes.length > 0) onNodesDelete(selNodes);
+          if (selEdges.length > 0) onEdgesDelete(selEdges);
+        }
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [addNode, copySelected, duplicateSelected, pasteClipboard]);
+  }, [
+    addNode,
+    copySelected,
+    duplicateSelected,
+    edges,
+    nodes,
+    onEdgesDelete,
+    onNodesDelete,
+    pasteClipboard,
+    setNodes,
+  ]);
 
   const { fitView } = useReactFlow();
 
@@ -997,7 +1027,11 @@ function GraphEditorContent({
   const paletteNodes = useMemo(() => [...registry.values()], [registry]);
 
   return (
-    <div className="graph-editor">
+    <div
+      className="graph-editor"
+      onMouseEnter={() => setInputZone("graph")}
+      onMouseLeave={() => setInputZone(null)}
+    >
       <NodePalette nodes={paletteNodes} onAddNode={addNode} />
       <div className="graph-editor-canvas">
         <ReactFlow
@@ -1022,6 +1056,7 @@ function GraphEditorContent({
           selectionMode={SelectionMode.Partial}
           multiSelectionKeyCode={["Shift", "Meta", "Control"]}
           selectionKeyCode={null}
+          deleteKeyCode={null}
           panOnDrag={[1, 2]}
           panOnScroll={false}
           fitView
