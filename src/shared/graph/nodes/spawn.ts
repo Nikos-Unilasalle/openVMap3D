@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { createNodeCache } from "../nodeCaches";
 import { NodeDefinition } from "../types";
+import { sampleSurfacePoints } from "../../three/bvh";
 
 const RAD = Math.PI / 180;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -25,90 +26,8 @@ function createPrng(seed: number) {
   };
 }
 
-interface TriangleSample {
-  meshMatrix: THREE.Matrix4;
-  meshNormalMatrix: THREE.Matrix3;
-  pA: THREE.Vector3;
-  pB: THREE.Vector3;
-  pC: THREE.Vector3;
-  nA: THREE.Vector3;
-  nB: THREE.Vector3;
-  nC: THREE.Vector3;
-  area: number;
-}
-
-function collectTriangles(object: THREE.Object3D): TriangleSample[] {
-  const triangles: TriangleSample[] = [];
-
-  object.traverse((child) => {
-    if (!(child instanceof THREE.Mesh) || !child.geometry) return;
-
-    const geo = child.geometry;
-    const posAttr = geo.attributes.position;
-    if (!posAttr) return;
-
-    const normAttr = geo.attributes.normal;
-    const index = geo.index;
-
-    // NOT updateMatrix(). Every graph-driven mesh has matrixAutoUpdate off
-    // and its `matrix` written directly by its node (see object.ts), leaving
-    // position/quaternion/scale at their untouched defaults — so
-    // updateMatrix() recomputes `matrix` from those defaults and destroys
-    // the transform the graph just set, on a mesh that is shared and still
-    // being drawn elsewhere. updateWorldMatrix guards that call behind
-    // matrixAutoUpdate and still refreshes matrixWorld, which is the part
-    // actually needed here.
-    // `force` (3rd arg) is required: three skips the recompute unless
-    // matrixWorldNeedsUpdate is set, and matrix.copy() never sets it.
-    child.updateWorldMatrix(true, false, true);
-    const meshMatrix = child.matrixWorld.clone();
-    const meshNormalMatrix = new THREE.Matrix3().getNormalMatrix(meshMatrix);
-
-    const getPos = (idx: number) => new THREE.Vector3().fromBufferAttribute(posAttr, idx);
-    const getNorm = (idx: number) => {
-      if (normAttr) return new THREE.Vector3().fromBufferAttribute(normAttr, idx);
-      return new THREE.Vector3(0, 1, 0);
-    };
-
-    const triCount = index ? index.count / 3 : posAttr.count / 3;
-
-    for (let i = 0; i < triCount; i++) {
-      const idxA = index ? index.getX(i * 3) : i * 3;
-      const idxB = index ? index.getX(i * 3 + 1) : i * 3 + 1;
-      const idxC = index ? index.getX(i * 3 + 2) : i * 3 + 2;
-
-      const pA = getPos(idxA);
-      const pB = getPos(idxB);
-      const pC = getPos(idxC);
-
-      const nA = getNorm(idxA);
-      const nB = getNorm(idxB);
-      const nC = getNorm(idxC);
-
-      // Compute area
-      const edge1 = new THREE.Vector3().subVectors(pB, pA);
-      const edge2 = new THREE.Vector3().subVectors(pC, pA);
-      const cross = new THREE.Vector3().crossVectors(edge1, edge2);
-      const area = cross.length() * 0.5;
-
-      if (area > 0.000001) {
-        triangles.push({
-          meshMatrix,
-          meshNormalMatrix,
-          pA,
-          pB,
-          pC,
-          nA,
-          nB,
-          nC,
-          area,
-        });
-      }
-    }
-  });
-
-  return triangles;
-}
+/** Surface sampling for the Spawner now goes through the shared BVH module. */
+export { sampleSurfacePoints };
 
 function extractItems(rawItems: unknown): THREE.Object3D[] {
   const items: THREE.Object3D[] = [];
@@ -186,51 +105,15 @@ export const SPAWN_NODE: NodeDefinition = {
 
     const prng = createPrng(seed);
 
-    // Make sure support matrices are updated
-    supportObj.updateMatrixWorld(true);
-
-    const triangles = collectTriangles(supportObj);
-    if (triangles.length === 0) return { geometry: group };
-
-    // Cumulative area distribution
-    const cumulativeAreas: number[] = [];
-    let totalArea = 0;
-    for (const tri of triangles) {
-      totalArea += tri.area;
-      cumulativeAreas.push(totalArea);
-    }
+    // Area-weighted surface sampling via the shared BVH module: cached per
+    // geometry (vs. the old per-frame collectTriangles scan) and reused by the
+    // physics/sample node. Returns world-space positions + normals.
+    const { positions: sampledPositions, normals: sampledNormals } = sampleSurfacePoints(supportObj, count, prng);
+    if (sampledPositions.length === 0) return { geometry: group };
 
     for (let i = 0; i < count; i++) {
-      // Pick triangle weighted by area
-      const rArea = prng() * totalArea;
-      let triIdx = cumulativeAreas.findIndex((a) => a >= rArea);
-      if (triIdx === -1) triIdx = triangles.length - 1;
-      const tri = triangles[triIdx];
-
-      // Barycentric coordinates
-      let r1 = prng();
-      let r2 = prng();
-      if (r1 + r2 > 1) {
-        r1 = 1 - r1;
-        r2 = 1 - r2;
-      }
-      const r3 = 1 - r1 - r2;
-
-      // Sampled local position & normal
-      const localPos = new THREE.Vector3()
-        .addScaledVector(tri.pA, r1)
-        .addScaledVector(tri.pB, r2)
-        .addScaledVector(tri.pC, r3);
-
-      const localNorm = new THREE.Vector3()
-        .addScaledVector(tri.nA, r1)
-        .addScaledVector(tri.nB, r2)
-        .addScaledVector(tri.nC, r3)
-        .normalize();
-
-      // Transform to world space
-      const worldPos = localPos.clone().applyMatrix4(tri.meshMatrix);
-      const worldNorm = localNorm.clone().applyMatrix3(tri.meshNormalMatrix).normalize();
+      const worldPos = sampledPositions[i];
+      const worldNorm = sampledNormals[i];
 
       // Apply dispersion / jitter along tangent space
       if (dispersion > 0) {
@@ -245,13 +128,13 @@ export const SPAWN_NODE: NodeDefinition = {
       // Select item to clone
       const sourceItem = items[i % items.length];
       const instance = sourceItem.clone(true);
-      // The item's *world* rotation & scale — same reasoning as collectTriangles:
-      // a graph-driven item's matrix is the truth, but a curve-to-mesh (or any
-      // modifier) hands back a GROUP whose pose lives on the group. We decompose
-      // the forced matrixWorld and keep rotation/scale (the shape's orientation
-      // and size) but DROP the item's world position — each copy sits on the
-      // support surface rather than being pushed off it by where the item
-      // happens to be in the scene.
+      // The item's *world* rotation & scale — same reasoning as the surface
+      // sampler: a graph-driven item's matrix is the truth, but a curve-to-mesh
+      // (or any modifier) hands back a GROUP whose pose lives on the group. We
+      // decompose the forced matrixWorld and keep rotation/scale (the shape's
+      // orientation and size) but DROP the item's world position — each copy
+      // sits on the support surface rather than being pushed off it by where
+      // the item happens to be in the scene.
       // `updateMatrixWorld(true)` (force) refreshes the WHOLE subtree, so
       // Box3.setFromObject below sees correct bounds for graph-driven children.
       sourceItem.updateMatrixWorld(true);
