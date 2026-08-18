@@ -754,6 +754,10 @@ export function Viewport({
 
       const key = e.key.toLowerCase();
 
+      // These shortcuts change the gizmo mode or the view — redraw immediately
+      // (render-on-demand would otherwise wait for the next interaction).
+      needsRender = true;
+
       // Curve control point editing — checked before the gizmo/camera keys so
       // they only take over while a point is picked.
       if (key === "a" && editPickedCurvePoint("insert")) {
