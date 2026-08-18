@@ -360,8 +360,19 @@ function applyVisibility(geometry: unknown, value: unknown): void {
 // fresh Map each pass, so it needed an explicit home to survive between frames.
 let previousFrameOutputs: EvalResult | null = null;
 
+// Cache the topological order by graph reference: playback re-runs the graph
+// every frame without mutating it, and recomputing the order (O(V+E) plus the
+// per-connection allocations) every frame is pure waste. The order only depends
+// on the graph's structure, which is fixed while the reference is the same.
+let lastTopoGraph: Graph | null = null;
+let lastTopo: TopoResult | null = null;
+
 export function evaluateGraph(graph: Graph, registry: NodeRegistry, ctx: EvalContext): EvalResult {
-  const { order, cyclic } = topoSort(graph);
+  if (lastTopoGraph !== graph) {
+    lastTopo = topoSort(graph);
+    lastTopoGraph = graph;
+  }
+  const { order, cyclic } = lastTopo!;
   const results: EvalResult = new Map();
   const nodesById = new Map(graph.nodes.map((n) => [n.id, n]));
 
