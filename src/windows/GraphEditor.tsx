@@ -989,7 +989,7 @@ function GraphEditorContent({
       } else if (isCmdOrCtrl && !isShift && code === "KeyV") {
         e.preventDefault();
         pasteClipboard();
-      } else if (isCmdOrCtrl && !isShift && code === "KeyA") {
+      } else if (isCmdOrCtrl && !isShift && e.key.toLowerCase() === "a") {
         e.preventDefault();
         setNodes((nds) => nds.map((n) => ({ ...n, selected: true })));
       } else if (e.key === "Delete" || e.key === "Backspace") {
