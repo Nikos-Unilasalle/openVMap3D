@@ -60,6 +60,7 @@ import {
 
 import { CURVE_DEFORM_NODE, CURVE_FROM_POINTS_NODE, CURVE_PRIMITIVE_NODE, CURVE_TO_MESH_NODE, CURVES_TO_MESH_NODE, SAMPLE_CURVE_NODE } from "./curve";
 import { LATTICE_DEFORM_NODE } from "./lattice";
+import { BOOLEAN_NODE } from "./boolean";
 import { SUBDIVIDE_NODE } from "./subdivide";
 import { WIGGLE_NODE, WIGGLE_NUMBER_NODE, WIGGLE_VECTOR_NODE } from "./wiggle";
 import { MATERIAL_NODE } from "./material";
@@ -195,6 +196,7 @@ export const STARTER_NODES = [
   LIST_GROUP_NODE,
   SPAWN_NODE,
   LATTICE_DEFORM_NODE,
+  BOOLEAN_NODE,
   SUBDIVIDE_NODE,
   WIGGLE_NODE,
   WIGGLE_NUMBER_NODE,
