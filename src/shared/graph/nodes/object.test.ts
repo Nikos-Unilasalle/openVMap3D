@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { EvalContext } from "../types";
 import { OBJECT_TEXT_NODE } from "./object";
+import { BUILTIN_FONTS, FONT_NAMES } from "../../three/fonts/fonts";
 import helvetikerData from "../../three/fonts/helvetikerData.json";
 
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "text-test" };
@@ -15,6 +16,20 @@ describe("OBJECT_TEXT_NODE font", () => {
     );
     const mesh = res.geometry as THREE.Mesh;
     expect(mesh).toBeInstanceOf(THREE.Mesh);
+    expect(mesh.geometry.attributes.position.count).toBeGreaterThan(0);
+  });
+
+  it("exposes bundled fonts in the menu and builds text with a preset", () => {
+    expect(FONT_NAMES).toContain("Helvetiker");
+    expect(FONT_NAMES.length).toBeGreaterThanOrEqual(5);
+    expect(BUILTIN_FONTS["Lobster"]).toBeDefined();
+
+    const res = OBJECT_TEXT_NODE.evaluate(
+      { text: "hello" },
+      { ...OBJECT_TEXT_NODE.defaultParams, fontPreset: "Lobster", text: "hello" },
+      CTX,
+    );
+    const mesh = res.geometry as THREE.Mesh;
     expect(mesh.geometry.attributes.position.count).toBeGreaterThan(0);
   });
 

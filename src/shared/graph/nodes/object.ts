@@ -3,6 +3,7 @@ import { Font, FontLoader } from "three/examples/jsm/loaders/FontLoader.js";
 import { NodeDefinition, ParamFieldDef } from "../types";
 import { toBoolean } from "../sockets";
 import { defaultFont } from "../../three/fonts/helvetikerFont";
+import { BUILTIN_FONTS, FONT_NAMES } from "../../three/fonts/fonts";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { composeNativeMatrix } from "./transform";
 
@@ -739,6 +740,7 @@ export const OBJECT_TEXT_NODE: NodeDefinition = {
   outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: {
     text: "OpenVMap3D",
+    fontPreset: "Helvetiker",
     fontSize: 64,
     depth: 0.1,
     fontPath: "",
@@ -746,7 +748,8 @@ export const OBJECT_TEXT_NODE: NodeDefinition = {
   },
   paramFields: buildPrimitiveDynamicParamFields([
     { id: "text", label: "Text (fallback)", kind: "text" },
-    { id: "fontPath", label: "Font (.json)", kind: "file", accept: [".json"], onLoaded: (nodeId, _path, content) => {
+    { id: "fontPreset", label: "Font", kind: "select", options: FONT_NAMES },
+    { id: "fontPath", label: "Custom Font (.json)", kind: "file", accept: [".json"], onLoaded: (nodeId, _path, content) => {
       const state = textMesh(nodeId);
       try {
         state.font = new FontLoader().parse(JSON.parse(String(content)));
@@ -760,7 +763,8 @@ export const OBJECT_TEXT_NODE: NodeDefinition = {
   ])(),
   dynamicParamFields: buildPrimitiveDynamicParamFields([
     { id: "text", label: "Text (fallback)", kind: "text" },
-    { id: "fontPath", label: "Font (.json)", kind: "file", accept: [".json"], onLoaded: (nodeId, _path, content) => {
+    { id: "fontPreset", label: "Font", kind: "select", options: FONT_NAMES },
+    { id: "fontPath", label: "Custom Font (.json)", kind: "file", accept: [".json"], onLoaded: (nodeId, _path, content) => {
       const state = textMesh(nodeId);
       try {
         state.font = new FontLoader().parse(JSON.parse(String(content)));
@@ -779,7 +783,8 @@ export const OBJECT_TEXT_NODE: NodeDefinition = {
     const textStr = inputs.text !== undefined ? String(inputs.text) : String(params.text ?? "OpenVMap3D");
     const fontSize = Math.max(8, inputs.fontSize !== undefined ? Number(inputs.fontSize) || 64 : Number(params.fontSize) || 64);
     const depth = Math.max(0.001, inputs.depth !== undefined ? Number(inputs.depth) : Number(params.depth) ?? 0.1);
-    const font = textState.font ?? defaultFont;
+    // A custom font loaded via the file field wins; otherwise the Font menu.
+    const font = textState.font ?? BUILTIN_FONTS[String(params.fontPreset ?? "Helvetiker")] ?? defaultFont;
 
     const baseMatrix = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale);
 
