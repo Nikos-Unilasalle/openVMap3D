@@ -849,6 +849,11 @@ function GraphEditorContent({
         };
       });
 
+      // The copies become the selection — this also feeds the graph→flow sync
+      // effect (selectedIdsRef), which would otherwise leave the *originals*
+      // selected and elevated above the new nodes.
+      selectedIdsRef.current = new Set(newInstances.map((n) => n.id));
+
     const newConnections: Connection[] = clipConns.map((c: Connection) => ({
       id: `${idMap.get(c.fromNode)}.${c.fromSocket}->${idMap.get(c.toNode)}.${c.toSocket}`,
       fromNode: idMap.get(c.fromNode)!,
