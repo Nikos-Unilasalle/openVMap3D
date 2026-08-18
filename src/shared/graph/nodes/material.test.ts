@@ -29,6 +29,16 @@ describe("MATERIAL_NODE", () => {
     expect(res.material.roughness).toBeCloseTo(0.9);
     expect(res.material.opacity).toBeCloseTo(0.5);
   });
+
+  it("carries transmission and thickness (glass params)", () => {
+    const res = MATERIAL_NODE.evaluate(
+      { transmission: 1, thickness: 2 },
+      MATERIAL_NODE.defaultParams,
+      CTX,
+    ) as { material: MaterialValue };
+    expect(res.material.transmission).toBeCloseTo(1);
+    expect(res.material.thickness).toBeCloseTo(2);
+  });
 });
 
 describe("material input priority", () => {
@@ -42,6 +52,8 @@ describe("material input priority", () => {
       metalness: 0.2,
       wireframe: false,
       opacity: 0.5,
+      transmission: 0.6,
+      thickness: 1.5,
     };
     const res = extractMaterialParams(
       { material: connected, color: new THREE.Color(0x0000ff), roughness: 0.1 },
@@ -50,6 +62,8 @@ describe("material input priority", () => {
     expect(res.color.getHex()).toBe(0x00ff00);
     expect(res.roughness).toBeCloseTo(0.9);
     expect(res.opacity).toBeCloseTo(0.5);
+    expect(res.transmission).toBeCloseTo(0.6);
+    expect(res.thickness).toBeCloseTo(1.5);
   });
 
   it("a box uses the connected material over its own color/roughness params", () => {
@@ -61,5 +75,37 @@ describe("material input priority", () => {
     const mat = (out.geometry as THREE.Mesh).material as THREE.MeshStandardMaterial;
     expect(mat.color.getHex()).toBe(0x00ff00);
     expect(mat.roughness).toBeCloseTo(0.7);
+  });
+
+  it("transmission upgrades the material to MeshPhysicalMaterial", () => {
+    const out = OBJECT_BOX_NODE.evaluate(
+      {},
+      { ...OBJECT_BOX_NODE.defaultParams, transmission: 1, thickness: 2, roughness: 0 },
+      CTX,
+    );
+    const mat = (out.geometry as THREE.Mesh).material;
+    expect(mat).toBeInstanceOf(THREE.MeshPhysicalMaterial);
+    expect((mat as THREE.MeshPhysicalMaterial).transmission).toBeCloseTo(1);
+    expect((mat as THREE.MeshPhysicalMaterial).thickness).toBeCloseTo(2);
+    expect((mat as THREE.MeshPhysicalMaterial).roughness).toBeCloseTo(0);
+  });
+
+  it("drops back to MeshStandardMaterial when transmission returns to 0", () => {
+    const withGlass = OBJECT_BOX_NODE.evaluate(
+      {},
+      { ...OBJECT_BOX_NODE.defaultParams, transmission: 1 },
+      CTX,
+    );
+    const mesh = withGlass.geometry as THREE.Mesh;
+    expect(mesh.material).toBeInstanceOf(THREE.MeshPhysicalMaterial);
+
+    const back = OBJECT_BOX_NODE.evaluate(
+      {},
+      { ...OBJECT_BOX_NODE.defaultParams, transmission: 0 },
+      CTX,
+    );
+    const mesh2 = back.geometry as THREE.Mesh;
+    expect(mesh2.material).toBeInstanceOf(THREE.MeshStandardMaterial);
+    expect(mesh2.material).not.toBeInstanceOf(THREE.MeshPhysicalMaterial);
   });
 });

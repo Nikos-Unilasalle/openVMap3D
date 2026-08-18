@@ -16,6 +16,8 @@ export const MATERIAL_NODE: NodeDefinition = {
     { id: "metalness", label: "Metalness", type: "value" },
     { id: "wireframe", label: "Wireframe", type: "value" },
     { id: "opacity", label: "Opacity", type: "value" },
+    { id: "transmission", label: "Transmission (Glass)", type: "value" },
+    { id: "thickness", label: "Glass Thickness", type: "value" },
   ],
   outputs: [{ id: "material", label: "Material", type: "material" }],
   defaultParams: {
@@ -27,6 +29,8 @@ export const MATERIAL_NODE: NodeDefinition = {
     metalness: 0.1,
     wireframe: 0,
     opacity: 1.0,
+    transmission: 0,
+    thickness: 0.5,
   },
   paramFields: [...COMMON_MATERIAL_PARAM_FIELDS],
   evaluate: (inputs, params) => ({ material: extractMaterialParams(inputs, params) }),

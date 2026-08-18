@@ -138,7 +138,7 @@ export const CURVE_TO_LINE_NODE: NodeDefinition = {
     { id: "dashRatio", label: "Dash % of curve length", kind: "number", step: 0.01, group: "Line" },
     { id: "gapRatio", label: "Gap % of curve length", kind: "number", step: 0.01, group: "Line" },
     { id: "worldUnits", label: "World Units (width in scene units)", kind: "boolean", group: "Line" },
-    ...COMMON_MATERIAL_PARAM_FIELDS,
+    ...COMMON_MATERIAL_PARAM_FIELDS.filter((f) => f.id !== "transmission" && f.id !== "thickness"),
   ],
   evaluate: (inputs, params, ctx) => {
     const curve = inputs.curve instanceof THREE.Curve ? inputs.curve : null;

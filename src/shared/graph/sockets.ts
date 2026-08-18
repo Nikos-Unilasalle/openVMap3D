@@ -42,6 +42,8 @@ export interface MaterialValue {
   metalness: number;
   wireframe: boolean;
   opacity: number;
+  transmission: number;
+  thickness: number;
 }
 
 /** The runtime value a socket of each type actually carries during evaluation. */

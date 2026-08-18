@@ -110,6 +110,10 @@ export interface MaterialParams {
   metalness: number;
   wireframe: boolean;
   opacity: number;
+  /** 0..1 — how much light passes through the surface (0 = opaque). Upgrades the material to MeshPhysicalMaterial. */
+  transmission: number;
+  /** Physical-material thickness in world units — how glass-like the transmission looks. */
+  thickness: number;
 }
 
 function materialParamsFromValue(v: unknown): MaterialParams | null {
@@ -125,6 +129,8 @@ function materialParamsFromValue(v: unknown): MaterialParams | null {
     metalness: numberInput(m.metalness, undefined, 0.1),
     wireframe: toBoolean(m.wireframe),
     opacity: Math.min(1, Math.max(0, numberInput(m.opacity, undefined, 1.0))),
+    transmission: Math.min(1, Math.max(0, numberInput(m.transmission, undefined, 0))),
+    thickness: Math.max(0, numberInput(m.thickness, undefined, 0.5)),
   };
 }
 
@@ -146,8 +152,10 @@ export function extractMaterialParams(
   const metalness = numberInput(inputs[p("metalness")], params[p("metalness")], 0.1);
   const wireframe = toBoolean(inputs[p("wireframe")] !== undefined ? inputs[p("wireframe")] : params[p("wireframe")] ?? 0);
   const opacity = Math.min(1, Math.max(0, numberInput(inputs[p("opacity")], params[p("opacity")], 1.0)));
+  const transmission = Math.min(1, Math.max(0, numberInput(inputs[p("transmission")], params[p("transmission")], 0)));
+  const thickness = Math.max(0, numberInput(inputs[p("thickness")], params[p("thickness")], 0.5));
 
-  return { color, emissive, emissiveIntensity, shadeless, roughness, metalness, wireframe, opacity };
+  return { color, emissive, emissiveIntensity, shadeless, roughness, metalness, wireframe, opacity, transmission, thickness };
 }
 
 export function applyMaterialParams(
@@ -188,7 +196,24 @@ export function applyMaterialParams(
 
     mat.needsUpdate = true;
   } else {
-    if (!(mesh.material instanceof THREE.MeshStandardMaterial)) {
+    const wantPhysical = matParams.transmission > 0;
+    if (wantPhysical) {
+      if (!(mesh.material instanceof THREE.MeshPhysicalMaterial)) {
+        if (Array.isArray(mesh.material)) {
+          mesh.material.forEach((m) => m.dispose());
+        } else if (mesh.material) {
+          mesh.material.dispose();
+        }
+        mesh.material = new THREE.MeshPhysicalMaterial({ side: defaultSide });
+      }
+    } else if (mesh.material instanceof THREE.MeshPhysicalMaterial) {
+      if (Array.isArray(mesh.material)) {
+        mesh.material.forEach((m) => m.dispose());
+      } else if (mesh.material) {
+        mesh.material.dispose();
+      }
+      mesh.material = new THREE.MeshStandardMaterial({ side: defaultSide });
+    } else if (!(mesh.material instanceof THREE.MeshStandardMaterial)) {
       if (Array.isArray(mesh.material)) {
         mesh.material.forEach((m) => m.dispose());
       } else if (mesh.material) {
@@ -206,6 +231,12 @@ export function applyMaterialParams(
     mat.transparent = isTransparent;
     mat.opacity = matParams.opacity;
     mat.side = defaultSide;
+
+    if (wantPhysical) {
+      const physical = mat as THREE.MeshPhysicalMaterial;
+      physical.transmission = matParams.transmission;
+      physical.thickness = matParams.thickness;
+    }
 
     if (texParams?.activeDiffuse) {
       mat.map = texParams.activeDiffuse;
@@ -275,6 +306,8 @@ export const COMMON_MATERIAL_PARAM_FIELDS: ParamFieldDef[] = [
   { id: "metalness", label: "Metalness", kind: "number", step: 0.05, group: "Material" },
   { id: "wireframe", label: "Wireframe", kind: "boolean", group: "Material" },
   { id: "opacity", label: "Opacity", kind: "number", step: 0.05, group: "Material" },
+  { id: "transmission", label: "Transmission (Glass)", kind: "number", step: 0.05, group: "Material" },
+  { id: "thickness", label: "Glass Thickness", kind: "number", step: 0.05, group: "Material" },
 ];
 
 /**
@@ -400,6 +433,8 @@ export const COMMON_DEFAULT_PARAMS = {
   metalness: 0.1,
   wireframe: 0,
   opacity: 1.0,
+  transmission: 0,
+  thickness: 0.5,
 };
 
 const meshCache = createNodeCache<THREE.Mesh>(disposeObject3D);
