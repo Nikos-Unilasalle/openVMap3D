@@ -504,7 +504,6 @@ export function Viewport({
     controls.dampingFactor = 0.05;
 
     toggleCameraModeRef.current = (isOrtho: boolean) => {
-      needsRender = true;
       const nextCam = isOrtho ? orthographicCamera : perspectiveCamera;
       const prevCam = isOrtho ? perspectiveCamera : orthographicCamera;
 
@@ -619,10 +618,7 @@ export function Viewport({
 
     if (!outputMode) {
       controls.addEventListener("start", handleOrbitStart);
-      controls.addEventListener("change", () => {
-        needsRender = true;
-        emitCameraPose();
-      });
+      controls.addEventListener("change", emitCameraPose);
       emitCameraPose();
     }
 
@@ -656,23 +652,6 @@ export function Viewport({
     // *current* base matrix for an "offset" target (see below), and this is
     // the cheapest way to get it without re-running evaluateGraph itself.
     let latestResults: EvalResult | null = null;
-    // The graph instance the last evaluation ran against. When the scene is
-    // idle (not playing, no export capture) and this hasn't changed, the graph
-    // output is deterministic and unchanged — so tick() reuses the last results
-    // instead of re-running evaluateGraph (and re-cloning every node's params)
-    // 60 times a second. This is the single biggest win in a browser tab.
-    let lastEvalGraph: Graph | null = null;
-    // The playhead frame the last evaluation used — scrubbing the timeline
-    // (while paused) must still re-evaluate for keyframe interpolation to track.
-    let lastEvalFrame = -1;
-    // Whether the viewport actually needs to draw this tick. The rAF loop still
-    // runs (OrbitControls damping needs update() each frame), but when nothing
-    // changed — no graph edit/playback, no camera move, no gizmo interaction —
-    // we skip the expensive full-scene GPU render and keep the last frame. This
-    // is the big browser win when the scene is sitting idle.
-    let needsRender = true;
-    let lastSelectedNodeId: string | null = null;
-    let lastPreviewPoseKey = "";
     // Tracks whether the postprocess chain was active last frame. When it goes
     // inactive we release the chain once; repeating that every idle frame would
     // destroy and re-compile all the cached passes on the next activation
@@ -753,10 +732,6 @@ export function Viewport({
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
       const key = e.key.toLowerCase();
-
-      // These shortcuts change the gizmo mode or the view — redraw immediately
-      // (render-on-demand would otherwise wait for the next interaction).
-      needsRender = true;
 
       // Curve control point editing — checked before the gizmo/camera keys so
       // they only take over while a point is picked.
@@ -850,7 +825,6 @@ export function Viewport({
       });
 
       transformControls.addEventListener("objectChange", () => {
-        needsRender = true;
         const object = transformControls.object;
         if (!object) return;
 
@@ -975,14 +949,9 @@ export function Viewport({
     // a selection click.
     const CLICK_MOVE_THRESHOLD_PX = 6;
     let pointerDownAt: { x: number; y: number } | null = null;
-    // True while the pointer is down on the canvas — any interaction (orbit,
-    // marquee, handle drag) must keep rendering even if the graph is idle.
-    let pointerActive = false;
     let suppressNextClick = false;
 
     function onCanvasPointerDown(e: PointerEvent) {
-      pointerActive = true;
-      needsRender = true;
       pointerDownAt = { x: e.clientX, y: e.clientY };
 
       const isMarqueeModifier = e.metaKey || e.ctrlKey;
@@ -1011,8 +980,6 @@ export function Viewport({
     }
 
     function onCanvasPointerUp(e: PointerEvent) {
-      pointerActive = false;
-      needsRender = true;
       if (isMarqueeDragging) {
         isMarqueeDragging = false;
         setMarqueeBox(null);
@@ -1107,8 +1074,6 @@ export function Viewport({
         }
       }
       onSelectNodeRef.current(hitNodeId);
-      pointerActive = false;
-      needsRender = true;
     }
 
     if (!outputMode) {
@@ -1120,7 +1085,6 @@ export function Viewport({
     const motionBlurEffect = createMotionBlur(host.clientWidth || 1, host.clientHeight || 1);
 
     function resize() {
-      needsRender = true;
       const { clientWidth, clientHeight } = host;
       if (clientWidth === 0 || clientHeight === 0) return;
       const aspect = clientWidth / clientHeight;
@@ -1283,59 +1247,36 @@ export function Viewport({
         : null;
 
       let results;
-      // When the scene is idle — not playing, no export capture, and the graph
-      // hasn't changed since the last evaluation — the output is deterministic
-      // and unchanged, so reuse the previous results instead of re-running the
-      // whole graph every frame.
-      const needsEval =
-        isPlayingRef.current || !!capture || latestResults === null || lastEvalGraph !== graphRef.current || exportFrameIndex !== lastEvalFrame;
-      if (needsEval) {
-        try {
-          // Feed the previous frame's render resolution to hub/* nodes so they
-          // can default their pixel positions to the scene centre.
-          const prevRender = renderNodeIdRef.current && latestResults ? latestResults.get(renderNodeIdRef.current) : undefined;
-          const renderSize =
-            prevRender && typeof prevRender.width === "number" && typeof prevRender.height === "number"
-              ? { width: prevRender.width as number, height: prevRender.height as number }
-              : undefined;
-          results = evaluateGraph(graphRef.current, registryRef.current, {
-            time: clock.time,
-            step: clock.step,
-            nodeId: "",
-            liveEditNodeId,
-            renderer,
-            activeCameraPose,
-            renderSize,
-            currentFrame: exportFrameIndex,
-            keyframes: graphRef.current.keyframes,
-          });
-          lastEvalGraph = graphRef.current;
-          lastEvalFrame = exportFrameIndex;
-        } catch (err) {
-          console.error("graph evaluation failed", err);
-          if (capture) {
-            pendingCaptureRef.current = null;
-            capture.resolve();
-          }
-          frameId = requestAnimationFrame(tick);
-          return;
+      try {
+        // Feed the previous frame's render resolution to hub/* nodes so they
+        // can default their pixel positions to the scene centre.
+        const prevRender = renderNodeIdRef.current && latestResults ? latestResults.get(renderNodeIdRef.current) : undefined;
+        const renderSize =
+          prevRender && typeof prevRender.width === "number" && typeof prevRender.height === "number"
+            ? { width: prevRender.width as number, height: prevRender.height as number }
+            : undefined;
+        results = evaluateGraph(graphRef.current, registryRef.current, {
+          time: clock.time,
+          step: clock.step,
+          nodeId: "",
+          liveEditNodeId,
+          renderer,
+          activeCameraPose,
+          renderSize,
+          currentFrame: exportFrameIndex,
+          keyframes: graphRef.current.keyframes,
+        });
+      } catch (err) {
+        console.error("graph evaluation failed", err);
+        if (capture) {
+          pendingCaptureRef.current = null;
+          capture.resolve();
         }
-      } else {
-        // needsEval being false implies latestResults !== null (latestResults
-        // === null is one of the needsEval conditions).
-        results = latestResults!;
+        frameId = requestAnimationFrame(tick);
+        return;
       }
       latestResults = results;
       onEvaluatedResultsRef.current?.(results);
-
-      // A graph edit/playback or a new selection always warrants a redraw.
-      if (needsEval) needsRender = true;
-      if (selectedNodeIdRef.current !== lastSelectedNodeId) {
-        lastSelectedNodeId = selectedNodeIdRef.current;
-        needsRender = true;
-      }
-      // Any in-progress pointer interaction keeps rendering.
-      if (pointerActive) needsRender = true;
 
       // Evaluate and sync ALL 3D Lights & Light Helpers in the scene (standalone or array instances)
       const detectedLights = new Map<string, { light: THREE.Light; nodeId: string }>();
@@ -1542,11 +1483,6 @@ export function Viewport({
         controls.enabled = false;
         const [px, py, pz] = previewCameraPoseRef.current.position;
         const [qx, qy, qz, qw] = previewCameraPoseRef.current.quaternion;
-        const poseKey = `${px},${py},${pz},${qx},${qy},${qz},${qw}`;
-        if (poseKey !== lastPreviewPoseKey) {
-          lastPreviewPoseKey = poseKey;
-          needsRender = true;
-        }
         camera.position.set(px, py, pz);
         camera.quaternion.set(qx, qy, qz, qw);
         restoreProjection();
@@ -1913,9 +1849,7 @@ export function Viewport({
         }
       }
 
-      // Skip the expensive GPU render entirely when nothing changed this frame.
-      if (needsRender) {
-        renderer.setViewport(viewX, viewY, viewWidth, viewHeight);
+      renderer.setViewport(viewX, viewY, viewWidth, viewHeight);
       renderer.setScissor(viewX, viewY, viewWidth, viewHeight);
       renderer.setScissorTest(outputMode && targetAspect !== null);
 
@@ -2004,8 +1938,6 @@ export function Viewport({
         pendingCaptureRef.current = null;
         capture.resolve();
       }
-      }
-      needsRender = false;
 
       frameId = requestAnimationFrame(tick);
     }
