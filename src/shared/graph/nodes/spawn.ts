@@ -245,13 +245,14 @@ export const SPAWN_NODE: NodeDefinition = {
       // Select item to clone
       const sourceItem = items[i % items.length];
       const instance = sourceItem.clone(true);
-      // Same reasoning as collectTriangles: only an auto-updating object's
-      // `matrix` may be recomputed from its position/quaternion/scale. On a
-      // graph-driven one those are stale by design and `matrix` is the truth,
-      // so calling updateMatrix() here was silently discarding every
-      // location/rotation/scale the item's own node had applied.
-      if (sourceItem.matrixAutoUpdate) sourceItem.updateMatrix();
-      const sourceMatrix = sourceItem.matrix.clone();
+      // The item's *world* pose — same reasoning as collectTriangles: a
+      // graph-driven item's `matrix` is the truth, but a curve-to-mesh (or any
+      // modifier) hands back a GROUP whose pose lives on the group, and
+      // extractItems flattens that group into its identity-matrix children. So
+      // reading `sourceItem.matrix` would drop the modifier's gizmo. Reading the
+      // forced matrixWorld captures the full chain (group × child).
+      sourceItem.updateWorldMatrix(true, false, true);
+      const sourceMatrix = sourceItem.matrixWorld.clone();
 
       // Orientation & Rotation
       const finalQuat = new THREE.Quaternion();

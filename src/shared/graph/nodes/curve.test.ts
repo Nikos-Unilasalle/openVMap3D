@@ -65,6 +65,22 @@ describe("CURVE NODES", () => {
     expect(curve.closed).toBe(true);
   });
 
+  it("Curve from Points bakes its native pose into the curve output", () => {
+    const res = CURVE_FROM_POINTS_NODE.evaluate(
+      {
+        points: [
+          new THREE.Vector3(0, 0, 0),
+          new THREE.Vector3(2, 0, 0),
+          new THREE.Vector3(2, 2, 0),
+        ],
+      },
+      { type: "catmull", location: new THREE.Vector3(10, 0, 0), rotation: new THREE.Vector3(0, 0, 0), scale: new THREE.Vector3(1, 1, 1) },
+      CTX,
+    );
+    const curve = res.curve as THREE.CatmullRomCurve3;
+    expect(curve.getPoint(0).x).toBeCloseTo(10, 3);
+  });
+
   it("createVariableThicknessTubeGeometry builds buffer geometry with positions and normals", () => {
     const pts = [
       new THREE.Vector3(0, 0, 0),

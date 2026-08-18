@@ -11,6 +11,7 @@ import {
   primitiveOutputs,
 } from "./object";
 import { composeNativeMatrix } from "./transform";
+import { applyMatrixToCurve } from "./curve";
 
 interface SvgState {
   /** Raw parsed curves (SVG units, Y already inverted, on the XY plane). */
@@ -249,10 +250,13 @@ export const SVG_TO_CURVES_NODE: NodeDefinition = {
     }
 
     const key = `${scale}:${normalize}:${raw.length}`;
+    const poseMatrix = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale);
+    const world = (curves: THREE.Curve<THREE.Vector3>[]) => curves.map((c) => applyMatrixToCurve(c, poseMatrix));
     if (state.transformed && state.lastKey === key) {
       const preview = svgPreviewGroup(state, state.transformed.map((c) => c.getPoints(128)), key);
       applySvgPose(preview, inputs, params, ctx);
-      return { curve: state.transformed[0] ?? null, curves: state.transformed, geometry: preview };
+      const output = world(state.transformed);
+      return { curve: output[0] ?? null, curves: output, geometry: preview };
     }
 
     const transformed = raw.map((c) => transformCurve3(c, s, ox, oy));
@@ -262,7 +266,8 @@ export const SVG_TO_CURVES_NODE: NodeDefinition = {
     const preview = svgPreviewGroup(state, transformed.map((c) => c.getPoints(128)), key);
     applySvgPose(preview, inputs, params, ctx);
 
-    return { curve: transformed[0] ?? null, curves: transformed, geometry: preview };
+    const output = world(transformed);
+    return { curve: output[0] ?? null, curves: output, geometry: preview };
   },
 };
 

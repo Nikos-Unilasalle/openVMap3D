@@ -493,6 +493,57 @@ export function createVariableThicknessTubeGeometry(
 }
 
 /** 1. Curve from Points Node */
+
+/** Builds a curve (linear / bezier / catmull-rom) through `pts` — shared by the
+ * local preview and the pose-baked world output. */
+function buildPointsCurve(pts: THREE.Vector3[], type: string, closed: boolean, tension: number): THREE.Curve<THREE.Vector3> {
+  if (type === "linear") {
+    const path = new THREE.CurvePath<THREE.Vector3>();
+    for (let i = 0; i < pts.length - 1; i++) path.add(new THREE.LineCurve3(pts[i], pts[i + 1]));
+    if (closed && pts.length > 2) path.add(new THREE.LineCurve3(pts[pts.length - 1], pts[0]));
+    return path;
+  }
+  if (type === "bezier" && pts.length >= 4) return buildBezierPath(pts, closed);
+  return new THREE.CatmullRomCurve3(pts, closed, "catmullrom", tension);
+}
+
+/** Returns a copy of `curve` transformed by `matrix`, preserving its type. */
+export function applyMatrixToCurve(curve: THREE.Curve<THREE.Vector3>, matrix: THREE.Matrix4): THREE.Curve<THREE.Vector3> {
+  const c = curve as unknown as Record<string, unknown>;
+  if (c.isCatmullRomCurve3 && Array.isArray(c.points)) {
+    return new THREE.CatmullRomCurve3(
+      (c.points as THREE.Vector3[]).map((p) => p.clone().applyMatrix4(matrix)),
+      Boolean(c.closed),
+      c.curveType as THREE.CurveType,
+      c.tension as number,
+    );
+  }
+  if (c.isLineCurve3 && c.v1 instanceof THREE.Vector3) {
+    return new THREE.LineCurve3((c.v1 as THREE.Vector3).clone().applyMatrix4(matrix), (c.v2 as THREE.Vector3).clone().applyMatrix4(matrix));
+  }
+  if (c.isCubicBezierCurve3 && c.v0 instanceof THREE.Vector3) {
+    return new THREE.CubicBezierCurve3(
+      (c.v0 as THREE.Vector3).clone().applyMatrix4(matrix),
+      (c.v1 as THREE.Vector3).clone().applyMatrix4(matrix),
+      (c.v2 as THREE.Vector3).clone().applyMatrix4(matrix),
+      (c.v3 as THREE.Vector3).clone().applyMatrix4(matrix),
+    );
+  }
+  if (c.isQuadraticBezierCurve3 && c.v0 instanceof THREE.Vector3) {
+    return new THREE.QuadraticBezierCurve3(
+      (c.v0 as THREE.Vector3).clone().applyMatrix4(matrix),
+      (c.v1 as THREE.Vector3).clone().applyMatrix4(matrix),
+      (c.v2 as THREE.Vector3).clone().applyMatrix4(matrix),
+    );
+  }
+  if (c.isCurvePath && Array.isArray(c.curves)) {
+    const path = new THREE.CurvePath<THREE.Vector3>();
+    for (const sub of c.curves as THREE.Curve<THREE.Vector3>[]) path.add(applyMatrixToCurve(sub, matrix));
+    return path;
+  }
+  return new THREE.CatmullRomCurve3(curve.getPoints(64).map((p) => p.clone().applyMatrix4(matrix)), false);
+}
+
 export const CURVE_FROM_POINTS_NODE: NodeDefinition = {
   type: "curve/from_points",
   label: "Curve from Points",
@@ -535,27 +586,21 @@ export const CURVE_FROM_POINTS_NODE: NodeDefinition = {
     const tension = inputs.tension !== undefined ? asNumber(inputs.tension, 0.5) : asNumber(params.tension, 0.5);
 
     let curve: THREE.Curve<THREE.Vector3>;
-
-    if (type === "linear") {
-      const path = new THREE.CurvePath<THREE.Vector3>();
-      for (let i = 0; i < pts.length - 1; i++) {
-        path.add(new THREE.LineCurve3(pts[i], pts[i + 1]));
-      }
-      if (closed && pts.length > 2) {
-        path.add(new THREE.LineCurve3(pts[pts.length - 1], pts[0]));
-      }
-      curve = path;
-    } else if (type === "bezier" && pts.length >= 4) {
-      curve = buildBezierPath(pts, closed);
-    } else {
-      // CatmullRom default
-      curve = new THREE.CatmullRomCurve3(pts, closed, "catmullrom", tension);
-    }
+    curve = buildPointsCurve(pts, type, closed, tension);
 
     const preview = getCurvePreviewLine(getState(ctx.nodeId), ctx.nodeId, curve);
     applyNativePose(preview, inputs, params, ctx);
 
-    return { curve, geometry: preview };
+    // Bake the native pose (location/rotation/scale + wired matrix) into the
+    // *curve output* so consumers — Curve to Mesh, Follow Path, Curve Deform —
+    // place the path exactly where this node's gizmo put it. The editable
+    // handles keep editing the local pointsList; the preview already carries
+    // the pose via its own matrix.
+    const poseMatrix = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale);
+    const worldPts = pts.map((p) => p.clone().applyMatrix4(poseMatrix));
+    const worldCurve = buildPointsCurve(worldPts, type, closed, tension);
+
+    return { curve: worldCurve, geometry: preview };
   },
 };
 
@@ -631,7 +676,11 @@ export const CURVE_PRIMITIVE_NODE: NodeDefinition = {
     const preview = getCurvePreviewLine(getState(ctx.nodeId), ctx.nodeId, curve);
     applyNativePose(preview, inputs, params, ctx);
 
-    return { curve, geometry: preview };
+    // Bake the native pose into the curve output (see Curve from Points).
+    const poseMatrix = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale);
+    const worldCurve = applyMatrixToCurve(curve, poseMatrix);
+
+    return { curve: worldCurve, geometry: preview };
   },
 };
 
