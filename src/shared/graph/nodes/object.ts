@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { Font, FontLoader } from "three/examples/jsm/loaders/FontLoader.js";
 import { NodeDefinition, ParamFieldDef } from "../types";
 import { toBoolean } from "../sockets";
 import { defaultFont } from "../../three/fonts/helvetikerFont";
@@ -724,29 +725,121 @@ export const OBJECT_CONE_NODE: NodeDefinition = {
   },
 };
 
-const FONT_FAMILIES = [
-  "sans-serif",
-  "serif",
-  "monospace",
-  "Arial",
-  "Helvetica",
-  "Verdana",
-  "Trebuchet MS",
-  "Times New Roman",
-  "Georgia",
-  "Courier New",
-  "Impact",
-  "Comic Sans MS",
-];
+/** 3D Extruded Text Object with texture mapping and vector font glyph outlines. */
+export const OBJECT_TEXT_NODE: NodeDefinition = {
+  type: "object/text",
+  label: "Text",
+  category: "object",
+  inputs: [
+    { id: "text", label: "Text", type: "text" },
+    { id: "fontSize", label: "Font Size", type: "value" },
+    { id: "depth", label: "Depth", type: "value" },
+    ...COMMON_PRIMITIVE_INPUTS,
+  ],
+  outputs: [...COMMON_PRIMITIVE_OUTPUTS],
+  defaultParams: {
+    text: "OpenVMap3D",
+    fontSize: 64,
+    depth: 0.1,
+    fontPath: "",
+    ...COMMON_DEFAULT_PARAMS,
+  },
+  paramFields: buildPrimitiveDynamicParamFields([
+    { id: "text", label: "Text (fallback)", kind: "text" },
+    { id: "fontPath", label: "Font (.json)", kind: "file", accept: [".json"], onLoaded: (nodeId, _path, content) => {
+      const state = textMesh(nodeId);
+      try {
+        state.font = new FontLoader().parse(JSON.parse(String(content)));
+      } catch (err) {
+        console.error("Failed to parse font:", err);
+        state.font = undefined;
+      }
+    } },
+    { id: "fontSize", label: "Font Size (px)", kind: "number" },
+    { id: "depth", label: "Depth / Relief", kind: "number", step: 0.05 },
+  ])(),
+  dynamicParamFields: buildPrimitiveDynamicParamFields([
+    { id: "text", label: "Text (fallback)", kind: "text" },
+    { id: "fontPath", label: "Font (.json)", kind: "file", accept: [".json"], onLoaded: (nodeId, _path, content) => {
+      const state = textMesh(nodeId);
+      try {
+        state.font = new FontLoader().parse(JSON.parse(String(content)));
+      } catch (err) {
+        console.error("Failed to parse font:", err);
+        state.font = undefined;
+      }
+    } },
+    { id: "fontSize", label: "Font Size (px)", kind: "number" },
+    { id: "depth", label: "Depth / Relief", kind: "number", step: 0.05 },
+  ]),
+  evaluate: (inputs, params, ctx) => {
+    const textState = textMesh(ctx.nodeId);
+    const mesh = textState.mesh;
+
+    const textStr = inputs.text !== undefined ? String(inputs.text) : String(params.text ?? "OpenVMap3D");
+    const fontSize = Math.max(8, inputs.fontSize !== undefined ? Number(inputs.fontSize) || 64 : Number(params.fontSize) || 64);
+    const depth = Math.max(0.001, inputs.depth !== undefined ? Number(inputs.depth) : Number(params.depth) ?? 0.1);
+    const font = textState.font ?? defaultFont;
+
+    const baseMatrix = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale);
+
+    const stateChanged =
+      textState.lastText !== textStr ||
+      textState.lastFontSize !== fontSize ||
+      textState.lastDepth !== depth ||
+      textState.lastFont !== font;
+
+    if (stateChanged) {
+      if (mesh.geometry) {
+        mesh.geometry.dispose();
+      }
+
+      const scale = fontSize * 0.015;
+      const shapes = font.generateShapes(textStr || " ", scale);
+
+      const geometry = new THREE.ExtrudeGeometry(shapes, {
+        depth: depth,
+        bevelEnabled: true,
+        bevelThickness: Math.min(0.02, depth * 0.2),
+        bevelSize: Math.min(0.01, depth * 0.1),
+        bevelSegments: 3,
+        curveSegments: 12,
+      });
+
+      geometry.center();
+      mesh.geometry = geometry;
+
+      textState.lastText = textStr;
+      textState.lastFontSize = fontSize;
+      textState.lastDepth = depth;
+      textState.lastFont = font;
+    }
+
+    if (ctx.nodeId !== ctx.liveEditNodeId) {
+      mesh.matrixAutoUpdate = false;
+      mesh.matrix.copy(baseMatrix);
+    }
+
+    const matParams = extractMaterialParams(inputs, params);
+    const texParams = extractTextureParams(inputs, params, ctx.nodeId);
+    applyMaterialParams(mesh, matParams, THREE.FrontSide, texParams);
+
+    return primitiveOutputs(mesh);
+  },
+};
+
+const textMeshCache = createNodeCache<TextMeshState>();
 
 interface TextMeshState {
   mesh: THREE.Mesh;
   lastText?: string;
   lastFontSize?: number;
   lastDepth?: number;
+  /** The font loaded via the Font (.json) file field — undefined falls back to helvetiker. */
+  font?: Font;
+  /** Reference for rebuild detection: a newly loaded font object must re-extrude. */
+  lastFont?: Font;
 }
-
-const textMeshCache = createNodeCache<TextMeshState>();
 
 function textMesh(nodeId: string): TextMeshState {
   const existing = textMeshCache.get(nodeId);
@@ -768,91 +861,6 @@ function textMesh(nodeId: string): TextMeshState {
   textMeshCache.set(nodeId, state);
   return state;
 }
-
-/** 3D Extruded Text Object with texture mapping and vector font glyph outlines. */
-export const OBJECT_TEXT_NODE: NodeDefinition = {
-  type: "object/text",
-  label: "Text",
-  category: "object",
-  inputs: [
-    { id: "text", label: "Text", type: "text" },
-    { id: "font", label: "Font", type: "text" },
-    { id: "fontSize", label: "Font Size", type: "value" },
-    { id: "depth", label: "Depth", type: "value" },
-    ...COMMON_PRIMITIVE_INPUTS,
-  ],
-  outputs: [...COMMON_PRIMITIVE_OUTPUTS],
-  defaultParams: {
-    text: "OpenVMap3D",
-    font: "sans-serif",
-    fontSize: 64,
-    depth: 0.1,
-    ...COMMON_DEFAULT_PARAMS,
-  },
-  paramFields: buildPrimitiveDynamicParamFields([
-    { id: "text", label: "Text (fallback)", kind: "text" },
-    { id: "font", label: "Font Family", kind: "select", options: FONT_FAMILIES },
-    { id: "fontSize", label: "Font Size (px)", kind: "number" },
-    { id: "depth", label: "Depth / Relief", kind: "number", step: 0.05 },
-  ])(),
-  dynamicParamFields: buildPrimitiveDynamicParamFields([
-    { id: "text", label: "Text (fallback)", kind: "text" },
-    { id: "font", label: "Font Family", kind: "select", options: FONT_FAMILIES },
-    { id: "fontSize", label: "Font Size (px)", kind: "number" },
-    { id: "depth", label: "Depth / Relief", kind: "number", step: 0.05 },
-  ]),
-  evaluate: (inputs, params, ctx) => {
-    const textState = textMesh(ctx.nodeId);
-    const mesh = textState.mesh;
-
-    const textStr = inputs.text !== undefined ? String(inputs.text) : String(params.text ?? "OpenVMap3D");
-    const fontSize = Math.max(8, inputs.fontSize !== undefined ? Number(inputs.fontSize) || 64 : Number(params.fontSize) || 64);
-    const depth = Math.max(0.001, inputs.depth !== undefined ? Number(inputs.depth) : Number(params.depth) ?? 0.1);
-
-    const baseMatrix = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale);
-
-    const stateChanged =
-      textState.lastText !== textStr ||
-      textState.lastFontSize !== fontSize ||
-      textState.lastDepth !== depth;
-
-    if (stateChanged) {
-      if (mesh.geometry) {
-        mesh.geometry.dispose();
-      }
-
-      const scale = fontSize * 0.015;
-      const shapes = defaultFont.generateShapes(textStr || " ", scale);
-
-      const geometry = new THREE.ExtrudeGeometry(shapes, {
-        depth: depth,
-        bevelEnabled: true,
-        bevelThickness: Math.min(0.02, depth * 0.2),
-        bevelSize: Math.min(0.01, depth * 0.1),
-        bevelSegments: 3,
-        curveSegments: 12,
-      });
-
-      geometry.center();
-      mesh.geometry = geometry;
-
-      textState.lastText = textStr;
-      textState.lastFontSize = fontSize;
-      textState.lastDepth = depth;
-    }
-
-    if (ctx.nodeId !== ctx.liveEditNodeId) {
-      mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(baseMatrix);
-    }
-
-    const matParams = extractMaterialParams(inputs, params);
-    const texParams = extractTextureParams(inputs, params, ctx.nodeId);
-    applyMaterialParams(mesh, matParams, THREE.FrontSide, texParams);
-
-    return primitiveOutputs(mesh);
-  },
-};
 
 const ALIGNMENT_OPTIONS = ["center", "left", "right"];
 const LABEL_POSITION_OPTIONS = ["above", "above_aligned", "below", "below_flat"];
