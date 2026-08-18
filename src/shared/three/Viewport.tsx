@@ -45,6 +45,7 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { createMotionBlur } from "./motionBlur";
 import { PostProcessConfig } from "../graph/nodes/postprocessing";
 import { Graph, NodeRegistry } from "../graph/types";
+import { isTauri } from "../ipc";
 import type { PreviewCameraPose } from "../ipc";
 import "./viewport.css";
 
@@ -446,7 +447,10 @@ export function Viewport({
     const host: HTMLDivElement = hostRef.current;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // The native app can afford 2x on a retina display; the browser build is
+    // CPU/GPU-bound, so cap it lower there — a big fill-rate saving on a 2x
+    // display (4x pixels → 2.25x at 1.5) for a barely perceptible softness.
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTauri() ? 2 : 1.5));
     renderer.autoClear = false;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -500,6 +504,7 @@ export function Viewport({
     controls.dampingFactor = 0.05;
 
     toggleCameraModeRef.current = (isOrtho: boolean) => {
+      needsRender = true;
       const nextCam = isOrtho ? orthographicCamera : perspectiveCamera;
       const prevCam = isOrtho ? perspectiveCamera : orthographicCamera;
 
@@ -614,7 +619,10 @@ export function Viewport({
 
     if (!outputMode) {
       controls.addEventListener("start", handleOrbitStart);
-      controls.addEventListener("change", emitCameraPose);
+      controls.addEventListener("change", () => {
+        needsRender = true;
+        emitCameraPose();
+      });
       emitCameraPose();
     }
 
@@ -657,6 +665,14 @@ export function Viewport({
     // The playhead frame the last evaluation used — scrubbing the timeline
     // (while paused) must still re-evaluate for keyframe interpolation to track.
     let lastEvalFrame = -1;
+    // Whether the viewport actually needs to draw this tick. The rAF loop still
+    // runs (OrbitControls damping needs update() each frame), but when nothing
+    // changed — no graph edit/playback, no camera move, no gizmo interaction —
+    // we skip the expensive full-scene GPU render and keep the last frame. This
+    // is the big browser win when the scene is sitting idle.
+    let needsRender = true;
+    let lastSelectedNodeId: string | null = null;
+    let lastPreviewPoseKey = "";
     // Tracks whether the postprocess chain was active last frame. When it goes
     // inactive we release the chain once; repeating that every idle frame would
     // destroy and re-compile all the cached passes on the next activation
@@ -830,6 +846,7 @@ export function Viewport({
       });
 
       transformControls.addEventListener("objectChange", () => {
+        needsRender = true;
         const object = transformControls.object;
         if (!object) return;
 
@@ -954,9 +971,14 @@ export function Viewport({
     // a selection click.
     const CLICK_MOVE_THRESHOLD_PX = 6;
     let pointerDownAt: { x: number; y: number } | null = null;
+    // True while the pointer is down on the canvas — any interaction (orbit,
+    // marquee, handle drag) must keep rendering even if the graph is idle.
+    let pointerActive = false;
     let suppressNextClick = false;
 
     function onCanvasPointerDown(e: PointerEvent) {
+      pointerActive = true;
+      needsRender = true;
       pointerDownAt = { x: e.clientX, y: e.clientY };
 
       const isMarqueeModifier = e.metaKey || e.ctrlKey;
@@ -985,6 +1007,8 @@ export function Viewport({
     }
 
     function onCanvasPointerUp(e: PointerEvent) {
+      pointerActive = false;
+      needsRender = true;
       if (isMarqueeDragging) {
         isMarqueeDragging = false;
         setMarqueeBox(null);
@@ -1079,6 +1103,8 @@ export function Viewport({
         }
       }
       onSelectNodeRef.current(hitNodeId);
+      pointerActive = false;
+      needsRender = true;
     }
 
     if (!outputMode) {
@@ -1090,6 +1116,7 @@ export function Viewport({
     const motionBlurEffect = createMotionBlur(host.clientWidth || 1, host.clientHeight || 1);
 
     function resize() {
+      needsRender = true;
       const { clientWidth, clientHeight } = host;
       if (clientWidth === 0 || clientHeight === 0) return;
       const aspect = clientWidth / clientHeight;
@@ -1297,6 +1324,15 @@ export function Viewport({
       latestResults = results;
       onEvaluatedResultsRef.current?.(results);
 
+      // A graph edit/playback or a new selection always warrants a redraw.
+      if (needsEval) needsRender = true;
+      if (selectedNodeIdRef.current !== lastSelectedNodeId) {
+        lastSelectedNodeId = selectedNodeIdRef.current;
+        needsRender = true;
+      }
+      // Any in-progress pointer interaction keeps rendering.
+      if (pointerActive) needsRender = true;
+
       // Evaluate and sync ALL 3D Lights & Light Helpers in the scene (standalone or array instances)
       const detectedLights = new Map<string, { light: THREE.Light; nodeId: string }>();
       for (const [nodeId, res] of results.entries()) {
@@ -1502,6 +1538,11 @@ export function Viewport({
         controls.enabled = false;
         const [px, py, pz] = previewCameraPoseRef.current.position;
         const [qx, qy, qz, qw] = previewCameraPoseRef.current.quaternion;
+        const poseKey = `${px},${py},${pz},${qx},${qy},${qz},${qw}`;
+        if (poseKey !== lastPreviewPoseKey) {
+          lastPreviewPoseKey = poseKey;
+          needsRender = true;
+        }
         camera.position.set(px, py, pz);
         camera.quaternion.set(qx, qy, qz, qw);
         restoreProjection();
@@ -1868,7 +1909,9 @@ export function Viewport({
         }
       }
 
-      renderer.setViewport(viewX, viewY, viewWidth, viewHeight);
+      // Skip the expensive GPU render entirely when nothing changed this frame.
+      if (needsRender) {
+        renderer.setViewport(viewX, viewY, viewWidth, viewHeight);
       renderer.setScissor(viewX, viewY, viewWidth, viewHeight);
       renderer.setScissorTest(outputMode && targetAspect !== null);
 
@@ -1957,6 +2000,8 @@ export function Viewport({
         pendingCaptureRef.current = null;
         capture.resolve();
       }
+      }
+      needsRender = false;
 
       frameId = requestAnimationFrame(tick);
     }
