@@ -114,18 +114,15 @@ function extractItems(rawItems: unknown): THREE.Object3D[] {
   const items: THREE.Object3D[] = [];
   const stack = Array.isArray(rawItems) ? [...rawItems] : [rawItems];
 
+  // Every top-level object is ONE spawnable unit — a Merge's Group, a
+  // curve-to-mesh Group, a single mesh, etc. Only explicit lists/arrays are
+  // flattened (a List Group of several items still cycles between them);
+  // groups are NOT recursed into, otherwise a merged "flower" of two surfaces
+  // would spawn as two separate parts instead of one unit.
   while (stack.length > 0) {
     const current = stack.shift();
     if (Array.isArray(current)) {
       stack.unshift(...current);
-    } else if (current instanceof THREE.Group) {
-      if (current.children.length > 0) {
-        for (const child of current.children) {
-          items.push(child);
-        }
-      } else {
-        items.push(current);
-      }
     } else if (current instanceof THREE.Object3D) {
       items.push(current);
     }
@@ -145,6 +142,7 @@ export const SPAWN_NODE: NodeDefinition = {
   defaultParams: {
     count: 50,
     seed: 1,
+    placement: "center",
     scaleMin: 0.8,
     scaleMax: 1.2,
     rotXVar: 0,
@@ -156,6 +154,7 @@ export const SPAWN_NODE: NodeDefinition = {
   paramFields: [
     { id: "count", label: "Count", kind: "number", step: 1, group: "Spawning" },
     { id: "seed", label: "Seed", kind: "number", step: 1, group: "Spawning" },
+    { id: "placement", label: "Placement", kind: "select", options: ["center", "base"], group: "Spawning" },
     { id: "alignToNormal", label: "Align to Normal", kind: "boolean", group: "Spawning" },
     { id: "dispersion", label: "Dispersion / Jitter", kind: "number", step: 0.05, group: "Spawning" },
     { id: "scaleMin", label: "Min Scale", kind: "number", step: 0.05, group: "Variation" },
@@ -183,6 +182,7 @@ export const SPAWN_NODE: NodeDefinition = {
     const rotZVarRad = (Number.isFinite(Number(params.rotZVar)) ? Number(params.rotZVar) : 0) * RAD;
     const alignToNormal = params.alignToNormal !== undefined ? Boolean(params.alignToNormal) : true;
     const dispersion = Number.isFinite(Number(params.dispersion)) ? Number(params.dispersion) : 0;
+    const placement = String(params.placement || "center") === "base" ? "base" : "center";
 
     const prng = createPrng(seed);
 
@@ -247,18 +247,32 @@ export const SPAWN_NODE: NodeDefinition = {
       const instance = sourceItem.clone(true);
       // The item's *world* rotation & scale — same reasoning as collectTriangles:
       // a graph-driven item's matrix is the truth, but a curve-to-mesh (or any
-      // modifier) hands back a GROUP whose pose lives on the group, and
-      // extractItems flattens that group into its identity-matrix children. So
-      // reading sourceItem.matrix would drop the modifier's gizmo. We decompose
+      // modifier) hands back a GROUP whose pose lives on the group. We decompose
       // the forced matrixWorld and keep rotation/scale (the shape's orientation
       // and size) but DROP the item's world position — each copy sits on the
       // support surface rather than being pushed off it by where the item
       // happens to be in the scene.
-      sourceItem.updateWorldMatrix(true, false, true);
+      // `updateMatrixWorld(true)` (force) refreshes the WHOLE subtree, so
+      // Box3.setFromObject below sees correct bounds for graph-driven children.
+      sourceItem.updateMatrixWorld(true);
       const itemPos = new THREE.Vector3();
       const itemQuat = new THREE.Quaternion();
       const itemScale = new THREE.Vector3();
       sourceItem.matrixWorld.decompose(itemPos, itemQuat, itemScale);
+
+      // Where the copy's shape should meet the spawn point. A merged "flower"
+      // has parts carrying absolute scene offsets, so placing the item's origin
+      // would scatter them. Anchor the copy by its actual bounds instead:
+      // - "center": the bounds' centre lands on the spawn point.
+      // - "base": the bounds' bottom-centre lands on it (sits on the surface).
+      const box = new THREE.Box3().setFromObject(sourceItem);
+      const worldCenter = box.getCenter(new THREE.Vector3());
+      const invItem = new THREE.Matrix4().copy(sourceItem.matrixWorld).invert();
+      const centerLocal = worldCenter.clone().applyMatrix4(invItem);
+      const anchor =
+        placement === "base"
+          ? new THREE.Vector3(centerLocal.x, box.min.clone().applyMatrix4(invItem).y, centerLocal.z)
+          : centerLocal;
 
       // Orientation & Rotation (surface normal × variation × item's own rotation)
       const finalQuat = new THREE.Quaternion();
@@ -277,12 +291,15 @@ export const SPAWN_NODE: NodeDefinition = {
       const scaleVal = scaleMin + prng() * (scaleMax - scaleMin);
       const spawnScale = new THREE.Vector3(scaleVal, scaleVal, scaleVal).multiply(itemScale);
 
-      // Compose surface placement matrix (no item translation)
+      // Compose surface placement, then shift so the chosen anchor lands on the
+      // spawn point (no item translation otherwise).
       const spawnMatrix = new THREE.Matrix4().compose(worldPos, finalQuat, spawnScale);
+      const anchorOffset = new THREE.Matrix4().makeTranslation(-anchor.x, -anchor.y, -anchor.z);
+      const finalMatrix = new THREE.Matrix4().multiplyMatrices(spawnMatrix, anchorOffset);
 
       instance.matrixAutoUpdate = false;
-      instance.matrix.copy(spawnMatrix);
-      spawnMatrix.decompose(instance.position, instance.quaternion, instance.scale);
+      instance.matrix.copy(finalMatrix);
+      finalMatrix.decompose(instance.position, instance.quaternion, instance.scale);
 
       group.add(instance);
     }

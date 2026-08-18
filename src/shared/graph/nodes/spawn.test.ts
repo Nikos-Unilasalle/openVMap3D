@@ -55,6 +55,69 @@ describe("SPAWN_NODE", () => {
     expect((res.geometry as THREE.Group).children.length).toBe(0);
   });
 
+  it("spawns a merged group as ONE unit, not its separate parts", () => {
+    const supportMesh = new THREE.Mesh(new THREE.PlaneGeometry(10, 10));
+    const mergeGroup = new THREE.Group();
+    mergeGroup.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1)));
+    mergeGroup.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1)));
+
+    const res = SPAWN_NODE.evaluate(
+      { support: supportMesh, items: [mergeGroup] },
+      { count: 3, seed: 5 },
+      { nodeId: "spawn_merge_unit" } as any,
+    );
+
+    const group = res.geometry as THREE.Group;
+    expect(group.children.length).toBe(3); // one copy per spawn
+    expect(group.children[0]).toBeInstanceOf(THREE.Group); // the merged flower
+    expect((group.children[0] as THREE.Group).children.length).toBe(2);
+  });
+
+  it("center placement puts the item's bounds centre on the support", () => {
+    const supportMesh = new THREE.Mesh(new THREE.PlaneGeometry(10, 10));
+    // A "flower": a group whose part sits far from the group's origin.
+    const child = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    child.matrixAutoUpdate = false;
+    child.matrix.makeTranslation(5, 3, 7);
+    child.updateMatrixWorld(true);
+    const flower = new THREE.Group();
+    flower.add(child);
+    flower.updateMatrixWorld(true);
+
+    const res = SPAWN_NODE.evaluate(
+      { support: supportMesh, items: [flower] },
+      { count: 1, seed: 1, scaleMin: 1, scaleMax: 1, alignToNormal: 1, placement: "center", rotXVar: 0, rotYVar: 0, rotZVar: 0 },
+      { nodeId: "spawn_center" } as any,
+    );
+
+    const instance = (res.geometry as THREE.Group).children[0];
+    instance.updateMatrixWorld(true);
+    const center = new THREE.Box3().setFromObject(instance).getCenter(new THREE.Vector3());
+    expect(center.z).toBeCloseTo(0, 3);
+  });
+
+  it("base placement puts the item's bottom on the support", () => {
+    const supportMesh = new THREE.Mesh(new THREE.PlaneGeometry(10, 10));
+    const child = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    child.matrixAutoUpdate = false;
+    child.matrix.makeTranslation(5, 3, 7);
+    child.updateMatrixWorld(true);
+    const flower = new THREE.Group();
+    flower.add(child);
+    flower.updateMatrixWorld(true);
+
+    const res = SPAWN_NODE.evaluate(
+      { support: supportMesh, items: [flower] },
+      { count: 1, seed: 1, scaleMin: 1, scaleMax: 1, alignToNormal: 1, placement: "base", rotXVar: 0, rotYVar: 0, rotZVar: 0 },
+      { nodeId: "spawn_base" } as any,
+    );
+
+    const instance = (res.geometry as THREE.Group).children[0];
+    instance.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(instance);
+    expect(box.min.z).toBeCloseTo(0, 3);
+  });
+
   it("preserves item local scale, rotation and location offset", () => {
     const supportMesh = new THREE.Mesh(new THREE.PlaneGeometry(10, 10));
     const itemMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
