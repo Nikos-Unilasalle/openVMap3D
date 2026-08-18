@@ -5,12 +5,43 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { NodeDefinition, ParamFieldDef } from "../types";
 import { getCurveNodePose } from "../curvePoseStore";
-import { asColor, primitiveOutputs } from "./object";
+import { extractMaterialParams, primitiveOutputs } from "./object";
 import { composeNativeMatrix } from "./transform";
 
 function asNumber(v: unknown, fallback: number): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
+}
+
+/**
+ * The dash shader reads `instanceDistanceStart`/`instanceDistanceEnd` (the
+ * cumulative arc-length at each segment's ends), but LineGeometry.setFromPoints
+ * only builds instanceStart/End — without these attributes the line renders
+ * solid no matter the dash settings. Same helper the webgl_lines_fat example
+ * uses. Must run after every setFromPoints (a rebuild replaces the instance
+ * buffers, leaving stale distance counts behind otherwise).
+ */
+function computeLineDistances(geometry: LineGeometry): void {
+  const start = geometry.attributes.instanceStart as THREE.InterleavedBufferAttribute;
+  const end = geometry.attributes.instanceEnd as THREE.InterleavedBufferAttribute;
+  const count = start.count;
+  const distances = [0];
+  let total = 0;
+  for (let i = 0; i < count; i++) {
+    const dx = end.getX(i) - start.getX(i);
+    const dy = end.getY(i) - start.getY(i);
+    const dz = end.getZ(i) - start.getZ(i);
+    total += Math.sqrt(dx * dx + dy * dy + dz * dz);
+    distances.push(total);
+  }
+  const startDist = new Float32Array(count);
+  const endDist = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    startDist[i] = distances[i];
+    endDist[i] = distances[i + 1];
+  }
+  geometry.setAttribute("instanceDistanceStart", new THREE.BufferAttribute(startDist, 1));
+  geometry.setAttribute("instanceDistanceEnd", new THREE.BufferAttribute(endDist, 1));
 }
 
 interface LineState {
@@ -62,6 +93,7 @@ export const CURVE_TO_LINE_NODE: NodeDefinition = {
   category: "curve",
   inputs: [
     { id: "curve", label: "Curve", type: "curve" },
+    { id: "material", label: "Material", type: "material" },
     LINE_TRANSFORM_INPUT,
   ],
   outputs: [
@@ -114,11 +146,14 @@ export const CURVE_TO_LINE_NODE: NodeDefinition = {
     if (signature !== state.geometrySignature) {
       state.geometrySignature = signature;
       (line.geometry as LineGeometry).setFromPoints(points);
+      computeLineDistances(line.geometry as LineGeometry);
     }
 
-    // Material: colour, opacity, width, dashes.
-    material.color.set(asColor(inputs.color, asColor(params.color, new THREE.Color(0x38bdf8))));
-    const opacity = Math.min(1, Math.max(0, asNumber(inputs.opacity, asNumber(params.opacity, 1))));
+    // Material: a wired Material node wins (color/opacity); the unlit line
+    // ignores roughness/metalness/emissive — no texture support.
+    const matParams = extractMaterialParams(inputs, params);
+    material.color.set(matParams.color);
+    const opacity = Math.min(1, Math.max(0, matParams.opacity));
     material.uniforms.opacity.value = opacity;
     material.transparent = opacity < 0.999;
     material.linewidth = Math.max(0.1, asNumber(params.linewidth, 2));

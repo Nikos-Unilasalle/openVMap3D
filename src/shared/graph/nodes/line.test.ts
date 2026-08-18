@@ -56,4 +56,32 @@ describe("CURVE_TO_LINE_NODE", () => {
     const pos = new THREE.Vector3().setFromMatrixPosition(line.matrix);
     expect(pos.x).toBeCloseTo(7, 3);
   });
+
+  it("computes the dash distance attributes the shader needs", () => {
+    const curve = new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0, 0), new THREE.Vector3(3, 0, 0)]);
+    const res = CURVE_TO_LINE_NODE.evaluate(
+      { curve },
+      { ...CURVE_TO_LINE_NODE.defaultParams, dashed: true },
+      CTX,
+    );
+    const line = res.geometry as Line2;
+    const geo = line.geometry as THREE.BufferGeometry;
+    const start = geo.getAttribute("instanceDistanceStart") as THREE.BufferAttribute;
+    const end = geo.getAttribute("instanceDistanceEnd") as THREE.BufferAttribute;
+    expect(start).toBeDefined();
+    expect(end).toBeDefined();
+    expect(end.getX(start.count - 1)).toBeCloseTo(3, 3);
+  });
+
+  it("a wired Material node drives colour and opacity", () => {
+    const curve = new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0, 0), new THREE.Vector3(2, 0, 0)]);
+    const res = CURVE_TO_LINE_NODE.evaluate(
+      { curve, material: { color: new THREE.Color(0x00ff00), opacity: 0.7, roughness: 0.5 } },
+      CURVE_TO_LINE_NODE.defaultParams,
+      CTX,
+    );
+    const mat = (res.geometry as Line2).material as LineMaterial;
+    expect((mat.color as THREE.Color).getHex()).toBe(0x00ff00);
+    expect(mat.uniforms.opacity.value).toBeCloseTo(0.7);
+  });
 });
