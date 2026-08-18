@@ -14,6 +14,7 @@ import {
   primitiveOutputs,
 } from "./object";
 import { DEFAULT_PROFILE_POINTS, evalProfileCurve, ProfilePoint } from "../profileCurve";
+import { setCurveNodePose, getCurveNodePose } from "../curvePoseStore";
 
 interface CurveNodeState {
   mesh?: THREE.Mesh;
@@ -507,43 +508,6 @@ function buildPointsCurve(pts: THREE.Vector3[], type: string, closed: boolean, t
   return new THREE.CatmullRomCurve3(pts, closed, "catmullrom", tension);
 }
 
-/** Returns a copy of `curve` transformed by `matrix`, preserving its type. */
-export function applyMatrixToCurve(curve: THREE.Curve<THREE.Vector3>, matrix: THREE.Matrix4): THREE.Curve<THREE.Vector3> {
-  const c = curve as unknown as Record<string, unknown>;
-  if (c.isCatmullRomCurve3 && Array.isArray(c.points)) {
-    return new THREE.CatmullRomCurve3(
-      (c.points as THREE.Vector3[]).map((p) => p.clone().applyMatrix4(matrix)),
-      Boolean(c.closed),
-      c.curveType as THREE.CurveType,
-      c.tension as number,
-    );
-  }
-  if (c.isLineCurve3 && c.v1 instanceof THREE.Vector3) {
-    return new THREE.LineCurve3((c.v1 as THREE.Vector3).clone().applyMatrix4(matrix), (c.v2 as THREE.Vector3).clone().applyMatrix4(matrix));
-  }
-  if (c.isCubicBezierCurve3 && c.v0 instanceof THREE.Vector3) {
-    return new THREE.CubicBezierCurve3(
-      (c.v0 as THREE.Vector3).clone().applyMatrix4(matrix),
-      (c.v1 as THREE.Vector3).clone().applyMatrix4(matrix),
-      (c.v2 as THREE.Vector3).clone().applyMatrix4(matrix),
-      (c.v3 as THREE.Vector3).clone().applyMatrix4(matrix),
-    );
-  }
-  if (c.isQuadraticBezierCurve3 && c.v0 instanceof THREE.Vector3) {
-    return new THREE.QuadraticBezierCurve3(
-      (c.v0 as THREE.Vector3).clone().applyMatrix4(matrix),
-      (c.v1 as THREE.Vector3).clone().applyMatrix4(matrix),
-      (c.v2 as THREE.Vector3).clone().applyMatrix4(matrix),
-    );
-  }
-  if (c.isCurvePath && Array.isArray(c.curves)) {
-    const path = new THREE.CurvePath<THREE.Vector3>();
-    for (const sub of c.curves as THREE.Curve<THREE.Vector3>[]) path.add(applyMatrixToCurve(sub, matrix));
-    return path;
-  }
-  return new THREE.CatmullRomCurve3(curve.getPoints(64).map((p) => p.clone().applyMatrix4(matrix)), false);
-}
-
 export const CURVE_FROM_POINTS_NODE: NodeDefinition = {
   type: "curve/from_points",
   label: "Curve from Points",
@@ -591,16 +555,12 @@ export const CURVE_FROM_POINTS_NODE: NodeDefinition = {
     const preview = getCurvePreviewLine(getState(ctx.nodeId), ctx.nodeId, curve);
     applyNativePose(preview, inputs, params, ctx);
 
-    // Bake the native pose (location/rotation/scale + wired matrix) into the
-    // *curve output* so consumers — Curve to Mesh, Follow Path, Curve Deform —
-    // place the path exactly where this node's gizmo put it. The editable
-    // handles keep editing the local pointsList; the preview already carries
-    // the pose via its own matrix.
-    const poseMatrix = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale);
-    const worldPts = pts.map((p) => p.clone().applyMatrix4(poseMatrix));
-    const worldCurve = buildPointsCurve(worldPts, type, closed, tension);
+    // Record where the gizmo put this curve so curve-building consumers (Curve
+    // to Mesh) can compose it into their own matrix — keeping the geometry they
+    // build local, rather than baking a world offset into it.
+    setCurveNodePose(ctx.nodeId, composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
 
-    return { curve: worldCurve, geometry: preview };
+    return { curve, geometry: preview };
   },
 };
 
@@ -676,11 +636,9 @@ export const CURVE_PRIMITIVE_NODE: NodeDefinition = {
     const preview = getCurvePreviewLine(getState(ctx.nodeId), ctx.nodeId, curve);
     applyNativePose(preview, inputs, params, ctx);
 
-    // Bake the native pose into the curve output (see Curve from Points).
-    const poseMatrix = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale);
-    const worldCurve = applyMatrixToCurve(curve, poseMatrix);
+    setCurveNodePose(ctx.nodeId, composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
 
-    return { curve: worldCurve, geometry: preview };
+    return { curve, geometry: preview };
   },
 };
 
@@ -906,10 +864,17 @@ export const CURVE_TO_MESH_NODE: NodeDefinition = {
       group.add(smesh);
     }
 
-    // Apply Matrix transformation to the group (the gizmo's target).
+    // Apply Matrix transformation to the group (the gizmo's target). The tube
+    // geometry is built from the curve in its LOCAL space, so the source curve
+    // node's pose (where its gizmo put it) is composed in here too — this keeps
+    // the geometry centred, which is what lets a Spawner sit copies on a
+    // surface instead of pushing them off by a baked-in world offset.
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       group.matrixAutoUpdate = false;
       group.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      const curveSourceId = ctx.inputSources?.get("curve");
+      const curvePose = curveSourceId ? getCurveNodePose(curveSourceId) : null;
+      if (curvePose) group.matrix.multiply(curvePose);
     }
 
     // Curve material and (optionally, independently) the surface material.

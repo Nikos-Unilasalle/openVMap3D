@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { EvalContext } from "../types";
+import { getCurveNodePose } from "../curvePoseStore";
 import {
   createVariableThicknessTubeGeometry,
   CURVE_DEFORM_NODE,
@@ -65,7 +66,8 @@ describe("CURVE NODES", () => {
     expect(curve.closed).toBe(true);
   });
 
-  it("Curve from Points bakes its native pose into the curve output", () => {
+  it("Curve from Points keeps the curve local and records its pose for curve-to-mesh", () => {
+    const nodeId = "curve-pose-test";
     const res = CURVE_FROM_POINTS_NODE.evaluate(
       {
         points: [
@@ -75,10 +77,14 @@ describe("CURVE NODES", () => {
         ],
       },
       { type: "catmull", location: new THREE.Vector3(10, 0, 0), rotation: new THREE.Vector3(0, 0, 0), scale: new THREE.Vector3(1, 1, 1) },
-      CTX,
+      { ...CTX, nodeId },
     );
-    const curve = res.curve as THREE.CatmullRomCurve3;
-    expect(curve.getPoint(0).x).toBeCloseTo(10, 3);
+    // The curve output stays in local space (spawned copies can sit on a
+    // surface); the pose is recorded separately for curve-to-mesh to compose.
+    expect((res.curve as THREE.CatmullRomCurve3).getPoint(0).x).toBeCloseTo(0, 3);
+    const pose = getCurveNodePose(nodeId);
+    expect(pose).toBeDefined();
+    expect(new THREE.Vector3().setFromMatrixPosition(pose!).x).toBeCloseTo(10, 3);
   });
 
   it("createVariableThicknessTubeGeometry builds buffer geometry with positions and normals", () => {

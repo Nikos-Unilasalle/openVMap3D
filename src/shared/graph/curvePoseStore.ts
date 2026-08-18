@@ -1,0 +1,20 @@
+import * as THREE from "three";
+
+/**
+ * The native pose (location/rotation/scale + wired matrix) that a curve node
+ * applied last, keyed by node id. Curve consumers that build *geometry* from a
+ * curve (Curve to Mesh) need to know where the gizmo put the curve, but the
+ * curve value itself is just a path in local space — so the curve node writes
+ * its pose here and the consumer composes it into its own matrix, keeping the
+ * built geometry local (a spawned copy then sits on its support instead of
+ * being pushed off it by a baked-in world offset).
+ */
+const poses = new Map<string, THREE.Matrix4>();
+
+export function setCurveNodePose(nodeId: string, matrix: THREE.Matrix4): void {
+  poses.set(nodeId, matrix.clone());
+}
+
+export function getCurveNodePose(nodeId: string): THREE.Matrix4 | undefined {
+  return poses.get(nodeId);
+}
