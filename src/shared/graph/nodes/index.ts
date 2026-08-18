@@ -59,6 +59,7 @@ import {
 } from "./postprocessing";
 
 import { CURVE_DEFORM_NODE, CURVE_FROM_POINTS_NODE, CURVE_PRIMITIVE_NODE, CURVE_TO_MESH_NODE, CURVES_TO_MESH_NODE, SAMPLE_CURVE_NODE } from "./curve";
+import { CURVE_TO_LINE_NODE } from "./line";
 import { LATTICE_DEFORM_NODE } from "./lattice";
 import { BOOLEAN_NODE } from "./boolean";
 import { SUBDIVIDE_NODE } from "./subdivide";
@@ -195,6 +196,7 @@ export const STARTER_NODES = [
   POSTPROCESS_FOG_NODE,
   LIST_GROUP_NODE,
   SPAWN_NODE,
+  CURVE_TO_LINE_NODE,
   LATTICE_DEFORM_NODE,
   BOOLEAN_NODE,
   SUBDIVIDE_NODE,
