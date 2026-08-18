@@ -58,7 +58,7 @@ describe("CURVE_TO_LINE_NODE", () => {
     expect(pos.x).toBeCloseTo(7, 3);
   });
 
-  it("computes the dash distance attributes the shader needs", () => {
+  it("computes instanced dash distance attributes the shader needs", () => {
     const curve = new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0, 0), new THREE.Vector3(3, 0, 0)]);
     const res = CURVE_TO_LINE_NODE.evaluate(
       { curve },
@@ -71,7 +71,10 @@ describe("CURVE_TO_LINE_NODE", () => {
     const end = geo.getAttribute("instanceDistanceEnd") as THREE.BufferAttribute;
     expect(start).toBeDefined();
     expect(end).toBeDefined();
-    expect(end.getX(start.count - 1)).toBeCloseTo(3, 3);
+    // Instanced, so each segment reads its own cumulative distance — otherwise
+    // every segment sees the same value and the dash collapses.
+    expect((start as THREE.InstancedBufferAttribute).isInstancedBufferAttribute).toBe(true);
+    expect(end.getX(end.count - 1)).toBeCloseTo(3, 3);
   });
 
   it("a wired Material node drives colour and opacity", () => {

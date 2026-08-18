@@ -49,8 +49,11 @@ function computeLineDistances(geometry: LineGeometry): void {
     startDist[i] = distances[i];
     endDist[i] = distances[i + 1];
   }
-  geometry.setAttribute("instanceDistanceStart", new THREE.BufferAttribute(startDist, 1));
-  geometry.setAttribute("instanceDistanceEnd", new THREE.BufferAttribute(endDist, 1));
+  // Must be InstancedBufferAttribute (divisor 1): the shader reads these per
+  // segment. A plain BufferAttribute is shared across every instance, so every
+  // segment saw the same distance and the dash pattern collapsed.
+  geometry.setAttribute("instanceDistanceStart", new THREE.InstancedBufferAttribute(startDist, 1));
+  geometry.setAttribute("instanceDistanceEnd", new THREE.InstancedBufferAttribute(endDist, 1));
 }
 
 interface LineState {
@@ -119,7 +122,6 @@ export const CURVE_TO_LINE_NODE: NodeDefinition = {
     gapSize: 1,
     dashScale: 1,
     worldUnits: false,
-    segments: 128,
     color: new THREE.Color(0x38bdf8),
     emissive: new THREE.Color(0x000000),
     emissiveIntensity: 1.0,
@@ -136,7 +138,6 @@ export const CURVE_TO_LINE_NODE: NodeDefinition = {
     { id: "dashRatio", label: "Dash % of curve length", kind: "number", step: 0.01, group: "Line" },
     { id: "gapRatio", label: "Gap % of curve length", kind: "number", step: 0.01, group: "Line" },
     { id: "worldUnits", label: "World Units (width in scene units)", kind: "boolean", group: "Line" },
-    { id: "segments", label: "Segments", kind: "number", step: 8, group: "Line" },
     ...COMMON_MATERIAL_PARAM_FIELDS,
   ],
   evaluate: (inputs, params, ctx) => {
@@ -149,14 +150,20 @@ export const CURVE_TO_LINE_NODE: NodeDefinition = {
     if (!state.line) {
       state.line = new Line2(new LineGeometry(), state.material);
       state.line.matrixAutoUpdate = false;
+      // The fat-line geometry is instanced; its bounding sphere is easily stale
+      // or off, which frustum-culls the line and visually truncates it (and any
+      // dash). Always draw it.
+      state.line.frustumCulled = false;
       state.line.userData.nodeId = ctx.nodeId;
     }
     const material = state.material;
     const line = state.line;
 
-    // Rebuild geometry only when the sampled points change.
-    const segments = Math.max(2, Math.round(asNumber(params.segments, 128)));
-    const points = curve.getPoints(segments);
+    // Rebuild geometry only when the sampled points change. Fixed sampling —
+    // the line is a polyline, and the number of points doesn't change its
+    // extent (a "segments" knob only confused: more samples should never
+    // truncate the curve).
+    const points = curve.getPoints(256);
     const signature = JSON.stringify(points.map((p) => [p.x, p.y, p.z]));
     if (signature !== state.geometrySignature) {
       state.geometrySignature = signature;
@@ -206,9 +213,13 @@ export const CURVE_TO_LINE_NODE: NodeDefinition = {
     }
 
     // Width is screen-space unless worldUnits — LineMaterial needs the viewport
-    // resolution. Default to 1920x1080 so a headless evaluate still works.
+    // resolution. Default to 1920x1080 so a headless evaluate still works, and
+    // never let a zero (not-yet-sized) renderer zero it out.
     const size = new THREE.Vector2(1920, 1080);
-    if (ctx.renderer) ctx.renderer.getSize(size);
+    if (ctx.renderer) {
+      ctx.renderer.getSize(size);
+      if (size.x <= 0 || size.y <= 0) size.set(1920, 1080);
+    }
     material.resolution.copy(size);
 
     // Native pose × the source curve node's pose (so the line follows the
