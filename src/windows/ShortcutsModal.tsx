@@ -23,7 +23,7 @@ const SHORTCUT_SECTIONS: ShortcutSection[] = [
     items: [
       { keys: ["⌘ / Ctrl", "Z"], description: "Undo last action" },
       { keys: ["⌘ / Ctrl", "⇧ Shift", "Z"], description: "Redo last action" },
-      { keys: ["⌘ / Ctrl", "S"], description: "Save Project (.ovm)" },
+      { keys: ["⌘ / Ctrl", "S"], description: "Save Project (.tsuji)" },
       { keys: ["⌘ / Ctrl", "O"], description: "Open Project file" },
       { keys: ["⌘ / Ctrl", "Click / Drag"], description: "Resize Viewport & Canvas Split height" },
     ],

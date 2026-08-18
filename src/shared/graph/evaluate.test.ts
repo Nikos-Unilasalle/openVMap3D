@@ -194,7 +194,7 @@ describe("evaluateGraph", () => {
     const { rehydrateGraphParams } = await import("./rehydrateParams");
 
     const demosDir = path.join(__dirname, "../../../demos");
-    const files = fs.readdirSync(demosDir).filter((f) => f.endsWith(".ovm"));
+    const files = fs.readdirSync(demosDir).filter((f) => f.endsWith(".tsuji") || f.endsWith(".ovm"));
 
     for (const file of files) {
       const demoJson = JSON.parse(fs.readFileSync(path.join(demosDir, file), "utf-8")) as Graph;

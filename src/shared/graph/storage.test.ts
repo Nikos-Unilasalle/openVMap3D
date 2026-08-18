@@ -11,29 +11,30 @@ import { CANVAS_COUNT, emptyGraph, Graph, Project } from "./types";
 
 describe("storage utilities", () => {
   describe("ensureOvmExtension", () => {
-    it("appends .ovm if missing", () => {
-      expect(ensureOvmExtension("project")).toBe("project.ovm");
+    it("appends .tsuji if missing", () => {
+      expect(ensureOvmExtension("project")).toBe("project.tsuji");
     });
 
-    it("keeps .ovm extension if present", () => {
-      expect(ensureOvmExtension("project_v1.ovm")).toBe("project_v1.ovm");
+    it("keeps .tsuji extension if present", () => {
+      expect(ensureOvmExtension("project_v1.tsuji")).toBe("project_v1.tsuji");
     });
 
-    it("keeps .json extension if present for backward compatibility", () => {
+    it("keeps .json/.ovm extensions for backward compatibility", () => {
       expect(ensureOvmExtension("project_v1.json")).toBe("project_v1.json");
+      expect(ensureOvmExtension("project_v1.ovm")).toBe("project_v1.ovm");
     });
   });
 
   describe("incrementFilename", () => {
-    it("increments .ovm version numbers", () => {
-      expect(incrementFilename("project_v1.ovm")).toBe("project_v2.ovm");
-      expect(incrementFilename("graph_01.ovm")).toBe("graph_02.ovm");
-      expect(incrementFilename("scene_09.ovm")).toBe("scene_10.ovm");
+    it("increments .tsuji version numbers", () => {
+      expect(incrementFilename("project_v1.tsuji")).toBe("project_v2.tsuji");
+      expect(incrementFilename("graph_01.tsuji")).toBe("graph_02.tsuji");
+      expect(incrementFilename("scene_09.tsuji")).toBe("scene_10.tsuji");
     });
 
-    it("appends _v2.ovm when no number exists", () => {
-      expect(incrementFilename("my_graph.ovm")).toBe("my_graph_v2.ovm");
-      expect(incrementFilename("my_graph")).toBe("my_graph_v2.ovm");
+    it("appends _v2.tsuji when no number exists", () => {
+      expect(incrementFilename("my_graph.tsuji")).toBe("my_graph_v2.tsuji");
+      expect(incrementFilename("my_graph")).toBe("my_graph_v2.tsuji");
     });
 
     it("handles .json files gracefully", () => {

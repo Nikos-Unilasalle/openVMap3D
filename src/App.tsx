@@ -53,7 +53,7 @@ function edge(fromNode: string, fromSocket: string, toNode: string, toSocket: st
 }
 
 /**
- * Keyframe values are stored in the graph and round-trip through the .ovm as
+ * Keyframe values are stored in the graph and round-trip through the .tsuji as
  * plain JSON, so a THREE.Vector3/Color is kept as its own plain fields —
  * rehydrateParams.ts turns those back into class instances on load, and
  * interpolateValue (evaluate.ts) blends either form.
@@ -177,7 +177,7 @@ function MainEditor() {
   const [isTimelineDrawerOpen, setIsTimelineDrawerOpen] = useState(false);
   const [timelineDrawerHeight, setTimelineDrawerHeight] = useState(280);
   const [splitPercent, setSplitPercent] = useState(50);
-  const [currentFilename, setCurrentFilename] = useState("project_v1.ovm");
+  const [currentFilename, setCurrentFilename] = useState("project_v1.tsuji");
   const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
   const [editorKey, setEditorKey] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -457,7 +457,7 @@ function MainEditor() {
    * Free the cached mesh/texture/toggle state of any node that has left the
    * graph, whatever made it leave.
    *
-   * Node ids are stable — saved into the .ovm, restored identically by undo
+   * Node ids are stable — saved into the .tsuji, restored identically by undo
    * — so a cache entry that outlives its node is not just a leak: the next
    * node to carry that id silently inherits it (see nodeCaches.ts). This
    * used to be handled in exactly one place, the editor's own onNodesDelete

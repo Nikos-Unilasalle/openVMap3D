@@ -5,24 +5,27 @@ import { pruneDanglingConnections } from "./pruneConnections";
 import { CANVAS_COUNT, Graph, NodeRegistry, normalizeCanvases, Project } from "./types";
 
 export function ensureOvmExtension(filename: string): string {
-  if (!filename) return "project_v1.ovm";
+  if (!filename) return "project_v1.tsuji";
   const lower = filename.toLowerCase();
-  if (lower.endsWith(".ovm") || lower.endsWith(".json")) {
+  if (lower.endsWith(".tsuji") || lower.endsWith(".json") || lower.endsWith(".ovm")) {
     return filename;
   }
-  return `${filename}.ovm`;
+  return `${filename}.tsuji`;
 }
 
 export function incrementFilename(filename: string): string {
-  let ext = ".ovm";
+  let ext = ".tsuji";
   let base = filename;
 
-  if (filename.toLowerCase().endsWith(".ovm")) {
-    ext = ".ovm";
-    base = filename.slice(0, -4);
+  if (filename.toLowerCase().endsWith(".tsuji")) {
+    ext = ".tsuji";
+    base = filename.slice(0, -6);
   } else if (filename.toLowerCase().endsWith(".json")) {
     ext = ".json";
     base = filename.slice(0, -5);
+  } else if (filename.toLowerCase().endsWith(".ovm")) {
+    ext = ".ovm";
+    base = filename.slice(0, -4);
   }
 
   const match = base.match(/^(.+?)([_-]?[vV]?)(\d+)$/);
@@ -182,7 +185,7 @@ export async function openProjectWithFilePicker(): Promise<{ project: Project; f
     return new Promise((resolve) => {
       const input = document.createElement("input");
       input.type = "file";
-      input.accept = ".ovm,.json";
+      input.accept = ".tsuji,.json,.ovm";
       input.onchange = async () => {
         const file = input.files?.[0];
         if (!file) {
@@ -205,7 +208,7 @@ export async function openProjectWithFilePicker(): Promise<{ project: Project; f
 
   const selected = await dialogOpen({
     multiple: false,
-    filters: [{ name: "OpenVMap Project", extensions: ["ovm", "json"] }],
+    filters: [{ name: "Tsuji Project", extensions: ["tsuji", "json", "ovm"] }],
   });
 
   if (!selected || typeof selected !== "string") return null;
@@ -213,7 +216,7 @@ export async function openProjectWithFilePicker(): Promise<{ project: Project; f
   const content = await readTextFile(selected);
   const project = deserializeProject(content);
   const parts = selected.split(/[\/\\]/);
-  const filename = parts[parts.length - 1] || "project_v1.ovm";
+  const filename = parts[parts.length - 1] || "project_v1.tsuji";
   return { project, filename };
 }
 
@@ -241,7 +244,7 @@ export async function saveProjectAsWithFilePicker(
 
   const filePath = await dialogSave({
     defaultPath: filename,
-    filters: [{ name: "OpenVMap Project", extensions: ["ovm"] }],
+    filters: [{ name: "Tsuji Project", extensions: ["tsuji"] }],
   });
 
   if (!filePath) return null;

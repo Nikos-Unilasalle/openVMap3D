@@ -82,6 +82,7 @@ function svgPreviewGroup(state: SvgState, loops: THREE.Vector3[][], sig: string)
         new THREE.BufferGeometry().setFromPoints(pts),
         new THREE.LineBasicMaterial({ color: SVG_PREVIEW_COLOR }),
       );
+      line.userData.isHelper = true; // editing aid — hidden in the camera view
       state.preview.add(line);
     }
   }

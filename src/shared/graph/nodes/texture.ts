@@ -352,3 +352,145 @@ export const TEXTURE_TRANSFORM_NODE: NodeDefinition = {
     return { texture };
   },
 };
+
+interface ProcTextureState {
+  texture?: THREE.CanvasTexture;
+  canvas?: HTMLCanvasElement;
+  signature?: string;
+}
+
+const procTextureCache = createNodeCache<ProcTextureState>((s) => s.texture?.dispose());
+
+function getProcState(nodeId: string): ProcTextureState {
+  let state = procTextureCache.get(nodeId);
+  if (!state) {
+    state = {};
+    procTextureCache.set(nodeId, state);
+  }
+  return state;
+}
+
+function drawProcedural(canvas: HTMLCanvasElement, type: string, colorA: THREE.Color, colorB: THREE.Color, scale: number): void {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const size = canvas.width;
+  const cells = Math.max(1, Math.round(scale));
+  const cell = size / cells;
+  const hex = (c: THREE.Color) => `#${c.getHexString()}`;
+
+  ctx.fillStyle = hex(colorA);
+  ctx.fillRect(0, 0, size, size);
+
+  if (type === "checker") {
+    ctx.fillStyle = hex(colorB);
+    for (let i = 0; i < cells; i++) {
+      for (let j = 0; j < cells; j++) {
+        if ((i + j) % 2 === 1) ctx.fillRect(i * cell, j * cell, cell + 1, cell + 1);
+      }
+    }
+  } else if (type === "stripes") {
+    ctx.fillStyle = hex(colorB);
+    for (let i = 1; i < cells; i += 2) ctx.fillRect(i * cell, 0, cell + 1, size);
+  } else if (type === "grid") {
+    ctx.strokeStyle = hex(colorB);
+    ctx.lineWidth = Math.max(1, cell * 0.12);
+    for (let i = 0; i <= cells; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * cell, 0);
+      ctx.lineTo(i * cell, size);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, i * cell);
+      ctx.lineTo(size, i * cell);
+      ctx.stroke();
+    }
+  } else if (type === "gradient") {
+    const g = ctx.createLinearGradient(0, 0, size, size);
+    g.addColorStop(0, hex(colorA));
+    g.addColorStop(1, hex(colorB));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+  } else if (type === "rings") {
+    const c = size / 2;
+    ctx.strokeStyle = hex(colorB);
+    ctx.lineWidth = Math.max(1, cell * 0.25);
+    for (let r = 1; r <= cells; r++) {
+      ctx.beginPath();
+      ctx.arc(c, c, (r / cells) * c, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  } else if (type === "noise") {
+    ctx.fillStyle = hex(colorB);
+    for (let i = 0; i < (size * size) / 8; i++) {
+      const x = Math.floor(Math.random() * size);
+      const y = Math.floor(Math.random() * size);
+      ctx.fillRect(x, y, 2, 2);
+    }
+  }
+}
+
+/** Procedural Texture node — generates a checker/gradient/stripe/… texture on a canvas. */
+export const TEXTURE_PROCEDURAL_NODE: NodeDefinition = {
+  type: "texture/procedural",
+  label: "Procedural Texture",
+  category: "texture",
+  inputs: [
+    { id: "uvScale", label: "UV Scale", type: "vector" },
+    { id: "uvOffset", label: "UV Offset", type: "vector" },
+  ],
+  outputs: [{ id: "texture", label: "Texture", type: "texture" }],
+  defaultParams: {
+    type: "checker",
+    colorA: new THREE.Color(0xffffff),
+    colorB: new THREE.Color(0x222222),
+    scale: 8,
+    resolution: 256,
+    uvScaleX: 1,
+    uvScaleY: 1,
+    uvOffsetX: 0,
+    uvOffsetY: 0,
+  },
+  dynamicParamFields: () => [
+    { id: "type", label: "Pattern", kind: "select", options: ["checker", "gradient", "stripes", "grid", "rings", "noise"] },
+    { id: "colorA", label: "Color A", kind: "color" },
+    { id: "colorB", label: "Color B", kind: "color" },
+    { id: "scale", label: "Scale / Density", kind: "number", step: 1 },
+    { id: "resolution", label: "Resolution (px)", kind: "number", step: 64 },
+  ],
+  evaluate: (inputs, params, ctx) => {
+    const state = getProcState(ctx.nodeId);
+    if (typeof document === "undefined") return { texture: null };
+
+    const type = String(params.type || "checker");
+    const resolution = Math.max(16, Math.min(1024, Math.round(Number(params.resolution) || 256)));
+    const scale = Math.max(1, Number(params.scale) || 8);
+    const colorA = asColor(params.colorA, new THREE.Color(0xffffff));
+    const colorB = asColor(params.colorB, new THREE.Color(0x222222));
+
+    if (!state.canvas) state.canvas = document.createElement("canvas");
+    const sig = JSON.stringify([type, resolution, scale, colorA.getHexString(), colorB.getHexString()]);
+    if (sig !== state.signature) {
+      state.signature = sig;
+      state.canvas.width = resolution;
+      state.canvas.height = resolution;
+      drawProcedural(state.canvas, type, colorA, colorB, scale);
+      if (!state.texture) {
+        state.texture = new THREE.CanvasTexture(state.canvas);
+        state.texture.wrapS = THREE.RepeatWrapping;
+        state.texture.wrapT = THREE.RepeatWrapping;
+        state.texture.colorSpace = THREE.SRGBColorSpace;
+      } else {
+        state.texture.image = state.canvas;
+        state.texture.needsUpdate = true;
+      }
+    }
+
+    // UV tiling / offset, like the image texture node.
+    if (inputs.uvScale instanceof THREE.Vector3) state.texture!.repeat.set(inputs.uvScale.x, inputs.uvScale.y);
+    else state.texture!.repeat.set(Number(params.uvScaleX) || 1, Number(params.uvScaleY) || 1);
+    if (inputs.uvOffset instanceof THREE.Vector3) state.texture!.offset.set(inputs.uvOffset.x, inputs.uvOffset.y);
+    else state.texture!.offset.set(Number(params.uvOffsetX) || 0, Number(params.uvOffsetY) || 0);
+
+    return { texture: state.texture };
+  },
+};

@@ -269,6 +269,8 @@ function getCurvePreviewLine(state: CurveNodeState, nodeId: string, curve: THREE
       new THREE.LineBasicMaterial({ color: CURVE_PREVIEW_COLOR }),
     );
     state.previewLine.userData.nodeId = nodeId;
+    // An editing aid — hidden in the camera/output view (see Viewport.tsx).
+    state.previewLine.userData.isHelper = true;
   }
   const points = curve.getPoints(128);
   const sig = JSON.stringify(points.map((p) => [p.x, p.y, p.z]));

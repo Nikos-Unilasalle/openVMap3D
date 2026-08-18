@@ -1,11 +1,21 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { EvalContext } from "../types";
-import { TEXTURE_IMAGE_NODE, TEXTURE_PLANE_NODE, TEXTURE_TRANSFORM_NODE } from "./texture";
+import { TEXTURE_IMAGE_NODE, TEXTURE_PLANE_NODE, TEXTURE_PROCEDURAL_NODE, TEXTURE_TRANSFORM_NODE } from "./texture";
 
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "tex-test-1" };
 
 describe("TEXTURE NODES", () => {
+  it("TEXTURE_PROCEDURAL_NODE registers patterns and degrades gracefully without a DOM", () => {
+    expect(TEXTURE_PROCEDURAL_NODE.type).toBe("texture/procedural");
+    const fields = TEXTURE_PROCEDURAL_NODE.dynamicParamFields!({ id: "p", type: "texture/procedural", position: { x: 0, y: 0 }, params: {} } as never);
+    const typeField = fields.find((f) => f.id === "type") as { options?: string[] };
+    expect(typeField.options).toEqual(expect.arrayContaining(["checker", "gradient", "stripes", "grid", "rings", "noise"]));
+    // Node environment has no `document` → evaluate returns a null texture, not a crash.
+    const res = TEXTURE_PROCEDURAL_NODE.evaluate({}, TEXTURE_PROCEDURAL_NODE.defaultParams, CTX);
+    expect(res.texture).toBeNull();
+  });
+
   it("TEXTURE_IMAGE_NODE evaluates fallback empty texture", () => {
     const res = TEXTURE_IMAGE_NODE.evaluate({}, TEXTURE_IMAGE_NODE.defaultParams, CTX);
     expect(res.texture).toBeInstanceOf(THREE.Texture);

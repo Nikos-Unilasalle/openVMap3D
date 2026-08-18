@@ -830,12 +830,13 @@ function GraphEditorContent({
   }, [getSelectedNodeInstances, graph.connections, graph.keyframes]);
 
   const pasteClipboard = useCallback(
-    (offset = true) => {
+    (offset: number | boolean = 30) => {
       const clip = getGraphClipboard();
       if (!clip || clip.nodes.length === 0) return;
 
       const { nodes: clipNodes, connections: clipConns, keyframes: clipKeyframes } = clip;
       const idMap = new Map<string, string>();
+      const px = offset === true ? 30 : offset === false ? 0 : offset;
 
       const newInstances: NodeInstance[] = clipNodes.map((n: NodeInstance) => {
         const newId = randomId();
@@ -843,9 +844,7 @@ function GraphEditorContent({
         return {
           id: newId,
           type: n.type,
-          position: offset
-            ? { x: n.position.x + 30, y: n.position.y + 30 }
-            : { x: n.position.x, y: n.position.y },
+          position: { x: n.position.x + px, y: n.position.y + px },
           params: cloneParams(n.params),
         };
       });
@@ -936,7 +935,8 @@ function GraphEditorContent({
 
   const duplicateSelected = useCallback(() => {
     copySelected();
-    pasteClipboard(false);
+    // In front of the original (selected) but nudged down-right so it's visible.
+    pasteClipboard(24);
   }, [copySelected, pasteClipboard]);
 
   useEffect(() => {

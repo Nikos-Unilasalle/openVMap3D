@@ -104,8 +104,8 @@ export const TopBar: React.FC<TopBarProps> = ({
     ) {
       return;
     }
-    onLoadProject(emptyProject(), "project_v1.ovm");
-    onFilenameChange("project_v1.ovm", null);
+    onLoadProject(emptyProject(), "project_v1.tsuji");
+    onFilenameChange("project_v1.tsuji", null);
     showToast("Nouveau graph créé !");
   };
 
@@ -204,7 +204,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         </button>
 
         {/* LOAD */}
-        <button className="top-bar-button top-bar-button-load" onClick={handleLoadClick} title="Charger un projet (.ovm)">
+        <button className="top-bar-button top-bar-button-load" onClick={handleLoadClick} title="Charger un projet (.tsuji)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
             <line x1="12" y1="11" x2="12" y2="17" />
@@ -214,7 +214,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         </button>
 
         {/* SAVE */}
-        <button className="top-bar-button top-bar-button-save" onClick={handleSave} title="Sauvegarder (.ovm)">
+        <button className="top-bar-button top-bar-button-save" onClick={handleSave} title="Sauvegarder (.tsuji)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
             <polyline points="17 21 17 13 7 13 7 21" />
@@ -224,7 +224,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         </button>
 
         {/* SAVE AS */}
-        <button className="top-bar-button top-bar-button-save-as" onClick={handleSaveAs} title="Sauvegarder sous (.ovm)">
+        <button className="top-bar-button top-bar-button-save-as" onClick={handleSaveAs} title="Sauvegarder sous (.tsuji)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
             <polyline points="17 21 17 13 7 13 7 21" />
@@ -236,7 +236,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         </button>
 
         {/* INCREMENTAL SAVE */}
-        <button className="top-bar-button top-bar-button-inc" onClick={handleIncrementalSave} title="Sauvegarde incrémentale (.ovm)">
+        <button className="top-bar-button top-bar-button-inc" onClick={handleIncrementalSave} title="Sauvegarde incrémentale (.tsuji)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
             <polyline points="17 21 17 13 7 13 7 21" />
