@@ -370,13 +370,129 @@ function getProcState(nodeId: string): ProcTextureState {
   return state;
 }
 
-function drawProcedural(canvas: HTMLCanvasElement, type: string, colorA: THREE.Color, colorB: THREE.Color, scale: number): void {
+/** Deterministic PRNG so a pattern stays stable for a given seed. */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Seeded 2D lattice hash → 0..1, used for value noise / voronoi sites. */
+function hash2(ix: number, iy: number, seed: number): number {
+  let h = (ix * 374761393 + iy * 668265263 + seed * 1274126177) | 0;
+  h = (h ^ (h >> 13)) * 1274126177;
+  return ((h ^ (h >> 16)) >>> 0) / 4294967296;
+}
+
+function valueNoise(x: number, y: number, seed: number): number {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const fx = x - ix;
+  const fy = y - iy;
+  const ux = fx * fx * (3 - 2 * fx);
+  const uy = fy * fy * (3 - 2 * fy);
+  const a = hash2(ix, iy, seed);
+  const b = hash2(ix + 1, iy, seed);
+  const c = hash2(ix, iy + 1, seed);
+  const d = hash2(ix + 1, iy + 1, seed);
+  return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+}
+
+function fbm(x: number, y: number, seed: number, octaves: number): number {
+  let amp = 0.5;
+  let freq = 1;
+  let sum = 0;
+  let norm = 0;
+  for (let o = 0; o < octaves; o++) {
+    sum += amp * valueNoise(x * freq, y * freq, seed + o * 101);
+    norm += amp;
+    amp *= 0.5;
+    freq *= 2;
+  }
+  return norm > 0 ? sum / norm : 0;
+}
+
+const lerpN = (a: number, b: number, t: number) => a + (b - a) * t;
+
+function colorAt(a: THREE.Color, b: THREE.Color, t: number): [number, number, number] {
+  return [
+    Math.round(lerpN(a.r, b.r, t) * 255),
+    Math.round(lerpN(a.g, b.g, t) * 255),
+    Math.round(lerpN(a.b, b.b, t) * 255),
+  ];
+}
+
+/** Fills the canvas from a per-pixel RGB function via an ImageData buffer (fast for noise/voronoi). */
+function drawPerPixel(canvas: HTMLCanvasElement, fn: (x: number, y: number) => [number, number, number]): void {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const size = canvas.width;
+  const img = ctx.createImageData(size, size);
+  const d = img.data;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const [r, g, b] = fn(x, y);
+      const i = (y * size + x) * 4;
+      d[i] = r;
+      d[i + 1] = g;
+      d[i + 2] = b;
+      d[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+function drawProcedural(
+  canvas: HTMLCanvasElement,
+  type: string,
+  colorA: THREE.Color,
+  colorB: THREE.Color,
+  scale: number,
+  seed: number,
+  octaves: number,
+): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
   const size = canvas.width;
   const cells = Math.max(1, Math.round(scale));
   const cell = size / cells;
   const hex = (c: THREE.Color) => `#${c.getHexString()}`;
+
+  if (type === "perlin" || type === "voronoi" || type === "wave" || type === "noise") {
+    if (type === "perlin") {
+      const o = Math.max(1, Math.round(octaves));
+      drawPerPixel(canvas, (x, y) => colorAt(colorA, colorB, fbm(x / cell, y / cell, seed, o)));
+    } else if (type === "voronoi") {
+      const rand = mulberry32(seed);
+      const sites: { x: number; y: number }[] = [];
+      for (let i = 0; i < cells * cells; i++) sites.push({ x: rand() * size, y: rand() * size });
+      drawPerPixel(canvas, (x, y) => {
+        let minD = Infinity;
+        for (const s of sites) {
+          const dx = x - s.x;
+          const dy = y - s.y;
+          const dd = dx * dx + dy * dy;
+          if (dd < minD) minD = dd;
+        }
+        return colorAt(colorB, colorA, Math.min(1, Math.sqrt(minD) / cell));
+      });
+    } else if (type === "wave") {
+      drawPerPixel(canvas, (x, y) => {
+        const n = 0.5 + 0.5 * Math.sin((x / cell) * Math.PI * 2) * Math.sin((y / cell) * Math.PI * 2);
+        return colorAt(colorA, colorB, n);
+      });
+    } else {
+      // noise — deterministic sprinkled dots
+      const rand = mulberry32(seed);
+      drawPerPixel(canvas, () => colorAt(colorA, colorB, rand()));
+    }
+    return;
+  }
 
   ctx.fillStyle = hex(colorA);
   ctx.fillRect(0, 0, size, size);
@@ -419,13 +535,6 @@ function drawProcedural(canvas: HTMLCanvasElement, type: string, colorA: THREE.C
       ctx.arc(c, c, (r / cells) * c, 0, Math.PI * 2);
       ctx.stroke();
     }
-  } else if (type === "noise") {
-    ctx.fillStyle = hex(colorB);
-    for (let i = 0; i < (size * size) / 8; i++) {
-      const x = Math.floor(Math.random() * size);
-      const y = Math.floor(Math.random() * size);
-      ctx.fillRect(x, y, 2, 2);
-    }
   }
 }
 
@@ -444,19 +553,26 @@ export const TEXTURE_PROCEDURAL_NODE: NodeDefinition = {
     colorA: new THREE.Color(0xffffff),
     colorB: new THREE.Color(0x222222),
     scale: 8,
+    seed: 1,
+    octaves: 3,
     resolution: 256,
     uvScaleX: 1,
     uvScaleY: 1,
     uvOffsetX: 0,
     uvOffsetY: 0,
   },
-  dynamicParamFields: () => [
-    { id: "type", label: "Pattern", kind: "select", options: ["checker", "gradient", "stripes", "grid", "rings", "noise"] },
-    { id: "colorA", label: "Color A", kind: "color" },
-    { id: "colorB", label: "Color B", kind: "color" },
-    { id: "scale", label: "Scale / Density", kind: "number", step: 1 },
-    { id: "resolution", label: "Resolution (px)", kind: "number", step: 64 },
-  ],
+  dynamicParamFields: (instance) => {
+    const type = String(instance.params.type || "checker");
+    return [
+      { id: "type", label: "Pattern", kind: "select", options: ["checker", "gradient", "stripes", "grid", "rings", "wave", "perlin", "voronoi", "noise"] },
+      { id: "colorA", label: "Color A", kind: "color" },
+      { id: "colorB", label: "Color B", kind: "color" },
+      { id: "scale", label: "Scale / Density", kind: "number", step: 1 },
+      ...(type === "perlin" ? [{ id: "octaves", label: "Octaves", kind: "number", step: 1 } as const] : []),
+      { id: "seed", label: "Seed", kind: "number", step: 1 },
+      { id: "resolution", label: "Resolution (px)", kind: "number", step: 64 },
+    ];
+  },
   evaluate: (inputs, params, ctx) => {
     const state = getProcState(ctx.nodeId);
     if (typeof document === "undefined") return { texture: null };
@@ -464,16 +580,18 @@ export const TEXTURE_PROCEDURAL_NODE: NodeDefinition = {
     const type = String(params.type || "checker");
     const resolution = Math.max(16, Math.min(1024, Math.round(Number(params.resolution) || 256)));
     const scale = Math.max(1, Number(params.scale) || 8);
+    const seed = Math.floor(Number(params.seed) || 1);
+    const octaves = Math.max(1, Math.round(Number(params.octaves) || 3));
     const colorA = asColor(params.colorA, new THREE.Color(0xffffff));
     const colorB = asColor(params.colorB, new THREE.Color(0x222222));
 
     if (!state.canvas) state.canvas = document.createElement("canvas");
-    const sig = JSON.stringify([type, resolution, scale, colorA.getHexString(), colorB.getHexString()]);
+    const sig = JSON.stringify([type, resolution, scale, seed, octaves, colorA.getHexString(), colorB.getHexString()]);
     if (sig !== state.signature) {
       state.signature = sig;
       state.canvas.width = resolution;
       state.canvas.height = resolution;
-      drawProcedural(state.canvas, type, colorA, colorB, scale);
+      drawProcedural(state.canvas, type, colorA, colorB, scale, seed, octaves);
       if (!state.texture) {
         state.texture = new THREE.CanvasTexture(state.canvas);
         state.texture.wrapS = THREE.RepeatWrapping;
@@ -492,5 +610,111 @@ export const TEXTURE_PROCEDURAL_NODE: NodeDefinition = {
     else state.texture!.offset.set(Number(params.uvOffsetX) || 0, Number(params.uvOffsetY) || 0);
 
     return { texture: state.texture };
+  },
+};
+
+interface ToNormalState {
+  texture?: THREE.CanvasTexture;
+  canvas?: HTMLCanvasElement;
+  heightCanvas?: HTMLCanvasElement;
+  signature?: string;
+}
+
+const toNormalCache = createNodeCache<ToNormalState>((s) => s.texture?.dispose());
+
+function getToNormalState(nodeId: string): ToNormalState {
+  let state = toNormalCache.get(nodeId);
+  if (!state) {
+    state = {};
+    toNormalCache.set(nodeId, state);
+  }
+  return state;
+}
+
+function isDrawable(v: unknown): boolean {
+  return (
+    (typeof HTMLCanvasElement !== "undefined" && v instanceof HTMLCanvasElement) ||
+    (typeof HTMLImageElement !== "undefined" && v instanceof HTMLImageElement) ||
+    (typeof ImageBitmap !== "undefined" && v instanceof ImageBitmap) ||
+    (typeof HTMLVideoElement !== "undefined" && v instanceof HTMLVideoElement)
+  );
+}
+
+/** Texture to Normal node — derives a tangent-space normal map from a texture's luminance. */
+export const TEXTURE_TO_NORMAL_NODE: NodeDefinition = {
+  type: "texture/to_normal",
+  label: "Texture to Normal",
+  category: "texture",
+  inputs: [{ id: "texture", label: "Texture", type: "texture" }],
+  outputs: [{ id: "normal", label: "Normal Map", type: "texture" }],
+  defaultParams: { strength: 1, resolution: 256 },
+  dynamicParamFields: () => [
+    { id: "strength", label: "Strength", kind: "number", step: 0.1 },
+    { id: "resolution", label: "Resolution (px)", kind: "number", step: 64 },
+  ],
+  evaluate: (inputs, params, ctx) => {
+    const state = getToNormalState(ctx.nodeId);
+    if (typeof document === "undefined") return { normal: null };
+    const source = inputs.texture instanceof THREE.Texture ? inputs.texture : null;
+    if (!source || !isDrawable(source.image)) return { normal: null };
+
+    const strength = Math.max(0, Number(params.strength) || 1);
+    const resolution = Math.max(16, Math.min(1024, Math.round(Number(params.resolution) || 256)));
+    const sig = JSON.stringify([strength, resolution, source.uuid, source.version]);
+    if (sig !== state.signature) {
+      state.signature = sig;
+      if (!state.heightCanvas) state.heightCanvas = document.createElement("canvas");
+      if (!state.canvas) state.canvas = document.createElement("canvas");
+
+      const hc = state.heightCanvas;
+      hc.width = resolution;
+      hc.height = resolution;
+      const hctx = hc.getContext("2d");
+      if (!hctx) return { normal: null };
+      hctx.drawImage(source.image as CanvasImageSource, 0, 0, resolution, resolution);
+      const hData = hctx.getImageData(0, 0, resolution, resolution).data;
+
+      // Grayscale height map.
+      const height = new Float32Array(resolution * resolution);
+      for (let i = 0; i < height.length; i++) {
+        height[i] = (0.299 * hData[i * 4] + 0.587 * hData[i * 4 + 1] + 0.114 * hData[i * 4 + 2]) / 255;
+      }
+
+      const nc = state.canvas;
+      nc.width = resolution;
+      nc.height = resolution;
+      const nctx = nc.getContext("2d");
+      if (!nctx) return { normal: null };
+      const nImg = nctx.createImageData(resolution, resolution);
+      const nd = nImg.data;
+      const at = (x: number, y: number) =>
+        (((y + resolution) % resolution) * resolution) + ((x + resolution) % resolution);
+      const n = new THREE.Vector3();
+      for (let y = 0; y < resolution; y++) {
+        for (let x = 0; x < resolution; x++) {
+          const dx = (height[at(x + 1, y)] - height[at(x - 1, y)]) * 0.5;
+          const dy = (height[at(x, y + 1)] - height[at(x, y - 1)]) * 0.5;
+          n.set(-dx * strength, -dy * strength, 1).normalize();
+          const i = (y * resolution + x) * 4;
+          nd[i] = (n.x * 0.5 + 0.5) * 255;
+          nd[i + 1] = (n.y * 0.5 + 0.5) * 255;
+          nd[i + 2] = (n.z * 0.5 + 0.5) * 255;
+          nd[i + 3] = 255;
+        }
+      }
+      nctx.putImageData(nImg, 0, 0);
+
+      if (!state.texture) {
+        state.texture = new THREE.CanvasTexture(nc);
+        state.texture.wrapS = THREE.RepeatWrapping;
+        state.texture.wrapT = THREE.RepeatWrapping;
+        state.texture.colorSpace = THREE.LinearSRGBColorSpace; // normal maps stay linear
+      } else {
+        state.texture.image = nc;
+        state.texture.needsUpdate = true;
+      }
+    }
+
+    return { normal: state.texture };
   },
 };

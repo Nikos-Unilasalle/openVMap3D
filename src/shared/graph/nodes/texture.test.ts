@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { EvalContext } from "../types";
-import { TEXTURE_IMAGE_NODE, TEXTURE_PLANE_NODE, TEXTURE_PROCEDURAL_NODE, TEXTURE_TRANSFORM_NODE } from "./texture";
+import { TEXTURE_IMAGE_NODE, TEXTURE_PLANE_NODE, TEXTURE_PROCEDURAL_NODE, TEXTURE_TO_NORMAL_NODE, TEXTURE_TRANSFORM_NODE } from "./texture";
 
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "tex-test-1" };
 
@@ -10,10 +10,21 @@ describe("TEXTURE NODES", () => {
     expect(TEXTURE_PROCEDURAL_NODE.type).toBe("texture/procedural");
     const fields = TEXTURE_PROCEDURAL_NODE.dynamicParamFields!({ id: "p", type: "texture/procedural", position: { x: 0, y: 0 }, params: {} } as never);
     const typeField = fields.find((f) => f.id === "type") as { options?: string[] };
-    expect(typeField.options).toEqual(expect.arrayContaining(["checker", "gradient", "stripes", "grid", "rings", "noise"]));
+    expect(typeField.options).toEqual(
+      expect.arrayContaining(["checker", "gradient", "stripes", "grid", "rings", "wave", "perlin", "voronoi", "noise"]),
+    );
+    // Octaves only appears when perlin is selected.
+    const perlinFields = TEXTURE_PROCEDURAL_NODE.dynamicParamFields!({ id: "p", type: "texture/procedural", position: { x: 0, y: 0 }, params: { type: "perlin" } } as never);
+    expect(perlinFields.some((f) => f.id === "octaves")).toBe(true);
     // Node environment has no `document` → evaluate returns a null texture, not a crash.
     const res = TEXTURE_PROCEDURAL_NODE.evaluate({}, TEXTURE_PROCEDURAL_NODE.defaultParams, CTX);
     expect(res.texture).toBeNull();
+  });
+
+  it("TEXTURE_TO_NORMAL_NODE registers and degrades gracefully without a DOM", () => {
+    expect(TEXTURE_TO_NORMAL_NODE.type).toBe("texture/to_normal");
+    const res = TEXTURE_TO_NORMAL_NODE.evaluate({ texture: new THREE.Texture() }, TEXTURE_TO_NORMAL_NODE.defaultParams, CTX);
+    expect(res.normal).toBeNull();
   });
 
   it("TEXTURE_IMAGE_NODE evaluates fallback empty texture", () => {
