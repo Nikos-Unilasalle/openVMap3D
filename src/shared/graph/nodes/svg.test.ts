@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, test } from "vitest";
 import { EvalContext } from "../types";
-import { pathToCurve3, SVG_TO_CURVES_NODE, transformCurve3 } from "./svg";
+import { pathToCurve3, SVG_TO_CURVES_NODE, SVG_TO_MESH_NODE, transformCurve3 } from "./svg";
 
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "svg-test" };
 
@@ -22,6 +22,27 @@ describe("SVG_TO_CURVES_NODE", () => {
     expect(preview).toBeInstanceOf(THREE.Group);
     // matrix = base(location) × delta(matrix input) → x translation = 4.
     const pos = new THREE.Vector3().setFromMatrixPosition(preview.matrix);
+    expect(pos.x).toBeCloseTo(4);
+  });
+});
+
+describe("SVG_TO_MESH_NODE", () => {
+  test("registers as curve/svg_mesh", () => {
+    expect(SVG_TO_MESH_NODE.type).toBe("curve/svg_mesh");
+    expect(SVG_TO_MESH_NODE.label).toBe("SVG to Mesh");
+  });
+
+  test("empty until a file is loaded, still carries the native pose", () => {
+    const res = SVG_TO_MESH_NODE.evaluate(
+      { matrix: new THREE.Matrix4().makeTranslation(3, 0, 0) },
+      { ...SVG_TO_MESH_NODE.defaultParams, location: new THREE.Vector3(1, 0, 0) },
+      { ...CTX, nodeId: "svg-mesh-empty" }
+    );
+    const group = res.geometry as THREE.Group;
+    expect(group).toBeInstanceOf(THREE.Group);
+    expect(group.children.length).toBe(0);
+    // matrix = base(location) × delta(matrix input) → x translation = 4.
+    const pos = new THREE.Vector3().setFromMatrixPosition(group.matrix);
     expect(pos.x).toBeCloseTo(4);
   });
 });

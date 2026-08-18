@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { SVGLoader } from "three/examples/jsm/loaders/SVGLoader.js";
+import type { StrokeStyle } from "three/examples/jsm/loaders/SVGLoader.js";
 import { createNodeCache } from "../nodeCaches";
 import { NodeDefinition } from "../types";
 import {
@@ -562,6 +563,292 @@ export const SVG_TO_SOLID_NODE: NodeDefinition = {
     const matParams = extractMaterialParams(inputs, params);
     const texParams = extractTextureParams(inputs, params, ctx.nodeId);
     applyMaterialParams(mesh, matParams, THREE.DoubleSide, texParams);
+
+    return primitiveOutputs(group);
+  },
+};
+
+interface FaithfulMaterial {
+  mat: THREE.MeshBasicMaterial;
+  /** The material's own opacity baked by the SVG loader (fill/stroke-opacity × opacity). */
+  baseOpacity: number;
+}
+
+interface SvgMeshState {
+  /** Raw parsed paths (SVG units, Y down) — fills via toShapes(), strokes via subPaths. */
+  paths: THREE.ShapePath[];
+  group?: THREE.Group;
+  geometrySignature?: string;
+  /** Every fill/stroke mesh the group currently owns, for per-frame material work. */
+  meshRefs: THREE.Mesh[];
+  /** The SVG-derived materials, kept separate so faithful mode can restore them after an override. */
+  faithful: FaithfulMaterial[];
+}
+
+const svgMeshCache = createNodeCache<SvgMeshState>((s) => {
+  if (s.group) {
+    s.group.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.geometry.dispose();
+        if (!Array.isArray(child.material) && child.material) {
+          (child.material as THREE.Material).dispose();
+        }
+      }
+    });
+  }
+  s.meshRefs = [];
+  s.faithful = [];
+});
+
+function getSvgMeshState(nodeId: string): SvgMeshState {
+  let state = svgMeshCache.get(nodeId);
+  if (!state) {
+    state = { paths: [], meshRefs: [], faithful: [] };
+    svgMeshCache.set(nodeId, state);
+  }
+  return state;
+}
+
+/**
+ * SVG to Mesh node — faithfully rebuilds an .svg the way three.js's
+ * webgl_loader_svg example does: filled regions use the SVG's fill colour
+ * (createFillMaterial + toShapes) and outlines are stroked geometry with real
+ * caps/joins (createStrokeMaterial + pointsToStroke). Fills lie flat by default
+ * and can be extruded along Z via `depth`; strokes always sit on the front face.
+ */
+export const SVG_TO_MESH_NODE: NodeDefinition = {
+  type: "curve/svg_mesh",
+  label: "SVG to Mesh",
+  category: "curve",
+  inputs: [...COMMON_PRIMITIVE_INPUTS],
+  outputs: [...COMMON_PRIMITIVE_OUTPUTS],
+  defaultParams: {
+    visible: 1,
+    location: new THREE.Vector3(0, 0, 0),
+    rotation: new THREE.Vector3(0, 0, 0),
+    scale: new THREE.Vector3(1, 1, 1),
+    filePath: "",
+    svgScale: 1,
+    normalize: false,
+    depth: 0,
+    bevelEnabled: false,
+    bevelSize: 0.02,
+    bevelThickness: 0.02,
+    bevelSegments: 1,
+    curveSegments: 24,
+    drawFills: true,
+    drawStrokes: true,
+    strokeWidthScale: 1,
+    opacity: 1,
+    wireframe: 0,
+  },
+  dynamicParamFields: () => [
+    {
+      id: "filePath",
+      label: "SVG File",
+      kind: "file",
+      accept: [".svg"],
+      onLoaded: (nodeId, _path, content) => {
+        const state = getSvgMeshState(nodeId);
+        try {
+          state.paths = new SVGLoader().parse(String(content)).paths;
+        } catch (err) {
+          console.error("Failed to parse SVG:", err);
+          state.paths = [];
+        }
+        state.geometrySignature = undefined;
+      },
+    },
+    { id: "svgScale", label: "Scale", kind: "number", step: 0.1 },
+    { id: "normalize", label: "Normalize (fit unit box)", kind: "boolean" },
+    { id: "depth", label: "Depth (extrude)", kind: "number", step: 0.02 },
+    { id: "bevelEnabled", label: "Bevel", kind: "boolean" },
+    { id: "bevelSize", label: "Bevel Size", kind: "number", step: 0.01 },
+    { id: "bevelThickness", label: "Bevel Thickness", kind: "number", step: 0.01 },
+    { id: "bevelSegments", label: "Bevel Segments", kind: "number", step: 1 },
+    { id: "curveSegments", label: "Curve Segments", kind: "number", step: 4 },
+    { id: "drawFills", label: "Draw Fills", kind: "boolean" },
+    { id: "drawStrokes", label: "Draw Strokes", kind: "boolean" },
+    { id: "strokeWidthScale", label: "Stroke Width", kind: "number", step: 0.05 },
+    { id: "opacity", label: "Opacity", kind: "number", step: 0.05, group: "Material" },
+    { id: "wireframe", label: "Wireframe", kind: "boolean", group: "Material" },
+    { id: "location", label: "Location", kind: "vector", group: "Transform" },
+    { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true, group: "Transform" },
+    { id: "scale", label: "Scale", kind: "vector", group: "Transform" },
+  ],
+  evaluate: (inputs, params, ctx) => {
+    const state = getSvgMeshState(ctx.nodeId);
+    const paths = state.paths;
+
+    const depth = Math.max(0, num(inputs.depth, params.depth));
+    const svgScale = Math.max(0, num(params.svgScale, 1));
+    const normalize = Boolean(params.normalize);
+    const drawFills = Boolean(params.drawFills);
+    const drawStrokes = Boolean(params.drawStrokes);
+    const strokeWidthScale = Math.max(0, num(params.strokeWidthScale, 1));
+    const bevelEnabled = Boolean(params.bevelEnabled);
+    const bevelSize = Math.max(0, num(params.bevelSize, 0.02));
+    const bevelThickness = Math.max(0, num(params.bevelThickness, 0.02));
+    const bevelSegments = Math.max(1, Math.round(num(params.bevelSegments, 1)));
+    const curveSegments = Math.max(2, Math.round(num(params.curveSegments, 24)));
+
+    // SVG-space bbox over fills AND stroke centre-lines (strokes poke out by
+    // half their width, close enough for centring).
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    if (paths.length > 0) {
+      for (const path of paths) {
+        for (const shape of path.toShapes()) {
+          for (const p of shape.getPoints(64)) {
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.y > maxY) maxY = p.y;
+          }
+        }
+        for (const subPath of path.subPaths) {
+          for (const p of subPath.getPoints()) {
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.y > maxY) maxY = p.y;
+          }
+        }
+      }
+    }
+
+    let s = svgScale;
+    let ox = 0;
+    let oy = 0;
+    if (normalize) {
+      const size = Math.max(maxX - minX, maxY - minY);
+      if (Number.isFinite(size) && size > 1e-9) {
+        const ns = svgScale / size;
+        ox = -((minX + maxX) / 2) * ns;
+        oy = ((minY + maxY) / 2) * ns;
+        s = ns;
+      }
+    }
+
+    // Wiring any material/texture/normal socket switches the node into override
+    // mode: the per-path SVG materials give way to the standard material params.
+    const override = Boolean(inputs.material) || Boolean(inputs.texture) || Boolean(inputs.normal);
+
+    if (!state.group) {
+      state.group = new THREE.Group();
+      state.group.userData.nodeId = ctx.nodeId;
+    }
+    const group = state.group;
+
+    const signature = JSON.stringify([
+      paths.length,
+      depth,
+      bevelEnabled,
+      bevelSize,
+      bevelThickness,
+      bevelSegments,
+      curveSegments,
+      drawFills,
+      drawStrokes,
+      strokeWidthScale,
+      s,
+      ox,
+      oy,
+      override,
+    ]);
+    if (signature !== state.geometrySignature) {
+      state.geometrySignature = signature;
+
+      group.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          child.geometry.dispose();
+          if (!Array.isArray(child.material) && child.material) {
+            (child.material as THREE.Material).dispose();
+          }
+        }
+      });
+      group.clear();
+      state.meshRefs = [];
+      state.faithful = [];
+
+      let renderOrder = 0;
+      for (const path of paths) {
+        if (drawFills) {
+          const fillMat = SVGLoader.createFillMaterial(path);
+          if (fillMat) {
+            for (const shape of path.toShapes()) {
+              const geo =
+                depth > 0
+                  ? new THREE.ExtrudeGeometry(shape, {
+                      depth,
+                      bevelEnabled,
+                      bevelThickness,
+                      bevelSize,
+                      bevelSegments,
+                      curveSegments,
+                      UVGenerator: normalizedUVGenerator(minX, maxX, minY, maxY, depth),
+                    })
+                  : new THREE.ShapeGeometry(shape, curveSegments);
+              // SVG (x, y-down) -> world (x*s+ox, -y*s+oy, z*s): scale + flip Y.
+              geo.applyMatrix4(new THREE.Matrix4().set(s, 0, 0, 0, 0, -s, 0, 0, 0, 0, s, 0, ox, oy, 0, 1));
+              const mesh = new THREE.Mesh(geo, fillMat);
+              mesh.renderOrder = renderOrder++;
+              mesh.castShadow = depth > 0;
+              mesh.receiveShadow = true;
+              mesh.userData.nodeId = ctx.nodeId;
+              group.add(mesh);
+              state.meshRefs.push(mesh);
+              state.faithful.push({ mat: fillMat, baseOpacity: fillMat.opacity });
+            }
+          }
+        }
+        if (drawStrokes) {
+          const strokeMat = SVGLoader.createStrokeMaterial(path);
+          if (strokeMat) {
+            const style = { ...(path.userData.style || {}) } as StrokeStyle;
+            if (strokeWidthScale !== 1) {
+              const w = Number(style.strokeWidth);
+              if (Number.isFinite(w) && w > 0) style.strokeWidth = w * strokeWidthScale;
+            }
+            for (const subPath of path.subPaths) {
+              const geo = SVGLoader.pointsToStroke(subPath.getPoints(), style);
+              if (geo) {
+                // Strokes live at z = 0 and sit on the top face of an extrusion.
+                const z = depth > 0 ? depth * s : 0;
+                geo.applyMatrix4(new THREE.Matrix4().set(s, 0, 0, 0, 0, -s, 0, 0, 0, 0, s, 0, ox, oy, z, 1));
+                const mesh = new THREE.Mesh(geo, strokeMat);
+                mesh.renderOrder = renderOrder++;
+                mesh.receiveShadow = true;
+                mesh.userData.nodeId = ctx.nodeId;
+                group.add(mesh);
+                state.meshRefs.push(mesh);
+                state.faithful.push({ mat: strokeMat, baseOpacity: strokeMat.opacity });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    applySvgPose(group, inputs, params, ctx);
+
+    if (override) {
+      const matParams = extractMaterialParams(inputs, params);
+      const texParams = extractTextureParams(inputs, params, ctx.nodeId);
+      for (const mesh of state.meshRefs) {
+        applyMaterialParams(mesh, matParams, THREE.DoubleSide, texParams);
+      }
+    } else {
+      const opacity = Math.min(1, Math.max(0, num(inputs.opacity, params.opacity)));
+      const wireframe = Boolean(inputs.wireframe !== undefined ? inputs.wireframe : params.wireframe);
+      for (const { mat, baseOpacity } of state.faithful) {
+        mat.opacity = Math.min(1, Math.max(0, baseOpacity * opacity));
+        mat.wireframe = wireframe;
+        mat.needsUpdate = true;
+      }
+    }
 
     return primitiveOutputs(group);
   },

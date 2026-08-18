@@ -66,7 +66,7 @@ import { SUBDIVIDE_NODE } from "./subdivide";
 import { WIGGLE_NODE, WIGGLE_NUMBER_NODE, WIGGLE_VECTOR_NODE } from "./wiggle";
 import { MATERIAL_NODE } from "./material";
 import { HUB_TEXT_NODE, HUB_IMAGE_NODE } from "./hub";
-import { SVG_TO_CURVES_NODE, SVG_TO_SOLID_NODE } from "./svg";
+import { SVG_TO_CURVES_NODE, SVG_TO_MESH_NODE, SVG_TO_SOLID_NODE } from "./svg";
 
 /** The starter catalogue — grows node by node; BIBLE.md has the full target list. */
 export const STARTER_NODES = [
@@ -209,6 +209,7 @@ export const STARTER_NODES = [
   HUB_TEXT_NODE,
   HUB_IMAGE_NODE,
   SVG_TO_CURVES_NODE,
+  SVG_TO_MESH_NODE,
   SVG_TO_SOLID_NODE,
 ];
 
