@@ -71,12 +71,16 @@ export const MotionGraph: React.FC<MotionGraphProps> = ({
   const svgRef = useRef<SVGSVGElement>(null);
   const [drag, setDrag] = useState<DraggingKey | null>(null);
 
-  if (!nodeId) return null;
+  if (!nodeId) {
+    return <div className="motion-graph-empty">Select a node on the canvas to see its value curves.</div>;
+  }
   const nodeKeys = graph.keyframes?.[nodeId] || {};
   const tracks = Object.entries(nodeKeys)
     .map(([key, list]) => ({ key, list }))
     .filter((t) => t.list.some((k) => Number.isFinite(Number(k.value))));
-  if (tracks.length === 0) return null;
+  if (tracks.length === 0) {
+    return <div className="motion-graph-empty">No keyframed parameters on this node yet.</div>;
+  }
 
   const ppf = Math.max(0.1, pixelsPerFrame);
   const W = X_PAD + totalFrames * ppf;

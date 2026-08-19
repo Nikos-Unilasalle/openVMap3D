@@ -4,7 +4,7 @@ import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { NodeDefinition } from "../types";
 import { createNodeCache } from "../nodeCaches";
-import { asColor, numberInput } from "./object";
+import { asColor, numberInput, primitiveOutputs } from "./object";
 
 interface TrailSample {
   t: number;
@@ -48,7 +48,10 @@ export const TRAIL_NODE: NodeDefinition = {
   label: "Trail",
   category: "structure",
   inputs: [
-    { id: "geometry", label: "Geometry", type: "geometry", owns: true },
+    // NOT owns: the trail only *reads* the object's position, like a Look At
+    // target — declaring ownership would yank the source object out of the
+    // scene whenever it isn't merged somewhere else too.
+    { id: "geometry", label: "Geometry", type: "geometry" },
     { id: "time", label: "Time", type: "value" },
     { id: "history", label: "History (s)", type: "value" },
     { id: "segments", label: "Segments", type: "value" },
@@ -106,6 +109,8 @@ export const TRAIL_NODE: NodeDefinition = {
 
     if (!state.line) {
       state.line = new Line2(new LineGeometry(), material);
+      state.line.matrixAutoUpdate = false;
+      state.line.matrix.identity();
       state.line.frustumCulled = false;
       state.line.userData.nodeId = ctx.nodeId;
     }
@@ -139,6 +144,6 @@ export const TRAIL_NODE: NodeDefinition = {
       (state.line.geometry as LineGeometry).setFromPoints([]);
     }
 
-    return { geometry: state.line };
+    return primitiveOutputs(state.line);
   },
 };

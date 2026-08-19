@@ -337,6 +337,21 @@
   border-bottom: 1px solid #1e293b;
   cursor: pointer;
   user-select: none;
+  position: relative;
+  z-index: 5;
+}
+
+.motion-graph-empty {
+  flex: 0 0 auto;
+  width: 100%;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #64748b;
+  background: #0b1120;
+  border-bottom: 1px solid #1e293b;
 }
 
 .motion-graph-collapse {

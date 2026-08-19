@@ -827,10 +827,10 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
           <span>MOTION GRAPH</span>
           <span className="motion-graph-collapse">{motionGraphOpen ? "▼" : "▲"}</span>
         </div>
-        {motionGraphOpen && selectedNodeIds[0] && (
+        {motionGraphOpen && (
           <MotionGraph
             graph={graph}
-            nodeId={selectedNodeIds[0]}
+            nodeId={selectedNodeIds[0] ?? null}
             currentFrame={currentFrame}
             totalFrames={totalFrames}
             pixelsPerFrame={pixelsPerFrame}
