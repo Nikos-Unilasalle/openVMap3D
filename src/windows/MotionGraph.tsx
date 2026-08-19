@@ -156,10 +156,19 @@ export const MotionGraph: React.FC<MotionGraphProps> = ({
             const range = ranges[i];
             const laneY = i * LANE_H;
             const kfs = t.list;
+            // Effective keyframes with the dragged one snapped to its live
+            // position, sorted — the curve follows the pointer in real time.
+            const effective = kfs
+              .map((k) =>
+                drag && drag.track === t.key && drag.oldFrame === k.frame
+                  ? { ...k, frame: drag.frame, value: drag.value }
+                  : k,
+              )
+              .sort((a, b) => a.frame - b.frame);
             let pathD = "";
-            for (let s = 0; s < kfs.length - 1; s++) {
-              const k1 = kfs[s];
-              const k2 = kfs[s + 1];
+            for (let s = 0; s < effective.length - 1; s++) {
+              const k1 = effective[s];
+              const k2 = effective[s + 1];
               const v1 = Number(k1.value);
               const v2 = Number(k2.value);
               // The first keyframe's easing shapes the first segment (see
