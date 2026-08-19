@@ -370,7 +370,7 @@ export const HUB_TEXT_NODE: NodeDefinition = {
   },
 };
 
-const hubImageCache = createNodeCache<{ url?: string; width?: number }>((s) => {
+const hubImageCache = createNodeCache<{ url?: string; width?: number; lastPath?: string }>((s) => {
   if (s.url) {
     try {
       URL.revokeObjectURL(s.url);
@@ -378,7 +378,7 @@ const hubImageCache = createNodeCache<{ url?: string; width?: number }>((s) => {
   }
 });
 
-function getImageState(nodeId: string): { url?: string; width?: number } {
+function getImageState(nodeId: string): { url?: string; width?: number; lastPath?: string } {
   let s = hubImageCache.get(nodeId);
   if (!s) {
     s = {};
@@ -393,6 +393,38 @@ const HUB_IMAGE_MIME: Record<string, string> = {
   jpeg: "image/jpeg",
   webp: "image/webp",
 };
+
+/** Fire onLoaded-style image decode from raw bytes — shared by the file picker and disk reloads. */
+function loadImageBytes(nodeId: string, path: string, content: Uint8Array | string): void {
+  const state = getImageState(nodeId);
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  const blob = new Blob([content], { type: HUB_IMAGE_MIME[ext] || "image/png" });
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.onload = () => {
+    state.url = url;
+    state.width = img.naturalWidth || undefined;
+  };
+  img.src = url;
+}
+
+/** Re-read a hub image from disk when its filePath param changed (duplicated nodes, reopened projects). */
+function reloadImageFromDisk(nodeId: string, path: string): void {
+  if (typeof path !== "string" || !path) return;
+  const state = getImageState(nodeId);
+  if (state.lastPath === path && state.url) return;
+  state.lastPath = path;
+  // @tauri-apps/plugin-fs is only available inside the desktop app; the browser
+  // build resolves it at runtime, guarded by isTauri() exactly like rehydrateFiles.
+  import("@tauri-apps/plugin-fs")
+    .then(async ({ readFile }) => {
+      const content = await readFile(path);
+      loadImageBytes(nodeId, path, content);
+    })
+    .catch(() => {
+      // Not Tauri / file unavailable — the user must re-pick in the browser.
+    });
+}
 
 /**
  * HUD Image node — a screen-space 2D image (JPG/PNG with alpha) rendered over
@@ -444,16 +476,14 @@ export const HUB_IMAGE_NODE: NodeDefinition = {
       kind: "file",
       accept: [".png", ".jpg", ".jpeg", ".webp"],
       onLoaded: (nodeId, path, content) => {
-        const state = getImageState(nodeId);
-        const ext = path.split(".").pop()?.toLowerCase() ?? "";
-        const blob = new Blob([content], { type: HUB_IMAGE_MIME[ext] || "image/png" });
-        const url = URL.createObjectURL(blob);
-        const img = new Image();
-        img.onload = () => {
-          state.url = url;
-          state.width = img.naturalWidth || undefined;
-        };
-        img.src = url;
+        if (!path) {
+          const state = getImageState(nodeId);
+          state.url = undefined;
+          state.width = undefined;
+          return;
+        }
+        getImageState(nodeId).lastPath = path;
+        loadImageBytes(nodeId, path, content);
       },
     },
     { id: "x", label: "Position X (px)", kind: "number", step: 0.01 },
@@ -482,6 +512,13 @@ export const HUB_IMAGE_NODE: NodeDefinition = {
   evaluate: (inputs, params, ctx) => {
     const state = getHubState(ctx.nodeId);
     const imgState = getImageState(ctx.nodeId);
+
+    // A duplicated node (or a reopened project) carries a filePath but the
+    // image itself lives in per-node memory — re-read it from disk when the
+    // path changes so the second copy isn't silently invisible.
+    if (typeof params.filePath === "string" && params.filePath && params.filePath !== imgState.lastPath) {
+      reloadImageFromDisk(ctx.nodeId, params.filePath);
+    }
 
     const cx = ctx.renderSize ? ctx.renderSize.width / 2 : 0;
     const cy = ctx.renderSize ? ctx.renderSize.height / 2 : 0;

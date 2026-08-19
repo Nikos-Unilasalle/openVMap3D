@@ -112,4 +112,58 @@ describe("HUB_IMAGE_NODE", () => {
     // No image URL loaded yet -> not rendered, but evaluate must not throw.
     expect(hud.visible).toBe(false);
   });
+
+  test("multiple HUD image nodes each keep their own loaded image and id", async () => {
+    // Mock the browser primitives the onLoaded callback uses.
+    let seq = 0;
+    vi.stubGlobal(
+      "Image",
+      class {
+        naturalWidth = 64;
+        naturalHeight = 64;
+        onload: (() => void) | null = null;
+        set src(_: string) {
+          queueMicrotask(() => this.onload?.());
+        }
+      },
+    );
+    vi.stubGlobal("URL", {
+      createObjectURL: () => `blob:img-${++seq}`,
+      revokeObjectURL: () => {},
+    });
+    vi.stubGlobal("performance", { now: () => 0 });
+
+    const fieldsA = HUB_IMAGE_NODE.dynamicParamFields!({
+      id: "hub-a",
+      type: "hub/image",
+      position: { x: 0, y: 0 },
+      params: {},
+    } as never);
+    const fileA = fieldsA.find((f) => f.id === "filePath") as any;
+    fileA.onLoaded("hub-a", "a.png", new Uint8Array([1]));
+    await Promise.resolve();
+
+    const fieldsB = HUB_IMAGE_NODE.dynamicParamFields!({
+      id: "hub-b",
+      type: "hub/image",
+      position: { x: 0, y: 0 },
+      params: {},
+    } as never);
+    const fileB = fieldsB.find((f) => f.id === "filePath") as any;
+    fileB.onLoaded("hub-b", "b.png", new Uint8Array([2]));
+    await Promise.resolve();
+
+    const hudA = HUB_IMAGE_NODE.evaluate({}, HUB_IMAGE_NODE.defaultParams, { ...CTX, nodeId: "hub-a" }).hud as any;
+    const hudB = HUB_IMAGE_NODE.evaluate({}, HUB_IMAGE_NODE.defaultParams, { ...CTX, nodeId: "hub-b" }).hud as any;
+
+    expect(hudA.id).toBe("hub-a");
+    expect(hudB.id).toBe("hub-b");
+    expect(hudA.imageUrl).toBeTruthy();
+    expect(hudB.imageUrl).toBeTruthy();
+    expect(hudA.imageUrl).not.toBe(hudB.imageUrl);
+    expect(hudA.visible).toBe(true);
+    expect(hudB.visible).toBe(true);
+
+    vi.unstubAllGlobals();
+  });
 });
