@@ -155,6 +155,8 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
   // Refs
   const gridViewportRef = useRef<HTMLDivElement>(null);
   const rulerRef = useRef<HTMLDivElement>(null);
+  const motionGraphScrollRef = useRef<HTMLDivElement>(null);
+  const [motionGraphOpen, setMotionGraphOpen] = useState(true);
   const drawerRootRef = useRef<HTMLDivElement>(null);
   const isDraggingRulerRef = useRef(false);
   const isResizingDrawerRef = useRef(false);
@@ -202,11 +204,16 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
     });
   };
 
-  // Synchronize horizontal scroll between ruler and grid
+  // Synchronize horizontal scroll between ruler, motion graph and grid.
   const onGridScroll = () => {
-    if (gridViewportRef.current && rulerRef.current) {
-      rulerRef.current.scrollLeft = gridViewportRef.current.scrollLeft;
-    }
+    const left = gridViewportRef.current?.scrollLeft ?? 0;
+    if (rulerRef.current) rulerRef.current.scrollLeft = left;
+    if (motionGraphScrollRef.current) motionGraphScrollRef.current.scrollLeft = left;
+  };
+
+  const onMotionGraphScroll = (scrollLeft: number) => {
+    if (gridViewportRef.current) gridViewportRef.current.scrollLeft = scrollLeft;
+    if (rulerRef.current) rulerRef.current.scrollLeft = scrollLeft;
   };
 
   // Convert clientX to frame in the grid
@@ -813,13 +820,22 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
 
       {/* --- BODY: LEFT TRACK TREE & RIGHT GRID --- */}
       <div className="timeline-drawer-body">
-        {/* Motion graph — value curves of the selected node, draggable */}
-        {selectedNodeIds[0] && (
+        {/* Motion graph — value curves of the selected node, draggable. Its X
+            axis follows the timeline's pixels-per-frame and horizontal scroll
+            so keyframes line up with the grid rows below. */}
+        <div className="motion-graph-header" onClick={() => setMotionGraphOpen((o) => !o)}>
+          <span>MOTION GRAPH</span>
+          <span className="motion-graph-collapse">{motionGraphOpen ? "▼" : "▲"}</span>
+        </div>
+        {motionGraphOpen && selectedNodeIds[0] && (
           <MotionGraph
             graph={graph}
             nodeId={selectedNodeIds[0]}
             currentFrame={currentFrame}
             totalFrames={totalFrames}
+            pixelsPerFrame={pixelsPerFrame}
+            scrollRef={motionGraphScrollRef}
+            onScrollSync={onMotionGraphScroll}
             onFrameChange={onFrameChange}
             onMoveKeyframe={(nodeId, paramKey, oldFrame, newFrame) =>
               onBatchMoveKeyframes([{ nodeId, paramKey, oldFrame, newFrame }])
@@ -828,6 +844,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
           />
         )}
 
+        <div className="timeline-drawer-body-row">
         {/* Left Tracks Column */}
         <div className="timeline-tracks-pane" style={{ width: `${leftPaneWidth}px` }}>
           <div className="timeline-tracks-header">
@@ -1165,6 +1182,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
             </div>
           </div>
         </div>
+      </div>
       </div>
 
       {/* --- CONTEXT MENU --- */}

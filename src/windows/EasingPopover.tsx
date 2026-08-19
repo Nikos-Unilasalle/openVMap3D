@@ -112,7 +112,7 @@ function easingPath(easeIn: EasingType, strength: number, bezier: [number, numbe
 /** Static preview of the selected easing curve. */
 function CurvePreview({ easeIn, strength, bezier }: { easeIn: EasingType; strength: number; bezier: [number, number, number, number] }) {
   return (
-    <svg className="easing-curve-preview" viewBox="-20 -20 140 140" preserveAspectRatio="none">
+    <svg className="easing-curve-preview" viewBox="-20 -20 140 140">
       <line x1="0" y1="100" x2="100" y2="0" className="easing-curve-grid" />
       <path d={easingPath(easeIn, strength, bezier)} className="easing-curve-path" />
     </svg>
@@ -130,6 +130,10 @@ function BezierEditor({
   const svgRef = useRef<SVGSVGElement>(null);
   const [active, setActive] = useState<0 | 1 | null>(null);
 
+  // The viewBox is -20..120 (140 units with 20 of padding) so overshooting
+  // handles stay visible; the inner 100×100 maps to the 0..1 value space.
+  const PAD = 20 / 140;
+
   const handle = (i: 0 | 1) => {
     const x = value[i * 2];
     const y = value[i * 2 + 1];
@@ -143,10 +147,13 @@ function BezierEditor({
       if (!svg) return;
       const rect = svg.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) return;
-      const nx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      const ny = 1 - (e.clientY - rect.top) / rect.height;
+      // Undo the viewBox padding so 0..1 maps to the inner square.
+      const inner = rect.width * (1 - PAD * 2);
+      const pad = rect.width * PAD;
+      const nx = (e.clientX - rect.left - pad) / inner;
+      const ny = 1 - (e.clientY - rect.top - pad) / inner;
       const next: [number, number, number, number] = [...value];
-      next[active * 2] = nx;
+      next[active * 2] = Math.max(0, Math.min(1, nx));
       next[active * 2 + 1] = Math.max(-0.5, Math.min(1.5, ny));
       onChange(next);
     };
@@ -161,7 +168,7 @@ function BezierEditor({
   }, [active]);
 
   return (
-    <svg ref={svgRef} className="easing-bezier-editor" viewBox="-20 -20 140 140" preserveAspectRatio="none">
+    <svg ref={svgRef} className="easing-bezier-editor" viewBox="-20 -20 140 140">
       <line x1="0" y1="100" x2="100" y2="0" className="easing-curve-grid" />
       <path d={`M 0 100 C ${handle(0).cx} ${handle(0).cy}, ${handle(1).cx} ${handle(1).cy}, 100 0`} className="easing-curve-path" />
       {([0, 1] as const).map((i) => {
