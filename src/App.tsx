@@ -710,6 +710,10 @@ function MainEditor() {
   // ---------------------------------------------------------------------
   const hasUnsavedEditsRef = useRef(false);
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The autosave effect also runs once on mount, which is not an edit — without
+  // this, merely opening the editor and closing the tab raised the browser's
+  // "leave site?" prompt over a document nobody had touched.
+  const autosaveSettledRef = useRef(false);
 
   /** Called after an explicit Save/Save As/Incremental Save writes a real file. */
   const handleProjectSaved = useCallback(() => {
@@ -717,7 +721,8 @@ function MainEditor() {
   }, []);
 
   useEffect(() => {
-    hasUnsavedEditsRef.current = true;
+    if (autosaveSettledRef.current) hasUnsavedEditsRef.current = true;
+    else autosaveSettledRef.current = true;
     if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
     autosaveTimerRef.current = setTimeout(() => {
       writeAutosave({ canvases, activeCanvas }, currentFilename);
@@ -729,11 +734,14 @@ function MainEditor() {
 
   useEffect(() => {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Nothing to protect, and — since the snapshot is per-origin, not per-tab
+      // — writing anyway would let a stale second tab clobber the tab that is
+      // actually being worked in as it closes.
+      if (!hasUnsavedEditsRef.current) return;
       // Flush synchronously: the debounce may still be pending, and this is the
       // last moment the document exists. beforeunload is one of the few places
       // a synchronous localStorage write is the right call.
       writeAutosave({ canvases, activeCanvas }, currentFilename);
-      if (!hasUnsavedEditsRef.current) return;
       // Only the presence of preventDefault still decides whether the browser
       // shows its own "leave site?" dialog — the custom string was dropped
       // years ago, and returnValue is kept purely for older engines.

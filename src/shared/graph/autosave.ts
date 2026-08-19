@@ -94,7 +94,11 @@ export function readAutosave(registry: NodeRegistry = DEFAULT_REGISTRY): Autosav
       filename: typeof record.filename === "string" && record.filename ? record.filename : "project_v1.tsuji",
       savedAt: Number.isFinite(record.savedAt) ? Number(record.savedAt) : 0,
     };
-  } catch {
+  } catch (err) {
+    // A snapshot that can't be read is dropped rather than crashing the editor
+    // on boot — but silently discarding someone's recovered work is exactly the
+    // failure this module exists to prevent, so say so.
+    console.warn("tsuji: could not restore the autosaved document — discarding it", err);
     clearAutosave();
     return null;
   }
