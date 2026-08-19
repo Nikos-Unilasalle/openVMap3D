@@ -33,6 +33,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The gate. Steps abort the job on failure, so a red suite here means the
+      # site is never built and the previous deployment stays up — this job
+      # publishes straight to production, and `npm run build` only runs tsc, so
+      # without this nothing but a type error could stop a broken release.
+      - name: Test
+        run: npm test
+
       - name: Build site
         run: npm run build
 
