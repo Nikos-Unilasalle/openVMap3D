@@ -74,7 +74,9 @@ export interface EasingPopoverProps {
   badge: string;
   subtitle: string;
   easeIn: EasingType;
+  strength: number;
   onSelectEasing: (newType: EasingType) => void;
+  onStrengthChange: (value: number) => void;
   onDelete: () => void;
   onClose: () => void;
 }
@@ -85,7 +87,9 @@ export const EasingPopover: React.FC<EasingPopoverProps> = ({
   badge,
   subtitle,
   easeIn,
+  strength,
   onSelectEasing,
+  onStrengthChange,
   onDelete,
   onClose,
 }) => (
@@ -122,6 +126,22 @@ export const EasingPopover: React.FC<EasingPopoverProps> = ({
           ))}
         </div>
       </div>
+
+      {easeIn === "expo" && (
+        <div className="easing-popover-section">
+          <label className="easing-strength-label">
+            <span>Expo Strength (contrast)</span>
+            <input
+              type="number"
+              min={1}
+              max={20}
+              step={0.5}
+              value={strength}
+              onChange={(e) => onStrengthChange(Number(e.target.value))}
+            />
+          </label>
+        </div>
+      )}
 
       <div className="easing-popover-footer">
         <button type="button" className="easing-delete-btn" onClick={onDelete} title="Delete this keyframe">

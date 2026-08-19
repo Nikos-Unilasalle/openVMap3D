@@ -873,6 +873,7 @@ function GraphEditorContent({
               frame: kf.frame,
               value: cloneParamValue(kf.value),
               easeIn: kf.easeIn,
+              easeStrength: kf.easeStrength,
             }));
           }
         }

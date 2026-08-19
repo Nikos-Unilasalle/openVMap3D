@@ -40,6 +40,7 @@ export interface TimelineDrawerProps {
   onBatchUpdateEasing: (
     targets: { nodeId: string; paramKey: string; frame: number }[],
     easeIn: EasingType,
+    easeStrength?: number,
   ) => void;
   onPasteKeyframes: (items: KeyframeClipboardItem[], targetBaseFrame: number) => void;
   markers?: number[];
@@ -124,6 +125,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
   const [easingPopover, setEasingPopover] = useState<{
     targets: SelectedKeyframeKey[];
     easeIn: EasingType;
+    strength: number;
     x: number;
     y: number;
   } | null>(null);
@@ -271,16 +273,20 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
     if (targets.length === 0) return;
 
     const ins = new Set<EasingType>();
+    const strengths = new Set<number>();
     for (const k of targets) {
       const kf = graph.keyframes?.[k.nodeId]?.[k.paramKey]?.find((f) => f.frame === k.frame);
       ins.add(kf?.easeIn || "smooth");
+      if (kf?.easeStrength !== undefined) strengths.add(kf.easeStrength);
     }
     const easeIn = ins.size === 1 ? [...ins][0] : "smooth";
+    const strength = strengths.size === 1 ? [...strengths][0] : 10;
 
     setContextMenu(null);
     setEasingPopover({
       targets,
       easeIn,
+      strength,
       x: Math.max(160, Math.min(window.innerWidth - 160, menu.x)),
       y: menu.y - 40,
     });
@@ -289,7 +295,14 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
   const handleSelectEasing = (newType: EasingType) => {
     if (!easingPopover) return;
     setEasingPopover((prev) => (prev ? { ...prev, easeIn: newType } : null));
-    onBatchUpdateEasing(easingPopover.targets, newType);
+    onBatchUpdateEasing(easingPopover.targets, newType, easingPopover.strength);
+  };
+
+  const handleStrengthChange = (value: number) => {
+    if (!easingPopover) return;
+    if (!Number.isFinite(value) || value <= 0) return;
+    setEasingPopover((prev) => (prev ? { ...prev, strength: value } : null));
+    onBatchUpdateEasing(easingPopover.targets, easingPopover.easeIn, value);
   };
 
   const handleDeleteEasingKeyframes = () => {
@@ -1087,7 +1100,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
                                   style={{ left: `${effectiveFrame * pixelsPerFrame}px` }}
                                   onClick={(e) => handleKeyframeClick(e, nodeInstance.id, pKey, kf.frame)}
                                   onMouseDown={(e) => handleKeyframeMouseDown(e, nodeInstance.id, pKey, kf.frame)}
-                                  title={`Param: ${pKey}\nFrame: ${kf.frame}\nValue: ${JSON.stringify(kf.value)}\nEase: ${kf.easeIn || "smooth"}`}
+                                  title={`Param: ${pKey}\nFrame: ${kf.frame}\nValue: ${JSON.stringify(kf.value)}\nEase: ${kf.easeIn || "smooth"}${kf.easeIn === "expo" && kf.easeStrength ? ` (strength ${kf.easeStrength})` : ""}`}
                                 >
                                   {renderKeyframeGlyph(kf.easeIn || "smooth", false)}
                                   {/* Drag delta badge */}
@@ -1248,7 +1261,9 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
             .filter((f, i, a) => a.indexOf(f) === i)
             .join(", ")}
           easeIn={easingPopover.easeIn}
+          strength={easingPopover.strength}
           onSelectEasing={handleSelectEasing}
+          onStrengthChange={handleStrengthChange}
           onDelete={handleDeleteEasingKeyframes}
           onClose={() => setEasingPopover(null)}
         />

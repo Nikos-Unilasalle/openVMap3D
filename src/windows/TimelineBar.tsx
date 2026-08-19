@@ -7,6 +7,7 @@ import "./timeline-bar.css";
 export interface KeyframeDataAtFrame {
   paramKeys: string[];
   easeIn?: EasingType;
+  easeStrength?: number;
 }
 
 interface TimelineBarProps {
@@ -19,7 +20,7 @@ interface TimelineBarProps {
   onToggleMarker?: (frame: number) => void;
   onMoveMarker?: (oldFrame: number, newFrame: number) => void;
   onMoveKeyframe?: (oldFrame: number, newFrame: number) => void;
-  onUpdateKeyframeEasing?: (frame: number, easeIn: EasingType) => void;
+  onUpdateKeyframeEasing?: (frame: number, easeIn: EasingType, easeStrength?: number) => void;
   onDeleteKeyframe?: (frame: number) => void;
   onFrameChange: (frame: number) => void;
   onTogglePlay: () => void;
@@ -94,6 +95,7 @@ export function TimelineBar({
     frame: number;
     paramKeys: string[];
     easeIn: EasingType;
+    strength: number;
     x: number;
     y: number;
   } | null>(null);
@@ -268,6 +270,7 @@ export function TimelineBar({
       frame,
       paramKeys: data.paramKeys,
       easeIn: initialIn,
+      strength: data.easeStrength ?? 10,
       x,
       y,
     });
@@ -289,7 +292,14 @@ export function TimelineBar({
   const handleSelectEasing = (newType: EasingType) => {
     if (!easingPopover) return;
     setEasingPopover((prev) => (prev ? { ...prev, easeIn: newType } : null));
-    onUpdateKeyframeEasing?.(easingPopover.frame, newType);
+    onUpdateKeyframeEasing?.(easingPopover.frame, newType, easingPopover.strength);
+  };
+
+  const handleStrengthChange = (value: number) => {
+    if (!easingPopover) return;
+    if (!Number.isFinite(value) || value <= 0) return;
+    setEasingPopover((prev) => (prev ? { ...prev, strength: value } : null));
+    onUpdateKeyframeEasing?.(easingPopover.frame, easingPopover.easeIn, value);
   };
 
   const handleDeleteCurrentKeyframe = () => {
@@ -396,7 +406,7 @@ export function TimelineBar({
                   style={{ left: `${kfPct}%` }}
                   onMouseDown={(e) => handleKeyframeMouseDown(e, kfFrame)}
                   onContextMenu={(e) => handleKeyframeContextMenu(e, kfFrame, data)}
-                  title={`Keyframe at Frame ${displayFrame} (${data.paramKeys.join(", ")})\nArrival Ease: ${data.easeIn || "smooth"}\n• Left click + drag to move\n• Right click to edit interpolation`}
+                  title={`Keyframe at Frame ${displayFrame} (${data.paramKeys.join(", ")})\nArrival Ease: ${data.easeIn || "smooth"}${data.easeIn === "expo" && data.easeStrength ? ` (strength ${data.easeStrength})` : ""}\n• Left click + drag to move\n• Right click to edit interpolation`}
                 >
                   {renderKeyframeGlyph(data.easeIn)}
                 </div>
@@ -451,7 +461,9 @@ export function TimelineBar({
           badge={`Keyframe ${easingPopover.frame}`}
           subtitle={easingPopover.paramKeys.join(", ")}
           easeIn={easingPopover.easeIn}
+          strength={easingPopover.strength}
           onSelectEasing={handleSelectEasing}
+          onStrengthChange={handleStrengthChange}
           onDelete={handleDeleteCurrentKeyframe}
           onClose={() => setEasingPopover(null)}
         />

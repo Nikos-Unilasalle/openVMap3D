@@ -230,6 +230,8 @@ export interface Keyframe {
   value: any;
   /** The easing used to arrive at this keyframe — the only easing a keyframe carries. */
   easeIn?: EasingType;
+  /** Expo contrast (1..~20, default 10). Higher = more aggressive exponential deceleration. Ignored for other easings. */
+  easeStrength?: number;
 }
 
 /** Keyframes store keyed by nodeId -> paramKey -> array of Keyframe sorted by frame ascending. */

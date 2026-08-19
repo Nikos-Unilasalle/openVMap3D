@@ -37,8 +37,8 @@ function backEaseOut(p: number): number {
   return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2);
 }
 
-function expoEaseOut(p: number): number {
-  return p >= 1 ? 1 : 1 - Math.pow(2, -10 * p);
+function expoEaseOut(p: number, k: number): number {
+  return p >= 1 ? 1 : 1 - Math.pow(2, -k * p);
 }
 
 function sineEaseInOut(p: number): number {
@@ -54,17 +54,19 @@ function sineEaseInOut(p: number): number {
  * keyframe, the classic motion-design default). The expressive ones all settle
  * ON the keyframe value (ease-out variants), which is what "arriving" means:
  * expo decelerates exponentially, back overshoots once, bounce bounces, elastic
- * springs.
+ * springs. `strength` tunes the expo contrast (exponent).
  */
-export function computeSegmentEasing(t: number, easing?: EasingType): number {
+export function computeSegmentEasing(t: number, easing?: EasingType, strength?: number): number {
   const p = Math.max(0, Math.min(1, t));
   switch (easing) {
     case "linear":
       return p;
     case "hold":
       return p >= 1 ? 1 : 0;
-    case "expo":
-      return expoEaseOut(p);
+    case "expo": {
+      const k = strength !== undefined && Number.isFinite(strength) && strength > 0 ? strength : 10;
+      return expoEaseOut(p, k);
+    }
     case "back":
       return backEaseOut(p);
     case "bounce":
@@ -80,8 +82,8 @@ export function computeSegmentEasing(t: number, easing?: EasingType): number {
 /**
  * Keyframe value interpolation applying the target keyframe's arrival easing.
  */
-export function interpolateValue(v1: any, v2: any, t: number, easing?: EasingType): any {
-  const ease = computeSegmentEasing(t, easing);
+export function interpolateValue(v1: any, v2: any, t: number, easing?: EasingType, strength?: number): any {
+  const ease = computeSegmentEasing(t, easing, strength);
 
   if (typeof v1 === "number" && typeof v2 === "number") {
     return v1 + (v2 - v1) * ease;
@@ -155,7 +157,7 @@ function evaluateKeyframeList(list: Keyframe[], currentFrame: number, fallback: 
       // fallback reads pre-simplification .tsuji files that stored a departure
       // easing only.
       const easing = k2.easeIn ?? (k2 as { easeOut?: EasingType }).easeOut ?? "smooth";
-      return interpolateValue(k1.value, k2.value, t, easing);
+      return interpolateValue(k1.value, k2.value, t, easing, k2.easeStrength);
     }
   }
 

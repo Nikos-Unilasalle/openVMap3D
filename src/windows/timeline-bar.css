@@ -397,6 +397,26 @@
   margin-bottom: 6px;
 }
 
+.easing-strength-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: #e2e8f0;
+}
+
+.easing-strength-label input {
+  width: 70px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 12px;
+  text-align: right;
+}
+
 .easing-buttons-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

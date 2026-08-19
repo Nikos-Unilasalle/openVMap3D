@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { evaluateKeyframeValue, interpolateValue } from "./evaluate";
+import { computeSegmentEasing, evaluateKeyframeValue, interpolateValue } from "./evaluate";
 import { KeyframeStore } from "./types";
 
 describe("KEYFRAME ANIMATION SYSTEM", () => {
@@ -86,6 +86,26 @@ describe("KEYFRAME ANIMATION SYSTEM", () => {
     const elasticOut = interpolateValue(0, 100, 1, "elastic");
     expect(elasticOut).toBe(100);
     expect(interpolateValue(0, 100, 0, "elastic")).toBe(0);
+  });
+
+  it("expo strength tunes how aggressively the curve lands on the value", () => {
+    // Default strength 10 → ~97% of the travel done at the midpoint.
+    expect(computeSegmentEasing(0.5, "expo")).toBeCloseTo(0.96875, 5);
+    // Stronger exponent → even more front-loaded.
+    expect(computeSegmentEasing(0.5, "expo", 20)).toBeCloseTo(1 - Math.pow(2, -10), 5);
+    // Gentler → closer to the start value.
+    expect(computeSegmentEasing(0.5, "expo", 1)).toBeCloseTo(1 - Math.sqrt(0.5), 5);
+    // The strength flows through keyframe evaluation.
+    const keyframes: KeyframeStore = {
+      "node-1": {
+        val: [
+          { frame: 0, value: 0 },
+          { frame: 100, value: 100, easeIn: "expo", easeStrength: 1 },
+        ],
+      },
+    };
+    const gentle = evaluateKeyframeValue(keyframes, "node-1", "val", 50, -1) as number;
+    expect(gentle).toBeLessThan(50);
   });
 
   it("each keyframe carries a single arrival easing that shapes its incoming segment", () => {
