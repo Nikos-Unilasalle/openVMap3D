@@ -101,6 +101,9 @@ export const TEXTURE_IMAGE_NODE: NodeDefinition = {
           texture.wrapS = THREE.RepeatWrapping;
           texture.wrapT = THREE.RepeatWrapping;
           texture.colorSpace = THREE.SRGBColorSpace;
+          // Re-picking a file used to strand the previous texture's GPU upload:
+          // the cache disposer only ever sees the last one.
+          state.texture?.dispose();
           state.texture = texture;
         } catch (err) {
           console.error("Failed to load image texture:", err);
@@ -210,6 +213,9 @@ export const TEXTURE_PLANE_NODE: NodeDefinition = {
           texture.wrapS = THREE.RepeatWrapping;
           texture.wrapT = THREE.RepeatWrapping;
           texture.colorSpace = THREE.SRGBColorSpace;
+          // Re-picking a file used to strand the previous texture's GPU upload:
+          // the cache disposer only ever sees the last one.
+          state.texture?.dispose();
           state.texture = texture;
         } catch (err) {
           console.error("Failed to load texture for plane:", err);

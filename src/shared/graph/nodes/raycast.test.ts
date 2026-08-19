@@ -44,6 +44,79 @@ describe("RAYCAST_NODE", () => {
 });
 
 describe("RAY_BURST_NODE", () => {
+  it("puts the same seed on the same ray field", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    box.updateMatrixWorld(true);
+    const run = (nodeId: string, seed: number) =>
+      RAY_BURST_NODE.evaluate(
+        { geometry: box, count: 12, seed },
+        RAY_BURST_NODE.defaultParams,
+        { nodeId } as any,
+      ).rayOrigins as THREE.Vector3[];
+
+    const a = run("burst_seed_a", 7);
+    const b = run("burst_seed_b", 7);
+    const other = run("burst_seed_c", 8);
+
+    expect(a).toHaveLength(12);
+    a.forEach((v, i) => {
+      expect(v.x).toBeCloseTo(b[i].x);
+      expect(v.y).toBeCloseTo(b[i].y);
+      expect(v.z).toBeCloseTo(b[i].z);
+    });
+    // A different seed must actually produce a different field.
+    expect(a.some((v, i) => Math.abs(v.x - other[i].x) > 1e-6)).toBe(true);
+  });
+
+  it("keeps the ray field stable when only colour, centre or radius animate", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    box.updateMatrixWorld(true);
+    const params = { ...RAY_BURST_NODE.defaultParams, count: 10, seed: 3, rotate: 0 };
+    const first = RAY_BURST_NODE.evaluate(
+      { geometry: box, radius: 4, origin: new THREE.Vector3(0, 0, 0) },
+      params,
+      { nodeId: "burst_stable" } as any,
+    ).rayOrigins as THREE.Vector3[];
+
+    // Same node, next frame: a moved centre, a new colour and a bigger radius.
+    const second = RAY_BURST_NODE.evaluate(
+      { geometry: box, radius: 8, origin: new THREE.Vector3(1, 0, 0) },
+      { ...params, color: new THREE.Color(0xff0000) },
+      { nodeId: "burst_stable" } as any,
+    ).rayOrigins as THREE.Vector3[];
+
+    // Each ray sits at centre + dir * radius, so with the field intact the
+    // second frame is exactly the first scaled about the (new) centre.
+    second.forEach((v, i) => {
+      expect(v.x - 1).toBeCloseTo((first[i].x - 0) * 2);
+      expect(v.y).toBeCloseTo(first[i].y * 2);
+      expect(v.z).toBeCloseTo(first[i].z * 2);
+    });
+  });
+
+  it("keeps every output list index-aligned with its ray, misses included", () => {
+    // A target the rays can't all reach: the burst sphere is far bigger than
+    // the box, so plenty of them miss.
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2));
+    box.updateMatrixWorld(true);
+    const res = RAY_BURST_NODE.evaluate(
+      { geometry: box, count: 20, radius: 5, seed: 1 },
+      { ...RAY_BURST_NODE.defaultParams, rotate: 0 },
+      { nodeId: "burst_align" } as any,
+    );
+    const hits = res.hits as number[];
+    expect(hits).toHaveLength(20);
+    expect((res.rayOrigins as unknown[])).toHaveLength(20);
+    expect((res.hitPoints as unknown[])).toHaveLength(20);
+    expect((res.hitNormals as unknown[])).toHaveLength(20);
+    const distances = res.distances as number[];
+    expect(distances).toHaveLength(20);
+    // Infinity used to leak into this list on every miss and poison List
+    // Statistics / List Math downstream.
+    expect(distances.every((d) => Number.isFinite(d))).toBe(true);
+  });
+
+
   it("emits a line geometry plus hit/miss lists against a box", () => {
     initBvhRaycast();
     const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));

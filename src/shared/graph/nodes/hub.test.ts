@@ -167,3 +167,47 @@ describe("HUB_IMAGE_NODE", () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe("hub animation clock", () => {
+  test("a captured frame animates on the graph clock, not the wall clock", () => {
+    const params = {
+      ...HUB_TEXT_NODE.defaultParams,
+      enterAnimation: "fade",
+      exitAnimation: "fade",
+      exitEase: "linear",
+      durationOut: 1,
+    };
+    const nodeId = "hub-capture-clock";
+    const capture = (time: number, trigger: number) =>
+      HUB_TEXT_NODE.evaluate({ trigger }, params, { ...CTX, nodeId, time, capturing: true })
+        .hud as { cssOpacity: number };
+
+    // Settle at the default trigger, then a rising edge starts the exit at t=0.
+    capture(0, 0);
+    expect(capture(0, 1).cssOpacity).toBeCloseTo(1);
+
+    // Halfway through a 1s exit, on the *graph* clock. A wall-clock animation
+    // would have finished (or not started) depending on how long the encoder
+    // took, which is exactly the drift this fixes.
+    expect(capture(0.5, 1).cssOpacity).toBeCloseTo(0.5);
+    expect(capture(1, 1).cssOpacity).toBeCloseTo(0);
+  });
+
+  test("live preview still runs on the wall clock", () => {
+    const now = vi.spyOn(performance, "now");
+    const params = { ...HUB_TEXT_NODE.defaultParams, exitEase: "linear", durationOut: 1 };
+    const nodeId = "hub-wall-clock";
+    const live = (wallMs: number, trigger: number) => {
+      now.mockReturnValue(wallMs);
+      return HUB_TEXT_NODE.evaluate({ trigger }, params, { ...CTX, nodeId, time: 0 }).hud as {
+        cssOpacity: number;
+      };
+    };
+
+    live(0, 0);
+    live(0, 1);
+    // `time` never moves, but the wall clock does — and the exit still plays.
+    expect(live(500, 1).cssOpacity).toBeCloseTo(0.5);
+    now.mockRestore();
+  });
+});

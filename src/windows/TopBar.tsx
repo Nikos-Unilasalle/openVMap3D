@@ -16,6 +16,8 @@ export interface TopBarProps {
   /** The whole document — every canvas, not just the one on screen: saving writes them all. */
   project: Project;
   onLoadProject: (project: Project, filename?: string) => void;
+  /** Fired after a Save/Save As/Incremental Save actually wrote a file — clears the unsaved-changes guard in App. */
+  onProjectSaved?: () => void;
   currentFilename: string;
   currentFilePath: string | null;
   onFilenameChange: (name: string, path: string | null) => void;
@@ -33,6 +35,7 @@ export interface TopBarProps {
 export const TopBar: React.FC<TopBarProps> = ({
   project,
   onLoadProject,
+  onProjectSaved,
   currentFilename,
   currentFilePath,
   onFilenameChange,
@@ -128,6 +131,7 @@ export const TopBar: React.FC<TopBarProps> = ({
     try {
       if (currentFilePath) {
         await saveProjectToPath(project, currentFilePath);
+        onProjectSaved?.();
         showToast(`Sauvegardé : ${currentFilename}`);
       } else {
         // No path yet — fall through to Save As
@@ -145,6 +149,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       const safeName = ensureOvmExtension(currentFilename);
       const savedName = await saveProjectAsWithFilePicker(project, safeName);
       if (savedName) {
+        onProjectSaved?.();
         // We don't have the full path back from just the name, so reset path to null
         // and the next Save will prompt again, OR we store from dialog
         onFilenameChange(savedName, null);
@@ -162,6 +167,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       const nextName = incrementFilename(currentFilename);
       const savedName = await saveProjectAsWithFilePicker(project, nextName);
       if (savedName) {
+        onProjectSaved?.();
         onFilenameChange(savedName, null);
         showToast(`Sauvegarde incrémentale : ${savedName}`);
       }

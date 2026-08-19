@@ -9,6 +9,7 @@ import { consumeCameraHandoffRequest } from "./shared/graph/cameraHandoffStore";
 import { consumeCanvasSwitchRequest } from "./shared/graph/canvasSwitchStore";
 import { isGraphZone } from "./shared/graph/inputZoneStore";
 import { disposeNodeCaches } from "./shared/graph/nodeCaches";
+import { AutosaveRecord, projectHasContent, readAutosave, writeAutosave } from "./shared/graph/autosave";
 import { rehydrateGraphParams } from "./shared/graph/rehydrateParams";
 import { connectedSocketIds, paramPanelValues } from "./shared/graph/paramPanelValues";
 import {
@@ -148,6 +149,9 @@ const HISTORY_LIMIT = 50;
 /** Consecutive edits to the same control within this window collapse into one undo step. */
 const HISTORY_COALESCE_MS = 600;
 
+/** Quiet time after the last edit before the document is written to localStorage. */
+const AUTOSAVE_DEBOUNCE_MS = 800;
+
 const MIN_PANE_PERCENT = 15;
 const MAX_PANE_PERCENT = 85;
 
@@ -168,16 +172,32 @@ function MainEditor() {
   // The whole document. `graph` below is a view onto the active one — every
   // existing edit path (params, gizmo, undo, the editor itself) still speaks
   // in terms of one Graph and needs to know nothing about canvases.
+  // A recovered autosave wins over the smoke-test graph: the browser build has
+  // no other persistence, so a reload used to be indistinguishable from
+  // discarding the session. Read once, in the initializer, so the recovered
+  // document is what renders on the first frame rather than flashing the
+  // starter graph first.
+  const recoveredRef = useRef<AutosaveRecord | null | undefined>(undefined);
+  if (recoveredRef.current === undefined) {
+    const record = readAutosave(DEFAULT_REGISTRY);
+    recoveredRef.current = record && projectHasContent(record.project) ? record : null;
+  }
+  const recovered = recoveredRef.current;
+
   const [canvases, setCanvases] = useState<Graph[]>(() =>
-    normalizeCanvases([buildSmokeTestGraph()]),
+    recovered
+      ? normalizeCanvases(recovered.project.canvases).map((canvas) =>
+          rehydrateGraphParams(canvas, DEFAULT_REGISTRY),
+        )
+      : normalizeCanvases([buildSmokeTestGraph()]),
   );
-  const [activeCanvas, setActiveCanvas] = useState(0);
+  const [activeCanvas, setActiveCanvas] = useState(recovered ? recovered.project.activeCanvas : 0);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [isTimelineDrawerOpen, setIsTimelineDrawerOpen] = useState(false);
   const [timelineDrawerHeight, setTimelineDrawerHeight] = useState(280);
   const [splitPercent, setSplitPercent] = useState(50);
-  const [currentFilename, setCurrentFilename] = useState("project_v1.tsuji");
+  const [currentFilename, setCurrentFilename] = useState(recovered?.filename ?? "project_v1.tsuji");
   const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
   const [editorKey, setEditorKey] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -192,6 +212,8 @@ function MainEditor() {
   // into whichever canvas was open when the callback was created.
   const activeCanvasRef = useRef(activeCanvas);
   activeCanvasRef.current = activeCanvas;
+  const canvasesRef = useRef(canvases);
+  canvasesRef.current = canvases;
 
   const setGraph = useCallback((nextOrUpdater: Graph | ((prev: Graph) => Graph)) => {
     setCanvases((prev) =>
@@ -643,6 +665,7 @@ function MainEditor() {
 
   const handleLoadProject = (newProject: Project, filename?: string) => {
     historyRef.current = {};
+    hasUnsavedEditsRef.current = false;
     const rehydrated = normalizeCanvases(newProject.canvases).map((canvas) =>
       rehydrateGraphParams(canvas, DEFAULT_REGISTRY),
     );
@@ -674,6 +697,66 @@ function MainEditor() {
       });
     }
   };
+
+  // ---------------------------------------------------------------------
+  // Autosave + unload guard
+  //
+  // The browser build has no file behind the document, so until this existed a
+  // refresh (or a lost WebGL context taking the tab with it) silently discarded
+  // the session. The snapshot is debounced rather than written per keystroke:
+  // a graph edit fires on every gizmo drag frame, and localStorage writes are
+  // synchronous and would stall the render loop.
+  // ---------------------------------------------------------------------
+  const hasUnsavedEditsRef = useRef(false);
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** Called after an explicit Save/Save As/Incremental Save writes a real file. */
+  const handleProjectSaved = useCallback(() => {
+    hasUnsavedEditsRef.current = false;
+  }, []);
+
+  useEffect(() => {
+    hasUnsavedEditsRef.current = true;
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => {
+      writeAutosave({ canvases, activeCanvas }, currentFilename);
+    }, AUTOSAVE_DEBOUNCE_MS);
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    };
+  }, [canvases, activeCanvas, currentFilename]);
+
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Flush synchronously: the debounce may still be pending, and this is the
+      // last moment the document exists. beforeunload is one of the few places
+      // a synchronous localStorage write is the right call.
+      writeAutosave({ canvases, activeCanvas }, currentFilename);
+      if (!hasUnsavedEditsRef.current) return;
+      // Only the presence of preventDefault still decides whether the browser
+      // shows its own "leave site?" dialog — the custom string was dropped
+      // years ago, and returnValue is kept purely for older engines.
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [canvases, activeCanvas, currentFilename]);
+
+  // A recovered document carries file-backed nodes (CSV, OBJ, textures, audio)
+  // that only stored their *path*, exactly like a document opened from disk —
+  // so it needs the same re-read pass. A no-op in the browser, where those
+  // paths can't be reopened without the user re-picking the file.
+  useEffect(() => {
+    if (!recovered) return;
+    for (const canvas of canvasesRef.current) {
+      rehydrateFileNodesFromDisk(canvas).then(({ attempted }) => {
+        if (attempted > 0) setCanvases((prev) => [...prev]);
+      });
+    }
+    // Recovery runs once, on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleFilenameChange = (name: string, path: string | null) => {
     setCurrentFilename(name);
@@ -1206,6 +1289,7 @@ function MainEditor() {
       <TopBar
         project={project}
         onLoadProject={handleLoadProject}
+        onProjectSaved={handleProjectSaved}
         currentFilename={currentFilename}
         currentFilePath={currentFilePath}
         onFilenameChange={handleFilenameChange}
@@ -1247,6 +1331,7 @@ function MainEditor() {
           onEvaluatedResults={onEvaluatedResults}
           isPlaying={isPlaying}
           onHubChange={handleHubChange}
+          suspended={isExporting}
         />
         {needsTransformHint && (
           <div className="viewport-hint">Wire a Transform node into this object's Matrix to move it</div>

@@ -117,6 +117,65 @@ describe("INSTANCE MANIPULATION NODES", () => {
     });
   });
 
+  it("SET_INSTANCE_TRANSFORM_NODE aligns in world space under an individual pivot", () => {
+    // An instance whose *placement* already carries a rotation. Under the
+    // individual pivot the delta is applied on the right (placement x delta),
+    // i.e. read in the instance's own frame — so a world-space align
+    // quaternion dropped in as-is pointed it somewhere else entirely.
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(0.5, 16));
+    disc.matrixAutoUpdate = false;
+    disc.matrix.makeRotationY(Math.PI / 2);
+
+    const direction = new THREE.Vector3(0, 1, 0);
+    const res = SET_INSTANCE_TRANSFORM_NODE.evaluate(
+      { geometry: disc, rotations: [direction] },
+      { rotationMode: "align", alignAxis: "Z", pivot: "individual" },
+      { ...CTX, connectedInputs: new Set(["rotations"]) } as never
+    );
+
+    const group = res.geometry as THREE.Group;
+    const child = group.children[0];
+    child.updateWorldMatrix(true, false, true);
+    const q = new THREE.Quaternion();
+    child.matrixWorld.decompose(new THREE.Vector3(), q, new THREE.Vector3());
+    const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(q).normalize();
+    expect(dir.dot(direction)).toBeCloseTo(1, 5);
+  });
+
+  it("SET_INSTANCE_COLOR_NODE reuses its cloned materials across frames", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
+    const arrayRes = ARRAY_NODE.evaluate({ geometry: box }, { count: 3, spacing: 1 }, CTX);
+    const ctx = { ...CTX, nodeId: "inst-color-cache" };
+
+    const meshesOf = (result: Record<string, unknown>) => {
+      const found: THREE.Mesh[] = [];
+      (result.geometry as THREE.Group).traverse((o) => {
+        if (o instanceof THREE.Mesh) found.push(o);
+      });
+      return found;
+    };
+    const materialsOf = (result: Record<string, unknown>) =>
+      meshesOf(result).map((mesh) => (mesh.material as THREE.Material).uuid);
+
+    const first = SET_INSTANCE_COLOR_NODE.evaluate(
+      { geometry: arrayRes.geometry, colors: [new THREE.Color(0xff0000)] },
+      SET_INSTANCE_COLOR_NODE.defaultParams,
+      ctx as never,
+    );
+    const second = SET_INSTANCE_COLOR_NODE.evaluate(
+      { geometry: arrayRes.geometry, colors: [new THREE.Color(0x00ff00)] },
+      SET_INSTANCE_COLOR_NODE.defaultParams,
+      ctx as never,
+    );
+
+    // Same material objects, second frame — the node used to allocate a fresh
+    // (and never disposed) clone per instance per frame.
+    expect(materialsOf(first)).toHaveLength(3);
+    expect(materialsOf(second)).toEqual(materialsOf(first));
+    const mesh = meshesOf(second)[0];
+    expect((mesh.material as THREE.MeshStandardMaterial).color.getHex()).toBe(0x00ff00);
+  });
+
   it("SET_INSTANCE_TRANSFORM_NODE align mode handles the anti-parallel case", () => {
     const disc = new THREE.Mesh(new THREE.CircleGeometry(0.5, 16));
     const arrayRes = ARRAY_NODE.evaluate({ geometry: disc }, { count: 1, spacing: 0 }, CTX);

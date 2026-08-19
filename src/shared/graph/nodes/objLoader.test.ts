@@ -90,12 +90,24 @@ describe("OBJECT_OBJ_NODE", () => {
     );
     expect(mat.version).toBe(appliedVersion);
 
-    // A real change bumps it.
+    // A uniform-only change is applied, but must NOT bump the version: nothing
+    // about the shader program depends on roughness.
     OBJECT_OBJ_NODE.evaluate(
       { diffuse: diffTex },
       { ...OBJECT_OBJ_NODE.defaultParams, roughness: 0.9 },
       { ...CTX, nodeId: "obj-test-reapply" }
     );
+    expect(mat.roughness).toBe(0.9);
+    expect(mat.version).toBe(appliedVersion);
+
+    // A change to the material's *defines* does bump it — transparency picks a
+    // different program.
+    OBJECT_OBJ_NODE.evaluate(
+      { diffuse: diffTex },
+      { ...OBJECT_OBJ_NODE.defaultParams, opacity: 0.5 },
+      { ...CTX, nodeId: "obj-test-reapply" }
+    );
+    expect(mat.transparent).toBe(true);
     expect(mat.version).toBe(appliedVersion + 1);
   });
 });

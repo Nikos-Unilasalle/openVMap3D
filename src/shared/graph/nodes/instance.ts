@@ -5,6 +5,27 @@ import { extractPositionFromInput } from "./transform";
 
 const groupCache = createNodeCache<THREE.Group>(disposeObject3D);
 
+/**
+ * Cloned materials for Set Instance Color, keyed by (instance, mesh, source
+ * material). The node re-clones its whole input every frame, so cloning the
+ * material along with it allocated — and leaked — one THREE.Material per mesh
+ * per frame. Reusing the clone and writing only `.color` keeps the per-frame
+ * work to a colour copy, and the prune below releases the ones whose source
+ * went away.
+ */
+const instanceMaterialCache = createNodeCache<Map<string, THREE.Material>>((m) => {
+  m.forEach((mat) => mat.dispose());
+});
+
+function getMaterialCache(nodeId: string): Map<string, THREE.Material> {
+  let cache = instanceMaterialCache.get(nodeId);
+  if (!cache) {
+    cache = new Map();
+    instanceMaterialCache.set(nodeId, cache);
+  }
+  return cache;
+}
+
 function getGroup(nodeId: string): THREE.Group {
   const existing = groupCache.get(nodeId);
   if (existing) return existing;
@@ -169,6 +190,8 @@ export const SET_INSTANCE_COLOR_NODE: NodeDefinition = {
     const colorsList = Array.isArray(inputs.colors) ? inputs.colors : [];
     const defaultColor = asColor(inputs.color, asColor(params.color, new THREE.Color(0xffffff)));
     const targetIndex = resolveTargetIndex(inputs.index, params.index);
+    const materialCache = getMaterialCache(ctx.nodeId);
+    const liveMaterialKeys = new Set<string>();
 
     instances.forEach((instance, i) => {
       const clone = cloneInstance(instance);
@@ -187,20 +210,42 @@ export const SET_INSTANCE_COLOR_NODE: NodeDefinition = {
         : defaultColor;
 
       // Apply color to all meshes and lights inside this instance
+      let meshOrdinal = 0;
       clone.traverse((child) => {
         if (child instanceof THREE.Light) {
           child.color.copy(targetColor);
         }
         if (child instanceof THREE.Mesh && child.material) {
-          child.material = (child.material as THREE.Material).clone();
-          if ("color" in child.material) {
-            (child.material as THREE.MeshStandardMaterial).color.copy(targetColor);
-          }
+          const ordinal = meshOrdinal++;
+          const sources = Array.isArray(child.material) ? child.material : [child.material];
+          const tinted = sources.map((src, slot) => {
+            // The source uuid is part of the key so an upstream node that
+            // rebuilds its material gets a fresh clone rather than a stale one.
+            const key = `${i}:${ordinal}:${slot}:${src.uuid}`;
+            liveMaterialKeys.add(key);
+            const cached = materialCache.get(key);
+            const mat: THREE.Material = cached ?? src.clone();
+            if (!cached) materialCache.set(key, mat);
+            if ("color" in mat) {
+              (mat as THREE.MeshStandardMaterial).color.copy(targetColor);
+            }
+            return mat;
+          });
+          child.material = Array.isArray(child.material) ? tinted : tinted[0];
         }
       });
 
       group.add(clone);
     });
+
+    // Release the clones nothing referenced this frame (instance count dropped,
+    // an upstream material was rebuilt, the index moved).
+    for (const [key, mat] of materialCache) {
+      if (!liveMaterialKeys.has(key)) {
+        mat.dispose();
+        materialCache.delete(key);
+      }
+    }
 
     return { geometry: group };
   },
@@ -402,15 +447,33 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
           const alignAxis = alignAxisVector(String(params.alignAxis || "Z"));
           let dir: THREE.Vector3;
           if (targetPosition) {
-            // Direction from the instance's (base + offset) position to the target.
-            const baseTrans = new THREE.Vector3().setFromMatrixPosition(clone.matrix);
-            dir = targetPosition.clone().sub(baseTrans.add(posOffset)).normalize();
+            // Direction from the instance's final position to the target. Under
+            // an individual pivot the offset is read in the instance's own axes
+            // (`placement × delta`), so it has to go through the placement
+            // matrix to land in world space — adding it to the placement's
+            // translation aimed rotated instances at the wrong point.
+            const instancePos = usesIndividualPivot
+              ? posOffset.clone().applyMatrix4(clone.matrix)
+              : new THREE.Vector3().setFromMatrixPosition(clone.matrix).add(posOffset);
+            dir = targetPosition.clone().sub(instancePos).normalize();
           } else {
             dir = baseRot.lengthSq() > 1e-9 ? baseRot.clone().normalize() : alignAxis;
           }
           quat = quaternionAlignAxis(alignAxis, dir);
           // The euler fields become extra rotation applied after alignment.
           quat.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rotX * RAD, rotY * RAD, rotZ * RAD)));
+          if (usesIndividualPivot) {
+            // `dir` is a world direction but this delta is applied on the right
+            // (`placement × delta`), i.e. read in the instance's local frame.
+            // Undoing the placement's own rotation is what makes the two agree:
+            // placement × (placement⁻¹ × qWorld) = qWorld. Without it, any
+            // instance whose placement carried a rotation aimed off-target.
+            // decompose, not setFromRotationMatrix: the placement usually
+            // carries scale, which the latter silently folds into the rotation.
+            const placementQuat = new THREE.Quaternion();
+            clone.matrix.decompose(new THREE.Vector3(), placementQuat, new THREE.Vector3());
+            quat.premultiply(placementQuat.invert());
+          }
         } else {
           const rotOffset = new THREE.Vector3(
             resolveScalarOrListItem(wired("rotX"), i, targetIndex, baseRot.x + paramRX),

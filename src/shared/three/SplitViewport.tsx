@@ -18,6 +18,8 @@ interface SplitViewportProps {
   onEvaluatedResults?: (results: Map<string, Record<string, unknown>>) => void;
   isPlaying?: boolean;
   onHubChange?: (nodeId: string, patch: Partial<{ x: number; y: number; rotation: number; scale: number }>) => void;
+  /** Freezes both panes while a video export runs — see Viewport's `suspended`. */
+  suspended?: boolean;
 }
 
 export function SplitViewport({
@@ -35,6 +37,7 @@ export function SplitViewport({
   onEvaluatedResults,
   isPlaying,
   onHubChange,
+  suspended = false,
 }: SplitViewportProps) {
   // Shift+Tab cycles the layout: viewport (free orbit) -> split (editor +
   // camera preview) -> full camera view -> viewport -> ...
@@ -92,6 +95,7 @@ export function SplitViewport({
     return (
       <div id="split-viewport-container" style={{ width: "100%", height: "100%", position: "relative" }}>
         <Viewport
+          suspended={suspended}
           graph={graph}
           registry={registry}
           renderNodeId={renderNodeId}
@@ -129,6 +133,7 @@ export function SplitViewport({
       {/* Left Pane: Editor Free View */}
       <div style={{ width: `${splitPercent}%`, height: "100%", position: "relative", minWidth: 0 }}>
         <Viewport
+          suspended={suspended}
           graph={graph}
           registry={registry}
           renderNodeId={renderNodeId}
@@ -164,6 +169,7 @@ export function SplitViewport({
       {/* Right Pane: Active Camera View / Output Preview */}
       <div style={{ width: `${100 - splitPercent}%`, height: "100%", position: "relative", minWidth: 0 }}>
         <Viewport
+          suspended={suspended}
           graph={graph}
           registry={registry}
           renderNodeId={renderNodeId}

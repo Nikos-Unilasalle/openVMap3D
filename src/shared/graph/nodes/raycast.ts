@@ -22,17 +22,46 @@ function asVector3(val: unknown, fallback: THREE.Vector3): THREE.Vector3 {
   return fallback.clone();
 }
 
-/** Stable signature of a geometry's mesh set — geometry uuid + position version. */
-function meshSignature(object: THREE.Object3D | null | undefined): string {
-  if (!(object instanceof THREE.Object3D)) return "none";
-  let sig = "";
+/**
+ * The raycastable meshes of an object, with their world matrices refreshed and
+ * their BVH built. Ray Burst fires thousands of rays at the *same* object, and
+ * both of those are per-object work, not per-ray — doing them inside the ray
+ * loop made every frame O(rays x meshes) matrix walks.
+ */
+function collectTargets(object: THREE.Object3D): THREE.Mesh[] {
+  const meshes: THREE.Mesh[] = [];
   object.traverse((child) => {
-    if (child instanceof THREE.Mesh && child.geometry?.attributes?.position) {
-      const pos = child.geometry.attributes.position as THREE.BufferAttribute;
-      sig += `${child.geometry.uuid}:${pos.version};`;
-    }
+    if (!(child instanceof THREE.Mesh) || !child.geometry?.attributes?.position) return;
+    // updateWorldMatrix (NOT updateMatrix): graph-driven meshes carry their
+    // pose in `matrix` with matrixAutoUpdate off — updateMatrix() would
+    // recompute `matrix` from the untouched defaults and destroy it. `force`
+    // is required since matrix.copy() never sets matrixWorldNeedsUpdate.
+    child.updateWorldMatrix(true, false, true);
+    // Opt the geometry into the accelerated raycast (builds its BVH once).
+    getBoundsTree(child.geometry);
+    meshes.push(child);
   });
-  return sig || "none";
+  return meshes;
+}
+
+/** The ray hits across a prepared mesh set, sorted by distance. */
+function castRayAgainst(
+  meshes: THREE.Mesh[],
+  origin: THREE.Vector3,
+  direction: THREE.Vector3,
+  maxDistance: number,
+  firstHitOnly: boolean,
+): THREE.Intersection[] {
+  const raycaster = new THREE.Raycaster(origin.clone(), direction.clone().normalize(), 0, maxDistance);
+  raycaster.firstHitOnly = firstHitOnly;
+
+  const hits: THREE.Intersection[] = [];
+  for (const mesh of meshes) {
+    const h = raycaster.intersectObject(mesh, false);
+    if (h.length > 0) hits.push(...h);
+  }
+  hits.sort((a, b) => a.distance - b.distance);
+  return hits;
 }
 
 /** The nearest ray hit across every mesh of an object, sorted by distance. */
@@ -43,24 +72,7 @@ function castRay(
   maxDistance: number,
   firstHitOnly: boolean,
 ): THREE.Intersection[] {
-  const raycaster = new THREE.Raycaster(origin.clone(), direction.clone().normalize(), 0, maxDistance);
-  raycaster.firstHitOnly = firstHitOnly;
-
-  const hits: THREE.Intersection[] = [];
-  object.traverse((child) => {
-    if (!(child instanceof THREE.Mesh) || !child.geometry?.attributes?.position) return;
-    // updateWorldMatrix (NOT updateMatrix): graph-driven meshes carry their
-    // pose in `matrix` with matrixAutoUpdate off — updateMatrix() would
-    // recompute `matrix` from the untouched defaults and destroy it. `force`
-    // is required since matrix.copy() never sets matrixWorldNeedsUpdate.
-    child.updateWorldMatrix(true, false, true);
-    // Opt the geometry into the accelerated raycast (builds its BVH once).
-    getBoundsTree(child.geometry);
-    const h = raycaster.intersectObject(child, false);
-    if (h.length > 0) hits.push(...h);
-  });
-  hits.sort((a, b) => a.distance - b.distance);
-  return hits;
+  return castRayAgainst(collectTargets(object), origin, direction, maxDistance, firstHitOnly);
 }
 
 export const RAYCAST_NODE: NodeDefinition = {
@@ -117,7 +129,8 @@ interface BurstState {
   lineGeometry?: LineSegmentsGeometry;
   material?: LineMaterial;
   signature?: string;
-  /** Seeded random ray directions + their per-ray rotation axes, regenerated with the signature. */
+  /** Seeded *unit* ray directions + their per-ray rotation axes — scaled by
+   * `radius` per frame, so changing the radius never re-rolls the field. */
   baseDirs: THREE.Vector3[];
   axes: THREE.Vector3[];
   /** Reused per-frame position buffer — a segment is [x0,y0,z0, x1,y1,z1]. */
@@ -132,6 +145,7 @@ interface BurstState {
 const burstCache = createNodeCache<BurstState>((s) => {
   if (s.lineGeometry) s.lineGeometry.dispose();
   if (s.material) s.material.dispose();
+  if (s.line) s.line.removeFromParent();
 });
 
 function getBurstState(nodeId: string): BurstState {
@@ -163,6 +177,18 @@ function updateRayDistances(state: BurstState): void {
   }
   (geo.attributes.instanceDistanceStart as THREE.InstancedBufferAttribute).needsUpdate = true;
   (geo.attributes.instanceDistanceEnd as THREE.InstancedBufferAttribute).needsUpdate = true;
+}
+
+/**
+ * A uniformly-distributed unit vector drawn from `prng`. THREE's own
+ * `randomDirection()` is hardwired to Math.random(), which silently made the
+ * node's Seed a no-op for the ray field itself.
+ */
+function randomUnitVector(prng: () => number): THREE.Vector3 {
+  const z = prng() * 2 - 1;
+  const theta = prng() * Math.PI * 2;
+  const r = Math.sqrt(Math.max(0, 1 - z * z));
+  return new THREE.Vector3(r * Math.cos(theta), r * Math.sin(theta), z);
 }
 
 function createPrng(seed: number) {
@@ -242,16 +268,11 @@ export const RAY_BURST_NODE: NodeDefinition = {
     const time = numberInput(inputs.time, params.time, 0);
     const color = asColor(inputs.color, asColor(params.color, new THREE.Color(0x444444)));
 
-    const signature = JSON.stringify([
-      count,
-      radius,
-      seed,
-      color.getHex(),
-      origin.x,
-      origin.y,
-      origin.z,
-      meshSignature(object),
-    ]);
+    // Only what genuinely invalidates the cached buffers and the random field.
+    // radius, origin, colour and the target's own geometry are all applied per
+    // frame further down — putting them here re-rolled every ray direction (and
+    // reallocated the geometry) on any frame that animated one of them.
+    const signature = JSON.stringify([count, seed]);
 
     if (signature !== state.signature) {
       state.signature = signature;
@@ -286,14 +307,8 @@ export const RAY_BURST_NODE: NodeDefinition = {
       state.baseDirs = [];
       state.axes = [];
       for (let i = 0; i < count; i++) {
-        state.baseDirs.push(new THREE.Vector3().randomDirection().multiplyScalar(radius));
-        state.axes.push(
-          new THREE.Vector3(
-            prng() * 2 - 1,
-            prng() * 2 - 1,
-            prng() * 2 - 1,
-          ).normalize(),
-        );
+        state.baseDirs.push(randomUnitVector(prng));
+        state.axes.push(randomUnitVector(prng));
       }
 
       if (!state.line) {
@@ -316,16 +331,29 @@ export const RAY_BURST_NODE: NodeDefinition = {
     const hits: number[] = [];
     const distances: number[] = [];
 
+    // World matrices + BVHs are refreshed once for the whole burst, not once
+    // per ray (see collectTargets).
+    const targets = object ? collectTargets(object) : [];
+
     const rotateRad = (rotate * Math.PI) / 180;
     for (let i = 0; i < count; i++) {
-      const rotated = state.baseDirs[i].clone().applyAxisAngle(state.axes[i], time * rotateRad);
+      const rotated = state.baseDirs[i]
+        .clone()
+        .applyAxisAngle(state.axes[i], time * rotateRad)
+        .multiplyScalar(radius);
       const rayOrigin = origin.clone().add(rotated);
       rayOrigins.push(rayOrigin.clone());
 
       let end: THREE.Vector3;
-      if (object) {
+      // Every output list stays index-aligned with the ray that produced it:
+      // a miss contributes the ray's far end and a zero normal rather than
+      // being skipped, so `hitPoints[i]`, `hits[i]` and `rayOrigins[i]` always
+      // describe ray i. Downstream `Set Instance Transform` reads them
+      // positionally, and a compacted list silently paired markers with the
+      // wrong rays. Filter on `hits` to keep only the ones that landed.
+      if (targets.length > 0) {
         const direction = origin.clone().sub(rayOrigin).normalize();
-        const result = castRay(object, rayOrigin, direction, Infinity, true);
+        const result = castRayAgainst(targets, rayOrigin, direction, Infinity, true);
         if (result.length > 0) {
           const h = result[0];
           end = h.point;
@@ -335,13 +363,19 @@ export const RAY_BURST_NODE: NodeDefinition = {
           distances.push(h.distance);
         } else {
           end = origin.clone();
+          hitPoints.push(end.clone());
+          hitNormals.push(new THREE.Vector3());
           hits.push(0);
-          distances.push(Infinity);
+          // A miss reports the full ray length, not Infinity — List Statistics
+          // and List Math had no way to survive an Infinity in the stream.
+          distances.push(rayOrigin.distanceTo(end));
         }
       } else {
         end = origin.clone();
+        hitPoints.push(end.clone());
+        hitNormals.push(new THREE.Vector3());
         hits.push(0);
-        distances.push(Infinity);
+        distances.push(rayOrigin.distanceTo(end));
       }
 
       positions[i * 6] = rayOrigin.x;

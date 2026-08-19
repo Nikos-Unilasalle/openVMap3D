@@ -105,6 +105,29 @@ interface HubState {
   lastTrigger: boolean;
   animDir: "enter" | "exit" | "none";
   animStart?: number;
+  /** Which clock `animStart` was stamped from — see hubClock(). */
+  animClock?: HubClockDomain;
+}
+
+type HubClockDomain = "wall" | "graph";
+
+/**
+ * Which clock a hub animation runs on.
+ *
+ * Live preview uses wall-clock time so an enter/exit still plays out while the
+ * timeline is paused — a HUD triggered from a keyboard node has to animate
+ * whether or not the playhead is moving.
+ *
+ * A captured export frame uses the graph's deterministic `time` instead. The
+ * export loop paces itself on real time and slows down whenever a frame takes
+ * longer than its budget, so a wall-clock animation drifted away from the
+ * frames it was supposed to be drawn on — the encoded video showed the HUD
+ * ahead of (or behind) everything else in the scene.
+ */
+function hubClock(ctx: { time: number; capturing?: boolean }): { nowSec: number; domain: HubClockDomain } {
+  if (ctx.capturing) return { nowSec: ctx.time, domain: "graph" };
+  const wall = typeof performance !== "undefined" ? performance.now() / 1000 : Date.now() / 1000;
+  return { nowSec: wall, domain: "wall" };
 }
 
 function getHubState(nodeId: string): HubState {
@@ -158,13 +181,14 @@ function hubAnimationStyle(anim: HubAnimation, p: number): { transform: string; 
 
 /**
  * Shared trigger + animation state machine for hub/* nodes. A single trigger
- * toggles enter/exit on each rising edge; animations run on real wall-clock
- * time (performance.now) so they're independent of the timeline.
+ * toggles enter/exit on each rising edge; `nowSec`/`domain` come from
+ * hubClock(), which picks the wall clock live and the graph clock on export.
  */
 function resolveHubAnimation(
   state: HubState,
   inputs: Record<string, unknown>,
   nowSec: number,
+  domain: HubClockDomain,
   durationIn: number,
   durationOut: number,
   enterEase: HubEasing,
@@ -172,6 +196,15 @@ function resolveHubAnimation(
   enterAnimation: HubAnimation,
   exitAnimation: HubAnimation,
 ): { p: number; anim: HubAnimation; isShown: boolean } {
+  // The two clocks share no origin, so an animation stamped on one can't be
+  // measured against the other — settle it and let the next trigger replay it
+  // cleanly in the new domain.
+  if (state.animClock !== domain) {
+    state.animClock = domain;
+    state.animDir = "none";
+    state.animStart = undefined;
+  }
+
   // Default trigger is 1 (shown); wiring the socket overrides that.
   const trigger = inputs.trigger !== undefined ? Number(inputs.trigger) > 0 : true;
   const risingTrigger = trigger && !state.lastTrigger;
@@ -333,13 +366,10 @@ export const HUB_TEXT_NODE: NodeDefinition = {
     const durationIn = Math.max(0.05, num(params.durationIn, 0.5));
     const durationOut = Math.max(0.05, num(params.durationOut, 0.5));
 
-    // The hub is independent of the timeline: animations run on real wall-clock
-    // time (performance.now), not the deterministic sim clock — so enter/exit
-    // complete whether the timeline is playing or paused.
-    const nowSec = typeof performance !== "undefined" ? performance.now() / 1000 : Date.now() / 1000;
+    const { nowSec, domain } = hubClock(ctx);
 
     const { p, anim, isShown } = resolveHubAnimation(
-      state, inputs, nowSec, durationIn, durationOut, enterEase, exitEase, enterAnimation, exitAnimation,
+      state, inputs, nowSec, domain, durationIn, durationOut, enterEase, exitEase, enterAnimation, exitAnimation,
     );
 
     const style = hubAnimationStyle(anim, p);
@@ -400,10 +430,25 @@ function loadImageBytes(nodeId: string, path: string, content: Uint8Array | stri
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
   const blob = new Blob([content], { type: HUB_IMAGE_MIME[ext] || "image/png" });
   const url = URL.createObjectURL(blob);
+  const revoke = (target: string | undefined) => {
+    if (!target) return;
+    try {
+      URL.revokeObjectURL(target);
+    } catch {}
+  };
   const img = new Image();
   img.onload = () => {
+    // The object URL the element was showing until now is dead the moment this
+    // one replaces it — only the *last* one ever reached the cache disposer, so
+    // every re-pick and every disk reload leaked one blob for the session.
+    revoke(state.url);
     state.url = url;
     state.width = img.naturalWidth || undefined;
+  };
+  img.onerror = () => {
+    // A URL nothing will ever draw from — release it rather than holding the
+    // decoded blob alive until the tab closes.
+    revoke(url);
   };
   img.src = url;
 }
@@ -542,9 +587,9 @@ export const HUB_IMAGE_NODE: NodeDefinition = {
     const durationIn = Math.max(0.05, num(params.durationIn, 0.5));
     const durationOut = Math.max(0.05, num(params.durationOut, 0.5));
 
-    const nowSec = typeof performance !== "undefined" ? performance.now() / 1000 : Date.now() / 1000;
+    const { nowSec, domain } = hubClock(ctx);
     const { p, anim, isShown } = resolveHubAnimation(
-      state, inputs, nowSec, durationIn, durationOut, enterEase, exitEase, enterAnimation, exitAnimation,
+      state, inputs, nowSec, domain, durationIn, durationOut, enterEase, exitEase, enterAnimation, exitAnimation,
     );
     const style = hubAnimationStyle(anim, p);
 

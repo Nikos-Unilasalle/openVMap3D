@@ -307,6 +307,29 @@ interface ObjMaterialParams {
   offsetY: number;
 }
 
+/**
+ * A material only needs recompiling when its *defines* change — which map
+ * slots are filled, and whether it draws transparent. Colour, roughness,
+ * repeat/offset and opacity are plain uniforms. Setting `needsUpdate`
+ * unconditionally every frame forced three to recompute the full program
+ * parameter set on every mesh of every loaded OBJ, every frame.
+ */
+function syncMaterialDefines(
+  mat: THREE.Material & { map?: THREE.Texture | null; normalMap?: THREE.Texture | null },
+  map: THREE.Texture | null,
+  normalMap: THREE.Texture | null,
+  isTransparent: boolean,
+): void {
+  const structural =
+    (mat.map ?? null) !== map ||
+    (mat.normalMap ?? null) !== normalMap ||
+    mat.transparent !== isTransparent;
+  mat.map = map;
+  if ("normalMap" in mat) mat.normalMap = normalMap;
+  mat.transparent = isTransparent;
+  if (structural) mat.needsUpdate = true;
+}
+
 function updateObjMaterials(group: THREE.Group, p: ObjMaterialParams): void {
   group.traverse((child) => {
     if (child instanceof THREE.Mesh) {
@@ -319,18 +342,14 @@ function updateObjMaterials(group: THREE.Group, p: ObjMaterialParams): void {
         const mat = child.material as THREE.MeshBasicMaterial;
         mat.color.copy(p.color);
         mat.wireframe = p.wireframe;
-        mat.transparent = p.isTransparent;
         mat.opacity = p.opacity;
 
         if (p.activeDiffuse) {
-          mat.map = p.activeDiffuse;
-          mat.map.colorSpace = THREE.SRGBColorSpace;
-          mat.map.repeat.set(p.scaleX, p.scaleY);
-          mat.map.offset.set(p.offsetX, p.offsetY);
-        } else {
-          mat.map = null;
+          p.activeDiffuse.colorSpace = THREE.SRGBColorSpace;
+          p.activeDiffuse.repeat.set(p.scaleX, p.scaleY);
+          p.activeDiffuse.offset.set(p.offsetX, p.offsetY);
         }
-        mat.needsUpdate = true;
+        syncMaterialDefines(mat, p.activeDiffuse ?? null, null, p.isTransparent);
       } else {
         if (!(child.material instanceof THREE.MeshStandardMaterial)) {
           if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
@@ -342,27 +361,18 @@ function updateObjMaterials(group: THREE.Group, p: ObjMaterialParams): void {
         mat.roughness = p.roughness;
         mat.metalness = p.metalness;
         mat.wireframe = p.wireframe;
-        mat.transparent = p.isTransparent;
         mat.opacity = p.opacity;
 
         if (p.activeDiffuse) {
-          mat.map = p.activeDiffuse;
-          mat.map.colorSpace = THREE.SRGBColorSpace;
-          mat.map.repeat.set(p.scaleX, p.scaleY);
-          mat.map.offset.set(p.offsetX, p.offsetY);
-        } else {
-          mat.map = null;
+          p.activeDiffuse.colorSpace = THREE.SRGBColorSpace;
+          p.activeDiffuse.repeat.set(p.scaleX, p.scaleY);
+          p.activeDiffuse.offset.set(p.offsetX, p.offsetY);
         }
-
         if (p.activeNormal) {
-          mat.normalMap = p.activeNormal;
-          mat.normalMap.repeat.set(p.scaleX, p.scaleY);
-          mat.normalMap.offset.set(p.offsetX, p.offsetY);
-        } else {
-          mat.normalMap = null;
+          p.activeNormal.repeat.set(p.scaleX, p.scaleY);
+          p.activeNormal.offset.set(p.offsetX, p.offsetY);
         }
-
-        mat.needsUpdate = true;
+        syncMaterialDefines(mat, p.activeDiffuse ?? null, p.activeNormal ?? null, p.isTransparent);
       }
     }
   });

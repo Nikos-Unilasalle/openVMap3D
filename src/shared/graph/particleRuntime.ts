@@ -102,6 +102,14 @@ const VELOCITY_SHADER = /* glsl */ `
 
 interface Simulation {
   gpuCompute: GPUComputationRenderer;
+  /**
+   * The renderer the GPUComputationRenderer was built against. Its render
+   * targets live in *that* WebGL context, so a second viewport (the output
+   * window, or the offscreen export viewport) reading them would sample an
+   * empty texture. Rebuilding when the renderer changes hands the sim to
+   * whoever is evaluating now instead of silently rendering nothing.
+   */
+  renderer: THREE.WebGLRenderer;
   positionVar: Variable;
   velocityVar: Variable;
   size: number;
@@ -146,7 +154,7 @@ function createSimulation(nodeId: string, renderer: THREE.WebGLRenderer, size: n
   const error = gpuCompute.init();
   if (error) console.error(`particles/simulate (${nodeId}): GPUComputationRenderer init failed — ${error}`);
 
-  const sim: Simulation = { gpuCompute, positionVar, velocityVar, size, lastSteppedStep: currentStep };
+  const sim: Simulation = { gpuCompute, renderer, positionVar, velocityVar, size, lastSteppedStep: currentStep };
   simCache.set(nodeId, sim);
   return sim;
 }
@@ -183,7 +191,13 @@ export function getOrCreateSimulation(
 
   const size = textureSizeFor(capacity);
   let sim = simCache.get(nodeId);
-  if (!sim || sim.size !== size) {
+  // A clock that jumped *backwards* — the timeline scrubbed back, or a video
+  // export restarting at frame 0 after the preview already ran — can't be
+  // caught up by stepping forward, and leaving the sim where it was made the
+  // first exported frames show a simulation that is minutes old. Rebuilding
+  // restarts it from the same deterministic initial state every time.
+  const rewound = sim !== undefined && currentStep < sim.lastSteppedStep;
+  if (!sim || sim.size !== size || sim.renderer !== renderer || rewound) {
     if (sim) {
       sim.gpuCompute.dispose();
     }

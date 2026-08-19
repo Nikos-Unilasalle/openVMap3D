@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { ClockState, createClock, STEP_SECONDS, tickClock } from "../graph/clock";
-import { EvalResult, evaluateGraph } from "../graph/evaluate";
+import { EvalResult, disposeEvalSession, evaluateGraph } from "../graph/evaluate";
 import { CAMERA_FLY_TO_NODE, CAMERA_NODE } from "../graph/nodes/camera";
 import { HubElement } from "../graph/nodes/hub";
 import { asVector3 } from "../graph/nodes/transform";
@@ -52,6 +52,12 @@ import "./viewport.css";
 // HUD elements are CSS/DOM overlays, which video export (which captures the
 // WebGL canvas) would otherwise omit. These helpers redraw each element onto a
 // 2D canvas so the export includes the HUD.
+/** Hands each mounted viewport its own evaluator session id. */
+let nextSessionOrdinal = 0;
+
+/** At 60fps, one second of grace before an undecodable HUD image is given up on. */
+const MAX_CAPTURE_WAIT_TICKS = 60;
+
 const exportImageCache = new Map<string, HTMLImageElement>();
 function getExportImage(url: string): HTMLImageElement | null {
   let img = exportImageCache.get(url);
@@ -61,6 +67,53 @@ function getExportImage(url: string): HTMLImageElement | null {
     exportImageCache.set(url, img);
   }
   return img.complete && img.naturalWidth > 0 ? img : null;
+}
+
+/**
+ * True once every HUD image in `elements` has decoded. Decoding is async and
+ * starts on first use, so without this gate the opening frames of an export
+ * encoded with the image elements simply missing — the very frames a title
+ * card lives on.
+ */
+function hubImagesReady(elements: HubElement[]): boolean {
+  for (const el of elements) {
+    if (!el.visible || el.cssOpacity <= 0) continue;
+    if (el.imageUrl && !getExportImage(el.imageUrl)) return false;
+  }
+  return true;
+}
+
+/** Drops cached decodes for object URLs no element references any more. */
+function pruneExportImages(elements: HubElement[]): void {
+  if (exportImageCache.size === 0) return;
+  const live = new Set<string>();
+  for (const el of elements) if (el.imageUrl) live.add(el.imageUrl);
+  for (const url of exportImageCache.keys()) {
+    if (!live.has(url)) exportImageCache.delete(url);
+  }
+}
+
+/**
+ * The animation part of a hub element's CSS transform — everything before the
+ * `translate(-50%, -50%)` that merely centres it. The CSS overlay gets these
+ * for free; the export canvas has to reproduce them, and not doing so meant
+ * every animation except `fade` was invisible in the encoded video.
+ */
+function parseHubAnimationTransform(
+  transform: string,
+  frameWidth: number,
+  frameHeight: number,
+): { dx: number; dy: number; scale: number } {
+  let dx = 0;
+  let dy = 0;
+  let scale = 1;
+  const tx = transform.match(/translateX\((-?[\d.]+)vw\)/);
+  if (tx) dx = (parseFloat(tx[1]) / 100) * frameWidth;
+  const ty = transform.match(/translateY\((-?[\d.]+)vh\)/);
+  if (ty) dy = (parseFloat(ty[1]) / 100) * frameHeight;
+  const sc = transform.match(/scale\((-?[\d.]+)\)/);
+  if (sc) scale = parseFloat(sc[1]);
+  return { dx, dy, scale };
 }
 
 function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
@@ -74,12 +127,24 @@ function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: n
   ctx.closePath();
 }
 
-function drawHubElement(ctx: CanvasRenderingContext2D, el: HubElement): void {
+function drawHubElement(
+  ctx: CanvasRenderingContext2D,
+  el: HubElement,
+  frameWidth: number,
+  frameHeight: number,
+): void {
   if (!el.visible || el.cssOpacity <= 0) return;
+  const anim = parseHubAnimationTransform(el.transform, frameWidth, frameHeight);
+  if (anim.scale === 0) return;
   ctx.save();
-  ctx.translate(el.x, el.y);
+  ctx.translate(el.x + anim.dx, el.y + anim.dy);
+  if (anim.scale !== 1) ctx.scale(anim.scale, anim.scale);
   ctx.rotate((el.rotation * Math.PI) / 180);
   ctx.globalAlpha = el.cssOpacity;
+  // `filter` carries the blur animation. Not every 2D context implements it,
+  // so only set it when the property exists — the element still draws (sharp)
+  // where it doesn't, rather than throwing mid-frame.
+  if (el.filter && "filter" in ctx) ctx.filter = el.filter;
 
   if (el.imageUrl) {
     const img = getExportImage(el.imageUrl);
@@ -223,6 +288,15 @@ interface ViewportProps {
    * — just the rendered scene. Default false (the editor's own viewport).
    */
   outputMode?: boolean;
+  /**
+   * Freezes this viewport's render loop entirely — no evaluation, no draw.
+   * Set on the editor panes while a video export runs: stateful nodes
+   * (particle sims, Ray Burst, hub triggers, Fly To) keep their state in
+   * module-level caches keyed only by node id, so a preview pane ticking on
+   * real time between two captured frames advanced the very state the export
+   * was trying to sample deterministically.
+   */
+  suspended?: boolean;
   /** Drives which object shows a transform gizmo — shared with GraphEditor's own node selection (see App.tsx), so clicking an object here and clicking its node in the graph select the same thing. */
   selectedNodeId?: string | null;
   /** Fired on a click (not a drag) that hits a selectable mesh, or null on an empty-space click — mirrors GraphEditor's onSelectNode. Omit to disable click-to-select and the gizmo entirely. */
@@ -267,6 +341,7 @@ export function Viewport({
   renderNodeId,
   epochMs = 0,
   outputMode = false,
+  suspended = false,
   onSelectNode,
   selectedNodeId = null,
   onTransformChange,
@@ -290,11 +365,24 @@ export function Viewport({
 
   // Set by captureFrame(), read (and cleared) by the very next tick() —
   // see ViewportExportHandle's own doc comment above.
-  const pendingCaptureRef = useRef<{ frameIndex: number; fps: number; resolve: () => void } | null>(null);
+  const pendingCaptureRef = useRef<{
+    frameIndex: number;
+    fps: number;
+    resolve: () => void;
+    /** Ticks this frame has been held waiting on HUD image decodes. */
+    waited?: number;
+  } | null>(null);
   const onEvaluatedResultsRef = useRef(onEvaluatedResults);
   onEvaluatedResultsRef.current = onEvaluatedResults;
   const isPlayingRef = useRef(isPlaying);
   isPlayingRef.current = isPlaying;
+  const suspendedRef = useRef(suspended);
+  suspendedRef.current = suspended;
+  // One evaluator session per mounted viewport — see EvalContext.sessionId.
+  const sessionIdRef = useRef<string>("");
+  if (!sessionIdRef.current) {
+    sessionIdRef.current = `viewport-${nextSessionOrdinal++}`;
+  }
 
   const [showEnvInEditor, setShowEnvInEditor] = useState(false);
   const showEnvInEditorRef = useRef(showEnvInEditor);
@@ -1227,6 +1315,14 @@ export function Viewport({
     }
 
     function tick() {
+      // Frozen while another viewport is capturing an export (see the
+      // `suspended` prop). Keep the rAF alive so the pane picks straight back
+      // up when the export finishes, but touch nothing in between.
+      if (suspendedRef.current) {
+        frameId = requestAnimationFrame(tick);
+        return;
+      }
+
       // A pending captureFrame() call wins over live playback entirely: the
       // clock is forced to exactly frameIndex/fps (not real elapsed time —
       // Time-node/oscillator/particle output must match that instant, not
@@ -1278,6 +1374,8 @@ export function Viewport({
           renderer,
           activeCameraPose,
           renderSize,
+          sessionId: sessionIdRef.current,
+          capturing: capture !== null,
           currentFrame: exportFrameIndex,
           keyframes: graphRef.current.keyframes,
         });
@@ -1448,6 +1546,10 @@ export function Viewport({
       const hubSig = JSON.stringify(collectedHub);
       if (hubSigRef.current !== hubSig) {
         hubSigRef.current = hubSig;
+        // Start decoding any new HUD image now rather than on the first
+        // captured frame, and let go of the ones no element points at.
+        for (const el of collectedHub) if (el.imageUrl) getExportImage(el.imageUrl);
+        pruneExportImages(collectedHub);
         setHubElements(collectedHub);
       }
 
@@ -1958,6 +2060,15 @@ export function Viewport({
       }
 
       if (capture) {
+        // Hold the frame until every HUD image has decoded — the capture is
+        // only resolved below, so exportVideo simply waits one more tick and
+        // this same frame index is rendered again. Bounded so a broken image
+        // can never wedge the export.
+        capture.waited = (capture.waited ?? 0) + 1;
+        if (capture.waited < MAX_CAPTURE_WAIT_TICKS && !hubImagesReady(collectedHub)) {
+          frameId = requestAnimationFrame(tick);
+          return;
+        }
         // Composite the WebGL frame + the 2D HUD overlay onto the export
         // canvas, which is what MediaRecorder actually captures.
         if (exportCtx) {
@@ -1980,7 +2091,7 @@ export function Viewport({
             const sy = exportCanvas.height / rs.height;
             exportCtx.save();
             exportCtx.scale(sx, sy);
-            for (const el of collectedHub) drawHubElement(exportCtx, el);
+            for (const el of collectedHub) drawHubElement(exportCtx, el, rs.width, rs.height);
             exportCtx.restore();
           }
         }
@@ -1995,6 +2106,7 @@ export function Viewport({
 
     return () => {
       cancelAnimationFrame(frameId);
+      disposeEvalSession(sessionIdRef.current);
       resizeObserver.disconnect();
       if (!outputMode) {
         renderer.domElement.removeEventListener("pointerdown", onCanvasPointerDown, { capture: true });

@@ -90,9 +90,10 @@ export function computeSegmentEasing(t: number, easing?: EasingType, strength?: 
       return blendToLinear(bounceEaseOut(p), p, s ?? 1);
     case "elastic":
       return blendToLinear(elasticEaseOut(p), p, s ?? 1);
-    case "smooth":
     default:
-      return sineEaseInOut(p);
+      // No easing recorded on the keyframe — the "smooth" default, and it
+      // honours `strength` the same way an explicit "smooth" does.
+      return blendToLinear(sineEaseInOut(p), p, s ?? 1);
   }
 }
 
@@ -310,7 +311,20 @@ function applyVisibility(geometry: unknown, value: unknown): void {
 // actually produced — instead of silently falling back to a static param. This
 // is what the cyclic-node comment below has always promised but `results` is a
 // fresh Map each pass, so it needed an explicit home to survive between frames.
-let previousFrameOutputs: EvalResult | null = null;
+//
+// Keyed by session, not global: several viewports evaluate the same graph in
+// their own render loops (the editor pane, the split preview, the offscreen
+// export viewport), each on its own clock. Sharing one slot meant a real-time
+// preview frame became "last frame" for the deterministic export frame that
+// followed it.
+const previousFrameOutputsBySession = new Map<string, EvalResult>();
+
+const DEFAULT_SESSION = "default";
+
+/** Forgets a session's carried-over frame — call when its viewport unmounts. */
+export function disposeEvalSession(sessionId: string): void {
+  previousFrameOutputsBySession.delete(sessionId);
+}
 
 // Cache the topological order by graph reference: playback re-runs the graph
 // every frame without mutating it, and recomputing the order (O(V+E) plus the
@@ -325,6 +339,8 @@ export function evaluateGraph(graph: Graph, registry: NodeRegistry, ctx: EvalCon
     lastTopoGraph = graph;
   }
   const { order, cyclic } = lastTopo!;
+  const sessionId = ctx.sessionId ?? DEFAULT_SESSION;
+  const previousFrameOutputs = previousFrameOutputsBySession.get(sessionId) ?? null;
   const results: EvalResult = new Map();
   const nodesById = new Map(graph.nodes.map((n) => [n.id, n]));
 
@@ -417,6 +433,6 @@ export function evaluateGraph(graph: Graph, registry: NodeRegistry, ctx: EvalCon
     }
   }
 
-  previousFrameOutputs = results;
+  previousFrameOutputsBySession.set(sessionId, results);
   return results;
 }

@@ -1,6 +1,7 @@
 import {
   enableMicrophone,
   getAudioContext,
+  getAudioOutput,
   getOrCreateAnalyser,
   getOrCreateMic,
   getOrCreatePeakDetector,
@@ -350,7 +351,7 @@ export const AUDIO_SYNTH_NODE: NodeDefinition = {
           osc.frequency.value = freq;
           gain.gain.value = volume;
           osc.connect(gain);
-          gain.connect(ctxWeb.destination);
+          gain.connect(getAudioOutput() ?? ctxWeb.destination);
           osc.start();
           synthState.osc = osc;
           synthState.gainNode = gain;

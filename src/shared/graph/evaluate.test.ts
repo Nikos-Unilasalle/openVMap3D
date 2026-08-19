@@ -276,3 +276,57 @@ describe("the visible socket", () => {
     expect((results.get("obj")?.geometry as THREE.Object3D).visible).toBe(false);
   });
 });
+
+describe("evaluator sessions", () => {
+  /**
+   * A source that produces a value on some frames and nothing on others — the
+   * evaluator is supposed to fall back to the *same session's* previous frame
+   * when a wired source goes quiet, which is what makes this observable.
+   */
+  const FLAKY: NodeDefinition = {
+    type: "test/flaky",
+    label: "Flaky",
+    category: "math",
+    inputs: [],
+    outputs: [{ id: "out", label: "Out", type: "value" }],
+    defaultParams: { value: 0, emit: 1 },
+    evaluate: (_inputs, params) => (params.emit ? { out: Number(params.value) } : {}),
+  };
+
+  const PASSTHROUGH: NodeDefinition = {
+    type: "test/passthrough",
+    label: "Passthrough",
+    category: "math",
+    inputs: [{ id: "in", label: "In", type: "value" }],
+    outputs: [{ id: "out", label: "Out", type: "value" }],
+    defaultParams: {},
+    evaluate: (inputs) => ({ out: inputs.in }),
+  };
+
+  const registry = createRegistry([FLAKY, PASSTHROUGH]);
+
+  function graphEmitting(value: number, emit: number): Graph {
+    return {
+      nodes: [node("src", "test/flaky", { value, emit }), node("sink", "test/passthrough")],
+      connections: [edge("src", "out", "sink", "in")],
+    };
+  }
+
+  test("one session's frame can't stand in as another's previous frame", () => {
+    // Session A sees 10 on its first frame...
+    evaluateGraph(graphEmitting(10, 1), registry, { ...CTX, sessionId: "a" });
+    // ...and session B sees 99 on its own.
+    evaluateGraph(graphEmitting(99, 1), registry, { ...CTX, sessionId: "b" });
+
+    // Now A's source goes quiet. It must fall back to 10 — A's own last value —
+    // not to 99, which is simply another viewport's frame.
+    const res = evaluateGraph(graphEmitting(10, 0), registry, { ...CTX, sessionId: "a" });
+    expect(res.get("sink")?.out).toBe(10);
+  });
+
+  test("a session still carries its own frame forward", () => {
+    evaluateGraph(graphEmitting(7, 1), registry, { ...CTX, sessionId: "solo" });
+    const res = evaluateGraph(graphEmitting(7, 0), registry, { ...CTX, sessionId: "solo" });
+    expect(res.get("sink")?.out).toBe(7);
+  });
+});

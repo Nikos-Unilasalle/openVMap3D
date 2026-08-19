@@ -55,6 +55,24 @@ export interface EvalContext {
    * these pixels. Absent when there is no render node, or in a headless call.
    */
   renderSize?: { width: number; height: number };
+  /**
+   * Which render loop is evaluating. Several viewports run the same graph
+   * concurrently on different clocks (editor pane, split preview, the
+   * offscreen export viewport), and the evaluator carries one frame of state
+   * forward per session so a real-time preview frame can't stand in as the
+   * "previous frame" of a deterministic export frame. Omitted in headless
+   * calls, which all share one implicit session.
+   */
+  sessionId?: string;
+  /**
+   * True while the frame being evaluated is a *captured* export frame, not a
+   * live preview one. Nodes whose animation would otherwise run on wall-clock
+   * time (hub/*, whose enter/exit must finish even when the timeline is
+   * paused) switch to `time` here, so what gets encoded is exactly frame
+   * `currentFrame` and not "whatever performance.now() said when the encoder
+   * got round to it".
+   */
+  capturing?: boolean;
   /** Active animation current frame index. */
   currentFrame?: number;
   /** Active keyframe store. */

@@ -76,6 +76,47 @@ export function requestPlay(player: PlayerState): void {
   }
 }
 
+/**
+ * The single bus every sound-producing node connects to instead of
+ * `ctx.destination`. It feeds the speakers as before, and — once
+ * `getAudioExportStream()` has been called — a MediaStreamDestination as well,
+ * which is what lets the video export carry an audio track. Connecting nodes
+ * straight to `destination` made the audio physically unreachable from
+ * MediaRecorder: exported files were silent no matter what the graph played.
+ */
+let outputBus: GainNode | null = null;
+let exportDestination: MediaStreamAudioDestinationNode | null = null;
+
+export function getAudioOutput(): AudioNode | null {
+  const ctx = getAudioContext();
+  if (!ctx) return null;
+  if (!outputBus) {
+    outputBus = ctx.createGain();
+    outputBus.gain.value = 1;
+    outputBus.connect(ctx.destination);
+    if (exportDestination) outputBus.connect(exportDestination);
+  }
+  return outputBus;
+}
+
+/**
+ * A live MediaStream carrying everything the graph is playing, for the video
+ * export to merge into its recording. Created on first use and kept — a
+ * MediaStreamDestination is cheap and tearing it down mid-session would drop
+ * the tap for any export that follows.
+ */
+export function getAudioExportStream(): MediaStream | null {
+  const ctx = getAudioContext();
+  if (!ctx) return null;
+  const bus = getAudioOutput();
+  if (!bus) return null;
+  if (!exportDestination) {
+    exportDestination = ctx.createMediaStreamDestination();
+    bus.connect(exportDestination);
+  }
+  return exportDestination.stream;
+}
+
 export function getAudioContext(): AudioContext | null {
   if (typeof window === "undefined") return null;
   if (!globalAudioCtx) {
@@ -160,7 +201,7 @@ export function getOrCreatePlayer(nodeId: string): PlayerState {
       const sourceNode = ctx.createMediaElementSource(audioEl);
       const gainNode = ctx.createGain();
       sourceNode.connect(gainNode);
-      gainNode.connect(ctx.destination);
+      gainNode.connect(getAudioOutput() ?? ctx.destination);
       state.sourceNode = sourceNode;
       state.gainNode = gainNode;
     } catch {

@@ -1,5 +1,6 @@
 import { save as dialogSave } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
+import { getAudioExportStream } from "../audio/audioStore";
 import { isTauri } from "../graph/storage";
 import type { ViewportExportHandle } from "../three/Viewport";
 
@@ -36,6 +37,13 @@ export interface VideoExportOptions {
   onProgress?: (framesDone: number, totalFrames: number) => void;
   /** Polled between frames; return true to stop early (partial file is still returned). */
   isCancelled?: () => boolean;
+  /**
+   * Merge the graph's live audio into the recording (default true). The audio
+   * runs on real time while the frames are rendered one by one, so it stays in
+   * sync only as long as the export holds its 1/fps pace — set false for a
+   * heavy scene where a silent video beats a drifting soundtrack.
+   */
+  includeAudio?: boolean;
 }
 
 /**
@@ -61,6 +69,20 @@ export async function exportVideo(
 
   const stream = (canvas as HTMLCanvasElement & { captureStream(fps: number): MediaStream }).captureStream(opts.fps);
   const track = stream.getVideoTracks()[0] as MediaStreamTrack & { requestFrame?: () => void };
+
+  // The graph's sound nodes feed a shared bus (audioStore's getAudioOutput),
+  // which also runs into a MediaStreamDestination — merging its track here is
+  // what puts audio in the file. Skipped when the graph makes no sound at all,
+  // so a silent project doesn't get a pointless empty track. Note that the
+  // audio is captured in real time while the frames are not, so it only lines
+  // up when the export keeps its 1/fps pace; a scene too heavy to render at
+  // rate will drift, which is why it can be turned off.
+  let audioTrack: MediaStreamTrack | null = null;
+  if (opts.includeAudio !== false) {
+    const audioStream = getAudioExportStream();
+    audioTrack = audioStream?.getAudioTracks()[0] ?? null;
+    if (audioTrack) stream.addTrack(audioTrack);
+  }
 
   const mimeType = pickSupportedMimeType();
   const recorder = new MediaRecorder(stream, {
@@ -112,6 +134,10 @@ export async function exportVideo(
 
   recorder.stop();
   await stopped;
+  // Stop the canvas track, but only *detach* the audio one: its MediaStreamTrack
+  // belongs to the shared MediaStreamDestination, and stopping it would leave
+  // every later export silent.
+  if (audioTrack) stream.removeTrack(audioTrack);
   stream.getTracks().forEach((t) => t.stop());
 
   return new Blob(chunks, { type: mimeType });
@@ -131,7 +157,10 @@ export async function saveVideoBlob(blob: Blob, suggestedFilename: string): Prom
     a.href = url;
     a.download = suggestedFilename;
     a.click();
-    URL.revokeObjectURL(url);
+    // Revoking synchronously races the browser's own read of the blob — the
+    // download silently fails on a large file in several engines. One turn of
+    // the event loop plus a grace period is enough for the fetch to start.
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
     return suggestedFilename;
   }
 
