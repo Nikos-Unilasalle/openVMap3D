@@ -1048,6 +1048,22 @@ function MainEditor() {
     [selectedNodeId, setGraphWithHistory],
   );
 
+  const onChangeKeyframeValue = useCallback(
+    (nodeId: string, paramKey: string, frame: number, value: number) => {
+      setGraphWithHistory((prevGraph) => {
+        const currentKeyframes = prevGraph.keyframes || {};
+        const nodeKeys = currentKeyframes[nodeId] ? { ...currentKeyframes[nodeId] } : {};
+        const list = nodeKeys[paramKey] ? [...nodeKeys[paramKey]] : [];
+        const idx = list.findIndex((k) => k.frame === frame);
+        if (idx < 0) return prevGraph;
+        list[idx] = { ...list[idx], value };
+        nodeKeys[paramKey] = list;
+        return { ...prevGraph, keyframes: { ...currentKeyframes, [nodeId]: nodeKeys } };
+      }, `keyframe:value:${nodeId}:${paramKey}:${frame}`);
+    },
+    [setGraphWithHistory],
+  );
+
   const onDeleteKeyframe = useCallback(
     (frame: number) => {
       if (!selectedNodeId) return;
@@ -1430,6 +1446,7 @@ function MainEditor() {
         onBatchDeleteKeyframes={onBatchDeleteKeyframes}
         onBatchDuplicateKeyframes={onBatchDuplicateKeyframes}
         onBatchUpdateEasing={onBatchUpdateEasing}
+        onChangeKeyframeValue={onChangeKeyframeValue}
         onPasteKeyframes={onPasteKeyframes}
         markers={graph.markers ?? []}
         onToggleMarker={onToggleMarker}

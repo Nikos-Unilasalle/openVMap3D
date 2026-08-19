@@ -13,6 +13,7 @@ import {
   SelectedKeyframeKey,
 } from "./timelineUtils";
 import { EasingPopover, EASING_OPTIONS, EASING_STRENGTH_CONFIG } from "./EasingPopover";
+import { MotionGraph } from "./MotionGraph";
 import "./timeline-drawer.css";
 
 export interface TimelineDrawerProps {
@@ -43,6 +44,7 @@ export interface TimelineDrawerProps {
     easeStrength?: number,
     easeBezier?: [number, number, number, number],
   ) => void;
+  onChangeKeyframeValue?: (nodeId: string, paramKey: string, frame: number, value: number) => void;
   onPasteKeyframes: (items: KeyframeClipboardItem[], targetBaseFrame: number) => void;
   markers?: number[];
   onToggleMarker?: (frame: number) => void;
@@ -108,6 +110,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
   onBatchDeleteKeyframes,
   onBatchDuplicateKeyframes,
   onBatchUpdateEasing,
+  onChangeKeyframeValue,
   onPasteKeyframes,
   markers = [],
   onToggleMarker,
@@ -810,6 +813,21 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
 
       {/* --- BODY: LEFT TRACK TREE & RIGHT GRID --- */}
       <div className="timeline-drawer-body">
+        {/* Motion graph — value curves of the selected node, draggable */}
+        {selectedNodeIds[0] && (
+          <MotionGraph
+            graph={graph}
+            nodeId={selectedNodeIds[0]}
+            currentFrame={currentFrame}
+            totalFrames={totalFrames}
+            onFrameChange={onFrameChange}
+            onMoveKeyframe={(nodeId, paramKey, oldFrame, newFrame) =>
+              onBatchMoveKeyframes([{ nodeId, paramKey, oldFrame, newFrame }])
+            }
+            onChangeKeyframeValue={onChangeKeyframeValue}
+          />
+        )}
+
         {/* Left Tracks Column */}
         <div className="timeline-tracks-pane" style={{ width: `${leftPaneWidth}px` }}>
           <div className="timeline-tracks-header">
