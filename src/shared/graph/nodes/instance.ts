@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
+import { extractPositionFromInput } from "./transform";
 
 const groupCache = createNodeCache<THREE.Group>(disposeObject3D);
 
@@ -236,6 +237,7 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
     { id: "matrix", label: "Matrix", type: "matrix" },
     { id: "matrices", label: "Matrices (List)", type: "any" },
     { id: "positions", label: "Positions (Vector List)", type: "list" },
+    { id: "target", label: "Target (look-at)", type: "any" },
     { id: "posX", label: "Pos X", type: "any" },
     { id: "posY", label: "Pos Y", type: "any" },
     { id: "posZ", label: "Pos Z", type: "any" },
@@ -327,6 +329,12 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
     const paramSY = params.scaleY !== undefined ? Number(params.scaleY) : 1;
     const paramSZ = params.scaleZ !== undefined ? Number(params.scaleZ) : 1;
 
+    // When a Target is wired, every instance's align axis is rotated to point
+    // at it (look-at). Accepts a vector, an object (Empty), or a matrix.
+    const targetPosition = hasWire("target")
+      ? extractPositionFromInput(inputs.target, new THREE.Vector3())
+      : null;
+
     const targetIndex = resolveTargetIndex(inputs.index, params.index);
 
     instances.forEach((instance, i) => {
@@ -374,7 +382,8 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
 
         // Rotation — either Euler angles in degrees, or (rotationMode = "align")
         // a per-instance world direction that the chosen axis is rotated to point
-        // along (normals list → disc facing the surface, for example).
+        // along (normals list → disc facing the surface, for example). Wiring a
+        // Target overrides the direction list: each instance faces the target.
         const rotItem = targetIndex >= 0 && rotationsList.length > 0
           ? (rotationsList.length === 1 ? rotationsList[0] : rotationsList[targetIndex % rotationsList.length])
           : rotationsList[i];
@@ -386,12 +395,19 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
         const rotY = resolveScalarOrListItem(wired("rotY"), i, targetIndex, paramRY);
         const rotZ = resolveScalarOrListItem(wired("rotZ"), i, targetIndex, paramRZ);
 
-        const align = String(params.rotationMode || "euler") === "align";
+        const align = String(params.rotationMode || "euler") === "align" || targetPosition !== null;
         const RAD = Math.PI / 180;
         let quat: THREE.Quaternion;
         if (align) {
           const alignAxis = alignAxisVector(String(params.alignAxis || "Z"));
-          const dir = baseRot.lengthSq() > 1e-9 ? baseRot.clone().normalize() : alignAxis;
+          let dir: THREE.Vector3;
+          if (targetPosition) {
+            // Direction from the instance's (base + offset) position to the target.
+            const baseTrans = new THREE.Vector3().setFromMatrixPosition(clone.matrix);
+            dir = targetPosition.clone().sub(baseTrans.add(posOffset)).normalize();
+          } else {
+            dir = baseRot.lengthSq() > 1e-9 ? baseRot.clone().normalize() : alignAxis;
+          }
           quat = quaternionAlignAxis(alignAxis, dir);
           // The euler fields become extra rotation applied after alignment.
           quat.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rotX * RAD, rotY * RAD, rotZ * RAD)));

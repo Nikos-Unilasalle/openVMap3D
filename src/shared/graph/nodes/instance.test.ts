@@ -133,6 +133,29 @@ describe("INSTANCE MANIPULATION NODES", () => {
     expect(dir.dot(new THREE.Vector3(0, 0, -1))).toBeCloseTo(1, 5);
   });
 
+  it("SET_INSTANCE_TRANSFORM_NODE orients every instance toward a wired Target (look-at)", () => {
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(0.5, 16));
+    const arrayRes = ARRAY_NODE.evaluate({ geometry: disc }, { count: 2, spacing: 0 }, CTX);
+
+    const positions = [new THREE.Vector3(0, 5, 0), new THREE.Vector3(5, 0, 0)];
+    const target = new THREE.Vector3(0, 0, 0);
+    const transformedRes = SET_INSTANCE_TRANSFORM_NODE.evaluate(
+      { geometry: arrayRes.geometry, positions, target },
+      { alignAxis: "Z" },
+      { ...CTX, connectedInputs: new Set(["positions", "target"]) } as never
+    );
+
+    const group = transformedRes.geometry as THREE.Group;
+    expect(group.children.length).toBe(2);
+    const fwd = new THREE.Vector3(0, 0, 1);
+    const expected = [new THREE.Vector3(0, -1, 0), new THREE.Vector3(-1, 0, 0)];
+    group.children.forEach((child, i) => {
+      const q = new THREE.Quaternion().setFromRotationMatrix((child as THREE.Group).matrix);
+      const dir = fwd.clone().applyQuaternion(q).normalize();
+      expect(dir.dot(expected[i])).toBeCloseTo(1, 5);
+    });
+  });
+
   it("SET_INSTANCE_TRANSFORM_NODE applies default single scalar X, Y, Z transforms to all instances", () => {
     const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
     const arrayRes = ARRAY_NODE.evaluate({ geometry: box }, { count: 3, spacing: 2 }, CTX);
