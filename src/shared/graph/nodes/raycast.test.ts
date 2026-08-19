@@ -6,6 +6,9 @@ import { initBvhRaycast } from "../../three/bvh";
 import { deserializeGraph } from "../storage";
 import { DEFAULT_REGISTRY } from "./index";
 import { evaluateGraph } from "../evaluate";
+import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
+import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
+import type { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 
 describe("RAYCAST_NODE", () => {
   it("hits a box from above with point, normal and distance", () => {
@@ -50,7 +53,7 @@ describe("RAY_BURST_NODE", () => {
       RAY_BURST_NODE.defaultParams,
       { nodeId: "rayburst_1" } as any,
     );
-    expect(res.geometry).toBeInstanceOf(THREE.LineSegments);
+    expect(res.geometry).toBeInstanceOf(LineSegments2);
     const hits = res.hits as number[];
     const hitPoints = res.hitPoints as THREE.Vector3[];
     const rayOrigins = res.rayOrigins as THREE.Vector3[];
@@ -62,9 +65,35 @@ describe("RAY_BURST_NODE", () => {
     for (const o of rayOrigins) {
       expect(o.length()).toBeCloseTo(3, 1);
     }
-    const line = res.geometry as THREE.LineSegments;
-    const posAttr = line.geometry.attributes.position as THREE.BufferAttribute;
-    expect(posAttr.count).toBe(50 * 2);
+    const line = res.geometry as LineSegments2;
+    const startAttr = line.geometry.attributes.instanceStart as THREE.InterleavedBufferAttribute;
+    expect(startAttr.count).toBe(50);
+  });
+
+  it("applies appearance params to the fat-line material", () => {
+    initBvhRaycast();
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    box.updateMatrixWorld(true);
+    const res = RAY_BURST_NODE.evaluate(
+      { geometry: box, count: 10, origin: new THREE.Vector3(0, 0, 0), radius: 3, seed: 1, rotate: 0, time: 0 },
+      { ...RAY_BURST_NODE.defaultParams, color: 0xff0000, opacity: 0.7, linewidth: 4, dashed: true, dashSize: 0.8, gapSize: 0.2 },
+      { nodeId: "rayburst_2" } as any,
+    );
+    const line = res.geometry as LineSegments2;
+    const mat = line.material as LineMaterial;
+    expect(mat.color.getHex()).toBe(0xff0000);
+    expect(mat.uniforms.opacity.value).toBeCloseTo(0.7);
+    expect(mat.linewidth).toBeCloseTo(4);
+    expect(mat.dashed).toBe(true);
+    expect(mat.dashSize).toBeCloseTo(0.8);
+    expect(mat.gapSize).toBeCloseTo(0.2);
+    // Dash distances are computed per segment.
+    const startDist = line.geometry.attributes.instanceDistanceStart as THREE.InstancedBufferAttribute;
+    const endDist = line.geometry.attributes.instanceDistanceEnd as THREE.InstancedBufferAttribute;
+    expect(startDist.count).toBe(10);
+    expect(endDist.count).toBe(10);
+    expect(startDist.getX(0)).toBe(0);
+    expect(endDist.getX(0)).toBeGreaterThan(0);
   });
 });
 
@@ -102,7 +131,7 @@ describe("demo_raycast.tsuji", () => {
 
     const results = evaluateGraph(graph, DEFAULT_REGISTRY, { time: 1.5, step: 1, nodeId: "demo" } as never);
     const burstRes = results.get(burstNode!.id)!;
-    expect(burstRes.geometry).toBeInstanceOf(THREE.LineSegments);
+    expect(burstRes.geometry).toBeInstanceOf(LineSegments2);
     expect(Array.isArray(burstRes.hitPoints)).toBe(true);
     expect((burstRes.hits as number[]).length).toBe(300);
 
@@ -126,8 +155,10 @@ describe("demo_raycast.tsuji", () => {
     const burstRes = results.get(burstNode.id)!;
     const markerRes = results.get(markerNode.id)!;
 
-    const line = burstRes.geometry as THREE.LineSegments;
-    const arr = (line.geometry.attributes.position as THREE.BufferAttribute).array as Float32Array;
+    const line = burstRes.geometry as LineSegments2;
+    const geo = line.geometry as LineSegmentsGeometry;
+    const start = geo.attributes.instanceStart as THREE.InterleavedBufferAttribute;
+    const end = geo.attributes.instanceEnd as THREE.InterleavedBufferAttribute;
     const markerGroup = markerRes.geometry as THREE.Group;
     expect(markerGroup.children.length).toBeGreaterThan(0);
 
@@ -136,8 +167,11 @@ describe("demo_raycast.tsuji", () => {
       if (!(w instanceof THREE.Group)) continue;
       const pos = new THREE.Vector3().setFromMatrixPosition(w.matrix);
       let best = Infinity;
-      for (let i = 1; i < line.geometry.attributes.position.count; i += 2) {
-        const d = (pos.x - arr[i * 3]) ** 2 + (pos.y - arr[i * 3 + 1]) ** 2 + (pos.z - arr[i * 3 + 2]) ** 2;
+      for (let i = 0; i < start.count; i++) {
+        const ex = end.getX(i);
+        const ey = end.getY(i);
+        const ez = end.getZ(i);
+        const d = (pos.x - ex) ** 2 + (pos.y - ey) ** 2 + (pos.z - ez) ** 2;
         if (d < best) best = d;
       }
       if (best < 1e-6) onEnds++;

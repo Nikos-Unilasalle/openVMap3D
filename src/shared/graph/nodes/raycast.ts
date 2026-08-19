@@ -3,6 +3,9 @@ import { NodeDefinition } from "../types";
 import { createNodeCache } from "../nodeCaches";
 import { getBoundsTree, sampleSurfacePoints } from "../../three/bvh";
 import { asColor, numberInput } from "./object";
+import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
+import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 
 /** Raycast Node — casts a single ray against a mesh surface (BVH-accelerated). */
 function asVector3(val: unknown, fallback: THREE.Vector3): THREE.Vector3 {
@@ -110,13 +113,20 @@ export const RAYCAST_NODE: NodeDefinition = {
 };
 
 interface BurstState {
-  line?: THREE.LineSegments;
-  lineGeometry?: THREE.BufferGeometry;
-  material?: THREE.LineBasicMaterial;
+  line?: LineSegments2;
+  lineGeometry?: LineSegmentsGeometry;
+  material?: LineMaterial;
   signature?: string;
   /** Seeded random ray directions + their per-ray rotation axes, regenerated with the signature. */
   baseDirs: THREE.Vector3[];
   axes: THREE.Vector3[];
+  /** Reused per-frame position buffer — a segment is [x0,y0,z0, x1,y1,z1]. */
+  positions: Float32Array;
+  /** Reused per-frame dash-distance buffers (only meaningful when dashed). */
+  startDist?: Float32Array;
+  endDist?: Float32Array;
+  lastDashed?: boolean;
+  lastWorldUnits?: boolean;
 }
 
 const burstCache = createNodeCache<BurstState>((s) => {
@@ -127,10 +137,32 @@ const burstCache = createNodeCache<BurstState>((s) => {
 function getBurstState(nodeId: string): BurstState {
   let state = burstCache.get(nodeId);
   if (!state) {
-    state = { baseDirs: [], axes: [] };
+    state = { baseDirs: [], axes: [], positions: new Float32Array(0) };
     burstCache.set(nodeId, state);
   }
   return state;
+}
+
+/** Recompute the per-segment cumulative distances the dash shader reads. */
+function updateRayDistances(state: BurstState): void {
+  const geo = state.lineGeometry;
+  if (!geo) return;
+  const start = geo.attributes.instanceStart as THREE.InterleavedBufferAttribute;
+  const end = geo.attributes.instanceEnd as THREE.InterleavedBufferAttribute;
+  const count = start.count;
+  const sd = state.startDist!;
+  const ed = state.endDist!;
+  let total = 0;
+  for (let i = 0; i < count; i++) {
+    const dx = end.getX(i) - start.getX(i);
+    const dy = end.getY(i) - start.getY(i);
+    const dz = end.getZ(i) - start.getZ(i);
+    sd[i] = total;
+    total += Math.sqrt(dx * dx + dy * dy + dz * dz);
+    ed[i] = total;
+  }
+  (geo.attributes.instanceDistanceStart as THREE.InstancedBufferAttribute).needsUpdate = true;
+  (geo.attributes.instanceDistanceEnd as THREE.InstancedBufferAttribute).needsUpdate = true;
 }
 
 function createPrng(seed: number) {
@@ -177,6 +209,12 @@ export const RAY_BURST_NODE: NodeDefinition = {
     rotate: 18,
     time: 0,
     color: new THREE.Color(0x444444),
+    opacity: 0.35,
+    linewidth: 2,
+    worldUnits: false,
+    dashed: false,
+    dashSize: 0.5,
+    gapSize: 0.25,
   },
   dynamicParamFields: () => [
     { id: "origin", label: "Center", kind: "vector" },
@@ -184,7 +222,13 @@ export const RAY_BURST_NODE: NodeDefinition = {
     { id: "radius", label: "Radius", kind: "number", step: 0.1 },
     { id: "seed", label: "Seed", kind: "number", step: 1 },
     { id: "rotate", label: "Rotate (°/s)", kind: "number", step: 1 },
-    { id: "color", label: "Ray Color", kind: "color", group: "Style" },
+    { id: "color", label: "Color", kind: "color", group: "Style" },
+    { id: "opacity", label: "Opacity", kind: "number", step: 0.05, group: "Style" },
+    { id: "linewidth", label: "Width", kind: "number", step: 0.1, group: "Line" },
+    { id: "worldUnits", label: "World Units (width in scene units)", kind: "boolean", group: "Line" },
+    { id: "dashed", label: "Dashed", kind: "boolean", group: "Line" },
+    { id: "dashSize", label: "Dash Size", kind: "number", step: 0.05, group: "Line" },
+    { id: "gapSize", label: "Gap Size", kind: "number", step: 0.05, group: "Line" },
   ],
   evaluate: (inputs, params, ctx) => {
     const state = getBurstState(ctx.nodeId);
@@ -217,18 +261,26 @@ export const RAY_BURST_NODE: NodeDefinition = {
         state.lineGeometry = undefined;
       }
       if (!state.material) {
-        state.material = new THREE.LineBasicMaterial({
-          color: 0x444444,
-          transparent: true,
-          opacity: 0.35,
-          depthWrite: false,
-        });
+        state.material = new LineMaterial({ color: 0x444444, transparent: true, depthWrite: false });
       }
-      state.material.color.copy(color);
 
-      const positions = new Float32Array(count * 2 * 3);
-      state.lineGeometry = new THREE.BufferGeometry();
-      state.lineGeometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      const positions = new Float32Array(count * 6);
+      state.positions = positions;
+      const lineGeometry = new LineSegmentsGeometry();
+      lineGeometry.setPositions(positions);
+      // The dash shader reads instanceDistanceStart/End — build them once and
+      // keep them updated in place as the rays move.
+      state.startDist = new Float32Array(count);
+      state.endDist = new Float32Array(count);
+      lineGeometry.setAttribute(
+        "instanceDistanceStart",
+        new THREE.InstancedBufferAttribute(state.startDist, 1),
+      );
+      lineGeometry.setAttribute(
+        "instanceDistanceEnd",
+        new THREE.InstancedBufferAttribute(state.endDist, 1),
+      );
+      state.lineGeometry = lineGeometry;
 
       const prng = createPrng(seed);
       state.baseDirs = [];
@@ -245,18 +297,18 @@ export const RAY_BURST_NODE: NodeDefinition = {
       }
 
       if (!state.line) {
-        state.line = new THREE.LineSegments(state.lineGeometry, state.material);
+        state.line = new LineSegments2(lineGeometry, state.material);
         state.line.frustumCulled = false;
         state.line.userData.nodeId = ctx.nodeId;
       } else {
-        state.line.geometry = state.lineGeometry;
+        state.line.geometry = lineGeometry;
       }
     }
 
     const line = state.line!;
     const lineGeometry = state.lineGeometry!;
-    const attr = lineGeometry.attributes.position as THREE.BufferAttribute;
-    const arr = attr.array as Float32Array;
+    const positions = state.positions;
+    const startAttr = lineGeometry.attributes.instanceStart as THREE.InterleavedBufferAttribute;
 
     const rayOrigins: THREE.Vector3[] = [];
     const hitPoints: THREE.Vector3[] = [];
@@ -292,14 +344,48 @@ export const RAY_BURST_NODE: NodeDefinition = {
         distances.push(Infinity);
       }
 
-      arr[i * 6] = rayOrigin.x;
-      arr[i * 6 + 1] = rayOrigin.y;
-      arr[i * 6 + 2] = rayOrigin.z;
-      arr[i * 6 + 3] = end.x;
-      arr[i * 6 + 4] = end.y;
-      arr[i * 6 + 5] = end.z;
+      positions[i * 6] = rayOrigin.x;
+      positions[i * 6 + 1] = rayOrigin.y;
+      positions[i * 6 + 2] = rayOrigin.z;
+      positions[i * 6 + 3] = end.x;
+      positions[i * 6 + 4] = end.y;
+      positions[i * 6 + 5] = end.z;
     }
-    attr.needsUpdate = true;
+    // instanceStart and instanceEnd share the same interleaved buffer.
+    startAttr.needsUpdate = true;
+
+    // Appearance — uniforms are cheap to set per frame; only toggling dashed /
+    // worldUnits recompiles the shader.
+    const material = state.material!;
+    material.color.set(color);
+    const opacity = Math.min(1, Math.max(0, numberInput(inputs.opacity, params.opacity, 0.35)));
+    material.uniforms.opacity.value = opacity;
+    material.transparent = opacity < 0.999;
+    material.linewidth = Math.max(0.1, numberInput(inputs.linewidth, params.linewidth, 2));
+    material.dashSize = Math.max(0.0001, numberInput(inputs.dashSize, params.dashSize, 0.5));
+    material.gapSize = Math.max(0, numberInput(inputs.gapSize, params.gapSize, 0.25));
+
+    const dashed = Boolean(params.dashed);
+    if (state.lastDashed !== dashed) {
+      state.lastDashed = dashed;
+      material.dashed = dashed;
+      material.needsUpdate = true; // toggles USE_DASH -> recompile
+    }
+    const worldUnits = Boolean(params.worldUnits);
+    if (state.lastWorldUnits !== worldUnits) {
+      state.lastWorldUnits = worldUnits;
+      material.worldUnits = worldUnits;
+      material.needsUpdate = true;
+    }
+
+    const size = new THREE.Vector2(1920, 1080);
+    if (ctx.renderer) {
+      ctx.renderer.getSize(size);
+      if (size.x <= 0 || size.y <= 0) size.set(1920, 1080);
+    }
+    material.resolution.copy(size);
+
+    if (dashed) updateRayDistances(state);
 
     return {
       geometry: line,
