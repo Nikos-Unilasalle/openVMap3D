@@ -1,0 +1,106 @@
+{
+  "nodes": [
+    {
+      "id": "time",
+      "type": "time",
+      "position": { "x": -1400, "y": 40 },
+      "params": {}
+    },
+    {
+      "id": "stagger",
+      "type": "list/stagger",
+      "position": { "x": -1130, "y": 40 },
+      "params": { "count": 12, "duration": 0.6, "offset": 0.15, "startAt": 0 }
+    },
+    {
+      "id": "tile",
+      "type": "object/box",
+      "position": { "x": -1130, "y": 300 },
+      "params": {
+        "scale": { "x": 0.6, "y": 0.15, "z": 1.2 },
+        "color": 5614111
+      }
+    },
+    {
+      "id": "row",
+      "type": "structure/array",
+      "position": { "x": -860, "y": 300 },
+      "params": { "count": 12, "mode": "linear", "axis": "X", "spacing": 1.3 }
+    },
+    {
+      "id": "scaleY",
+      "type": "list/math",
+      "position": { "x": -1130, "y": 170 },
+      "params": { "op": "multiply", "factor": 1, "offset": 0 }
+    },
+    {
+      "id": "instances",
+      "type": "structure/instance-transform",
+      "position": { "x": -620, "y": 170 },
+      "params": { "mode": "relative", "pivot": "shared", "index": -1 }
+    },
+    {
+      "id": "merge",
+      "type": "structure/merge",
+      "position": { "x": -320, "y": 120 },
+      "params": {}
+    },
+    {
+      "id": "output",
+      "type": "render",
+      "position": { "x": -80, "y": 120 },
+      "params": {}
+    }
+  ],
+  "connections": [
+    {
+      "id": "time.seconds->stagger.time",
+      "fromNode": "time",
+      "fromSocket": "seconds",
+      "toNode": "stagger",
+      "toSocket": "time"
+    },
+    {
+      "id": "stagger.progress->scaleY.list",
+      "fromNode": "stagger",
+      "fromSocket": "progress",
+      "toNode": "scaleY",
+      "toSocket": "list"
+    },
+    {
+      "id": "tile.geometry->row.geometry",
+      "fromNode": "tile",
+      "fromSocket": "geometry",
+      "toNode": "row",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "row.geometry->instances.geometry",
+      "fromNode": "row",
+      "fromSocket": "geometry",
+      "toNode": "instances",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "scaleY.list->instances.scaleY",
+      "fromNode": "scaleY",
+      "fromSocket": "list",
+      "toNode": "instances",
+      "toSocket": "scaleY"
+    },
+    {
+      "id": "instances.geometry->merge.in1",
+      "fromNode": "instances",
+      "fromSocket": "geometry",
+      "toNode": "merge",
+      "toSocket": "in1"
+    },
+    {
+      "id": "merge.geometry->output.geometry",
+      "fromNode": "merge",
+      "fromSocket": "geometry",
+      "toNode": "output",
+      "toSocket": "geometry"
+    }
+  ]
+}

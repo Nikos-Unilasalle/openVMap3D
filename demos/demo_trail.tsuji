@@ -1,0 +1,141 @@
+{
+  "nodes": [
+    {
+      "id": "time",
+      "type": "time",
+      "position": { "x": -1450, "y": 40 },
+      "params": {}
+    },
+    {
+      "id": "exprX",
+      "type": "value/expression",
+      "position": { "x": -1180, "y": 40 },
+      "params": { "expression": "cos(time * 2) * 3", "a": 0, "b": 0, "c": 0 }
+    },
+    {
+      "id": "exprZ",
+      "type": "value/expression",
+      "position": { "x": -1180, "y": 190 },
+      "params": { "expression": "sin(time * 2) * 3", "a": 0, "b": 0, "c": 0 }
+    },
+    {
+      "id": "pos",
+      "type": "vector/compose",
+      "position": { "x": -900, "y": 90 },
+      "params": { "x": 0, "y": 0, "z": 0 }
+    },
+    {
+      "id": "xform",
+      "type": "transform/matrix-transform",
+      "position": { "x": -640, "y": 90 },
+      "params": {
+        "location": { "x": 0, "y": 0, "z": 0 },
+        "rotation": { "x": 0, "y": 0, "z": 0 },
+        "scale": { "x": 1, "y": 1, "z": 1 }
+      }
+    },
+    {
+      "id": "sphere",
+      "type": "object/sphere",
+      "position": { "x": -380, "y": 90 },
+      "params": { "scale": { "x": 0.35, "y": 0.35, "z": 0.35 }, "color": 16738048 }
+    },
+    {
+      "id": "trail",
+      "type": "structure/trail",
+      "position": { "x": -100, "y": 220 },
+      "params": { "history": 3, "segments": 160, "linewidth": 3, "opacity": 0.6, "color": 5614111 }
+    },
+    {
+      "id": "merge",
+      "type": "structure/merge",
+      "position": { "x": 200, "y": 90 },
+      "params": {}
+    },
+    {
+      "id": "output",
+      "type": "render",
+      "position": { "x": 460, "y": 90 },
+      "params": {}
+    }
+  ],
+  "connections": [
+    {
+      "id": "time.seconds->exprX.time",
+      "fromNode": "time",
+      "fromSocket": "seconds",
+      "toNode": "exprX",
+      "toSocket": "time"
+    },
+    {
+      "id": "time.seconds->exprZ.time",
+      "fromNode": "time",
+      "fromSocket": "seconds",
+      "toNode": "exprZ",
+      "toSocket": "time"
+    },
+    {
+      "id": "exprX.value->pos.x",
+      "fromNode": "exprX",
+      "fromSocket": "value",
+      "toNode": "pos",
+      "toSocket": "x"
+    },
+    {
+      "id": "exprZ.value->pos.z",
+      "fromNode": "exprZ",
+      "fromSocket": "value",
+      "toNode": "pos",
+      "toSocket": "z"
+    },
+    {
+      "id": "pos.out->xform.location",
+      "fromNode": "pos",
+      "fromSocket": "out",
+      "toNode": "xform",
+      "toSocket": "location"
+    },
+    {
+      "id": "xform.matrix->sphere.matrix",
+      "fromNode": "xform",
+      "fromSocket": "matrix",
+      "toNode": "sphere",
+      "toSocket": "matrix"
+    },
+    {
+      "id": "time.seconds->trail.time",
+      "fromNode": "time",
+      "fromSocket": "seconds",
+      "toNode": "trail",
+      "toSocket": "time"
+    },
+    {
+      "id": "sphere.geometry->trail.geometry",
+      "fromNode": "sphere",
+      "fromSocket": "geometry",
+      "toNode": "trail",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "sphere.geometry->merge.in1",
+      "fromNode": "sphere",
+      "fromSocket": "geometry",
+      "toNode": "merge",
+      "toSocket": "in1"
+    },
+    {
+      "id": "trail.geometry->merge.in2",
+      "fromNode": "trail",
+      "fromSocket": "geometry",
+      "toNode": "merge",
+      "toSocket": "in2"
+    },
+    {
+      "id": "merge.geometry->output.geometry",
+      "fromNode": "merge",
+      "fromSocket": "geometry",
+      "toNode": "output",
+      "toSocket": "geometry"
+    }
+  ]
+}

@@ -1,0 +1,140 @@
+{
+  "nodes": [
+    {
+      "id": "time",
+      "type": "time",
+      "position": { "x": -1560, "y": 40 },
+      "params": {}
+    },
+    {
+      "id": "bounce",
+      "type": "value/expression",
+      "position": { "x": -1290, "y": 40 },
+      "params": { "expression": "1 + abs(sin(time * 2)) * 3", "a": 0, "b": 0, "c": 0 }
+    },
+    {
+      "id": "squashAmt",
+      "type": "value/expression",
+      "position": { "x": -1290, "y": 220 },
+      "params": { "expression": "max(0, 1 - abs(sin(time * 2)))", "a": 0, "b": 0, "c": 0 }
+    },
+    {
+      "id": "yVec",
+      "type": "vector/compose",
+      "position": { "x": -1010, "y": 40 },
+      "params": { "x": 0, "y": 0, "z": 0 }
+    },
+    {
+      "id": "xform",
+      "type": "transform/matrix-transform",
+      "position": { "x": -740, "y": 40 },
+      "params": {
+        "location": { "x": 0, "y": 0, "z": 0 },
+        "rotation": { "x": 0, "y": 0, "z": 0 },
+        "scale": { "x": 1, "y": 1, "z": 1 }
+      }
+    },
+    {
+      "id": "ball",
+      "type": "object/sphere",
+      "position": { "x": -470, "y": 40 },
+      "params": { "color": 16353942 }
+    },
+    {
+      "id": "squash",
+      "type": "modifier/squash-stretch",
+      "position": { "x": -210, "y": 120 },
+      "params": { "squash": 0, "stretch": 0.4, "axis": { "x": 0, "y": 1, "z": 0 } }
+    },
+    {
+      "id": "ground",
+      "type": "object/plane",
+      "position": { "x": -470, "y": 330 },
+      "params": { "scale": { "x": 12, "y": 12, "z": 1 }, "color": 3552822 }
+    },
+    {
+      "id": "merge",
+      "type": "structure/merge",
+      "position": { "x": 80, "y": 40 },
+      "params": {}
+    },
+    {
+      "id": "output",
+      "type": "render",
+      "position": { "x": 340, "y": 40 },
+      "params": {}
+    }
+  ],
+  "connections": [
+    {
+      "id": "time.seconds->bounce.time",
+      "fromNode": "time",
+      "fromSocket": "seconds",
+      "toNode": "bounce",
+      "toSocket": "time"
+    },
+    {
+      "id": "time.seconds->squashAmt.time",
+      "fromNode": "time",
+      "fromSocket": "seconds",
+      "toNode": "squashAmt",
+      "toSocket": "time"
+    },
+    {
+      "id": "bounce.value->yVec.y",
+      "fromNode": "bounce",
+      "fromSocket": "value",
+      "toNode": "yVec",
+      "toSocket": "y"
+    },
+    {
+      "id": "yVec.out->xform.location",
+      "fromNode": "yVec",
+      "fromSocket": "out",
+      "toNode": "xform",
+      "toSocket": "location"
+    },
+    {
+      "id": "xform.matrix->ball.matrix",
+      "fromNode": "xform",
+      "fromSocket": "matrix",
+      "toNode": "ball",
+      "toSocket": "matrix"
+    },
+    {
+      "id": "ball.geometry->squash.geometry",
+      "fromNode": "ball",
+      "fromSocket": "geometry",
+      "toNode": "squash",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "squashAmt.value->squash.squash",
+      "fromNode": "squashAmt",
+      "fromSocket": "value",
+      "toNode": "squash",
+      "toSocket": "squash"
+    },
+    {
+      "id": "squash.geometry->merge.in1",
+      "fromNode": "squash",
+      "fromSocket": "geometry",
+      "toNode": "merge",
+      "toSocket": "in1"
+    },
+    {
+      "id": "ground.geometry->merge.in2",
+      "fromNode": "ground",
+      "fromSocket": "geometry",
+      "toNode": "merge",
+      "toSocket": "in2"
+    },
+    {
+      "id": "merge.geometry->output.geometry",
+      "fromNode": "merge",
+      "fromSocket": "geometry",
+      "toNode": "output",
+      "toSocket": "geometry"
+    }
+  ]
+}
