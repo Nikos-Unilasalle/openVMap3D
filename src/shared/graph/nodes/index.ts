@@ -69,6 +69,8 @@ import { HUB_TEXT_NODE, HUB_IMAGE_NODE } from "./hub";
 import { SVG_TO_CURVES_NODE, SVG_TO_MESH_NODE, SVG_TO_SOLID_NODE } from "./svg";
 import { RAYCAST_NODE, RAY_BURST_NODE, SAMPLE_SURFACE_NODE } from "./raycast";
 import { EXPRESSION_NODE, STAGGER_NODE, TIME_REMAP_NODE } from "./motion";
+import { TRAIL_NODE } from "./trail";
+import { SQUASH_STRETCH_NODE } from "./squash";
 
 /** The starter catalogue — grows node by node; BIBLE.md has the full target list. */
 export const STARTER_NODES = [
@@ -219,6 +221,8 @@ export const STARTER_NODES = [
   STAGGER_NODE,
   TIME_REMAP_NODE,
   EXPRESSION_NODE,
+  TRAIL_NODE,
+  SQUASH_STRETCH_NODE,
 ];
 
 export const DEFAULT_REGISTRY = createRegistry(STARTER_NODES);
@@ -266,3 +270,5 @@ export * from "./hub";
 export * from "./svg";
 export * from "./raycast";
 export * from "./motion";
+export * from "./trail";
+export * from "./squash";
