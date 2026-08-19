@@ -25,6 +25,11 @@ describe("TRAIL_NODE", () => {
     expect(start.count).toBe(1);
     const end = geo.attributes.instanceEnd as THREE.InterleavedBufferAttribute;
     expect(end.getX(0)).toBeCloseTo(2);
+
+    // The world points are exposed as a list.
+    const points = res.points as THREE.Vector3[];
+    expect(points.length).toBe(2);
+    expect(points[points.length - 1].x).toBeCloseTo(2);
   });
 
   it("resets the trail when time rewinds", () => {

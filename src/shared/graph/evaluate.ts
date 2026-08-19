@@ -207,6 +207,33 @@ function cloneKeyframeValue(value: any): any {
   return value;
 }
 
+/**
+ * Which easing shapes the segment from `list[index]` to `list[index + 1]`.
+ *
+ * Only the *arrival* easing shapes a segment — K2's. The easeOut fallback
+ * reads pre-simplification .tsuji files that stored a departure easing only.
+ * The FIRST keyframe has no arrival segment, so its own easing shapes the
+ * first segment instead — that way changing any keyframe always affects a
+ * curve.
+ *
+ * Exported because the motion graph has to *draw* exactly what the evaluator
+ * *plays*: the rule used to be written out twice, and the two copies had
+ * already drifted apart once.
+ */
+export function resolveSegmentEasing(
+  list: Keyframe[],
+  index: number,
+): { easing: EasingType; strength?: number; bezier?: [number, number, number, number] } {
+  const k1 = list[index];
+  const k2 = list[index + 1];
+  const first = index === 0 && k1?.easeIn !== undefined;
+  if (first) {
+    return { easing: k1.easeIn as EasingType, strength: k1.easeStrength, bezier: k1.easeBezier };
+  }
+  const easing = k2?.easeIn ?? (k2 as { easeOut?: EasingType } | undefined)?.easeOut ?? "smooth";
+  return { easing, strength: k2?.easeStrength, bezier: k2?.easeBezier };
+}
+
 function evaluateKeyframeList(list: Keyframe[], currentFrame: number, fallback: any): any {
   if (list.length === 0) return fallback;
   if (list.length === 1) return cloneKeyframeValue(list[0].value);
@@ -219,15 +246,7 @@ function evaluateKeyframeList(list: Keyframe[], currentFrame: number, fallback: 
     if (currentFrame >= k1.frame && currentFrame <= k2.frame) {
       if (k1.frame === k2.frame) return cloneKeyframeValue(k1.value);
       const t = (currentFrame - k1.frame) / (k2.frame - k1.frame);
-      // Only the *arrival* easing shapes the segment — K2's. The easeOut
-      // fallback reads pre-simplification .tsuji files that stored a departure
-      // easing only. The FIRST keyframe has no arrival segment, so its easing
-      // shapes the first segment instead — changing any keyframe always affects
-      // a curve.
-      const first = i === 0 && k1.easeIn !== undefined;
-      const easing = first ? k1.easeIn : k2.easeIn ?? (k2 as { easeOut?: EasingType }).easeOut ?? "smooth";
-      const strength = first ? k1.easeStrength : k2.easeStrength;
-      const bezier = first ? k1.easeBezier : k2.easeBezier;
+      const { easing, strength, bezier } = resolveSegmentEasing(list, i);
       return interpolateValue(k1.value, k2.value, t, easing, strength, bezier);
     }
   }

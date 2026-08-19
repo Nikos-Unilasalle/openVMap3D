@@ -58,7 +58,10 @@ export const TRAIL_NODE: NodeDefinition = {
     { id: "linewidth", label: "Width", type: "value" },
     { id: "opacity", label: "Opacity", type: "value" },
   ],
-  outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
+  outputs: [
+    { id: "geometry", label: "Geometry", type: "geometry" },
+    { id: "points", label: "Points (World)", type: "list" },
+  ],
   defaultParams: {
     time: 0,
     history: 2,
@@ -120,7 +123,11 @@ export const TRAIL_NODE: NodeDefinition = {
       const pos = new THREE.Vector3().setFromMatrixPosition(object.matrixWorld);
 
       // Time went backward (scrub / export restart): start the trail afresh.
-      if (state.lastTime !== undefined && time < state.lastTime - 0.05) {
+      // The threshold is deliberately loose — the editor and output panes both
+      // evaluate this node with their own clocks, so the shared state sees
+      // small interleaved backward steps every frame; only a real rewind
+      // (> 0.5s) wipes the trail, otherwise the reset would empty it forever.
+      if (state.lastTime !== undefined && time < state.lastTime - 0.5) {
         state.samples = [];
       }
       state.lastTime = time;
@@ -140,10 +147,11 @@ export const TRAIL_NODE: NodeDefinition = {
 
       const points = state.samples.map((s) => new THREE.Vector3(s.x, s.y, s.z));
       (state.line.geometry as LineGeometry).setFromPoints(points);
-    } else {
-      (state.line.geometry as LineGeometry).setFromPoints([]);
+
+      return { ...primitiveOutputs(state.line), points };
     }
 
-    return primitiveOutputs(state.line);
+    (state.line.geometry as LineGeometry).setFromPoints([]);
+    return { ...primitiveOutputs(state.line), points: [] };
   },
 };
