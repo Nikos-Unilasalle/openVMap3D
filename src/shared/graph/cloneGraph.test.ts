@@ -90,8 +90,8 @@ describe("cloneGraph", () => {
       keyframes: {
         a: {
           "rotation.x": [
-            { frame: 0, value: 0, easeIn: "smooth", easeOut: "bounce" },
-            { frame: 60, value: 180, easeIn: "bounce", easeOut: "smooth" },
+            { frame: 0, value: 0, easeIn: "smooth" },
+            { frame: 60, value: 180, easeIn: "bounce" },
           ],
         },
       },
@@ -102,7 +102,7 @@ describe("cloneGraph", () => {
     expect(cloned.keyframes).toBeDefined();
     expect(cloned.keyframes?.a?.["rotation.x"]).toHaveLength(2);
     expect(cloned.keyframes?.a?.["rotation.x"][0].value).toBe(0);
-    expect(cloned.keyframes?.a?.["rotation.x"][0].easeOut).toBe("bounce");
+    expect(cloned.keyframes?.a?.["rotation.x"][0].easeIn).toBe("smooth");
     expect(cloned.markers).toEqual([0, 30, 60]);
 
     // Mutation of cloned should not affect original

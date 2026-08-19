@@ -51,58 +51,61 @@ describe("KEYFRAME ANIMATION SYSTEM", () => {
   });
 
   it("supports linear easing", () => {
-    expect(interpolateValue(0, 100, 0.25, "linear", "linear")).toBeCloseTo(25);
-    expect(interpolateValue(0, 100, 0.5, "linear", "linear")).toBeCloseTo(50);
-    expect(interpolateValue(0, 100, 0.75, "linear", "linear")).toBeCloseTo(75);
+    expect(interpolateValue(0, 100, 0.25, "linear")).toBeCloseTo(25);
+    expect(interpolateValue(0, 100, 0.5, "linear")).toBeCloseTo(50);
+    expect(interpolateValue(0, 100, 0.75, "linear")).toBeCloseTo(75);
   });
 
   it("supports hold easing", () => {
     // Hold stays at initial value until t = 1.0
-    expect(interpolateValue(0, 100, 0, "hold", "smooth")).toBe(0);
-    expect(interpolateValue(0, 100, 0.5, "hold", "smooth")).toBe(0);
-    expect(interpolateValue(0, 100, 0.99, "hold", "smooth")).toBe(0);
-    expect(interpolateValue(0, 100, 1.0, "hold", "smooth")).toBe(100);
+    expect(interpolateValue(0, 100, 0, "hold")).toBe(0);
+    expect(interpolateValue(0, 100, 0.5, "hold")).toBe(0);
+    expect(interpolateValue(0, 100, 0.99, "hold")).toBe(0);
+    expect(interpolateValue(0, 100, 1.0, "hold")).toBe(100);
   });
 
   it("supports expo, back, bounce, and elastic easings", () => {
-    // Expo has high contrast acceleration/deceleration
-    const expoMid = interpolateValue(0, 100, 0.5, "expo", "expo");
-    expect(expoMid).toBeCloseTo(50);
+    // Expo arrival is an exponential deceleration: most of the travel happens
+    // up front, then it eases into the keyframe value.
+    const expoMid = interpolateValue(0, 100, 0.5, "expo");
+    expect(expoMid).toBeGreaterThan(50);
+    expect(interpolateValue(0, 100, 0.5, "expo")).toBeLessThan(100);
+    expect(interpolateValue(0, 100, 1, "expo")).toBe(100);
 
     // Back has anticipation / overshoot
-    const backOut = interpolateValue(0, 100, 0.4, "back", "back");
+    const backOut = interpolateValue(0, 100, 0.4, "back");
     expect(typeof backOut).toBe("number");
 
     // Bounce: physically travels fast towards destination then bounces
-    const bounceMid = interpolateValue(0, 100, 0.5, "bounce", "bounce");
+    const bounceMid = interpolateValue(0, 100, 0.5, "bounce");
     expect(bounceMid).toBeGreaterThan(50);
-    expect(interpolateValue(0, 100, 0, "bounce", "bounce")).toBe(0);
-    expect(interpolateValue(0, 100, 1, "bounce", "bounce")).toBe(100);
+    expect(interpolateValue(0, 100, 0, "bounce")).toBe(0);
+    expect(interpolateValue(0, 100, 1, "bounce")).toBe(100);
 
     // Elastic: reaches target with spring oscillation
-    const elasticOut = interpolateValue(0, 100, 1, "elastic", "elastic");
+    const elasticOut = interpolateValue(0, 100, 1, "elastic");
     expect(elasticOut).toBe(100);
-    expect(interpolateValue(0, 100, 0, "elastic", "elastic")).toBe(0);
+    expect(interpolateValue(0, 100, 0, "elastic")).toBe(0);
   });
 
-  it("evaluates keyframes with custom easeIn and easeOut per keyframe", () => {
+  it("each keyframe carries a single arrival easing that shapes its incoming segment", () => {
     const keyframes: KeyframeStore = {
       "node-1": {
         val: [
-          { frame: 0, value: 0, easeOut: "hold" },
-          { frame: 50, value: 100, easeIn: "linear", easeOut: "linear" },
+          { frame: 0, value: 0 },
+          { frame: 50, value: 100, easeIn: "hold" },
           { frame: 100, value: 200, easeIn: "bounce" },
         ],
       },
     };
 
-    // Between 0 and 50 with hold on k1:
+    // Between 0 and 50, hold on the arriving keyframe (frame 50):
     expect(evaluateKeyframeValue(keyframes, "node-1", "val", 0, -1)).toBe(0);
     expect(evaluateKeyframeValue(keyframes, "node-1", "val", 25, -1)).toBe(0);
     expect(evaluateKeyframeValue(keyframes, "node-1", "val", 49, -1)).toBe(0);
     expect(evaluateKeyframeValue(keyframes, "node-1", "val", 50, -1)).toBe(100);
 
-    // Between 50 and 100: at 75 with linear out
+    // Between 50 and 100: bounce into the frame-100 keyframe.
     const val75 = evaluateKeyframeValue(keyframes, "node-1", "val", 75, -1);
     expect(val75).toBeGreaterThan(100);
     expect(val75).toBeLessThan(200);

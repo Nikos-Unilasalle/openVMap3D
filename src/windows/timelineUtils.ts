@@ -24,7 +24,6 @@ export interface KeyframeClipboardItem {
   relativeFrame: number; // offset from baseFrame
   value: any;
   easeIn?: EasingType;
-  easeOut?: EasingType;
 }
 
 export interface KeyframeClipboard {
@@ -61,7 +60,6 @@ export function copyKeyframesToClipboard(
       relativeFrame: kf.frame - minFrame,
       value: JSON.parse(JSON.stringify(kf.value)),
       easeIn: kf.easeIn,
-      easeOut: kf.easeOut,
     });
   }
 

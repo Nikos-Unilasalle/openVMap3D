@@ -7,7 +7,6 @@ import "./timeline-bar.css";
 export interface KeyframeDataAtFrame {
   paramKeys: string[];
   easeIn?: EasingType;
-  easeOut?: EasingType;
 }
 
 interface TimelineBarProps {
@@ -20,7 +19,7 @@ interface TimelineBarProps {
   onToggleMarker?: (frame: number) => void;
   onMoveMarker?: (oldFrame: number, newFrame: number) => void;
   onMoveKeyframe?: (oldFrame: number, newFrame: number) => void;
-  onUpdateKeyframeEasing?: (frame: number, easeIn: EasingType, easeOut: EasingType) => void;
+  onUpdateKeyframeEasing?: (frame: number, easeIn: EasingType) => void;
   onDeleteKeyframe?: (frame: number) => void;
   onFrameChange: (frame: number) => void;
   onTogglePlay: () => void;
@@ -29,8 +28,8 @@ interface TimelineBarProps {
   onToggleDrawer?: () => void;
 }
 
-function renderKeyframeGlyph(easeIn: EasingType = "smooth", easeOut: EasingType = "smooth") {
-  if (easeOut === "hold") {
+function renderKeyframeGlyph(easeIn: EasingType = "smooth") {
+  if (easeIn === "hold") {
     // Square hold glyph
     return (
       <svg width="12" height="12" viewBox="0 0 12 12" className="kf-glyph-svg">
@@ -38,7 +37,7 @@ function renderKeyframeGlyph(easeIn: EasingType = "smooth", easeOut: EasingType 
       </svg>
     );
   }
-  if (easeIn === "linear" && easeOut === "linear") {
+  if (easeIn === "linear") {
     // Circle linear glyph
     return (
       <svg width="12" height="12" viewBox="0 0 12 12" className="kf-glyph-svg">
@@ -46,23 +45,7 @@ function renderKeyframeGlyph(easeIn: EasingType = "smooth", easeOut: EasingType 
       </svg>
     );
   }
-  if (easeIn !== "smooth" && easeOut === "smooth") {
-    // Left-arrowhead / Ease-In glyph
-    return (
-      <svg width="12" height="12" viewBox="0 0 12 12" className="kf-glyph-svg">
-        <polygon points="6,1.5 1.5,6 6,10.5 8.5,6" fill="#76C560" stroke="#0f172a" strokeWidth="1" />
-      </svg>
-    );
-  }
-  if (easeIn === "smooth" && easeOut !== "smooth") {
-    // Right-arrowhead / Ease-Out glyph
-    return (
-      <svg width="12" height="12" viewBox="0 0 12 12" className="kf-glyph-svg">
-        <polygon points="6,1.5 10.5,6 6,10.5 3.5,6" fill="#76C560" stroke="#0f172a" strokeWidth="1" />
-      </svg>
-    );
-  }
-  if (easeIn === "bounce" || easeOut === "bounce" || easeIn === "elastic" || easeOut === "elastic") {
+  if (easeIn === "bounce" || easeIn === "elastic") {
     // Wavy diamond glyph
     return (
       <svg width="12" height="12" viewBox="0 0 12 12" className="kf-glyph-svg">
@@ -111,8 +94,6 @@ export function TimelineBar({
     frame: number;
     paramKeys: string[];
     easeIn: EasingType;
-    easeOut: EasingType;
-    isLinked: boolean;
     x: number;
     y: number;
   } | null>(null);
@@ -282,14 +263,11 @@ export function TimelineBar({
     const y = Math.max(10, targetRect.top - 180);
 
     const initialIn = data.easeIn || "smooth";
-    const initialOut = data.easeOut || "smooth";
 
     setEasingPopover({
       frame,
       paramKeys: data.paramKeys,
       easeIn: initialIn,
-      easeOut: initialOut,
-      isLinked: initialIn === initialOut,
       x,
       y,
     });
@@ -308,21 +286,10 @@ export function TimelineBar({
     if (!isScrubbing) setHoverFrame(null);
   };
 
-  const handleSelectEasing = (direction: "in" | "out", newType: EasingType) => {
+  const handleSelectEasing = (newType: EasingType) => {
     if (!easingPopover) return;
-    let nextIn = easingPopover.easeIn;
-    let nextOut = easingPopover.easeOut;
-
-    if (direction === "in") {
-      nextIn = newType;
-      if (easingPopover.isLinked) nextOut = newType;
-    } else {
-      nextOut = newType;
-      if (easingPopover.isLinked) nextIn = newType;
-    }
-
-    setEasingPopover((prev) => (prev ? { ...prev, easeIn: nextIn, easeOut: nextOut } : null));
-    onUpdateKeyframeEasing?.(easingPopover.frame, nextIn, nextOut);
+    setEasingPopover((prev) => (prev ? { ...prev, easeIn: newType } : null));
+    onUpdateKeyframeEasing?.(easingPopover.frame, newType);
   };
 
   const handleDeleteCurrentKeyframe = () => {
@@ -429,9 +396,9 @@ export function TimelineBar({
                   style={{ left: `${kfPct}%` }}
                   onMouseDown={(e) => handleKeyframeMouseDown(e, kfFrame)}
                   onContextMenu={(e) => handleKeyframeContextMenu(e, kfFrame, data)}
-                  title={`Keyframe at Frame ${displayFrame} (${data.paramKeys.join(", ")})\nIn: ${data.easeIn || "smooth"} | Out: ${data.easeOut || "smooth"}\n• Left click + drag to move\n• Right click to edit interpolation`}
+                  title={`Keyframe at Frame ${displayFrame} (${data.paramKeys.join(", ")})\nArrival Ease: ${data.easeIn || "smooth"}\n• Left click + drag to move\n• Right click to edit interpolation`}
                 >
-                  {renderKeyframeGlyph(data.easeIn, data.easeOut)}
+                  {renderKeyframeGlyph(data.easeIn)}
                 </div>
               );
             })}
@@ -484,11 +451,6 @@ export function TimelineBar({
           badge={`Keyframe ${easingPopover.frame}`}
           subtitle={easingPopover.paramKeys.join(", ")}
           easeIn={easingPopover.easeIn}
-          easeOut={easingPopover.easeOut}
-          isLinked={easingPopover.isLinked}
-          onToggleLinked={(linked) =>
-            setEasingPopover((prev) => (prev ? { ...prev, isLinked: linked } : null))
-          }
           onSelectEasing={handleSelectEasing}
           onDelete={handleDeleteCurrentKeyframe}
           onClose={() => setEasingPopover(null)}

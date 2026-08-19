@@ -52,7 +52,6 @@ export function cloneKeyframes(store?: KeyframeStore): KeyframeStore | undefined
         frame: kf.frame,
         value: cloneParamValue(kf.value),
         easeIn: kf.easeIn,
-        easeOut: kf.easeOut,
       }));
     }
   }

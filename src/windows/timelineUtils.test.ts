@@ -43,8 +43,8 @@ describe("timelineUtils", () => {
     const sampleStore: KeyframeStore = {
       nodeA: {
         x: [
-          { frame: 10, value: 100, easeIn: "smooth", easeOut: "smooth" },
-          { frame: 25, value: 200, easeIn: "linear", easeOut: "linear" },
+          { frame: 10, value: 100, easeIn: "smooth" },
+          { frame: 25, value: 200, easeIn: "linear" },
         ],
       },
     };

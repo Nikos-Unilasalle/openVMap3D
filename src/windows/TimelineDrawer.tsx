@@ -40,7 +40,6 @@ export interface TimelineDrawerProps {
   onBatchUpdateEasing: (
     targets: { nodeId: string; paramKey: string; frame: number }[],
     easeIn: EasingType,
-    easeOut: EasingType,
   ) => void;
   onPasteKeyframes: (items: KeyframeClipboardItem[], targetBaseFrame: number) => void;
   markers?: number[];
@@ -52,7 +51,7 @@ export interface TimelineDrawerProps {
   onSplitHandleMouseDown: (e: React.MouseEvent) => void;
 }
 
-function renderKeyframeGlyph(easeIn: EasingType = "smooth", easeOut: EasingType = "smooth", isSummary = false) {
+function renderKeyframeGlyph(easeIn: EasingType = "smooth", isSummary = false) {
   if (isSummary) {
     return (
       <svg width="12" height="12" viewBox="0 0 12 12" className="kf-glyph-svg">
@@ -60,35 +59,21 @@ function renderKeyframeGlyph(easeIn: EasingType = "smooth", easeOut: EasingType 
       </svg>
     );
   }
-  if (easeOut === "hold") {
+  if (easeIn === "hold") {
     return (
       <svg width="12" height="12" viewBox="0 0 12 12" className="kf-glyph-svg">
         <rect x="2" y="2" width="8" height="8" rx="1" fill="#76C560" stroke="#0f172a" strokeWidth="1" />
       </svg>
     );
   }
-  if (easeIn === "linear" && easeOut === "linear") {
+  if (easeIn === "linear") {
     return (
       <svg width="12" height="12" viewBox="0 0 12 12" className="kf-glyph-svg">
         <circle cx="6" cy="6" r="4" fill="#76C560" stroke="#0f172a" strokeWidth="1" />
       </svg>
     );
   }
-  if (easeIn !== "smooth" && easeOut === "smooth") {
-    return (
-      <svg width="12" height="12" viewBox="0 0 12 12" className="kf-glyph-svg">
-        <polygon points="6,1.5 1.5,6 6,10.5 8.5,6" fill="#76C560" stroke="#0f172a" strokeWidth="1" />
-      </svg>
-    );
-  }
-  if (easeIn === "smooth" && easeOut !== "smooth") {
-    return (
-      <svg width="12" height="12" viewBox="0 0 12 12" className="kf-glyph-svg">
-        <polygon points="6,1.5 10.5,6 6,10.5 3.5,6" fill="#76C560" stroke="#0f172a" strokeWidth="1" />
-      </svg>
-    );
-  }
-  if (easeIn === "bounce" || easeOut === "bounce" || easeIn === "elastic" || easeOut === "elastic") {
+  if (easeIn === "bounce" || easeIn === "elastic") {
     return (
       <svg width="12" height="12" viewBox="0 0 12 12" className="kf-glyph-svg">
         <polygon points="6,1 11,6 6,11 1,6" fill="#76C560" stroke="#0f172a" strokeWidth="1" />
@@ -139,8 +124,6 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
   const [easingPopover, setEasingPopover] = useState<{
     targets: SelectedKeyframeKey[];
     easeIn: EasingType;
-    easeOut: EasingType;
-    isLinked: boolean;
     x: number;
     y: number;
   } | null>(null);
@@ -288,41 +271,25 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
     if (targets.length === 0) return;
 
     const ins = new Set<EasingType>();
-    const outs = new Set<EasingType>();
     for (const k of targets) {
       const kf = graph.keyframes?.[k.nodeId]?.[k.paramKey]?.find((f) => f.frame === k.frame);
       ins.add(kf?.easeIn || "smooth");
-      outs.add(kf?.easeOut || "smooth");
     }
     const easeIn = ins.size === 1 ? [...ins][0] : "smooth";
-    const easeOut = outs.size === 1 ? [...outs][0] : "smooth";
 
     setContextMenu(null);
     setEasingPopover({
       targets,
       easeIn,
-      easeOut,
-      isLinked: easeIn === easeOut,
       x: Math.max(160, Math.min(window.innerWidth - 160, menu.x)),
       y: menu.y - 40,
     });
   };
 
-  const handleSelectEasing = (direction: "in" | "out", newType: EasingType) => {
+  const handleSelectEasing = (newType: EasingType) => {
     if (!easingPopover) return;
-    let nextIn = easingPopover.easeIn;
-    let nextOut = easingPopover.easeOut;
-
-    if (direction === "in") {
-      nextIn = newType;
-      if (easingPopover.isLinked) nextOut = newType;
-    } else {
-      nextOut = newType;
-      if (easingPopover.isLinked) nextIn = newType;
-    }
-
-    setEasingPopover((prev) => (prev ? { ...prev, easeIn: nextIn, easeOut: nextOut } : null));
-    onBatchUpdateEasing(easingPopover.targets, nextIn, nextOut);
+    setEasingPopover((prev) => (prev ? { ...prev, easeIn: newType } : null));
+    onBatchUpdateEasing(easingPopover.targets, newType);
   };
 
   const handleDeleteEasingKeyframes = () => {
@@ -780,7 +747,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
             onChange={(e) => {
               const val = e.target.value as EasingType;
               if (val && selectedKeyObjects.length > 0) {
-                onBatchUpdateEasing(selectedKeyObjects, val, val);
+                onBatchUpdateEasing(selectedKeyObjects, val);
                 e.target.value = "";
               }
             }}
@@ -1093,7 +1060,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
                             }
                             title={`Node ${nodeInstance.type} @ frame ${sFrame}`}
                           >
-                            {renderKeyframeGlyph("smooth", "smooth", true)}
+                            {renderKeyframeGlyph("smooth", true)}
                           </div>
                         );
                       })}
@@ -1120,9 +1087,9 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
                                   style={{ left: `${effectiveFrame * pixelsPerFrame}px` }}
                                   onClick={(e) => handleKeyframeClick(e, nodeInstance.id, pKey, kf.frame)}
                                   onMouseDown={(e) => handleKeyframeMouseDown(e, nodeInstance.id, pKey, kf.frame)}
-                                  title={`Param: ${pKey}\nFrame: ${kf.frame}\nValue: ${JSON.stringify(kf.value)}\nEase: ${kf.easeIn || "smooth"} / ${kf.easeOut || "smooth"}`}
+                                  title={`Param: ${pKey}\nFrame: ${kf.frame}\nValue: ${JSON.stringify(kf.value)}\nEase: ${kf.easeIn || "smooth"}`}
                                 >
-                                  {renderKeyframeGlyph(kf.easeIn, kf.easeOut, false)}
+                                  {renderKeyframeGlyph(kf.easeIn || "smooth", false)}
                                   {/* Drag delta badge */}
                                   {draggingKeyframes && isSelected && draggingKeyframes.currentDelta !== 0 && (
                                     <div className="timeline-drag-delta-badge">
@@ -1281,11 +1248,6 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
             .filter((f, i, a) => a.indexOf(f) === i)
             .join(", ")}
           easeIn={easingPopover.easeIn}
-          easeOut={easingPopover.easeOut}
-          isLinked={easingPopover.isLinked}
-          onToggleLinked={(linked) =>
-            setEasingPopover((prev) => (prev ? { ...prev, isLinked: linked } : null))
-          }
           onSelectEasing={handleSelectEasing}
           onDelete={handleDeleteEasingKeyframes}
           onClose={() => setEasingPopover(null)}

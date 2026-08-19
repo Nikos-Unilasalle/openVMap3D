@@ -24,22 +24,11 @@ function bounceEaseOut(p: number): number {
   return n1 * (x -= 2.625 / d1) * x + 0.984375;
 }
 
-function bounceEaseIn(p: number): number {
-  return 1 - bounceEaseOut(1 - p);
-}
-
 function elasticEaseOut(p: number): number {
   if (p <= 0) return 0;
   if (p >= 1) return 1;
   const c4 = (2 * Math.PI) / 3;
   return Math.pow(2, -10 * p) * Math.sin((p * 10 - 0.75) * c4) + 1;
-}
-
-function elasticEaseIn(p: number): number {
-  if (p <= 0) return 0;
-  if (p >= 1) return 1;
-  const c4 = (2 * Math.PI) / 3;
-  return -Math.pow(2, 10 * p - 10) * Math.sin((p * 10 - 10.75) * c4);
 }
 
 function backEaseOut(p: number): number {
@@ -48,111 +37,51 @@ function backEaseOut(p: number): number {
   return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2);
 }
 
-function backEaseIn(p: number): number {
-  const c1 = 1.70158;
-  const c3 = c1 + 1;
-  return c3 * Math.pow(p, 3) - c1 * Math.pow(p, 2);
-}
-
-function backEaseInOut(p: number): number {
-  const c1 = 1.70158;
-  const c2 = c1 * 1.525;
-  return p < 0.5
-    ? (Math.pow(2 * p, 2) * ((c2 + 1) * 2 * p - c2)) / 2
-    : (Math.pow(2 * p - 2, 2) * ((c2 + 1) * (p * 2 - 2) + c2) + 2) / 2;
-}
-
 function expoEaseOut(p: number): number {
   return p >= 1 ? 1 : 1 - Math.pow(2, -10 * p);
-}
-
-function expoEaseIn(p: number): number {
-  return p <= 0 ? 0 : Math.pow(2, 10 * p - 10);
-}
-
-function sineEaseOut(p: number): number {
-  return Math.sin((p * Math.PI) / 2);
-}
-
-function sineEaseIn(p: number): number {
-  return 1 - Math.cos((p * Math.PI) / 2);
 }
 
 function sineEaseInOut(p: number): number {
   return (1 - Math.cos(Math.PI * p)) / 2;
 }
 
-export function computeSegmentEasing(t: number, easeOut?: EasingType, easeIn?: EasingType): number {
-  const clampedT = Math.max(0, Math.min(1, t));
-  const outType = easeOut || "smooth";
-  const inType = easeIn || "smooth";
-
-  if (outType === "hold") {
-    return clampedT >= 1 ? 1 : 0;
+/**
+ * The easing applied to the segment that ARRIVES at a keyframe. Each keyframe
+ * carries exactly one easing (its arrival) — there is no departure easing: the
+ * segment K1→K2 is shaped entirely by K2's arrival curve.
+ *
+ * "smooth" is a symmetric ease-in-out (velocity is continuous through every
+ * keyframe, the classic motion-design default). The expressive ones all settle
+ * ON the keyframe value (ease-out variants), which is what "arriving" means:
+ * expo decelerates exponentially, back overshoots once, bounce bounces, elastic
+ * springs.
+ */
+export function computeSegmentEasing(t: number, easing?: EasingType): number {
+  const p = Math.max(0, Math.min(1, t));
+  switch (easing) {
+    case "linear":
+      return p;
+    case "hold":
+      return p >= 1 ? 1 : 0;
+    case "expo":
+      return expoEaseOut(p);
+    case "back":
+      return backEaseOut(p);
+    case "bounce":
+      return bounceEaseOut(p);
+    case "elastic":
+      return elasticEaseOut(p);
+    case "smooth":
+    default:
+      return sineEaseInOut(p);
   }
-
-  // 1. Symmetrical / identical easing cases
-  if (outType === inType) {
-    switch (outType) {
-      case "linear":
-        return clampedT;
-      case "smooth":
-        return sineEaseInOut(clampedT);
-      case "expo":
-        return clampedT < 0.5 ? Math.pow(2, 20 * clampedT - 10) / 2 : (2 - Math.pow(2, -20 * clampedT + 10)) / 2;
-      case "back":
-        return backEaseInOut(clampedT);
-      case "bounce":
-        return bounceEaseOut(clampedT);
-      case "elastic":
-        return elasticEaseOut(clampedT);
-    }
-  }
-
-  // 2. Specific expressive arrival on K2 (easeIn)
-  if (inType === "bounce" && outType !== "bounce") {
-    return bounceEaseOut(clampedT);
-  }
-  if (inType === "elastic" && outType !== "elastic") {
-    return elasticEaseOut(clampedT);
-  }
-  if (inType === "back" && outType !== "back") {
-    return backEaseOut(clampedT);
-  }
-
-  // 3. Specific expressive departure from K1 (easeOut)
-  if (outType === "bounce") {
-    return bounceEaseIn(clampedT);
-  }
-  if (outType === "elastic") {
-    return elasticEaseIn(clampedT);
-  }
-  if (outType === "back") {
-    return backEaseIn(clampedT);
-  }
-
-  // 4. Standard smooth / linear / expo mixtures
-  if (outType === "linear" && inType === "smooth") {
-    return sineEaseOut(clampedT);
-  }
-  if (outType === "smooth" && inType === "linear") {
-    return sineEaseIn(clampedT);
-  }
-  if (inType === "expo") {
-    return expoEaseOut(clampedT);
-  }
-  if (outType === "expo") {
-    return expoEaseIn(clampedT);
-  }
-
-  return sineEaseInOut(clampedT);
 }
 
 /**
- * Keyframe value interpolation respecting In and Out easing curves.
+ * Keyframe value interpolation applying the target keyframe's arrival easing.
  */
-export function interpolateValue(v1: any, v2: any, t: number, easeOut?: EasingType, easeIn?: EasingType): any {
-  const ease = computeSegmentEasing(t, easeOut, easeIn);
+export function interpolateValue(v1: any, v2: any, t: number, easing?: EasingType): any {
+  const ease = computeSegmentEasing(t, easing);
 
   if (typeof v1 === "number" && typeof v2 === "number") {
     return v1 + (v2 - v1) * ease;
@@ -222,7 +151,11 @@ function evaluateKeyframeList(list: Keyframe[], currentFrame: number, fallback: 
     if (currentFrame >= k1.frame && currentFrame <= k2.frame) {
       if (k1.frame === k2.frame) return cloneKeyframeValue(k1.value);
       const t = (currentFrame - k1.frame) / (k2.frame - k1.frame);
-      return interpolateValue(k1.value, k2.value, t, k1.easeOut, k2.easeIn);
+      // Only the *arrival* easing shapes the segment — K2's. The easeOut
+      // fallback reads pre-simplification .tsuji files that stored a departure
+      // easing only.
+      const easing = k2.easeIn ?? (k2 as { easeOut?: EasingType }).easeOut ?? "smooth";
+      return interpolateValue(k1.value, k2.value, t, easing);
     }
   }
 

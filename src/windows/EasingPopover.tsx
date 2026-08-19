@@ -74,10 +74,7 @@ export interface EasingPopoverProps {
   badge: string;
   subtitle: string;
   easeIn: EasingType;
-  easeOut: EasingType;
-  isLinked: boolean;
-  onToggleLinked: (linked: boolean) => void;
-  onSelectEasing: (direction: "in" | "out", newType: EasingType) => void;
+  onSelectEasing: (newType: EasingType) => void;
   onDelete: () => void;
   onClose: () => void;
 }
@@ -88,9 +85,6 @@ export const EasingPopover: React.FC<EasingPopoverProps> = ({
   badge,
   subtitle,
   easeIn,
-  easeOut,
-  isLinked,
-  onToggleLinked,
   onSelectEasing,
   onDelete,
   onClose,
@@ -111,40 +105,15 @@ export const EasingPopover: React.FC<EasingPopoverProps> = ({
         </button>
       </div>
 
-      <div className="easing-popover-link-toggle">
-        <label>
-          <input type="checkbox" checked={isLinked} onChange={(e) => onToggleLinked(e.target.checked)} />
-          <span>🔗 Link In & Out (Symmetrical)</span>
-        </label>
-      </div>
-
       <div className="easing-popover-section">
-        <div className="easing-section-label">IN (Arrival at keyframe)</div>
+        <div className="easing-section-label">ARRIVAL EASING (into this keyframe)</div>
         <div className="easing-buttons-grid">
           {EASING_OPTIONS.map((opt) => (
             <button
               key={opt.type}
               type="button"
               className={`easing-btn ${easeIn === opt.type ? "active" : ""}`}
-              onClick={() => onSelectEasing("in", opt.type)}
-              title={opt.label}
-            >
-              <span className="easing-icon">{opt.icon}</span>
-              <span className="easing-text">{opt.type}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="easing-popover-section">
-        <div className="easing-section-label">OUT (Departure from keyframe)</div>
-        <div className="easing-buttons-grid">
-          {EASING_OPTIONS.map((opt) => (
-            <button
-              key={opt.type}
-              type="button"
-              className={`easing-btn ${easeOut === opt.type ? "active" : ""}`}
-              onClick={() => onSelectEasing("out", opt.type)}
+              onClick={() => onSelectEasing(opt.type)}
               title={opt.label}
             >
               <span className="easing-icon">{opt.icon}</span>

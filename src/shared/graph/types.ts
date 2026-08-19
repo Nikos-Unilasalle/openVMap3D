@@ -228,8 +228,8 @@ export type EasingType =
 export interface Keyframe {
   frame: number;
   value: any;
+  /** The easing used to arrive at this keyframe — the only easing a keyframe carries. */
   easeIn?: EasingType;
-  easeOut?: EasingType;
 }
 
 /** Keyframes store keyed by nodeId -> paramKey -> array of Keyframe sorted by frame ascending. */
