@@ -874,6 +874,7 @@ function GraphEditorContent({
               value: cloneParamValue(kf.value),
               easeIn: kf.easeIn,
               easeStrength: kf.easeStrength,
+              easeBezier: kf.easeBezier ? ([...kf.easeBezier] as [number, number, number, number]) : undefined,
             }));
           }
         }

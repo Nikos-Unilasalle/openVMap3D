@@ -1,10 +1,11 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { EasingType } from "../shared/graph/types";
+import { BEZIER_PRESETS, computeSegmentEasing } from "../shared/graph/evaluate";
 import "./timeline-bar.css";
 
 /**
- * Per-easing strength knob. `null` = no knob (linear / hold). For each easing
- * the number has a native meaning (see computeSegmentEasing in evaluate.ts).
+ * Per-easing strength knob. `null` = no knob (linear / hold / bezier). For each
+ * easing the number has a native meaning (see computeSegmentEasing).
  */
 export const EASING_STRENGTH_CONFIG: Record<
   EasingType,
@@ -17,6 +18,7 @@ export const EASING_STRENGTH_CONFIG: Record<
   back: { label: "Overshoot (higher = more pull-back)", min: 0, max: 5, step: 0.05, defaultValue: 1.70158 },
   bounce: { label: "Strength (0 = linear, 1 = full)", min: 0, max: 1, step: 0.05, defaultValue: 1 },
   elastic: { label: "Strength (0 = linear, 1 = full)", min: 0, max: 1, step: 0.05, defaultValue: 1 },
+  bezier: null,
 };
 
 export const EASING_OPTIONS: { type: EasingType; label: string; icon: React.ReactNode }[] = [
@@ -83,7 +85,104 @@ export const EASING_OPTIONS: { type: EasingType; label: string; icon: React.Reac
       </svg>
     ),
   },
+  {
+    type: "bezier",
+    label: "Bezier (Custom)",
+    icon: (
+      <svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M 2 12 C 5 2, 13 12, 16 2" />
+        <circle cx="5" cy="5" r="1.4" fill="currentColor" />
+        <circle cx="13" cy="9" r="1.4" fill="currentColor" />
+      </svg>
+    ),
+  },
 ];
+
+/** Samples an easing into an SVG path `d` (y-up 0..1, overshoot allowed). */
+function easingPath(easeIn: EasingType, strength: number, bezier: [number, number, number, number]): string {
+  const pts: string[] = [];
+  for (let i = 0; i <= 24; i++) {
+    const p = i / 24;
+    const y = computeSegmentEasing(p, easeIn, strength, bezier);
+    pts.push(`${(p * 100).toFixed(2)},${(100 - y * 100).toFixed(2)}`);
+  }
+  return `M ${pts.join(" L ")}`;
+}
+
+/** Static preview of the selected easing curve. */
+function CurvePreview({ easeIn, strength, bezier }: { easeIn: EasingType; strength: number; bezier: [number, number, number, number] }) {
+  return (
+    <svg className="easing-curve-preview" viewBox="-20 -20 140 140" preserveAspectRatio="none">
+      <line x1="0" y1="100" x2="100" y2="0" className="easing-curve-grid" />
+      <path d={easingPath(easeIn, strength, bezier)} className="easing-curve-path" />
+    </svg>
+  );
+}
+
+/** Draggable cubic-bezier editor: drag the two control handles. */
+function BezierEditor({
+  value,
+  onChange,
+}: {
+  value: [number, number, number, number];
+  onChange: (b: [number, number, number, number]) => void;
+}) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [active, setActive] = useState<0 | 1 | null>(null);
+
+  const handle = (i: 0 | 1) => {
+    const x = value[i * 2];
+    const y = value[i * 2 + 1];
+    return { cx: x * 100, cy: 100 - y * 100 };
+  };
+
+  useEffect(() => {
+    if (active === null) return;
+    const onMove = (e: PointerEvent) => {
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const nx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const ny = 1 - (e.clientY - rect.top) / rect.height;
+      const next: [number, number, number, number] = [...value];
+      next[active * 2] = nx;
+      next[active * 2 + 1] = Math.max(-0.5, Math.min(1.5, ny));
+      onChange(next);
+    };
+    const onUp = () => setActive(null);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
+
+  return (
+    <svg ref={svgRef} className="easing-bezier-editor" viewBox="-20 -20 140 140" preserveAspectRatio="none">
+      <line x1="0" y1="100" x2="100" y2="0" className="easing-curve-grid" />
+      <path d={`M 0 100 C ${handle(0).cx} ${handle(0).cy}, ${handle(1).cx} ${handle(1).cy}, 100 0`} className="easing-curve-path" />
+      {([0, 1] as const).map((i) => {
+        const h = handle(i);
+        return (
+          <circle
+            key={i}
+            cx={h.cx}
+            cy={h.cy}
+            r={6}
+            className={`easing-bezier-handle ${active === i ? "active" : ""}`}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              setActive(i);
+            }}
+          />
+        );
+      })}
+    </svg>
+  );
+}
 
 export interface EasingPopoverProps {
   x: number;
@@ -92,8 +191,10 @@ export interface EasingPopoverProps {
   subtitle: string;
   easeIn: EasingType;
   strength: number;
+  easeBezier: [number, number, number, number];
   onSelectEasing: (newType: EasingType) => void;
   onStrengthChange: (value: number) => void;
+  onBezierChange: (b: [number, number, number, number]) => void;
   onDelete: () => void;
   onClose: () => void;
 }
@@ -105,8 +206,10 @@ export const EasingPopover: React.FC<EasingPopoverProps> = ({
   subtitle,
   easeIn,
   strength,
+  easeBezier,
   onSelectEasing,
   onStrengthChange,
+  onBezierChange,
   onDelete,
   onClose,
 }) => (
@@ -144,6 +247,20 @@ export const EasingPopover: React.FC<EasingPopoverProps> = ({
         </div>
       </div>
 
+      {easeIn === "bezier" && (
+        <div className="easing-popover-section">
+          <div className="easing-section-label">CUSTOM BEZIER — drag the handles</div>
+          <BezierEditor value={easeBezier} onChange={onBezierChange} />
+          <div className="easing-bezier-presets">
+            {Object.entries(BEZIER_PRESETS).map(([name, b]) => (
+              <button key={name} type="button" className="easing-btn" onClick={() => onBezierChange([...b])}>
+                {name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {EASING_STRENGTH_CONFIG[easeIn] && (
         <div className="easing-popover-section">
           <label className="easing-strength-label">
@@ -159,6 +276,10 @@ export const EasingPopover: React.FC<EasingPopoverProps> = ({
           </label>
         </div>
       )}
+
+      <div className="easing-popover-section">
+        <CurvePreview easeIn={easeIn} strength={strength} bezier={easeBezier} />
+      </div>
 
       <div className="easing-popover-footer">
         <button type="button" className="easing-delete-btn" onClick={onDelete} title="Delete this keyframe">
