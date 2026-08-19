@@ -88,29 +88,6 @@ describe("KEYFRAME ANIMATION SYSTEM", () => {
     expect(interpolateValue(0, 100, 0, "elastic")).toBe(0);
   });
 
-  it("supports a custom cubic-bezier easing", () => {
-    // Symmetric bezier → mid stays at mid.
-    expect(computeSegmentEasing(0.5, "bezier", undefined, [0.42, 0, 0.58, 1])).toBeCloseTo(0.5, 3);
-    // Degenerate [0,0,1,1] is the linear curve.
-    expect(computeSegmentEasing(0.3, "bezier", undefined, [0, 0, 1, 1])).toBeCloseTo(0.3, 3);
-    // Endpoints are exact regardless of the control points.
-    expect(computeSegmentEasing(0, "bezier", undefined, [0.34, 1.56, 0.64, 1])).toBe(0);
-    expect(computeSegmentEasing(1, "bezier", undefined, [0.34, 1.56, 0.64, 1])).toBe(1);
-    // Overshoot bezier exceeds 1 mid-curve.
-    expect(computeSegmentEasing(0.5, "bezier", undefined, [0.34, 1.56, 0.64, 1])).toBeGreaterThan(1);
-
-    // The control points flow through keyframe evaluation.
-    const keyframes: KeyframeStore = {
-      "node-1": {
-        val: [
-          { frame: 0, value: 0 },
-          { frame: 100, value: 100, easeIn: "bezier", easeBezier: [0, 0, 1, 1] },
-        ],
-      },
-    };
-    expect(evaluateKeyframeValue(keyframes, "node-1", "val", 50, -1)).toBeCloseTo(50, 3);
-  });
-
   it("strength tunes every easing (expo exponent, back overshoot, others blend to linear)", () => {
     // Expo: default exponent 10 → ~97% at the midpoint; higher is more front-loaded.
     expect(computeSegmentEasing(0.5, "expo")).toBeCloseTo(0.96875, 5);

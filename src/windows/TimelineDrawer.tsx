@@ -13,7 +13,6 @@ import {
   SelectedKeyframeKey,
 } from "./timelineUtils";
 import { EasingPopover, EASING_OPTIONS, EASING_STRENGTH_CONFIG } from "./EasingPopover";
-import { MotionGraph } from "./MotionGraph";
 import "./timeline-drawer.css";
 
 export interface TimelineDrawerProps {
@@ -42,9 +41,7 @@ export interface TimelineDrawerProps {
     targets: { nodeId: string; paramKey: string; frame: number }[],
     easeIn: EasingType,
     easeStrength?: number,
-    easeBezier?: [number, number, number, number],
   ) => void;
-  onChangeKeyframeValue?: (nodeId: string, paramKey: string, frame: number, value: number) => void;
   onPasteKeyframes: (items: KeyframeClipboardItem[], targetBaseFrame: number) => void;
   markers?: number[];
   onToggleMarker?: (frame: number) => void;
@@ -110,7 +107,6 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
   onBatchDeleteKeyframes,
   onBatchDuplicateKeyframes,
   onBatchUpdateEasing,
-  onChangeKeyframeValue,
   onPasteKeyframes,
   markers = [],
   onToggleMarker,
@@ -130,7 +126,6 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
     targets: SelectedKeyframeKey[];
     easeIn: EasingType;
     strength: number;
-    easeBezier: [number, number, number, number];
     x: number;
     y: number;
   } | null>(null);
@@ -155,8 +150,6 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
   // Refs
   const gridViewportRef = useRef<HTMLDivElement>(null);
   const rulerRef = useRef<HTMLDivElement>(null);
-  const motionGraphScrollRef = useRef<HTMLDivElement>(null);
-  const [motionGraphOpen, setMotionGraphOpen] = useState(true);
   const drawerRootRef = useRef<HTMLDivElement>(null);
   const isDraggingRulerRef = useRef(false);
   const isResizingDrawerRef = useRef(false);
@@ -204,16 +197,11 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
     });
   };
 
-  // Synchronize horizontal scroll between ruler, motion graph and grid.
+  // Synchronize horizontal scroll between ruler and grid
   const onGridScroll = () => {
-    const left = gridViewportRef.current?.scrollLeft ?? 0;
-    if (rulerRef.current) rulerRef.current.scrollLeft = left;
-    if (motionGraphScrollRef.current) motionGraphScrollRef.current.scrollLeft = left;
-  };
-
-  const onMotionGraphScroll = (scrollLeft: number) => {
-    if (gridViewportRef.current) gridViewportRef.current.scrollLeft = scrollLeft;
-    if (rulerRef.current) rulerRef.current.scrollLeft = scrollLeft;
+    if (gridViewportRef.current && rulerRef.current) {
+      rulerRef.current.scrollLeft = gridViewportRef.current.scrollLeft;
+    }
   };
 
   // Convert clientX to frame in the grid
@@ -286,23 +274,19 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
 
     const ins = new Set<EasingType>();
     const strengths = new Set<number>();
-    const beziers = new Set<string>();
     for (const k of targets) {
       const kf = graph.keyframes?.[k.nodeId]?.[k.paramKey]?.find((f) => f.frame === k.frame);
       ins.add(kf?.easeIn || "smooth");
       if (kf?.easeStrength !== undefined) strengths.add(kf.easeStrength);
-      if (kf?.easeBezier) beziers.add(JSON.stringify(kf.easeBezier));
     }
     const easeIn = ins.size === 1 ? [...ins][0] : "smooth";
     const strength = strengths.size === 1 ? [...strengths][0] : (EASING_STRENGTH_CONFIG[easeIn]?.defaultValue ?? 1);
-    const easeBezier = beziers.size === 1 ? (JSON.parse([...beziers][0]) as [number, number, number, number]) : ([0.42, 0, 0.58, 1] as [number, number, number, number]);
 
     setContextMenu(null);
     setEasingPopover({
       targets,
       easeIn,
       strength,
-      easeBezier,
       x: Math.max(160, Math.min(window.innerWidth - 160, menu.x)),
       y: menu.y - 40,
     });
@@ -311,20 +295,14 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
   const handleSelectEasing = (newType: EasingType) => {
     if (!easingPopover) return;
     setEasingPopover((prev) => (prev ? { ...prev, easeIn: newType } : null));
-    onBatchUpdateEasing(easingPopover.targets, newType, easingPopover.strength, easingPopover.easeBezier);
+    onBatchUpdateEasing(easingPopover.targets, newType, easingPopover.strength);
   };
 
   const handleStrengthChange = (value: number) => {
     if (!easingPopover) return;
     if (!Number.isFinite(value) || value <= 0) return;
     setEasingPopover((prev) => (prev ? { ...prev, strength: value } : null));
-    onBatchUpdateEasing(easingPopover.targets, easingPopover.easeIn, value, easingPopover.easeBezier);
-  };
-
-  const handleBezierChange = (b: [number, number, number, number]) => {
-    if (!easingPopover) return;
-    setEasingPopover((prev) => (prev ? { ...prev, easeBezier: b } : null));
-    onBatchUpdateEasing(easingPopover.targets, "bezier", easingPopover.strength, b);
+    onBatchUpdateEasing(easingPopover.targets, easingPopover.easeIn, value);
   };
 
   const handleDeleteEasingKeyframes = () => {
@@ -820,31 +798,6 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
 
       {/* --- BODY: LEFT TRACK TREE & RIGHT GRID --- */}
       <div className="timeline-drawer-body">
-        {/* Motion graph — value curves of the selected node, draggable. Its X
-            axis follows the timeline's pixels-per-frame and horizontal scroll
-            so keyframes line up with the grid rows below. */}
-        <div className="motion-graph-header" onClick={() => setMotionGraphOpen((o) => !o)}>
-          <span>MOTION GRAPH</span>
-          <span className="motion-graph-collapse">{motionGraphOpen ? "▼" : "▲"}</span>
-        </div>
-        {motionGraphOpen && selectedNodeIds[0] && (
-          <MotionGraph
-            graph={graph}
-            nodeId={selectedNodeIds[0]}
-            currentFrame={currentFrame}
-            totalFrames={totalFrames}
-            pixelsPerFrame={pixelsPerFrame}
-            scrollRef={motionGraphScrollRef}
-            onScrollSync={onMotionGraphScroll}
-            onFrameChange={onFrameChange}
-            onMoveKeyframe={(nodeId, paramKey, oldFrame, newFrame) =>
-              onBatchMoveKeyframes([{ nodeId, paramKey, oldFrame, newFrame }])
-            }
-            onChangeKeyframeValue={onChangeKeyframeValue}
-          />
-        )}
-
-        <div className="timeline-drawer-body-row">
         {/* Left Tracks Column */}
         <div className="timeline-tracks-pane" style={{ width: `${leftPaneWidth}px` }}>
           <div className="timeline-tracks-header">
@@ -1183,7 +1136,6 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
           </div>
         </div>
       </div>
-      </div>
 
       {/* --- CONTEXT MENU --- */}
       {contextMenu && (
@@ -1310,10 +1262,8 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
             .join(", ")}
           easeIn={easingPopover.easeIn}
           strength={easingPopover.strength}
-          easeBezier={easingPopover.easeBezier}
           onSelectEasing={handleSelectEasing}
           onStrengthChange={handleStrengthChange}
-          onBezierChange={handleBezierChange}
           onDelete={handleDeleteEasingKeyframes}
           onClose={() => setEasingPopover(null)}
         />

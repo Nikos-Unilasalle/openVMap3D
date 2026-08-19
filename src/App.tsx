@@ -32,7 +32,6 @@ import {
 } from "./shared/graph/types";
 import { broadcastGraph, maximizeMainWindow, PreviewCameraPose, startBroadcasting } from "./shared/ipc";
 import { exportVideo, mimeToExtension, saveVideoBlob } from "./shared/export/videoExport";
-import { getOrCreatePlayer } from "./shared/audio/audioStore";
 import { TransformPatch, Viewport, ViewportExportHandle } from "./shared/three/Viewport";
 import { SplitViewport } from "./shared/three/SplitViewport";
 import "./shared/three/viewport.css";
@@ -933,7 +932,7 @@ function MainEditor() {
       : {};
 
   const selectedKeyframesRecord = useMemo(() => {
-    const map: Record<number, { paramKeys: string[]; easeIn?: EasingType; easeStrength?: number; easeBezier?: [number, number, number, number] }> = {};
+    const map: Record<number, { paramKeys: string[]; easeIn?: EasingType; easeStrength?: number }> = {};
     if (selectedNodeId && graph.keyframes?.[selectedNodeId]) {
       for (const [paramKey, list] of Object.entries(graph.keyframes[selectedNodeId])) {
         for (const kf of list) {
@@ -942,7 +941,6 @@ function MainEditor() {
               paramKeys: [paramKey],
               easeIn: kf.easeIn || "smooth",
               easeStrength: kf.easeStrength,
-              easeBezier: kf.easeBezier,
             };
           } else {
             if (!map[kf.frame].paramKeys.includes(paramKey)) {
@@ -954,18 +952,6 @@ function MainEditor() {
     }
     return map;
   }, [selectedNodeId, graph.keyframes]);
-
-  // The first sound/player node with a loaded file drives the timeline
-  // waveform strip (music sync).
-  const waveformUrl = useMemo(() => {
-    for (const node of graph.nodes) {
-      if (node.type === "sound/player" && typeof node.params.filePath === "string" && node.params.filePath) {
-        const url = getOrCreatePlayer(node.id).loadedPath;
-        if (url) return url;
-      }
-    }
-    return undefined;
-  }, [graph.nodes]);
 
   const onMoveKeyframe = useCallback(
     (oldFrame: number, newFrame: number) => {
@@ -1009,7 +995,7 @@ function MainEditor() {
   );
 
   const onUpdateKeyframeEasing = useCallback(
-    (frame: number, easeIn: EasingType, easeStrength?: number, easeBezier?: [number, number, number, number]) => {
+    (frame: number, easeIn: EasingType, easeStrength?: number) => {
       if (!selectedNodeId) return;
       setGraphWithHistory((prevGraph) => {
         const currentKeyframes = prevGraph.keyframes || {};
@@ -1023,11 +1009,9 @@ function MainEditor() {
           const nextList = list.map((kf) => {
             if (kf.frame === frame) {
               modified = true;
-              return easeBezier !== undefined
-                ? { ...kf, easeIn, easeStrength, easeBezier }
-                : easeStrength !== undefined
-                  ? { ...kf, easeIn, easeStrength }
-                  : { ...kf, easeIn };
+              return easeStrength !== undefined
+                ? { ...kf, easeIn, easeStrength }
+                : { ...kf, easeIn };
             }
             return kf;
           });
@@ -1046,22 +1030,6 @@ function MainEditor() {
       }, `keyframe:easing:${frame}`);
     },
     [selectedNodeId, setGraphWithHistory],
-  );
-
-  const onChangeKeyframeValue = useCallback(
-    (nodeId: string, paramKey: string, frame: number, value: number) => {
-      setGraphWithHistory((prevGraph) => {
-        const currentKeyframes = prevGraph.keyframes || {};
-        const nodeKeys = currentKeyframes[nodeId] ? { ...currentKeyframes[nodeId] } : {};
-        const list = nodeKeys[paramKey] ? [...nodeKeys[paramKey]] : [];
-        const idx = list.findIndex((k) => k.frame === frame);
-        if (idx < 0) return prevGraph;
-        list[idx] = { ...list[idx], value };
-        nodeKeys[paramKey] = list;
-        return { ...prevGraph, keyframes: { ...currentKeyframes, [nodeId]: nodeKeys } };
-      }, `keyframe:value:${nodeId}:${paramKey}:${frame}`);
-    },
-    [setGraphWithHistory],
   );
 
   const onDeleteKeyframe = useCallback(
@@ -1218,12 +1186,7 @@ function MainEditor() {
   );
 
   const onBatchUpdateEasing = useCallback(
-    (
-      targets: { nodeId: string; paramKey: string; frame: number }[],
-      easeIn: EasingType,
-      easeStrength?: number,
-      easeBezier?: [number, number, number, number],
-    ) => {
+    (targets: { nodeId: string; paramKey: string; frame: number }[], easeIn: EasingType, easeStrength?: number) => {
       if (targets.length === 0) return;
       setGraphWithHistory((prevGraph) => {
         const currentKeyframes = prevGraph.keyframes || {};
@@ -1242,11 +1205,9 @@ function MainEditor() {
             const nextList = list.map((kf) => {
               if (targetMap.has(`${nodeId}::${paramKey}::${kf.frame}`)) {
                 paramModified = true;
-                return easeBezier !== undefined
-                  ? { ...kf, easeIn, easeStrength, easeBezier }
-                  : easeStrength !== undefined
-                    ? { ...kf, easeIn, easeStrength }
-                    : { ...kf, easeIn };
+                return easeStrength !== undefined
+                  ? { ...kf, easeIn, easeStrength }
+                  : { ...kf, easeIn };
               }
               return kf;
             });
@@ -1285,7 +1246,6 @@ function MainEditor() {
             value: JSON.parse(JSON.stringify(item.value)),
             easeIn: item.easeIn,
             easeStrength: item.easeStrength,
-            easeBezier: item.easeBezier,
           };
           const filtered = list.filter((k) => k.frame !== targetFrame);
           nodeKeys[item.paramKey] = [...filtered, newKf].sort((a, b) => a.frame - b.frame);
@@ -1415,7 +1375,6 @@ function MainEditor() {
           keyframesEnabled={keyframesEnabled}
           selectedKeyframes={selectedKeyframesRecord}
           markers={graph.markers ?? []}
-          waveformUrl={waveformUrl}
           onToggleMarker={onToggleMarker}
           onMoveMarker={onMoveMarker}
           onMoveKeyframe={onMoveKeyframe}
@@ -1446,7 +1405,6 @@ function MainEditor() {
         onBatchDeleteKeyframes={onBatchDeleteKeyframes}
         onBatchDuplicateKeyframes={onBatchDuplicateKeyframes}
         onBatchUpdateEasing={onBatchUpdateEasing}
-        onChangeKeyframeValue={onChangeKeyframeValue}
         onPasteKeyframes={onPasteKeyframes}
         markers={graph.markers ?? []}
         onToggleMarker={onToggleMarker}

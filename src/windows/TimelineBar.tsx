@@ -2,14 +2,12 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { EasingType } from "../shared/graph/types";
 import { setInputZone } from "../shared/graph/inputZoneStore";
 import { EasingPopover, EASING_STRENGTH_CONFIG } from "./EasingPopover";
-import { WaveformPeak, loadWaveformPeaks } from "./audioWaveform";
 import "./timeline-bar.css";
 
 export interface KeyframeDataAtFrame {
   paramKeys: string[];
   easeIn?: EasingType;
   easeStrength?: number;
-  easeBezier?: [number, number, number, number];
 }
 
 interface TimelineBarProps {
@@ -19,11 +17,10 @@ interface TimelineBarProps {
   keyframesEnabled: boolean;
   selectedKeyframes?: Record<number, KeyframeDataAtFrame>;
   markers?: number[];
-  waveformUrl?: string;
   onToggleMarker?: (frame: number) => void;
   onMoveMarker?: (oldFrame: number, newFrame: number) => void;
   onMoveKeyframe?: (oldFrame: number, newFrame: number) => void;
-  onUpdateKeyframeEasing?: (frame: number, easeIn: EasingType, easeStrength?: number, easeBezier?: [number, number, number, number]) => void;
+  onUpdateKeyframeEasing?: (frame: number, easeIn: EasingType, easeStrength?: number) => void;
   onDeleteKeyframe?: (frame: number) => void;
   onFrameChange: (frame: number) => void;
   onTogglePlay: () => void;
@@ -66,58 +63,6 @@ function renderKeyframeGlyph(easeIn: EasingType = "smooth") {
   );
 }
 
-/** Decoded audio waveform drawn behind the timeline track — the music-sync reference. */
-function WaveformCanvas({ url }: { url?: string }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  const [peaks, setPeaks] = useState<WaveformPeak[] | null>(null);
-
-  useEffect(() => {
-    if (!url) {
-      setPeaks(null);
-      return;
-    }
-    let alive = true;
-    loadWaveformPeaks(url).then((p) => {
-      if (alive) setPeaks(p);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [url]);
-
-  useEffect(() => {
-    const canvas = ref.current;
-    if (!canvas) return;
-    const draw = () => {
-      const w = canvas.clientWidth;
-      const h = canvas.clientHeight;
-      if (w <= 0 || h <= 0) return;
-      if (canvas.width !== w || canvas.height !== h) {
-        canvas.width = w;
-        canvas.height = h;
-      }
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      ctx.clearRect(0, 0, w, h);
-      if (!peaks || peaks.length === 0) return;
-      const bw = w / peaks.length;
-      ctx.fillStyle = "rgba(56, 189, 248, 0.22)";
-      peaks.forEach((p, i) => {
-        const x = i * bw;
-        const top = (0.5 - p.max / 2) * h;
-        const bottom = (0.5 - p.min / 2) * h;
-        ctx.fillRect(x, top, Math.max(1, bw), Math.max(1, bottom - top));
-      });
-    };
-    draw();
-    const ro = new ResizeObserver(draw);
-    if (canvas.parentElement) ro.observe(canvas.parentElement);
-    return () => ro.disconnect();
-  }, [peaks]);
-
-  return <canvas ref={ref} className="timeline-waveform" />;
-}
-
 export function TimelineBar({
   currentFrame,
   totalFrames,
@@ -125,7 +70,6 @@ export function TimelineBar({
   keyframesEnabled,
   selectedKeyframes = {},
   markers = [],
-  waveformUrl,
   onToggleMarker,
   onMoveMarker,
   onMoveKeyframe,
@@ -152,7 +96,6 @@ export function TimelineBar({
     paramKeys: string[];
     easeIn: EasingType;
     strength: number;
-    easeBezier: [number, number, number, number];
     x: number;
     y: number;
   } | null>(null);
@@ -328,7 +271,6 @@ export function TimelineBar({
       paramKeys: data.paramKeys,
       easeIn: initialIn,
       strength: data.easeStrength ?? EASING_STRENGTH_CONFIG[initialIn]?.defaultValue ?? 1,
-      easeBezier: data.easeBezier ?? ([0.42, 0, 0.58, 1] as [number, number, number, number]),
       x,
       y,
     });
@@ -350,20 +292,14 @@ export function TimelineBar({
   const handleSelectEasing = (newType: EasingType) => {
     if (!easingPopover) return;
     setEasingPopover((prev) => (prev ? { ...prev, easeIn: newType } : null));
-    onUpdateKeyframeEasing?.(easingPopover.frame, newType, easingPopover.strength, easingPopover.easeBezier);
+    onUpdateKeyframeEasing?.(easingPopover.frame, newType, easingPopover.strength);
   };
 
   const handleStrengthChange = (value: number) => {
     if (!easingPopover) return;
     if (!Number.isFinite(value) || value <= 0) return;
     setEasingPopover((prev) => (prev ? { ...prev, strength: value } : null));
-    onUpdateKeyframeEasing?.(easingPopover.frame, easingPopover.easeIn, value, easingPopover.easeBezier);
-  };
-
-  const handleBezierChange = (b: [number, number, number, number]) => {
-    if (!easingPopover) return;
-    setEasingPopover((prev) => (prev ? { ...prev, easeBezier: b } : null));
-    onUpdateKeyframeEasing?.(easingPopover.frame, "bezier", easingPopover.strength, b);
+    onUpdateKeyframeEasing?.(easingPopover.frame, easingPopover.easeIn, value);
   };
 
   const handleDeleteCurrentKeyframe = () => {
@@ -421,7 +357,6 @@ export function TimelineBar({
           onMouseLeave={handleMouseLeaveTrack}
         >
           <div className="timeline-track-bg" />
-          <WaveformCanvas url={waveformUrl} />
           <div className="timeline-track-fill" style={{ width: `${progressPct}%` }} />
 
           {/* Visual markers */}
@@ -527,10 +462,8 @@ export function TimelineBar({
           subtitle={easingPopover.paramKeys.join(", ")}
           easeIn={easingPopover.easeIn}
           strength={easingPopover.strength}
-          easeBezier={easingPopover.easeBezier}
           onSelectEasing={handleSelectEasing}
           onStrengthChange={handleStrengthChange}
-          onBezierChange={handleBezierChange}
           onDelete={handleDeleteCurrentKeyframe}
           onClose={() => setEasingPopover(null)}
         />

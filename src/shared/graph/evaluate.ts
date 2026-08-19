@@ -44,38 +44,6 @@ function sineEaseInOut(p: number): number {
   return (1 - Math.cos(Math.PI * p)) / 2;
 }
 
-/** Cubic bezier with P0=(0,0), P3=(1,1): solve x(t)=p by bisection, return y(t). */
-function cubicBezierY(p: number, x1: number, y1: number, x2: number, y2: number): number {
-  if (p <= 0) return 0;
-  if (p >= 1) return 1;
-  const cx = 3 * x1;
-  const bx = 3 * (x2 - x1) - cx;
-  const ax = 1 - cx - bx;
-  const cy = 3 * y1;
-  const by = 3 * (y2 - y1) - cy;
-  const ay = 1 - cy - by;
-  let lo = 0;
-  let hi = 1;
-  for (let i = 0; i < 20; i++) {
-    const mid = (lo + hi) / 2;
-    const x = ((ax * mid + bx) * mid + cx) * mid;
-    if (x < p) lo = mid;
-    else hi = mid;
-  }
-  const t = (lo + hi) / 2;
-  return ((ay * t + by) * t + cy) * t;
-}
-
-/** Named bezier presets — the classic motion-design palette. */
-export const BEZIER_PRESETS: Record<string, [number, number, number, number]> = {
-  "Ease (in-out)": [0.42, 0, 0.58, 1],
-  "Ease Out (quart)": [0.25, 1, 0.5, 1],
-  "Ease In (quart)": [0.5, 0, 0.75, 0],
-  "Ease Out (back)": [0.34, 1.56, 0.64, 1],
-  "Ease Out (expo)": [0.16, 1, 0.3, 1],
-  "Snap": [0.68, -0.6, 0.32, 1.6],
-};
-
 /**
  * Softens an eased curve toward linear: s = 1 keeps the full curve, s = 0 is
  * purely linear. The "strength" knob for the easings whose natural parameter
@@ -102,12 +70,7 @@ function blendToLinear(eased: number, linear: number, s: number): number {
  *   expo                     — the exponent k (higher = more contrast)
  *   back                     — the overshoot amount s
  */
-export function computeSegmentEasing(
-  t: number,
-  easing?: EasingType,
-  strength?: number,
-  bezier?: [number, number, number, number],
-): number {
+export function computeSegmentEasing(t: number, easing?: EasingType, strength?: number): number {
   const p = Math.max(0, Math.min(1, t));
   const s = strength !== undefined && Number.isFinite(strength) ? strength : undefined;
   switch (easing) {
@@ -127,10 +90,6 @@ export function computeSegmentEasing(
       return blendToLinear(bounceEaseOut(p), p, s ?? 1);
     case "elastic":
       return blendToLinear(elasticEaseOut(p), p, s ?? 1);
-    case "bezier": {
-      const b = bezier ?? [0.42, 0, 0.58, 1];
-      return cubicBezierY(p, b[0], b[1], b[2], b[3]);
-    }
     default:
       // No easing recorded on the keyframe — the "smooth" default, and it
       // honours `strength` the same way an explicit "smooth" does.
@@ -141,15 +100,8 @@ export function computeSegmentEasing(
 /**
  * Keyframe value interpolation applying the target keyframe's arrival easing.
  */
-export function interpolateValue(
-  v1: any,
-  v2: any,
-  t: number,
-  easing?: EasingType,
-  strength?: number,
-  bezier?: [number, number, number, number],
-): any {
-  const ease = computeSegmentEasing(t, easing, strength, bezier);
+export function interpolateValue(v1: any, v2: any, t: number, easing?: EasingType, strength?: number): any {
+  const ease = computeSegmentEasing(t, easing, strength);
 
   if (typeof v1 === "number" && typeof v2 === "number") {
     return v1 + (v2 - v1) * ease;
@@ -223,7 +175,7 @@ function evaluateKeyframeList(list: Keyframe[], currentFrame: number, fallback: 
       // fallback reads pre-simplification .tsuji files that stored a departure
       // easing only.
       const easing = k2.easeIn ?? (k2 as { easeOut?: EasingType }).easeOut ?? "smooth";
-      return interpolateValue(k1.value, k2.value, t, easing, k2.easeStrength, k2.easeBezier);
+      return interpolateValue(k1.value, k2.value, t, easing, k2.easeStrength);
     }
   }
 

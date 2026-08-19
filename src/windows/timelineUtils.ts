@@ -25,7 +25,6 @@ export interface KeyframeClipboardItem {
   value: any;
   easeIn?: EasingType;
   easeStrength?: number;
-  easeBezier?: [number, number, number, number];
 }
 
 export interface KeyframeClipboard {
@@ -63,7 +62,6 @@ export function copyKeyframesToClipboard(
       value: JSON.parse(JSON.stringify(kf.value)),
       easeIn: kf.easeIn,
       easeStrength: kf.easeStrength,
-      easeBezier: kf.easeBezier ? ([...kf.easeBezier] as [number, number, number, number]) : undefined,
     });
   }
 
