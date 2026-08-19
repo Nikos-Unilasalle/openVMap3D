@@ -1157,6 +1157,83 @@ function MainEditor() {
     [setGraphWithHistory],
   );
 
+  /**
+   * One atomic edit pass over a set of keyframes: a move in time, a new value,
+   * new bezier control points, or any combination.
+   *
+   * The motion graph needs this because dragging a key changes its frame AND
+   * its value at once. Doing that through onBatchMoveKeyframes followed by
+   * onChangeKeyframeValue produced two undo entries, and the second call had to
+   * address the key by its *new* frame — so if the move collided with an
+   * existing key, the value landed on the wrong one.
+   */
+  const onEditKeyframes = useCallback(
+    (
+      edits: {
+        nodeId: string;
+        paramKey: string;
+        oldFrame: number;
+        newFrame: number;
+        value?: number;
+        easeBezier?: [number, number, number, number];
+      }[],
+    ) => {
+      if (edits.length === 0) return;
+      setGraphWithHistory((prevGraph) => {
+        const currentKeyframes = prevGraph.keyframes || {};
+        const nextStore = { ...currentKeyframes };
+
+        const byNodeParam = new Map<string, typeof edits>();
+        for (const e of edits) {
+          const key = `${e.nodeId}\u0000${e.paramKey}`;
+          const bucket = byNodeParam.get(key);
+          if (bucket) bucket.push(e);
+          else byNodeParam.set(key, [e]);
+        }
+
+        let modified = false;
+        for (const [bucketKey, list] of byNodeParam) {
+          const [nodeId, paramKey] = bucketKey.split("\u0000");
+          const existing = nextStore[nodeId]?.[paramKey];
+          if (!existing) continue;
+
+          const editByOldFrame = new Map(list.map((e) => [e.oldFrame, e]));
+          const moved: Keyframe[] = [];
+          const untouched: Keyframe[] = [];
+
+          for (const kf of existing) {
+            const edit = editByOldFrame.get(kf.frame);
+            if (!edit) {
+              untouched.push(kf);
+              continue;
+            }
+            modified = true;
+            const next: Keyframe = { ...kf, frame: edit.newFrame };
+            if (edit.value !== undefined && Number.isFinite(edit.value)) next.value = edit.value;
+            if (edit.easeBezier) next.easeBezier = [...edit.easeBezier] as [number, number, number, number];
+            moved.push(next);
+          }
+
+          if (moved.length === 0) continue;
+          // A key dropped onto an occupied frame replaces the one already there
+          // — the same rule the track grid's drag follows.
+          const takenFrames = new Set(moved.map((k) => k.frame));
+          const combined = [...untouched.filter((k) => !takenFrames.has(k.frame)), ...moved].sort(
+            (a, b) => a.frame - b.frame,
+          );
+
+          const nodeKeys = { ...(nextStore[nodeId] || {}) };
+          nodeKeys[paramKey] = combined;
+          nextStore[nodeId] = nodeKeys;
+        }
+
+        if (!modified) return prevGraph;
+        return { ...prevGraph, keyframes: nextStore };
+      }, `keyframes:edit:${edits.length}`);
+    },
+    [setGraphWithHistory],
+  );
+
   const onBatchDeleteKeyframes = useCallback(
     (targets: { nodeId: string; paramKey: string; frame: number }[]) => {
       if (targets.length === 0) return;
@@ -1455,6 +1532,8 @@ function MainEditor() {
         onBatchDuplicateKeyframes={onBatchDuplicateKeyframes}
         onBatchUpdateEasing={onBatchUpdateEasing}
         onChangeKeyframeValue={onChangeKeyframeValue}
+        onEditKeyframes={onEditKeyframes}
+        fps={exportFps}
         onPasteKeyframes={onPasteKeyframes}
         markers={graph.markers ?? []}
         onToggleMarker={onToggleMarker}

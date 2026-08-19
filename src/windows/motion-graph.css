@@ -1,0 +1,271 @@
+/* Motion graph — the curve editor strip at the top of the timeline drawer.
+   Sits above the track rows and shares their horizontal scroll, so a key here
+   is directly above the same key down there. */
+
+.mg-root {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+  background: #2f3742;
+  border-bottom: 1px solid #1f2733;
+  position: relative;
+}
+
+/* --- toolbar ----------------------------------------------------------- */
+
+.mg-toolbar {
+  flex: 0 0 auto;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  background: var(--chrome-surface, #3b434f);
+  border-bottom: 1px solid #1f2733;
+  user-select: none;
+}
+
+.mg-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #aab4c5;
+}
+
+.mg-tool {
+  height: 16px;
+  padding: 0 7px;
+  font-size: 10px;
+  font-family: inherit;
+  color: #c7d0dd;
+  background: #2b323c;
+  border: 1px solid #1f2733;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.mg-tool:hover:not(:disabled) {
+  background: #39424f;
+  color: #eef2f8;
+}
+
+.mg-tool.on {
+  background: #38bdf8;
+  border-color: #0ea5e9;
+  color: #0b1220;
+  font-weight: 600;
+}
+
+.mg-tool:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.mg-hint {
+  margin-left: auto;
+  font-size: 9px;
+  color: #6d7889;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- body -------------------------------------------------------------- */
+
+.mg-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #8b95a6;
+}
+
+.mg-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.mg-channels {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 3px;
+  overflow-y: auto;
+  background: #262d36;
+  border-right: 1px solid #1f2733;
+}
+
+.mg-channel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 5px;
+  font-size: 10px;
+  font-family: inherit;
+  color: #c7d0dd;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.mg-channel:hover {
+  background: #333c47;
+}
+
+.mg-channel.off {
+  opacity: 0.35;
+}
+
+.mg-channel.off .mg-channel-name {
+  text-decoration: line-through;
+}
+
+.mg-swatch {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.mg-channel-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- plot -------------------------------------------------------------- */
+
+.mg-view {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.mg-scroll {
+  width: 100%;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.mg-plot {
+  display: block;
+  touch-action: none;
+  user-select: none;
+  cursor: crosshair;
+}
+
+.mg-gridline {
+  stroke: #3c4552;
+  stroke-width: 1;
+}
+
+.mg-gridline.zero {
+  stroke: #5b6778;
+}
+
+.mg-curve {
+  fill: none;
+  stroke-width: 1.6;
+}
+
+/* Values held outside the keyframed range — drawn faint so the flat run reads
+   as extrapolation rather than as animation. */
+.mg-extrap {
+  fill: none;
+  stroke-width: 1.2;
+  stroke-dasharray: 3 3;
+  opacity: 0.4;
+}
+
+.mg-key {
+  stroke: #131920;
+  stroke-width: 1.2;
+  cursor: grab;
+}
+
+.mg-key.sel {
+  stroke: #fff8e1;
+  stroke-width: 1.6;
+}
+
+.mg-handles line {
+  stroke: #94a3b8;
+  stroke-width: 1;
+  opacity: 0.65;
+}
+
+.mg-handle {
+  fill: #1e293b;
+  stroke: #cbd5e1;
+  stroke-width: 1.2;
+  cursor: grab;
+}
+
+.mg-marquee {
+  fill: rgba(56, 189, 248, 0.14);
+  stroke: #38bdf8;
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
+}
+
+.mg-playhead {
+  stroke: #f472b6;
+  stroke-width: 1;
+  opacity: 0.85;
+}
+
+/* --- value axis overlay ------------------------------------------------ */
+
+.mg-axis {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  pointer-events: none;
+  background: linear-gradient(to right, #2f3742 65%, rgba(47, 55, 66, 0));
+}
+
+.mg-axis-label {
+  position: absolute;
+  left: 4px;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  color: #8b95a6;
+  line-height: 14px;
+}
+
+.mg-lock-badge {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  padding: 1px 6px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #0b1220;
+  background: #fbbf24;
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+/* --- resize handle ----------------------------------------------------- */
+
+.mg-resize {
+  flex: 0 0 auto;
+  height: 5px;
+  cursor: ns-resize;
+  background: #262d36;
+  border-top: 1px solid #1f2733;
+}
+
+.mg-resize:hover {
+  background: #38bdf8;
+}

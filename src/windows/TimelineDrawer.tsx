@@ -45,7 +45,20 @@ export interface TimelineDrawerProps {
     easeBezier?: [number, number, number, number],
   ) => void;
   onChangeKeyframeValue?: (nodeId: string, paramKey: string, frame: number, value: number) => void;
+  /** One atomic pass over a set of keyframes — the motion graph's drag commit. */
+  onEditKeyframes: (
+    edits: {
+      nodeId: string;
+      paramKey: string;
+      oldFrame: number;
+      newFrame: number;
+      value?: number;
+      easeBezier?: [number, number, number, number];
+    }[],
+  ) => void;
   onPasteKeyframes: (items: KeyframeClipboardItem[], targetBaseFrame: number) => void;
+  /** The Render node's frame rate — what the timecode is counted in. */
+  fps?: number;
   markers?: number[];
   onToggleMarker?: (frame: number) => void;
   onMoveMarker?: (oldFrame: number, newFrame: number) => void;
@@ -110,8 +123,10 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
   onBatchDeleteKeyframes,
   onBatchDuplicateKeyframes,
   onBatchUpdateEasing,
-  onChangeKeyframeValue,
+  onChangeKeyframeValue: _onChangeKeyframeValue,
+  onEditKeyframes,
   onPasteKeyframes,
+  fps = 30,
   markers = [],
   onToggleMarker,
   onMoveMarker: _onMoveMarker,
@@ -157,6 +172,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
   const rulerRef = useRef<HTMLDivElement>(null);
   const motionGraphScrollRef = useRef<HTMLDivElement>(null);
   const [motionGraphOpen, setMotionGraphOpen] = useState(true);
+  const [motionGraphHeight, setMotionGraphHeight] = useState(190);
   const drawerRootRef = useRef<HTMLDivElement>(null);
   const isDraggingRulerRef = useRef(false);
   const isResizingDrawerRef = useRef(false);
@@ -193,6 +209,12 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
     const animatedNodeIds = new Set(Object.keys(graph.keyframes || {}));
     return graph.nodes.filter((n) => animatedNodeIds.has(n.id));
   }, [graph.keyframes, graph.nodes, selectedNodeIds, viewMode]);
+
+  // The graph plots exactly the tracks the grid below lists — including the
+  // "nothing selected, so show everything animated" fallback and the All Nodes
+  // mode. Following the canvas selection alone left the graph blank while the
+  // grid was full of rows.
+  const motionGraphNodeIds = useMemo(() => displayedNodes.map((n) => n.id), [displayedNodes]);
 
   // Expand / collapse helper
   const toggleNodeCollapse = (nodeId: string) => {
@@ -714,7 +736,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
               }}
             />
             <span>/ {totalFrames}</span>
-            <span className="timeline-timecode-tc">({formatTimecode(currentFrame, 30)})</span>
+            <span className="timeline-timecode-tc">({formatTimecode(currentFrame, fps)})</span>
           </div>
         </div>
 
@@ -832,26 +854,24 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
             so keyframes line up with the grid rows below. Collapsed (Graph
             button in the toolbar) → nothing shows in the timeline. */}
         {motionGraphOpen && (
-          <>
-            <div className="motion-graph-header" onClick={() => setMotionGraphOpen((o) => !o)}>
-              <span>MOTION GRAPH</span>
-              <span className="motion-graph-collapse">▼</span>
-            </div>
-            <MotionGraph
-              graph={graph}
-              nodeId={selectedNodeIds[0] ?? null}
-              currentFrame={currentFrame}
-              totalFrames={totalFrames}
-              pixelsPerFrame={pixelsPerFrame}
-              scrollRef={motionGraphScrollRef}
-              onScrollSync={onMotionGraphScroll}
-              onFrameChange={onFrameChange}
-              onMoveKeyframe={(nodeId, paramKey, oldFrame, newFrame) =>
-                onBatchMoveKeyframes([{ nodeId, paramKey, oldFrame, newFrame }])
-              }
-              onChangeKeyframeValue={onChangeKeyframeValue}
-            />
-          </>
+          <MotionGraph
+            graph={graph}
+            registry={registry}
+            nodeIds={motionGraphNodeIds}
+            currentFrame={currentFrame}
+            totalFrames={totalFrames}
+            pixelsPerFrame={pixelsPerFrame}
+            onPixelsPerFrameChange={setPixelsPerFrame}
+            scrollRef={motionGraphScrollRef}
+            onScrollSync={onMotionGraphScroll}
+            onFrameChange={onFrameChange}
+            selectedKeyframeIds={selectedKeyframeIds}
+            onSelectionChange={setSelectedKeyframeIds}
+            onEditKeyframes={onEditKeyframes}
+            onOpenEasing={(x, y) => openEasingPopover({ x, y })}
+            height={motionGraphHeight}
+            onHeightChange={setMotionGraphHeight}
+          />
         )}
 
         <div className="timeline-drawer-body-row">
