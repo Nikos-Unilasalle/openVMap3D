@@ -89,6 +89,20 @@
       "toSocket": "scaleY"
     },
     {
+      "id": "scaleY.list->instances.scaleX",
+      "fromNode": "scaleY",
+      "fromSocket": "list",
+      "toNode": "instances",
+      "toSocket": "scaleX"
+    },
+    {
+      "id": "scaleY.list->instances.scaleZ",
+      "fromNode": "scaleY",
+      "fromSocket": "list",
+      "toNode": "instances",
+      "toSocket": "scaleZ"
+    },
+    {
       "id": "instances.geometry->merge.in1",
       "fromNode": "instances",
       "fromSocket": "geometry",

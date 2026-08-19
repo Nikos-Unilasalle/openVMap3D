@@ -1,6 +1,12 @@
 {
   "nodes": [
     {
+      "id": "play",
+      "type": "value/constant",
+      "position": { "x": -1450, "y": 40 },
+      "params": { "value": 1 }
+    },
+    {
       "id": "player",
       "type": "sound/player",
       "position": { "x": -1260, "y": 40 },
@@ -60,6 +66,13 @@
     }
   ],
   "connections": [
+    {
+      "id": "play.out->player.play",
+      "fromNode": "play",
+      "fromSocket": "out",
+      "toNode": "player",
+      "toSocket": "play"
+    },
     {
       "id": "player.audio->spectrum.audio",
       "fromNode": "player",

@@ -221,9 +221,14 @@ function evaluateKeyframeList(list: Keyframe[], currentFrame: number, fallback: 
       const t = (currentFrame - k1.frame) / (k2.frame - k1.frame);
       // Only the *arrival* easing shapes the segment — K2's. The easeOut
       // fallback reads pre-simplification .tsuji files that stored a departure
-      // easing only.
-      const easing = k2.easeIn ?? (k2 as { easeOut?: EasingType }).easeOut ?? "smooth";
-      return interpolateValue(k1.value, k2.value, t, easing, k2.easeStrength, k2.easeBezier);
+      // easing only. The FIRST keyframe has no arrival segment, so its easing
+      // shapes the first segment instead — changing any keyframe always affects
+      // a curve.
+      const first = i === 0 && k1.easeIn !== undefined;
+      const easing = first ? k1.easeIn : k2.easeIn ?? (k2 as { easeOut?: EasingType }).easeOut ?? "smooth";
+      const strength = first ? k1.easeStrength : k2.easeStrength;
+      const bezier = first ? k1.easeBezier : k2.easeBezier;
+      return interpolateValue(k1.value, k2.value, t, easing, strength, bezier);
     }
   }
 

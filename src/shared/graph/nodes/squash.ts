@@ -69,7 +69,7 @@ export const SQUASH_STRETCH_NODE: NodeDefinition = {
     const state = getSquashState(ctx.nodeId);
     const object = inputs.geometry instanceof THREE.Object3D ? inputs.geometry : null;
 
-    const time = numberInput(inputs.time, params.time, 0);
+    const time = inputs.time !== undefined ? numberInput(inputs.time, params.time, 0) : (ctx.time ?? 0);
     const intensity = clamp01(numberInput(inputs.intensity, params.intensity, 0.6));
     const maxSpeed = Math.max(0.01, numberInput(inputs.maxSpeed, params.maxSpeed, 3));
 

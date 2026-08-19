@@ -162,9 +162,15 @@ export const MotionGraph: React.FC<MotionGraphProps> = ({
               const k2 = kfs[s + 1];
               const v1 = Number(k1.value);
               const v2 = Number(k2.value);
+              // The first keyframe's easing shapes the first segment (see
+              // evaluateKeyframeList) so every easing knob is visible.
+              const first = s === 0 && k1.easeIn !== undefined;
+              const easeIn = first ? k1.easeIn : k2.easeIn;
+              const strength = first ? k1.easeStrength : k2.easeStrength;
+              const bezier = first ? k1.easeBezier : k2.easeBezier;
               for (let n = 0; n <= 24; n++) {
                 const p = n / 24;
-                const eased = computeSegmentEasing(p, k2.easeIn, k2.easeStrength, k2.easeBezier);
+                const eased = computeSegmentEasing(p, easeIn, strength, bezier);
                 const v = v1 + (v2 - v1) * eased;
                 const x = frameX(k1.frame + (k2.frame - k1.frame) * p);
                 const y = laneY + valueToY(v, range, LANE_H);
@@ -178,7 +184,7 @@ export const MotionGraph: React.FC<MotionGraphProps> = ({
                 {kfs.map((k, ki) => {
                   const v = Number(k.value);
                   const y = laneY + valueToY(v, range, LANE_H);
-                  const isDrag = drag && drag.track === t.key && drag.frame === k.frame;
+                  const isDrag = drag && drag.track === t.key && drag.oldFrame === k.frame;
                   const cx = frameX(isDrag && drag ? drag.frame : k.frame);
                   const cy = laneY + (isDrag && drag ? valueToY(drag.value, range, LANE_H) : y);
                   return (

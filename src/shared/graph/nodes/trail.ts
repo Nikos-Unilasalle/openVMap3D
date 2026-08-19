@@ -81,7 +81,7 @@ export const TRAIL_NODE: NodeDefinition = {
     const state = getTrailState(ctx.nodeId);
 
     const object = inputs.geometry instanceof THREE.Object3D ? inputs.geometry : null;
-    const time = numberInput(inputs.time, params.time, 0);
+    const time = inputs.time !== undefined ? numberInput(inputs.time, params.time, 0) : (ctx.time ?? 0);
     const history = Math.max(0.05, numberInput(inputs.history, params.history, 2));
     const segments = Math.max(3, Math.min(400, Math.round(numberInput(inputs.segments, params.segments, 96))));
     const color = asColor(inputs.color, asColor(params.color, new THREE.Color(0x38bdf8)));
