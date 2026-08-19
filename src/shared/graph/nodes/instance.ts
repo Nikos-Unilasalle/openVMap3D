@@ -105,6 +105,34 @@ function isTargeted(index: number, targetIndex: number): boolean {
   return targetIndex < 0 || index === targetIndex;
 }
 
+/** Unit vector for an axis name ("X" / "Y" / "Z" / "-X" / …) used by align mode. */
+function alignAxisVector(axis: string): THREE.Vector3 {
+  switch (axis) {
+    case "X": return new THREE.Vector3(1, 0, 0);
+    case "Y": return new THREE.Vector3(0, 1, 0);
+    case "-X": return new THREE.Vector3(-1, 0, 0);
+    case "-Y": return new THREE.Vector3(0, -1, 0);
+    case "-Z": return new THREE.Vector3(0, 0, -1);
+    default: return new THREE.Vector3(0, 0, 1); // "Z"
+  }
+}
+
+/** Quaternion rotating `from` onto `to`, robust to anti-parallel directions. */
+function quaternionAlignAxis(from: THREE.Vector3, to: THREE.Vector3): THREE.Quaternion {
+  const fromN = from.clone().normalize();
+  const toN = to.clone().normalize();
+  const dot = fromN.dot(toN);
+  if (dot > 0.999999) return new THREE.Quaternion();
+  if (dot < -0.999999) {
+    // 180° about any axis perpendicular to `from` — setFromUnitVectors would
+    // produce a degenerate rotation here.
+    const perp = Math.abs(fromN.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+    const axis = new THREE.Vector3().crossVectors(fromN, perp).normalize();
+    return new THREE.Quaternion().setFromAxisAngle(axis, Math.PI);
+  }
+  return new THREE.Quaternion().setFromUnitVectors(fromN, toN);
+}
+
 const INSTANCE_INDEX_INPUT = { id: "index", label: "Index (-1 = All)", type: "value" } as const;
 
 const INSTANCE_INDEX_FIELD = { id: "index", label: "Index (-1 = All)", kind: "number", step: 1 } as const;
@@ -211,7 +239,7 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
     { id: "posX", label: "Pos X", type: "any" },
     { id: "posY", label: "Pos Y", type: "any" },
     { id: "posZ", label: "Pos Z", type: "any" },
-    { id: "rotations", label: "Rotations (Vector List)", type: "list" },
+    { id: "rotations", label: "Rotations / Directions (Vector List)", type: "list" },
     { id: "rotX", label: "Rot X (°)", type: "any" },
     { id: "rotY", label: "Rot Y (°)", type: "any" },
     { id: "rotZ", label: "Rot Z (°)", type: "any" },
@@ -229,6 +257,8 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
     // `pivot` key and so falls back to here. See the note by PIVOT_OPTIONS.
     pivot: "shared",
     index: ALL_INSTANCES,
+    rotationMode: "euler",
+    alignAxis: "Z",
     posX: 0,
     posY: 0,
     posZ: 0,
@@ -243,6 +273,8 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
     { ...INSTANCE_INDEX_FIELD, group: "Transform Defaults" },
     { id: "mode", label: "Transform Mode", kind: "select", options: ["relative", "absolute"], group: "Transform Defaults" },
     { id: "pivot", label: "Pivot", kind: "select", options: PIVOT_OPTIONS, group: "Transform Defaults" },
+    { id: "rotationMode", label: "Rotation Mode", kind: "select", options: ["euler", "align"], group: "Transform Defaults" },
+    { id: "alignAxis", label: "Align Axis (toward direction)", kind: "select", options: ["X", "Y", "Z", "-X", "-Y", "-Z"], group: "Transform Defaults" },
     { id: "posX", label: "Pos X", kind: "number", step: 0.1, group: "Transform Defaults" },
     { id: "posY", label: "Pos Y", kind: "number", step: 0.1, group: "Transform Defaults" },
     { id: "posZ", label: "Pos Z", kind: "number", step: 0.1, group: "Transform Defaults" },
@@ -340,7 +372,9 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
           resolveScalarOrListItem(wired("posZ"), i, targetIndex, basePos.z + paramPZ),
         );
 
-        // Rotation offset (Euler angles in degrees)
+        // Rotation — either Euler angles in degrees, or (rotationMode = "align")
+        // a per-instance world direction that the chosen axis is rotated to point
+        // along (normals list → disc facing the surface, for example).
         const rotItem = targetIndex >= 0 && rotationsList.length > 0
           ? (rotationsList.length === 1 ? rotationsList[0] : rotationsList[targetIndex % rotationsList.length])
           : rotationsList[i];
@@ -348,11 +382,29 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
           ? asVector(rotItem, new THREE.Vector3(0, 0, 0))
           : new THREE.Vector3(0, 0, 0);
 
-        const rotOffset = new THREE.Vector3(
-          resolveScalarOrListItem(wired("rotX"), i, targetIndex, baseRot.x + paramRX),
-          resolveScalarOrListItem(wired("rotY"), i, targetIndex, baseRot.y + paramRY),
-          resolveScalarOrListItem(wired("rotZ"), i, targetIndex, baseRot.z + paramRZ),
-        );
+        const rotX = resolveScalarOrListItem(wired("rotX"), i, targetIndex, paramRX);
+        const rotY = resolveScalarOrListItem(wired("rotY"), i, targetIndex, paramRY);
+        const rotZ = resolveScalarOrListItem(wired("rotZ"), i, targetIndex, paramRZ);
+
+        const align = String(params.rotationMode || "euler") === "align";
+        const RAD = Math.PI / 180;
+        let quat: THREE.Quaternion;
+        if (align) {
+          const alignAxis = alignAxisVector(String(params.alignAxis || "Z"));
+          const dir = baseRot.lengthSq() > 1e-9 ? baseRot.clone().normalize() : alignAxis;
+          quat = quaternionAlignAxis(alignAxis, dir);
+          // The euler fields become extra rotation applied after alignment.
+          quat.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rotX * RAD, rotY * RAD, rotZ * RAD)));
+        } else {
+          const rotOffset = new THREE.Vector3(
+            resolveScalarOrListItem(wired("rotX"), i, targetIndex, baseRot.x + paramRX),
+            resolveScalarOrListItem(wired("rotY"), i, targetIndex, baseRot.y + paramRY),
+            resolveScalarOrListItem(wired("rotZ"), i, targetIndex, baseRot.z + paramRZ),
+          );
+          quat = new THREE.Quaternion().setFromEuler(
+            new THREE.Euler((rotOffset.x * RAD), (rotOffset.y * RAD), (rotOffset.z * RAD)),
+          );
+        }
 
         // Scale
         const scaleItem = targetIndex >= 0 && scalesList.length > 0
@@ -369,12 +421,7 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
         );
 
         const deltaMat = new THREE.Matrix4();
-        const euler = new THREE.Euler(
-          (rotOffset.x * Math.PI) / 180,
-          (rotOffset.y * Math.PI) / 180,
-          (rotOffset.z * Math.PI) / 180
-        );
-        deltaMat.compose(posOffset, new THREE.Quaternion().setFromEuler(euler), scaleVal);
+        deltaMat.compose(posOffset, quat, scaleVal);
 
         if (usesIndividualPivot) {
           // Fold the delta into the instance's own matrix, on the right:
