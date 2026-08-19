@@ -932,7 +932,7 @@ function MainEditor() {
       : {};
 
   const selectedKeyframesRecord = useMemo(() => {
-    const map: Record<number, { paramKeys: string[]; easeIn?: EasingType; easeStrength?: number }> = {};
+    const map: Record<number, { paramKeys: string[]; easeIn?: EasingType; easeStrength?: number; easeBezier?: [number, number, number, number] }> = {};
     if (selectedNodeId && graph.keyframes?.[selectedNodeId]) {
       for (const [paramKey, list] of Object.entries(graph.keyframes[selectedNodeId])) {
         for (const kf of list) {
@@ -941,6 +941,7 @@ function MainEditor() {
               paramKeys: [paramKey],
               easeIn: kf.easeIn || "smooth",
               easeStrength: kf.easeStrength,
+              easeBezier: kf.easeBezier,
             };
           } else {
             if (!map[kf.frame].paramKeys.includes(paramKey)) {
@@ -995,7 +996,7 @@ function MainEditor() {
   );
 
   const onUpdateKeyframeEasing = useCallback(
-    (frame: number, easeIn: EasingType, easeStrength?: number) => {
+    (frame: number, easeIn: EasingType, easeStrength?: number, easeBezier?: [number, number, number, number]) => {
       if (!selectedNodeId) return;
       setGraphWithHistory((prevGraph) => {
         const currentKeyframes = prevGraph.keyframes || {};
@@ -1009,9 +1010,11 @@ function MainEditor() {
           const nextList = list.map((kf) => {
             if (kf.frame === frame) {
               modified = true;
-              return easeStrength !== undefined
-                ? { ...kf, easeIn, easeStrength }
-                : { ...kf, easeIn };
+              return easeBezier !== undefined
+                ? { ...kf, easeIn, easeStrength, easeBezier }
+                : easeStrength !== undefined
+                  ? { ...kf, easeIn, easeStrength }
+                  : { ...kf, easeIn };
             }
             return kf;
           });
@@ -1186,7 +1189,12 @@ function MainEditor() {
   );
 
   const onBatchUpdateEasing = useCallback(
-    (targets: { nodeId: string; paramKey: string; frame: number }[], easeIn: EasingType, easeStrength?: number) => {
+    (
+      targets: { nodeId: string; paramKey: string; frame: number }[],
+      easeIn: EasingType,
+      easeStrength?: number,
+      easeBezier?: [number, number, number, number],
+    ) => {
       if (targets.length === 0) return;
       setGraphWithHistory((prevGraph) => {
         const currentKeyframes = prevGraph.keyframes || {};
@@ -1205,9 +1213,11 @@ function MainEditor() {
             const nextList = list.map((kf) => {
               if (targetMap.has(`${nodeId}::${paramKey}::${kf.frame}`)) {
                 paramModified = true;
-                return easeStrength !== undefined
-                  ? { ...kf, easeIn, easeStrength }
-                  : { ...kf, easeIn };
+                return easeBezier !== undefined
+                  ? { ...kf, easeIn, easeStrength, easeBezier }
+                  : easeStrength !== undefined
+                    ? { ...kf, easeIn, easeStrength }
+                    : { ...kf, easeIn };
               }
               return kf;
             });
@@ -1246,6 +1256,7 @@ function MainEditor() {
             value: JSON.parse(JSON.stringify(item.value)),
             easeIn: item.easeIn,
             easeStrength: item.easeStrength,
+            easeBezier: item.easeBezier,
           };
           const filtered = list.filter((k) => k.frame !== targetFrame);
           nodeKeys[item.paramKey] = [...filtered, newKf].sort((a, b) => a.frame - b.frame);

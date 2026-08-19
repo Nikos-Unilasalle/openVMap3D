@@ -241,7 +241,8 @@ export type EasingType =
   | "expo"
   | "back"
   | "bounce"
-  | "elastic";
+  | "elastic"
+  | "bezier";
 
 export interface Keyframe {
   frame: number;
@@ -250,6 +251,8 @@ export interface Keyframe {
   easeIn?: EasingType;
   /** Expo contrast (1..~20, default 10). Higher = more aggressive exponential deceleration. Ignored for other easings. */
   easeStrength?: number;
+  /** Custom cubic-bezier control points (x1, y1, x2, y2) — used when easeIn = "bezier". */
+  easeBezier?: [number, number, number, number];
 }
 
 /** Keyframes store keyed by nodeId -> paramKey -> array of Keyframe sorted by frame ascending. */
