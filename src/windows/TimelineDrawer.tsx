@@ -721,6 +721,13 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
         {/* Right Actions & Zoom */}
         <div className="timeline-drawer-actions">
           <button
+            className={`timeline-action-btn ${motionGraphOpen ? "active" : ""}`}
+            onClick={() => setMotionGraphOpen((o) => !o)}
+            title={motionGraphOpen ? "Hide motion graph" : "Show motion graph"}
+          >
+            Graph
+          </button>
+          <button
             className="timeline-action-btn"
             onClick={() => {
               if (selectedKeyObjects.length > 0) {
@@ -822,26 +829,29 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
       <div className="timeline-drawer-body">
         {/* Motion graph — value curves of the selected node, draggable. Its X
             axis follows the timeline's pixels-per-frame and horizontal scroll
-            so keyframes line up with the grid rows below. */}
-        <div className="motion-graph-header" onClick={() => setMotionGraphOpen((o) => !o)}>
-          <span>MOTION GRAPH</span>
-          <span className="motion-graph-collapse">{motionGraphOpen ? "▼" : "▲"}</span>
-        </div>
+            so keyframes line up with the grid rows below. Collapsed (Graph
+            button in the toolbar) → nothing shows in the timeline. */}
         {motionGraphOpen && (
-          <MotionGraph
-            graph={graph}
-            nodeId={selectedNodeIds[0] ?? null}
-            currentFrame={currentFrame}
-            totalFrames={totalFrames}
-            pixelsPerFrame={pixelsPerFrame}
-            scrollRef={motionGraphScrollRef}
-            onScrollSync={onMotionGraphScroll}
-            onFrameChange={onFrameChange}
-            onMoveKeyframe={(nodeId, paramKey, oldFrame, newFrame) =>
-              onBatchMoveKeyframes([{ nodeId, paramKey, oldFrame, newFrame }])
-            }
-            onChangeKeyframeValue={onChangeKeyframeValue}
-          />
+          <>
+            <div className="motion-graph-header" onClick={() => setMotionGraphOpen((o) => !o)}>
+              <span>MOTION GRAPH</span>
+              <span className="motion-graph-collapse">▼</span>
+            </div>
+            <MotionGraph
+              graph={graph}
+              nodeId={selectedNodeIds[0] ?? null}
+              currentFrame={currentFrame}
+              totalFrames={totalFrames}
+              pixelsPerFrame={pixelsPerFrame}
+              scrollRef={motionGraphScrollRef}
+              onScrollSync={onMotionGraphScroll}
+              onFrameChange={onFrameChange}
+              onMoveKeyframe={(nodeId, paramKey, oldFrame, newFrame) =>
+                onBatchMoveKeyframes([{ nodeId, paramKey, oldFrame, newFrame }])
+              }
+              onChangeKeyframeValue={onChangeKeyframeValue}
+            />
+          </>
         )}
 
         <div className="timeline-drawer-body-row">

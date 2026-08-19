@@ -51,7 +51,7 @@ describe("SQUASH_STRETCH_NODE", () => {
     const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
     box.matrixAutoUpdate = false;
     const res = SQUASH_STRETCH_NODE.evaluate(
-      { geometry: box, squash: 0, stretch: 0 },
+      { geometry: box, time: 0 },
       SQUASH_STRETCH_NODE.defaultParams,
       { ...CTX, nodeId: "squash-0" },
     );
@@ -60,19 +60,33 @@ describe("SQUASH_STRETCH_NODE", () => {
     expect(v.y).toBeCloseTo(2);
   });
 
-  it("squashes along the axis and stretches perpendicularly", () => {
+  it("stretches along the motion direction and stays pinned at the object", () => {
     const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
     box.matrixAutoUpdate = false;
+    box.matrix.makeTranslation(0, 0, 0);
+    const nodeId = "squash-1";
+    SQUASH_STRETCH_NODE.evaluate(
+      { geometry: box, time: 0, intensity: 1, maxSpeed: 3 },
+      { ...SQUASH_STRETCH_NODE.defaultParams, intensity: 1, maxSpeed: 3 },
+      { ...CTX, nodeId },
+    );
+    // Move +3 units in 1 s → speed = maxSpeed → stretch factor 1.5 along +X.
+    box.matrix.makeTranslation(3, 0, 0);
+    box.matrixWorldNeedsUpdate = true;
     const res = SQUASH_STRETCH_NODE.evaluate(
-      { geometry: box, squash: 1, stretch: 0.5 },
-      SQUASH_STRETCH_NODE.defaultParams,
-      { ...CTX, nodeId: "squash-1" },
+      { geometry: box, time: 1, intensity: 1, maxSpeed: 3 },
+      { ...SQUASH_STRETCH_NODE.defaultParams, intensity: 1, maxSpeed: 3 },
+      { ...CTX, nodeId },
     );
     const group = res.geometry as THREE.Group;
-    // Axis Y squashed to 40%; X widened by 1 + 0.5*0.5 = 1.25.
-    const along = new THREE.Vector3(0, 1, 0).applyMatrix4(group.matrix);
-    expect(along.y).toBeCloseTo(0.4);
-    const perp = new THREE.Vector3(1, 0, 0).applyMatrix4(group.matrix);
-    expect(perp.x).toBeCloseTo(1.25);
+    // The object's origin stays pinned.
+    const origin = new THREE.Vector3(3, 0, 0).applyMatrix4(group.matrix);
+    expect(origin.x).toBeCloseTo(3, 3);
+    // A point in front of it stretches along the motion.
+    const front = new THREE.Vector3(3.5, 0, 0).applyMatrix4(group.matrix);
+    expect(front.x).toBeCloseTo(3.75, 3);
+    // A point above it squashes perpendicularly (volume-preserving inverse).
+    const top = new THREE.Vector3(3, 0.5, 0).applyMatrix4(group.matrix);
+    expect(top.y).toBeCloseTo(0.5 / Math.sqrt(1.5), 3);
   });
 });

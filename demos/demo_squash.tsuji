@@ -13,12 +13,6 @@
       "params": { "expression": "1 + abs(sin(time * 2)) * 3", "a": 0, "b": 0, "c": 0 }
     },
     {
-      "id": "squashAmt",
-      "type": "value/expression",
-      "position": { "x": -1290, "y": 220 },
-      "params": { "expression": "max(0, 1 - abs(sin(time * 2)))", "a": 0, "b": 0, "c": 0 }
-    },
-    {
       "id": "yVec",
       "type": "vector/compose",
       "position": { "x": -1010, "y": 40 },
@@ -44,7 +38,7 @@
       "id": "squash",
       "type": "modifier/squash-stretch",
       "position": { "x": -210, "y": 120 },
-      "params": { "squash": 0, "stretch": 0.4, "axis": { "x": 0, "y": 1, "z": 0 } }
+      "params": { "intensity": 0.8, "maxSpeed": 6 }
     },
     {
       "id": "ground",
@@ -71,13 +65,6 @@
       "fromNode": "time",
       "fromSocket": "seconds",
       "toNode": "bounce",
-      "toSocket": "time"
-    },
-    {
-      "id": "time.seconds->squashAmt.time",
-      "fromNode": "time",
-      "fromSocket": "seconds",
-      "toNode": "squashAmt",
       "toSocket": "time"
     },
     {
@@ -109,11 +96,11 @@
       "toSocket": "geometry"
     },
     {
-      "id": "squashAmt.value->squash.squash",
-      "fromNode": "squashAmt",
-      "fromSocket": "value",
+      "id": "time.seconds->squash.time",
+      "fromNode": "time",
+      "fromSocket": "seconds",
       "toNode": "squash",
-      "toSocket": "squash"
+      "toSocket": "time"
     },
     {
       "id": "squash.geometry->merge.in1",
