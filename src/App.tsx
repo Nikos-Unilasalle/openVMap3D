@@ -32,6 +32,7 @@ import {
 } from "./shared/graph/types";
 import { broadcastGraph, maximizeMainWindow, PreviewCameraPose, startBroadcasting } from "./shared/ipc";
 import { exportVideo, mimeToExtension, saveVideoBlob } from "./shared/export/videoExport";
+import { getOrCreatePlayer } from "./shared/audio/audioStore";
 import { TransformPatch, Viewport, ViewportExportHandle } from "./shared/three/Viewport";
 import { SplitViewport } from "./shared/three/SplitViewport";
 import "./shared/three/viewport.css";
@@ -954,6 +955,18 @@ function MainEditor() {
     return map;
   }, [selectedNodeId, graph.keyframes]);
 
+  // The first sound/player node with a loaded file drives the timeline
+  // waveform strip (music sync).
+  const waveformUrl = useMemo(() => {
+    for (const node of graph.nodes) {
+      if (node.type === "sound/player" && typeof node.params.filePath === "string" && node.params.filePath) {
+        const url = getOrCreatePlayer(node.id).loadedPath;
+        if (url) return url;
+      }
+    }
+    return undefined;
+  }, [graph.nodes]);
+
   const onMoveKeyframe = useCallback(
     (oldFrame: number, newFrame: number) => {
       if (!selectedNodeId) return;
@@ -1386,6 +1399,7 @@ function MainEditor() {
           keyframesEnabled={keyframesEnabled}
           selectedKeyframes={selectedKeyframesRecord}
           markers={graph.markers ?? []}
+          waveformUrl={waveformUrl}
           onToggleMarker={onToggleMarker}
           onMoveMarker={onMoveMarker}
           onMoveKeyframe={onMoveKeyframe}
