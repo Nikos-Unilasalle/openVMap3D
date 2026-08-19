@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { EasingType } from "../shared/graph/types";
 import { setInputZone } from "../shared/graph/inputZoneStore";
-import { EasingPopover } from "./EasingPopover";
+import { EasingPopover, EASING_STRENGTH_CONFIG } from "./EasingPopover";
 import "./timeline-bar.css";
 
 export interface KeyframeDataAtFrame {
@@ -270,7 +270,7 @@ export function TimelineBar({
       frame,
       paramKeys: data.paramKeys,
       easeIn: initialIn,
-      strength: data.easeStrength ?? 10,
+      strength: data.easeStrength ?? EASING_STRENGTH_CONFIG[initialIn]?.defaultValue ?? 1,
       x,
       y,
     });
@@ -406,7 +406,7 @@ export function TimelineBar({
                   style={{ left: `${kfPct}%` }}
                   onMouseDown={(e) => handleKeyframeMouseDown(e, kfFrame)}
                   onContextMenu={(e) => handleKeyframeContextMenu(e, kfFrame, data)}
-                  title={`Keyframe at Frame ${displayFrame} (${data.paramKeys.join(", ")})\nArrival Ease: ${data.easeIn || "smooth"}${data.easeIn === "expo" && data.easeStrength ? ` (strength ${data.easeStrength})` : ""}\n• Left click + drag to move\n• Right click to edit interpolation`}
+                  title={`Keyframe at Frame ${displayFrame} (${data.paramKeys.join(", ")})\nArrival Ease: ${data.easeIn || "smooth"}${data.easeStrength !== undefined && EASING_STRENGTH_CONFIG[data.easeIn || "smooth"] ? ` (strength ${data.easeStrength})` : ""}\n• Left click + drag to move\n• Right click to edit interpolation`}
                 >
                   {renderKeyframeGlyph(data.easeIn)}
                 </div>

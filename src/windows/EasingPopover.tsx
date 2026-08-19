@@ -2,6 +2,23 @@ import React from "react";
 import { EasingType } from "../shared/graph/types";
 import "./timeline-bar.css";
 
+/**
+ * Per-easing strength knob. `null` = no knob (linear / hold). For each easing
+ * the number has a native meaning (see computeSegmentEasing in evaluate.ts).
+ */
+export const EASING_STRENGTH_CONFIG: Record<
+  EasingType,
+  { label: string; min: number; max: number; step: number; defaultValue: number } | null
+> = {
+  smooth: { label: "Strength (0 = linear, 1 = full)", min: 0, max: 1, step: 0.05, defaultValue: 1 },
+  linear: null,
+  hold: null,
+  expo: { label: "Expo Strength (exponent, higher = more contrast)", min: 1, max: 20, step: 0.5, defaultValue: 10 },
+  back: { label: "Overshoot (higher = more pull-back)", min: 0, max: 5, step: 0.05, defaultValue: 1.70158 },
+  bounce: { label: "Strength (0 = linear, 1 = full)", min: 0, max: 1, step: 0.05, defaultValue: 1 },
+  elastic: { label: "Strength (0 = linear, 1 = full)", min: 0, max: 1, step: 0.05, defaultValue: 1 },
+};
+
 export const EASING_OPTIONS: { type: EasingType; label: string; icon: React.ReactNode }[] = [
   {
     type: "smooth",
@@ -127,15 +144,15 @@ export const EasingPopover: React.FC<EasingPopoverProps> = ({
         </div>
       </div>
 
-      {easeIn === "expo" && (
+      {EASING_STRENGTH_CONFIG[easeIn] && (
         <div className="easing-popover-section">
           <label className="easing-strength-label">
-            <span>Expo Strength (contrast)</span>
+            <span>{EASING_STRENGTH_CONFIG[easeIn]!.label}</span>
             <input
               type="number"
-              min={1}
-              max={20}
-              step={0.5}
+              min={EASING_STRENGTH_CONFIG[easeIn]!.min}
+              max={EASING_STRENGTH_CONFIG[easeIn]!.max}
+              step={EASING_STRENGTH_CONFIG[easeIn]!.step}
               value={strength}
               onChange={(e) => onStrengthChange(Number(e.target.value))}
             />

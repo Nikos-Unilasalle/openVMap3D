@@ -12,7 +12,7 @@ import {
   parseKeyframeId,
   SelectedKeyframeKey,
 } from "./timelineUtils";
-import { EasingPopover, EASING_OPTIONS } from "./EasingPopover";
+import { EasingPopover, EASING_OPTIONS, EASING_STRENGTH_CONFIG } from "./EasingPopover";
 import "./timeline-drawer.css";
 
 export interface TimelineDrawerProps {
@@ -280,7 +280,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
       if (kf?.easeStrength !== undefined) strengths.add(kf.easeStrength);
     }
     const easeIn = ins.size === 1 ? [...ins][0] : "smooth";
-    const strength = strengths.size === 1 ? [...strengths][0] : 10;
+    const strength = strengths.size === 1 ? [...strengths][0] : (EASING_STRENGTH_CONFIG[easeIn]?.defaultValue ?? 1);
 
     setContextMenu(null);
     setEasingPopover({
@@ -1100,7 +1100,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
                                   style={{ left: `${effectiveFrame * pixelsPerFrame}px` }}
                                   onClick={(e) => handleKeyframeClick(e, nodeInstance.id, pKey, kf.frame)}
                                   onMouseDown={(e) => handleKeyframeMouseDown(e, nodeInstance.id, pKey, kf.frame)}
-                                  title={`Param: ${pKey}\nFrame: ${kf.frame}\nValue: ${JSON.stringify(kf.value)}\nEase: ${kf.easeIn || "smooth"}${kf.easeIn === "expo" && kf.easeStrength ? ` (strength ${kf.easeStrength})` : ""}`}
+                                  title={`Param: ${pKey}\nFrame: ${kf.frame}\nValue: ${JSON.stringify(kf.value)}\nEase: ${kf.easeIn || "smooth"}${kf.easeStrength !== undefined && EASING_STRENGTH_CONFIG[kf.easeIn || "smooth"] ? ` (strength ${kf.easeStrength})` : ""}`}
                                 >
                                   {renderKeyframeGlyph(kf.easeIn || "smooth", false)}
                                   {/* Drag delta badge */}

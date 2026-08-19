@@ -88,13 +88,24 @@ describe("KEYFRAME ANIMATION SYSTEM", () => {
     expect(interpolateValue(0, 100, 0, "elastic")).toBe(0);
   });
 
-  it("expo strength tunes how aggressively the curve lands on the value", () => {
-    // Default strength 10 → ~97% of the travel done at the midpoint.
+  it("strength tunes every easing (expo exponent, back overshoot, others blend to linear)", () => {
+    // Expo: default exponent 10 → ~97% at the midpoint; higher is more front-loaded.
     expect(computeSegmentEasing(0.5, "expo")).toBeCloseTo(0.96875, 5);
-    // Stronger exponent → even more front-loaded.
     expect(computeSegmentEasing(0.5, "expo", 20)).toBeCloseTo(1 - Math.pow(2, -10), 5);
-    // Gentler → closer to the start value.
-    expect(computeSegmentEasing(0.5, "expo", 1)).toBeCloseTo(1 - Math.sqrt(0.5), 5);
+
+    // Back: strength = overshoot amount — 0 removes the overshoot, high overshoots.
+    expect(computeSegmentEasing(0.5, "back", 0)).toBeCloseTo(1 + Math.pow(-0.5, 3), 5);
+    expect(computeSegmentEasing(0.5, "back", 3)).toBeGreaterThan(1);
+
+    // smooth / bounce / elastic: 0..1 blend toward linear (0 = linear, 1 = full).
+    expect(computeSegmentEasing(0.25, "smooth", 0)).toBeCloseTo(0.25);
+    expect(computeSegmentEasing(0.25, "bounce", 0)).toBeCloseTo(0.25);
+    expect(computeSegmentEasing(0.25, "elastic", 0)).toBeCloseTo(0.25);
+    expect(computeSegmentEasing(0.25, "smooth")).toBeCloseTo((1 - Math.cos(Math.PI * 0.25)) / 2);
+    // Blending partially toward linear keeps the endpoints exact.
+    expect(computeSegmentEasing(0, "smooth", 0.5)).toBe(0);
+    expect(computeSegmentEasing(1, "smooth", 0.5)).toBe(1);
+
     // The strength flows through keyframe evaluation.
     const keyframes: KeyframeStore = {
       "node-1": {

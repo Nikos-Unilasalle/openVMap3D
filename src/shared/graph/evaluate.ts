@@ -31,10 +31,9 @@ function elasticEaseOut(p: number): number {
   return Math.pow(2, -10 * p) * Math.sin((p * 10 - 0.75) * c4) + 1;
 }
 
-function backEaseOut(p: number): number {
-  const c1 = 1.70158;
-  const c3 = c1 + 1;
-  return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2);
+function backEaseOut(p: number, s: number): number {
+  const c3 = s + 1;
+  return 1 + c3 * Math.pow(p - 1, 3) + s * Math.pow(p - 1, 2);
 }
 
 function expoEaseOut(p: number, k: number): number {
@@ -46,6 +45,15 @@ function sineEaseInOut(p: number): number {
 }
 
 /**
+ * Softens an eased curve toward linear: s = 1 keeps the full curve, s = 0 is
+ * purely linear. The "strength" knob for the easings whose natural parameter
+ * isn't an exponent.
+ */
+function blendToLinear(eased: number, linear: number, s: number): number {
+  return linear + (eased - linear) * s;
+}
+
+/**
  * The easing applied to the segment that ARRIVES at a keyframe. Each keyframe
  * carries exactly one easing (its arrival) — there is no departure easing: the
  * segment K1→K2 is shaped entirely by K2's arrival curve.
@@ -54,25 +62,34 @@ function sineEaseInOut(p: number): number {
  * keyframe, the classic motion-design default). The expressive ones all settle
  * ON the keyframe value (ease-out variants), which is what "arriving" means:
  * expo decelerates exponentially, back overshoots once, bounce bounces, elastic
- * springs. `strength` tunes the expo contrast (exponent).
+ * springs.
+ *
+ * `strength` is interpreted per easing (the default matches the standard curve
+ * whenever the keyframe doesn't set one):
+ *   smooth / bounce / elastic — 0..1 blend toward linear (1 = full curve)
+ *   expo                     — the exponent k (higher = more contrast)
+ *   back                     — the overshoot amount s
  */
 export function computeSegmentEasing(t: number, easing?: EasingType, strength?: number): number {
   const p = Math.max(0, Math.min(1, t));
+  const s = strength !== undefined && Number.isFinite(strength) ? strength : undefined;
   switch (easing) {
     case "linear":
       return p;
     case "hold":
       return p >= 1 ? 1 : 0;
+    case "smooth":
+      return blendToLinear(sineEaseInOut(p), p, s ?? 1);
     case "expo": {
-      const k = strength !== undefined && Number.isFinite(strength) && strength > 0 ? strength : 10;
+      const k = s !== undefined && s > 0 ? s : 10;
       return expoEaseOut(p, k);
     }
     case "back":
-      return backEaseOut(p);
+      return backEaseOut(p, s !== undefined && s >= 0 ? s : 1.70158);
     case "bounce":
-      return bounceEaseOut(p);
+      return blendToLinear(bounceEaseOut(p), p, s ?? 1);
     case "elastic":
-      return elasticEaseOut(p);
+      return blendToLinear(elasticEaseOut(p), p, s ?? 1);
     case "smooth":
     default:
       return sineEaseInOut(p);
