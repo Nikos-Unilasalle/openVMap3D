@@ -196,9 +196,14 @@ describe("evaluateGraph", () => {
     const demosDir = path.join(__dirname, "../../../demos");
     const files = fs.readdirSync(demosDir).filter((f) => f.endsWith(".tsuji") || f.endsWith(".ovm"));
 
+    const { deserializeProject } = await import("./storage");
+
     for (const file of files) {
-      const demoJson = JSON.parse(fs.readFileSync(path.join(demosDir, file), "utf-8")) as Graph;
-      const rehydrated = rehydrateGraphParams(demoJson, DEFAULT_REGISTRY);
+      // Same reason as demos.test.ts: a demo saved from the app carries the
+      // multi-canvas project shape, which a raw JSON.parse-as-Graph misreads.
+      const project = deserializeProject(fs.readFileSync(path.join(demosDir, file), "utf-8"), DEFAULT_REGISTRY);
+      const demoGraph = project.canvases.find((c) => c.nodes.length > 0) ?? project.canvases[0];
+      const rehydrated = rehydrateGraphParams(demoGraph, DEFAULT_REGISTRY);
       const result = evaluateGraph(rehydrated, DEFAULT_REGISTRY, CTX);
       expect(result.size).toBeGreaterThan(0);
     }

@@ -165,6 +165,11 @@ export const PARENT_NODE: NodeDefinition = {
 
 export function extractPositionFromInput(val: unknown, fallback: THREE.Vector3): THREE.Vector3 {
   if (val instanceof THREE.Vector3) return val.clone();
+  // A Matrix4 is a perfectly good way to point at a place — it is what every
+  // Transform node hands downstream. Without this it fell through to
+  // asVector3, which sees no x/y/z on a matrix and quietly returned the
+  // fallback, so a matrix-driven Target aimed at the origin instead.
+  if (val instanceof THREE.Matrix4) return new THREE.Vector3().setFromMatrixPosition(val);
   if (val instanceof THREE.Object3D) {
     val.updateMatrixWorld(true);
     let target: THREE.Object3D = val;

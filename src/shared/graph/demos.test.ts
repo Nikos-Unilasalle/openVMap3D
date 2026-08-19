@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { deserializeGraph } from "./storage";
+import { deserializeProject } from "./storage";
 import { DEFAULT_REGISTRY } from "./nodes/index";
 import { evaluateGraph } from "./evaluate";
 import { initBvhRaycast } from "../three/bvh";
@@ -16,7 +16,11 @@ describe("demo .tsuji files", () => {
     it(`loads and evaluates ${file}`, () => {
       initBvhRaycast();
       const text = readFileSync(join(DEMO_DIR, file), "utf8");
-      const graph = deserializeGraph(text, DEFAULT_REGISTRY);
+      // deserializeProject, not deserializeGraph: saving a demo from the app
+      // writes the multi-canvas project shape, and a demo re-saved that way
+      // used to fail this test on its format rather than on its content.
+      const project = deserializeProject(text, DEFAULT_REGISTRY);
+      const graph = project.canvases.find((c) => c.nodes.length > 0) ?? project.canvases[0];
       expect(graph.nodes.length).toBeGreaterThan(0);
 
       const results = evaluateGraph(graph, DEFAULT_REGISTRY, {

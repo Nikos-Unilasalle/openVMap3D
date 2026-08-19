@@ -1,141 +1,480 @@
 {
-  "nodes": [
+  "canvases": [
     {
-      "id": "time",
-      "type": "time",
-      "position": { "x": -1450, "y": 40 },
-      "params": {}
+      "nodes": [
+        {
+          "id": "time",
+          "type": "time",
+          "position": {
+            "x": -1427,
+            "y": 153
+          },
+          "params": {}
+        },
+        {
+          "id": "trail",
+          "type": "structure/trail",
+          "position": {
+            "x": -129,
+            "y": 127
+          },
+          "params": {
+            "history": 1.9,
+            "segments": 160
+          }
+        },
+        {
+          "id": "output",
+          "type": "render",
+          "position": {
+            "x": 688,
+            "y": 90
+          },
+          "params": {
+            "frameCount": 500
+          }
+        },
+        {
+          "id": "6c2624d4-e098-4d4b-9afc-6e28d7d048a1",
+          "type": "curve/from_points",
+          "position": {
+            "x": 191,
+            "y": 371
+          },
+          "params": {
+            "type": "catmull",
+            "closed": false,
+            "tension": 0.5,
+            "pointsList": [
+              {
+                "x": -2,
+                "y": 0,
+                "z": 0
+              },
+              {
+                "x": -0.5,
+                "y": 1.5,
+                "z": 0
+              },
+              {
+                "x": 0.5,
+                "y": -1.5,
+                "z": 0
+              },
+              {
+                "x": 2,
+                "y": 0,
+                "z": 0
+              }
+            ],
+            "location": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            }
+          }
+        },
+        {
+          "id": "5c141a24-ec19-457b-93d9-18cfd71552a1",
+          "type": "animation/oscillator",
+          "position": {
+            "x": -1427,
+            "y": 270
+          },
+          "params": {
+            "type": "sine",
+            "frequency": 1,
+            "phase": 0,
+            "amplitude": 1,
+            "offset": 0
+          }
+        },
+        {
+          "id": "e94cd29f-17cc-4b40-863b-52a6cdc9866a",
+          "type": "curve/to_mesh",
+          "position": {
+            "x": 390,
+            "y": 366
+          },
+          "params": {
+            "visible": 1,
+            "location": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "thickness": 0.15,
+            "startProgress": 0,
+            "endProgress": 1,
+            "tubularSegments": 64,
+            "radialSegments": 12,
+            "closed": false,
+            "color": 15320405,
+            "emissive": 15381256,
+            "emissiveIntensity": 1,
+            "shadeless": 0,
+            "roughness": 0,
+            "metalness": 0,
+            "wireframe": false,
+            "opacity": 1,
+            "surfaceColor": 3718648,
+            "surfaceEmissive": 0,
+            "surfaceEmissiveIntensity": 1,
+            "surfaceShadeless": false,
+            "surfaceRoughness": 0.4,
+            "surfaceMetalness": 0.1,
+            "surfaceWireframe": false,
+            "surfaceOpacity": 1,
+            "uvScaleX": 1,
+            "uvScaleY": 1,
+            "uvOffsetX": -0.1,
+            "uvOffsetY": 0,
+            "profile": [
+              {
+                "x": 0,
+                "y": 0.1
+              },
+              {
+                "x": 0.38736548989994335,
+                "y": 0.20931603773584906
+              },
+              {
+                "x": 1,
+                "y": 1
+              }
+            ],
+            "pointsList": [
+              {
+                "x": -2,
+                "y": 0,
+                "z": 0
+              },
+              {
+                "x": -0.5,
+                "y": 1.5,
+                "z": 0
+              },
+              {
+                "x": 0.5,
+                "y": -1.5,
+                "z": 0
+              },
+              {
+                "x": 2,
+                "y": 0,
+                "z": 0
+              }
+            ],
+            "doubleSided": true,
+            "surface": false,
+            "surfaceMode": "extrude",
+            "depth": 0.2,
+            "surfaceSegments": 64,
+            "surfaceRings": 8,
+            "surfaceIterations": 60,
+            "showCurve": 1,
+            "transmission": 0
+          }
+        },
+        {
+          "id": "baf96494-ecde-4187-8a8a-da6d9223b83b",
+          "type": "postprocess/bloom",
+          "position": {
+            "x": 361,
+            "y": 172
+          },
+          "params": {
+            "strength": 0.7,
+            "radius": 0,
+            "threshold": 0.45
+          }
+        },
+        {
+          "id": "ceda3c1a-32ab-4513-bfe1-dad1f5785239",
+          "type": "object/sphere",
+          "position": {
+            "x": -347,
+            "y": 211
+          },
+          "params": {
+            "visible": 1,
+            "location": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "texturePath": "",
+            "normalMapPath": "",
+            "uvScaleX": 1,
+            "uvScaleY": 1,
+            "uvOffsetX": 0,
+            "uvOffsetY": 0,
+            "color": 14330910,
+            "emissive": 15256956,
+            "emissiveIntensity": 1,
+            "shadeless": 0,
+            "roughness": 0.4,
+            "metalness": 0.1,
+            "wireframe": 0,
+            "opacity": 1,
+            "transmission": 0,
+            "thickness": 0.5
+          }
+        },
+        {
+          "id": "0b138d9a-9d48-43df-a3fd-b1f0abd151fd",
+          "type": "object/plane",
+          "position": {
+            "x": -430,
+            "y": 427
+          },
+          "params": {
+            "visible": 1,
+            "location": {
+              "x": 2.6918450140801995,
+              "y": -1.1356561114943107,
+              "z": 1.2871167331575408
+            },
+            "rotation": {
+              "x": 1.5707963267948966,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 141.0328028704202,
+              "y": 141.0328028704202,
+              "z": 141.0328028704202
+            },
+            "texturePath": "",
+            "normalMapPath": "",
+            "uvScaleX": 1,
+            "uvScaleY": 1,
+            "uvOffsetX": 0,
+            "uvOffsetY": 0,
+            "color": 16777215,
+            "emissive": 0,
+            "emissiveIntensity": 1,
+            "shadeless": 0,
+            "roughness": 1,
+            "metalness": 0,
+            "wireframe": 0,
+            "opacity": 1,
+            "transmission": 0,
+            "thickness": 0.5
+          }
+        },
+        {
+          "id": "0ce415c6-db7a-43eb-9efe-3733be93cb74",
+          "type": "light/point",
+          "position": {
+            "x": -92,
+            "y": 361
+          },
+          "params": {
+            "location": {
+              "x": 0,
+              "y": 5,
+              "z": 0
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "color": 16777215,
+            "intensity": 2,
+            "distance": 15,
+            "decay": 2,
+            "castShadow": 1
+          }
+        },
+        {
+          "id": "dd064854-d90c-4aae-a239-c72389f8cd49",
+          "type": "lighting/environment",
+          "position": {
+            "x": 692,
+            "y": 368
+          },
+          "params": {
+            "color": 0,
+            "intensity": 1,
+            "background": 1,
+            "blurriness": 0,
+            "filePath": "",
+            "backgroundImagePath": "",
+            "backgroundFit": "cover",
+            "backgroundScale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "backgroundOffset": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "backgroundRotation": 0,
+            "ambientIntensity": 0,
+            "sunIntensity": 0
+          }
+        },
+        {
+          "id": "orbit",
+          "type": "transform/orbit",
+          "position": {
+            "x": -819,
+            "y": 120
+          },
+          "params": {
+            "radius": 5,
+            "speed": 114.59,
+            "phase": 0,
+            "axis": "Y",
+            "tilt": 0,
+            "faceTarget": false
+          }
+        }
+      ],
+      "connections": [
+        {
+          "id": "time.seconds->trail.time",
+          "fromNode": "time",
+          "fromSocket": "seconds",
+          "toNode": "trail",
+          "toSocket": "time"
+        },
+        {
+          "id": "trail.points->6c2624d4-e098-4d4b-9afc-6e28d7d048a1.points",
+          "fromNode": "trail",
+          "fromSocket": "points",
+          "toNode": "6c2624d4-e098-4d4b-9afc-6e28d7d048a1",
+          "toSocket": "points"
+        },
+        {
+          "id": "6c2624d4-e098-4d4b-9afc-6e28d7d048a1.curve->e94cd29f-17cc-4b40-863b-52a6cdc9866a.curve",
+          "fromNode": "6c2624d4-e098-4d4b-9afc-6e28d7d048a1",
+          "fromSocket": "curve",
+          "toNode": "e94cd29f-17cc-4b40-863b-52a6cdc9866a",
+          "toSocket": "curve"
+        },
+        {
+          "id": "baf96494-ecde-4187-8a8a-da6d9223b83b.effect->output.postprocess",
+          "fromNode": "baf96494-ecde-4187-8a8a-da6d9223b83b",
+          "fromSocket": "effect",
+          "toNode": "output",
+          "toSocket": "postprocess"
+        },
+        {
+          "id": "ceda3c1a-32ab-4513-bfe1-dad1f5785239.geometry->trail.geometry",
+          "fromNode": "ceda3c1a-32ab-4513-bfe1-dad1f5785239",
+          "fromSocket": "geometry",
+          "toNode": "trail",
+          "toSocket": "geometry"
+        },
+        {
+          "id": "ceda3c1a-32ab-4513-bfe1-dad1f5785239.matrix->0ce415c6-db7a-43eb-9efe-3733be93cb74.matrix",
+          "fromNode": "ceda3c1a-32ab-4513-bfe1-dad1f5785239",
+          "fromSocket": "matrix",
+          "toNode": "0ce415c6-db7a-43eb-9efe-3733be93cb74",
+          "toSocket": "matrix"
+        },
+        {
+          "id": "dd064854-d90c-4aae-a239-c72389f8cd49.environment->output.environment",
+          "fromNode": "dd064854-d90c-4aae-a239-c72389f8cd49",
+          "fromSocket": "environment",
+          "toNode": "output",
+          "toSocket": "environment"
+        },
+        {
+          "id": "7556a262-19dd-42ee-b45e-19e2582e5bb4",
+          "fromNode": "time",
+          "fromSocket": "seconds",
+          "toNode": "orbit",
+          "toSocket": "time"
+        },
+        {
+          "id": "6ceba398-bfec-4ee6-b510-0d756cd87319",
+          "fromNode": "5c141a24-ec19-457b-93d9-18cfd71552a1",
+          "fromSocket": "out",
+          "toNode": "orbit",
+          "toSocket": "height"
+        },
+        {
+          "id": "8747bf4f-042e-4ec9-8e8d-c61452f77027",
+          "fromNode": "orbit",
+          "fromSocket": "matrix",
+          "toNode": "ceda3c1a-32ab-4513-bfe1-dad1f5785239",
+          "toSocket": "matrix"
+        }
+      ],
+      "keyframes": {},
+      "markers": []
     },
     {
-      "id": "exprX",
-      "type": "value/expression",
-      "position": { "x": -1180, "y": 40 },
-      "params": { "expression": "cos(time * 2) * 3", "a": 0, "b": 0, "c": 0 }
+      "nodes": [],
+      "connections": [],
+      "keyframes": {},
+      "markers": []
     },
     {
-      "id": "exprZ",
-      "type": "value/expression",
-      "position": { "x": -1180, "y": 190 },
-      "params": { "expression": "sin(time * 2) * 3", "a": 0, "b": 0, "c": 0 }
+      "nodes": [],
+      "connections": [],
+      "keyframes": {},
+      "markers": []
     },
     {
-      "id": "pos",
-      "type": "vector/compose",
-      "position": { "x": -900, "y": 90 },
-      "params": { "x": 0, "y": 0, "z": 0 }
+      "nodes": [],
+      "connections": [],
+      "keyframes": {},
+      "markers": []
     },
     {
-      "id": "xform",
-      "type": "transform/matrix-transform",
-      "position": { "x": -640, "y": 90 },
-      "params": {
-        "location": { "x": 0, "y": 0, "z": 0 },
-        "rotation": { "x": 0, "y": 0, "z": 0 },
-        "scale": { "x": 1, "y": 1, "z": 1 }
-      }
+      "nodes": [],
+      "connections": [],
+      "keyframes": {},
+      "markers": []
     },
     {
-      "id": "sphere",
-      "type": "object/sphere",
-      "position": { "x": -380, "y": 90 },
-      "params": { "scale": { "x": 0.35, "y": 0.35, "z": 0.35 }, "color": 16738048 }
-    },
-    {
-      "id": "trail",
-      "type": "structure/trail",
-      "position": { "x": -100, "y": 220 },
-      "params": { "history": 3, "segments": 160, "linewidth": 3, "opacity": 0.6, "color": 5614111 }
-    },
-    {
-      "id": "merge",
-      "type": "structure/merge",
-      "position": { "x": 200, "y": 90 },
-      "params": {}
-    },
-    {
-      "id": "output",
-      "type": "render",
-      "position": { "x": 460, "y": 90 },
-      "params": {}
+      "nodes": [],
+      "connections": [],
+      "keyframes": {},
+      "markers": []
     }
   ],
-  "connections": [
-    {
-      "id": "time.seconds->exprX.time",
-      "fromNode": "time",
-      "fromSocket": "seconds",
-      "toNode": "exprX",
-      "toSocket": "time"
-    },
-    {
-      "id": "time.seconds->exprZ.time",
-      "fromNode": "time",
-      "fromSocket": "seconds",
-      "toNode": "exprZ",
-      "toSocket": "time"
-    },
-    {
-      "id": "exprX.value->pos.x",
-      "fromNode": "exprX",
-      "fromSocket": "value",
-      "toNode": "pos",
-      "toSocket": "x"
-    },
-    {
-      "id": "exprZ.value->pos.z",
-      "fromNode": "exprZ",
-      "fromSocket": "value",
-      "toNode": "pos",
-      "toSocket": "z"
-    },
-    {
-      "id": "pos.out->xform.location",
-      "fromNode": "pos",
-      "fromSocket": "out",
-      "toNode": "xform",
-      "toSocket": "location"
-    },
-    {
-      "id": "xform.matrix->sphere.matrix",
-      "fromNode": "xform",
-      "fromSocket": "matrix",
-      "toNode": "sphere",
-      "toSocket": "matrix"
-    },
-    {
-      "id": "time.seconds->trail.time",
-      "fromNode": "time",
-      "fromSocket": "seconds",
-      "toNode": "trail",
-      "toSocket": "time"
-    },
-    {
-      "id": "sphere.geometry->trail.geometry",
-      "fromNode": "sphere",
-      "fromSocket": "geometry",
-      "toNode": "trail",
-      "toSocket": "geometry"
-    },
-    {
-      "id": "sphere.geometry->merge.in1",
-      "fromNode": "sphere",
-      "fromSocket": "geometry",
-      "toNode": "merge",
-      "toSocket": "in1"
-    },
-    {
-      "id": "trail.geometry->merge.in2",
-      "fromNode": "trail",
-      "fromSocket": "geometry",
-      "toNode": "merge",
-      "toSocket": "in2"
-    },
-    {
-      "id": "merge.geometry->output.geometry",
-      "fromNode": "merge",
-      "fromSocket": "geometry",
-      "toNode": "output",
-      "toSocket": "geometry"
-    }
-  ]
+  "activeCanvas": 0
 }

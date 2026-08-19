@@ -3,74 +3,128 @@
     {
       "id": "time",
       "type": "time",
-      "position": { "x": -1560, "y": 40 },
+      "position": {
+        "x": -1560,
+        "y": 40
+      },
       "params": {}
     },
     {
       "id": "bounce",
-      "type": "value/expression",
-      "position": { "x": -1290, "y": 40 },
-      "params": { "expression": "1 + abs(sin(time * 2)) * 3", "a": 0, "b": 0, "c": 0 }
+      "type": "animation/oscillator",
+      "position": {
+        "x": -1290,
+        "y": 40
+      },
+      "params": {
+        "type": "sine",
+        "frequency": 0.6,
+        "phase": 0,
+        "amplitude": 1.5,
+        "offset": 2.5
+      }
     },
     {
       "id": "yVec",
       "type": "vector/compose",
-      "position": { "x": -1010, "y": 40 },
-      "params": { "x": 0, "y": 0, "z": 0 }
+      "position": {
+        "x": -1010,
+        "y": 40
+      },
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
     },
     {
       "id": "xform",
       "type": "transform/matrix-transform",
-      "position": { "x": -740, "y": 40 },
+      "position": {
+        "x": -740,
+        "y": 40
+      },
       "params": {
-        "location": { "x": 0, "y": 0, "z": 0 },
-        "rotation": { "x": 0, "y": 0, "z": 0 },
-        "scale": { "x": 1, "y": 1, "z": 1 }
+        "location": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
       }
     },
     {
       "id": "ball",
       "type": "object/sphere",
-      "position": { "x": -470, "y": 40 },
-      "params": { "color": 16353942 }
+      "position": {
+        "x": -470,
+        "y": 40
+      },
+      "params": {
+        "color": 16353942
+      }
     },
     {
       "id": "squash",
       "type": "modifier/squash-stretch",
-      "position": { "x": -210, "y": 120 },
-      "params": { "intensity": 0.8, "maxSpeed": 6 }
+      "position": {
+        "x": -210,
+        "y": 120
+      },
+      "params": {
+        "intensity": 0.8,
+        "maxSpeed": 6
+      }
     },
     {
       "id": "ground",
       "type": "object/plane",
-      "position": { "x": -470, "y": 330 },
-      "params": { "scale": { "x": 12, "y": 12, "z": 1 }, "color": 3552822 }
+      "position": {
+        "x": -470,
+        "y": 330
+      },
+      "params": {
+        "scale": {
+          "x": 12,
+          "y": 12,
+          "z": 1
+        },
+        "color": 3552822
+      }
     },
     {
       "id": "merge",
       "type": "structure/merge",
-      "position": { "x": 80, "y": 40 },
+      "position": {
+        "x": 80,
+        "y": 40
+      },
       "params": {}
     },
     {
       "id": "output",
       "type": "render",
-      "position": { "x": 340, "y": 40 },
+      "position": {
+        "x": 340,
+        "y": 40
+      },
       "params": {}
     }
   ],
   "connections": [
     {
-      "id": "time.seconds->bounce.time",
-      "fromNode": "time",
-      "fromSocket": "seconds",
-      "toNode": "bounce",
-      "toSocket": "time"
-    },
-    {
       "id": "bounce.value->yVec.y",
       "fromNode": "bounce",
-      "fromSocket": "value",
+      "fromSocket": "out",
       "toNode": "yVec",
       "toSocket": "y"
     },

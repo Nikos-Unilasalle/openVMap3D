@@ -69,7 +69,7 @@ import { HUB_TEXT_NODE, HUB_IMAGE_NODE } from "./hub";
 import { SVG_TO_CURVES_NODE, SVG_TO_MESH_NODE, SVG_TO_SOLID_NODE } from "./svg";
 import { RAYCAST_NODE, RAY_BURST_NODE, SAMPLE_SURFACE_NODE } from "./raycast";
 import { MATRIX_MATH_NODE } from "./matrixMath";
-import { EXPRESSION_NODE, STAGGER_NODE, TIME_REMAP_NODE } from "./motion";
+import { ORBIT_NODE, STAGGER_NODE, TIME_REMAP_NODE } from "./motion";
 import { TRAIL_NODE } from "./trail";
 import { SQUASH_STRETCH_NODE } from "./squash";
 
@@ -221,7 +221,7 @@ export const STARTER_NODES = [
   SAMPLE_SURFACE_NODE,
   STAGGER_NODE,
   TIME_REMAP_NODE,
-  EXPRESSION_NODE,
+  ORBIT_NODE,
   MATRIX_MATH_NODE,
   TRAIL_NODE,
   SQUASH_STRETCH_NODE,
