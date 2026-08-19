@@ -138,13 +138,15 @@
   white-space: nowrap;
 }
 
-/* 2D HUD overlay — rendered over the camera view from hub/* nodes. */
+/* 2D HUD overlay — rendered over the camera view from hub/* nodes. Kept below
+   the floating panels (param panel z-index 5, node palette, top bar…) so a HUD
+   element never paints on top of them, but above the 3D canvas. */
 .viewport-hub-overlay {
   position: absolute;
   inset: 0;
   overflow: hidden;
   pointer-events: none;
-  z-index: 30;
+  z-index: 4;
 }
 
 .viewport-hub-element {
