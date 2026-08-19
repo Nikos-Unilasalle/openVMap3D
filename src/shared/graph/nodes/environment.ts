@@ -27,6 +27,10 @@ export interface EnvironmentData {
   backgroundOffset: THREE.Vector3;
   /** Radians, pivoted on the image center. */
   backgroundRotation: number;
+  /** Global scene ambient light level — 0 disables it. */
+  ambientIntensity: number;
+  /** Global scene directional (sun) light level — 0 disables it. */
+  sunIntensity: number;
 }
 
 const envTextureCache = createNodeCache<
@@ -187,12 +191,16 @@ export const ENVIRONMENT_NODE: NodeDefinition = {
     backgroundScale: new THREE.Vector3(1, 1, 1),
     backgroundOffset: new THREE.Vector3(0, 0, 0),
     backgroundRotation: 0,
+    ambientIntensity: 0.65,
+    sunIntensity: 1.2,
   },
   dynamicParamFields: () => [
     { id: "color", label: "Background Color", kind: "color" },
     { id: "intensity", label: "Env Intensity", kind: "number", step: 0.1 },
     { id: "background", label: "Show Background", kind: "boolean" },
     { id: "blurriness", label: "Bg Blur", kind: "number", step: 0.001 },
+    { id: "ambientIntensity", label: "Global Ambient Light", kind: "number", step: 0.05, group: "Lighting" },
+    { id: "sunIntensity", label: "Global Sun Light", kind: "number", step: 0.05, group: "Lighting" },
     {
       id: "filePath",
       label: "HDRI Map (.hdr, .jpg, .png)",
@@ -261,6 +269,8 @@ export const ENVIRONMENT_NODE: NodeDefinition = {
       backgroundScale,
       backgroundOffset,
       backgroundRotation,
+      ambientIntensity: Math.max(0, numberInput(inputs.ambientIntensity, params.ambientIntensity, 0.65)),
+      sunIntensity: Math.max(0, numberInput(inputs.sunIntensity, params.sunIntensity, 1.2)),
     };
 
     return { environment: envData };

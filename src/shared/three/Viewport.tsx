@@ -465,10 +465,11 @@ export function Viewport({
     const scene = new THREE.Scene();
     const bgScene = new THREE.Scene();
     bgScene.background = viewportBackground;
-    scene.add(new THREE.AmbientLight(0xffffff, 0.65));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.2);
-    sun.position.set(3, 5, 4);
-    scene.add(sun);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
+    scene.add(ambientLight);
+    const sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    sunLight.position.set(3, 5, 4);
+    scene.add(sunLight);
 
     // Editor UI Overlay Scene — holds grid, transform controls, light helpers outside of main postprocess pipeline
     const editorUiScene = new THREE.Scene();
@@ -1762,7 +1763,7 @@ export function Viewport({
       const applyEnv = outputMode || showEnvInEditorRef.current;
       applyEnvironment(
         applyEnv ? activeEnv : null,
-        { scene, bgScene, fallbackBackground: viewportBackground },
+        { scene, bgScene, fallbackBackground: viewportBackground, ambientLight, sunLight },
         backgroundBlur,
         host.clientWidth,
         host.clientHeight,

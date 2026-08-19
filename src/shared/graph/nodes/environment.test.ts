@@ -19,6 +19,8 @@ describe("ENVIRONMENT NODE", () => {
     expect(env.intensity).toBe(1.0);
     expect(env.showBackground).toBe(true);
     expect(env.blurriness).toBe(0.0);
+    expect(env.ambientIntensity).toBeCloseTo(0.65);
+    expect(env.sunIntensity).toBeCloseTo(1.2);
   });
 
   it("evaluates custom background color, intensity, and blurriness", () => {
@@ -32,5 +34,16 @@ describe("ENVIRONMENT NODE", () => {
     expect(env.intensity).toBe(2.5);
     expect(env.showBackground).toBe(false);
     expect(env.blurriness).toBe(0.5);
+  });
+
+  it("exposes global ambient/sun light levels that can disable the scene lighting", () => {
+    const res = ENVIRONMENT_NODE.evaluate(
+      {},
+      { ambientIntensity: 0, sunIntensity: 0.4 },
+      CTX
+    );
+    const env = res.environment as EnvironmentData;
+    expect(env.ambientIntensity).toBe(0);
+    expect(env.sunIntensity).toBeCloseTo(0.4);
   });
 });

@@ -16,6 +16,8 @@ function env(overrides: Partial<EnvironmentData> = {}): EnvironmentData {
     backgroundScale: new THREE.Vector2(1, 1),
     backgroundOffset: new THREE.Vector2(0, 0),
     backgroundRotation: 0,
+    ambientIntensity: 0.65,
+    sunIntensity: 1.2,
     ...overrides,
   } as EnvironmentData;
 }
@@ -38,6 +40,8 @@ function targets() {
     scene: new THREE.Scene(),
     bgScene: new THREE.Scene(),
     fallbackBackground: new THREE.Texture(),
+    ambientLight: new THREE.AmbientLight(0xffffff, 0.65),
+    sunLight: new THREE.DirectionalLight(0xffffff, 1.2),
   };
 }
 
@@ -120,5 +124,37 @@ describe("applyEnvironment", () => {
     const hdri = targets();
     applyEnvironment(env({ texture: new THREE.Texture(), blurriness: 0.3 }), hdri, fakeBlur(), 800, 600);
     expect((hdri.scene as any).backgroundBlurriness).toBeCloseTo(0.3);
+  });
+
+  test("the environment drives the global ambient and sun intensities", () => {
+    const t = targets();
+    applyEnvironment(env({ ambientIntensity: 0.3, sunIntensity: 0.9 }), t, fakeBlur(), 800, 600);
+    expect(t.ambientLight.intensity).toBeCloseTo(0.3);
+    expect(t.ambientLight.visible).toBe(true);
+    expect(t.sunLight.intensity).toBeCloseTo(0.9);
+    expect(t.sunLight.visible).toBe(true);
+  });
+
+  test("zero light levels disable the global lights", () => {
+    const t = targets();
+    applyEnvironment(env({ ambientIntensity: 0, sunIntensity: 0 }), t, fakeBlur(), 800, 600);
+    expect(t.ambientLight.intensity).toBe(0);
+    expect(t.ambientLight.visible).toBe(false);
+    expect(t.sunLight.intensity).toBe(0);
+    expect(t.sunLight.visible).toBe(false);
+  });
+
+  test("no environment restores the default global light levels", () => {
+    const t = targets();
+    t.ambientLight.intensity = 0;
+    t.ambientLight.visible = false;
+    t.sunLight.intensity = 0;
+    t.sunLight.visible = false;
+
+    applyEnvironment(null, t, fakeBlur(), 800, 600);
+    expect(t.ambientLight.intensity).toBeCloseTo(0.65);
+    expect(t.ambientLight.visible).toBe(true);
+    expect(t.sunLight.intensity).toBeCloseTo(1.2);
+    expect(t.sunLight.visible).toBe(true);
   });
 });
