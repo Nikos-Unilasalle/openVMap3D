@@ -32,7 +32,6 @@ import {
 } from "./shared/graph/types";
 import { broadcastGraph, maximizeMainWindow, PreviewCameraPose, startBroadcasting } from "./shared/ipc";
 import { exportVideo, mimeToExtension, saveVideoBlob } from "./shared/export/videoExport";
-import { getOrCreatePlayer } from "./shared/audio/audioStore";
 import { TransformPatch, Viewport, ViewportExportHandle } from "./shared/three/Viewport";
 import { SplitViewport } from "./shared/three/SplitViewport";
 import "./shared/three/viewport.css";
@@ -965,15 +964,31 @@ function MainEditor() {
 
   // The first sound/player node with a loaded file drives the timeline
   // waveform strip (music sync).
-  const waveformUrl = useMemo(() => {
+  //
+  // Read from the evaluation results, not from the audio store: the store is a
+  // module cache filled asynchronously once the file has decoded, and nothing
+  // about that write reaches React. Keyed on graph.nodes, this memo never
+  // recomputed after a project was reopened — the file loaded, the waveform
+  // never appeared. `url` is a socket now, so it arrives with every frame's
+  // results like any other value.
+  const waveformClip = useMemo(() => {
+    if (!evaluatedResults) return undefined;
     for (const node of graph.nodes) {
-      if (node.type === "sound/player" && typeof node.params.filePath === "string" && node.params.filePath) {
-        const url = getOrCreatePlayer(node.id).loadedPath;
-        if (url) return url;
-      }
+      if (node.type !== "sound/player") continue;
+      const res = evaluatedResults.get(node.id);
+      const url = res?.url;
+      if (typeof url !== "string" || !url) continue;
+      // A trigger-driven clip (startFrame -1) has no knowable position on the
+      // timeline, so it is drawn from frame 0 rather than not at all.
+      const start = Number(res?.startFrame);
+      return {
+        url,
+        startFrame: Number.isFinite(start) && start >= 0 ? start : 0,
+        duration: Number(res?.duration) || 0,
+      };
     }
     return undefined;
-  }, [graph.nodes]);
+  }, [graph.nodes, evaluatedResults]);
 
   const onMoveKeyframe = useCallback(
     (oldFrame: number, newFrame: number) => {
@@ -1500,7 +1515,10 @@ function MainEditor() {
           keyframesEnabled={keyframesEnabled}
           selectedKeyframes={selectedKeyframesRecord}
           markers={graph.markers ?? []}
-          waveformUrl={waveformUrl}
+          waveformUrl={waveformClip?.url}
+          waveformStartFrame={waveformClip?.startFrame}
+          waveformDuration={waveformClip?.duration}
+          fps={exportFps}
           onToggleMarker={onToggleMarker}
           onMoveMarker={onMoveMarker}
           onMoveKeyframe={onMoveKeyframe}

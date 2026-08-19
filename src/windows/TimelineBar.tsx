@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { EasingType } from "../shared/graph/types";
 import { setInputZone } from "../shared/graph/inputZoneStore";
 import { EasingPopover, EASING_STRENGTH_CONFIG } from "./EasingPopover";
-import { WaveformPeak, loadWaveformPeaks } from "./audioWaveform";
+import { WaveformPeak, clipPixelRange, loadWaveformPeaks } from "./audioWaveform";
 import "./timeline-bar.css";
 
 export interface KeyframeDataAtFrame {
@@ -20,6 +20,10 @@ interface TimelineBarProps {
   selectedKeyframes?: Record<number, KeyframeDataAtFrame>;
   markers?: number[];
   waveformUrl?: string;
+  /** Where the audio clip starts on the timeline, and how long it runs. */
+  waveformStartFrame?: number;
+  waveformDuration?: number;
+  fps?: number;
   onToggleMarker?: (frame: number) => void;
   onMoveMarker?: (oldFrame: number, newFrame: number) => void;
   onMoveKeyframe?: (oldFrame: number, newFrame: number) => void;
@@ -66,8 +70,29 @@ function renderKeyframeGlyph(easeIn: EasingType = "smooth") {
   );
 }
 
-/** Decoded audio waveform drawn behind the timeline track — the music-sync reference. */
-function WaveformCanvas({ url }: { url?: string }) {
+/**
+ * Decoded audio waveform drawn behind the timeline track — the music-sync
+ * reference.
+ *
+ * The peaks are laid out on the *timeline's* frame axis: the clip begins at
+ * `startFrame` and runs for `duration × fps` frames. Stretching the whole file
+ * across the whole strip, as this did before, only lined up when the track
+ * happened to be exactly as long as the animation — so as a sync reference it
+ * was wrong in every other case, which is all of them.
+ */
+function WaveformCanvas({
+  url,
+  startFrame,
+  duration,
+  fps,
+  totalFrames,
+}: {
+  url?: string;
+  startFrame: number;
+  duration: number;
+  fps: number;
+  totalFrames: number;
+}) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [peaks, setPeaks] = useState<WaveformPeak[] | null>(null);
 
@@ -100,10 +125,17 @@ function WaveformCanvas({ url }: { url?: string }) {
       if (!ctx) return;
       ctx.clearRect(0, 0, w, h);
       if (!peaks || peaks.length === 0) return;
-      const bw = w / peaks.length;
+      const range = clipPixelRange(startFrame, duration, fps, totalFrames, w);
+      if (!range) return;
+
+      const clipX = range.x;
+      const bw = range.width / peaks.length;
       ctx.fillStyle = "rgba(56, 189, 248, 0.22)";
       peaks.forEach((p, i) => {
-        const x = i * bw;
+        const x = clipX + i * bw;
+        // A clip can start before the timeline or run off its end; draw only
+        // the part that is actually on screen.
+        if (x + bw < 0 || x > w) return;
         const top = (0.5 - p.max / 2) * h;
         const bottom = (0.5 - p.min / 2) * h;
         ctx.fillRect(x, top, Math.max(1, bw), Math.max(1, bottom - top));
@@ -113,7 +145,7 @@ function WaveformCanvas({ url }: { url?: string }) {
     const ro = new ResizeObserver(draw);
     if (canvas.parentElement) ro.observe(canvas.parentElement);
     return () => ro.disconnect();
-  }, [peaks]);
+  }, [peaks, startFrame, duration, fps, totalFrames]);
 
   return <canvas ref={ref} className="timeline-waveform" />;
 }
@@ -126,6 +158,9 @@ export function TimelineBar({
   selectedKeyframes = {},
   markers = [],
   waveformUrl,
+  waveformStartFrame,
+  waveformDuration,
+  fps,
   onToggleMarker,
   onMoveMarker,
   onMoveKeyframe,
@@ -421,7 +456,13 @@ export function TimelineBar({
           onMouseLeave={handleMouseLeaveTrack}
         >
           <div className="timeline-track-bg" />
-          <WaveformCanvas url={waveformUrl} />
+          <WaveformCanvas
+            url={waveformUrl}
+            startFrame={waveformStartFrame ?? 0}
+            duration={waveformDuration ?? 0}
+            fps={fps ?? 30}
+            totalFrames={totalFrames}
+          />
           <div className="timeline-track-fill" style={{ width: `${progressPct}%` }} />
 
           {/* Visual markers */}

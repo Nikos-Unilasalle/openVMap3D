@@ -47,3 +47,28 @@ export function loadWaveformPeaks(url: string, buckets = 320): Promise<WaveformP
   cache.set(url, promise);
   return promise;
 }
+
+/**
+ * Where an audio clip sits on the timeline strip, in pixels.
+ *
+ * The waveform is a sync reference, so it has to be laid out on the timeline's
+ * own frame axis — a clip starting at frame 90 of a 300-frame animation covers
+ * the last two thirds of the strip, whatever the file's length. Returns null
+ * when there is nothing to draw, including the case of a clip that falls
+ * entirely outside the visible range.
+ */
+export function clipPixelRange(
+  startFrame: number,
+  duration: number,
+  fps: number,
+  totalFrames: number,
+  width: number,
+): { x: number; width: number } | null {
+  if (!(duration > 0) || !(fps > 0) || !(totalFrames > 0) || !(width > 0)) return null;
+  const pxPerFrame = width / totalFrames;
+  const clipWidth = duration * fps * pxPerFrame;
+  if (!(clipWidth > 0)) return null;
+  const x = startFrame * pxPerFrame;
+  if (x + clipWidth < 0 || x > width) return null;
+  return { x, width: clipWidth };
+}

@@ -73,6 +73,12 @@ export interface EvalContext {
    * got round to it".
    */
   capturing?: boolean;
+  /**
+   * The Render node's frame rate. Needed by any node that has to turn a
+   * timeline frame into a duration in seconds — an Audio Player anchored to a
+   * frame, for one. Absent in headless calls, where 30 is assumed.
+   */
+  fps?: number;
   /** Active animation current frame index. */
   currentFrame?: number;
   /** Active keyframe store. */

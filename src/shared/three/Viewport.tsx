@@ -1366,6 +1366,7 @@ export function Viewport({
           prevRender && typeof prevRender.width === "number" && typeof prevRender.height === "number"
             ? { width: prevRender.width as number, height: prevRender.height as number }
             : undefined;
+        const renderFps = typeof prevRender?.fps === "number" ? (prevRender.fps as number) : undefined;
         results = evaluateGraph(graphRef.current, registryRef.current, {
           time: clock.time,
           step: clock.step,
@@ -1374,6 +1375,7 @@ export function Viewport({
           renderer,
           activeCameraPose,
           renderSize,
+          fps: renderFps,
           sessionId: sessionIdRef.current,
           capturing: capture !== null,
           currentFrame: exportFrameIndex,

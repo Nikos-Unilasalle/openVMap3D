@@ -11,6 +11,7 @@ import {
   requestPlay,
 } from "../../audio/audioStore";
 import { NodeDefinition } from "../types";
+import { numberInput } from "./object";
 
 /** Audio Player node — loads and plays local audio files (.mp3, .wav, .ogg) with playback controls. */
 export const AUDIO_PLAYER_NODE: NodeDefinition = {
@@ -23,14 +24,21 @@ export const AUDIO_PLAYER_NODE: NodeDefinition = {
     { id: "volume", label: "Volume", type: "value" },
     { id: "playbackRate", label: "Speed", type: "value" },
     { id: "seek", label: "Seek (s)", type: "value" },
+    { id: "startFrame", label: "Start Frame", type: "value" },
   ],
   outputs: [
     { id: "audio", label: "Audio", type: "any" },
     { id: "volume", label: "Volume", type: "value" },
     { id: "duration", label: "Duration", type: "value" },
     { id: "position", label: "Position", type: "value" },
+    // The decoded file's object URL, published as a socket so the timeline's
+    // waveform strip can find it through the graph like any other value. It
+    // used to be read straight out of the audio store's module cache, which
+    // React had no way of knowing had changed.
+    { id: "url", label: "Audio URL", type: "text" },
+    { id: "startFrame", label: "Start Frame", type: "value" },
   ],
-  defaultParams: { filePath: "", loop: 1, volume: 1, playbackRate: 1 },
+  defaultParams: { filePath: "", loop: 1, volume: 1, playbackRate: 1, startFrame: -1 },
   dynamicParamFields: () => [
     {
       id: "filePath",
@@ -59,6 +67,12 @@ export const AUDIO_PLAYER_NODE: NodeDefinition = {
       },
     },
     { id: "loop", label: "Loop", kind: "boolean" },
+    {
+      id: "startFrame",
+      label: "Start Frame (-1 = trigger-driven)",
+      kind: "number",
+      step: 1,
+    },
     { id: "volume", label: "Volume", kind: "number", step: 0.05 },
     { id: "playbackRate", label: "Speed", kind: "number", step: 0.1 },
   ],
@@ -84,6 +98,49 @@ export const AUDIO_PLAYER_NODE: NodeDefinition = {
       if (Math.abs(audioEl.currentTime - targetPos) > 0.5) {
         audioEl.currentTime = targetPos;
       }
+    }
+
+    // Anchoring the clip to a frame. -1 (the default) keeps the node exactly as
+    // it was — driven by Play and Trigger — so nothing already built changes
+    // behaviour. Set to a frame and the clip becomes part of the timeline
+    // instead: it starts there, scrubs with the playhead, and lands on the same
+    // frame in an export as it does in the preview. That is what makes the
+    // waveform strip honest, and what lets a sound be pinned to the frame an
+    // event happens on.
+    const startFrame = Math.round(numberInput(inputs.startFrame, params.startFrame, -1));
+    const anchored = startFrame >= 0;
+
+    if (anchored) {
+      const fps = Math.max(1, Number(ctx.fps) || 30);
+      const frame = ctx.currentFrame ?? -1;
+      const offsetSeconds = (frame - startFrame) / fps;
+      const clipLength = isNaN(audioEl.duration) ? 0 : audioEl.duration;
+      const withinClip = frame >= startFrame && (loop || clipLength <= 0 || offsetSeconds < clipLength);
+
+      if (frame >= 0 && withinClip && audioEl.src) {
+        // Only correct the position when it has genuinely drifted: writing
+        // currentTime every frame restarts the decoder and stutters the sound.
+        const target = loop && clipLength > 0 ? offsetSeconds % clipLength : offsetSeconds;
+        if (Math.abs(audioEl.currentTime - target) > 0.25) {
+          audioEl.currentTime = Math.max(0, target);
+        }
+        if (audioEl.paused) {
+          requestPlay(player);
+          player.isPlaying = true;
+        }
+      } else if (!audioEl.paused) {
+        requestPause(player);
+        player.isPlaying = false;
+      }
+
+      return {
+        audio: player,
+        volume: audioEl.paused ? 0 : volume,
+        duration: clipLength,
+        position: isNaN(audioEl.currentTime) ? 0 : audioEl.currentTime,
+        url: player.loadedPath ?? "",
+        startFrame,
+      };
     }
 
     // Trigger: a rising edge (0 -> 1) starts the sound from the beginning and
@@ -122,6 +179,10 @@ export const AUDIO_PLAYER_NODE: NodeDefinition = {
       volume: audioEl.paused ? 0 : volume,
       duration: isNaN(audioEl.duration) ? 0 : audioEl.duration,
       position: isNaN(audioEl.currentTime) ? 0 : audioEl.currentTime,
+      url: player.loadedPath ?? "",
+      // Published so the timeline's waveform strip can draw the clip where it
+      // will actually be heard.
+      startFrame,
     };
   },
 };
