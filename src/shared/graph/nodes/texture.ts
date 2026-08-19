@@ -9,9 +9,13 @@ interface TextureNodeState {
   mesh?: THREE.Mesh;
   aspectRatio: number;
   lastPath?: string;
+  /** Last wrap/repeat/offset signature — avoid re-uploading the texture every frame. */
+  lastSig?: string;
 }
 
 const textureCache = createNodeCache<TextureNodeState>((s) => s.texture?.dispose());
+
+const textureTransformCache = createNodeCache<{ texture?: THREE.Texture; lastSig?: string }>((s) => s.texture?.dispose());
 
 function getState(nodeId: string): TextureNodeState {
   let state = textureCache.get(nodeId);
@@ -119,14 +123,23 @@ export const TEXTURE_IMAGE_NODE: NodeDefinition = {
       texture.wrapS = wrapMap[String(params.wrapS || "repeat")] ?? THREE.RepeatWrapping;
       texture.wrapT = wrapMap[String(params.wrapT || "repeat")] ?? THREE.RepeatWrapping;
 
-      if (inputs.uvScale instanceof THREE.Vector3) {
-        texture.repeat.set(inputs.uvScale.x, inputs.uvScale.y);
+      const sig = [
+        texture.wrapS,
+        texture.wrapT,
+        inputs.uvScale instanceof THREE.Vector3 ? inputs.uvScale.toArray().join(",") : "",
+        inputs.uvOffset instanceof THREE.Vector3 ? inputs.uvOffset.toArray().join(",") : "",
+      ].join("|");
+      if (sig !== state.lastSig) {
+        state.lastSig = sig;
+        if (inputs.uvScale instanceof THREE.Vector3) {
+          texture.repeat.set(inputs.uvScale.x, inputs.uvScale.y);
+        }
+        if (inputs.uvOffset instanceof THREE.Vector3) {
+          texture.offset.set(inputs.uvOffset.x, inputs.uvOffset.y);
+        }
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.needsUpdate = true;
       }
-      if (inputs.uvOffset instanceof THREE.Vector3) {
-        texture.offset.set(inputs.uvOffset.x, inputs.uvOffset.y);
-      }
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.needsUpdate = true;
     }
 
     return {
@@ -258,40 +271,58 @@ export const TEXTURE_PLANE_NODE: NodeDefinition = {
     // Update material properties
     const mat = mesh.material as THREE.MeshStandardMaterial;
     const color = asColor(inputs.color, asColor(params.color, new THREE.Color(0xffffff)));
-    mat.color.copy(color);
-    mat.side = Boolean(params.doubleSided ?? true) ? THREE.DoubleSide : THREE.FrontSide;
-    mat.roughness = Math.max(0, Math.min(1, Number(params.roughness) ?? 0.5));
-    mat.metalness = Math.max(0, Math.min(1, Number(params.metalness) ?? 0.1));
 
-    const isTransparent = Boolean(params.transparent ?? true);
-    mat.transparent = isTransparent;
-    mat.alphaTest = isTransparent ? Math.max(0, Number(params.alphaCutoff ?? 0.001)) : 0;
-    mat.depthWrite = !isTransparent || mat.alphaTest > 0;
-
-    if (activeTexture) {
-      mat.map = activeTexture;
-      mat.map.colorSpace = THREE.SRGBColorSpace;
-
-      let scaleX = 1;
-      let scaleY = 1;
-      if (inputs.uvScale instanceof THREE.Vector3) {
-        scaleX = inputs.uvScale.x;
-        scaleY = inputs.uvScale.y;
-      }
-      let offsetX = 0;
-      let offsetY = 0;
-      if (inputs.uvOffset instanceof THREE.Vector3) {
-        offsetX = inputs.uvOffset.x;
-        offsetY = inputs.uvOffset.y;
-      }
-
-      mat.map.repeat.set(scaleX, scaleY);
-      mat.map.offset.set(offsetX, offsetY);
-      mat.map.needsUpdate = true;
-    } else {
-      mat.map = null;
+    let scaleX = 1;
+    let scaleY = 1;
+    if (inputs.uvScale instanceof THREE.Vector3) {
+      scaleX = inputs.uvScale.x;
+      scaleY = inputs.uvScale.y;
     }
-    mat.needsUpdate = true;
+    let offsetX = 0;
+    let offsetY = 0;
+    if (inputs.uvOffset instanceof THREE.Vector3) {
+      offsetX = inputs.uvOffset.x;
+      offsetY = inputs.uvOffset.y;
+    }
+
+    // Only touch the material (and re-upload its map) when something changed —
+    // doing it every frame recompiles the shader and re-uploads the texture.
+    const planeSig = [
+      color.getHex(),
+      Boolean(params.doubleSided ?? true),
+      Number(params.roughness) ?? 0.5,
+      Number(params.metalness) ?? 0.1,
+      Boolean(params.transparent ?? true),
+      Number(params.alphaCutoff) ?? 0.001,
+      activeTexture?.uuid ?? "",
+      scaleX,
+      scaleY,
+      offsetX,
+      offsetY,
+    ].join("|");
+    if (state.lastSig !== planeSig) {
+      state.lastSig = planeSig;
+      mat.color.copy(color);
+      mat.side = Boolean(params.doubleSided ?? true) ? THREE.DoubleSide : THREE.FrontSide;
+      mat.roughness = Math.max(0, Math.min(1, Number(params.roughness) ?? 0.5));
+      mat.metalness = Math.max(0, Math.min(1, Number(params.metalness) ?? 0.1));
+
+      const isTransparent = Boolean(params.transparent ?? true);
+      mat.transparent = isTransparent;
+      mat.alphaTest = isTransparent ? Math.max(0, Number(params.alphaCutoff ?? 0.001)) : 0;
+      mat.depthWrite = !isTransparent || mat.alphaTest > 0;
+
+      if (activeTexture) {
+        mat.map = activeTexture;
+        mat.map.colorSpace = THREE.SRGBColorSpace;
+        mat.map.repeat.set(scaleX, scaleY);
+        mat.map.offset.set(offsetX, offsetY);
+        mat.map.needsUpdate = true;
+      } else {
+        mat.map = null;
+      }
+      mat.needsUpdate = true;
+    }
 
     return primitiveOutputs(mesh);
   },
@@ -323,9 +354,8 @@ export const TEXTURE_TRANSFORM_NODE: NodeDefinition = {
     { id: "offsetY", label: "Offset Y", kind: "number", step: 0.05 },
     { id: "rotation", label: "Rotation (°)", kind: "number", step: 5 },
   ],
-  evaluate: (inputs, params) => {
+  evaluate: (inputs, params, ctx) => {
     const source = inputs.texture instanceof THREE.Texture ? inputs.texture : new THREE.Texture();
-    const texture = source.clone();
 
     let scaleX = Number(params.scaleX) || 1;
     let scaleY = Number(params.scaleY) || 1;
@@ -343,13 +373,37 @@ export const TEXTURE_TRANSFORM_NODE: NodeDefinition = {
 
     const rotDeg = inputs.rotation !== undefined ? Number(inputs.rotation) : Number(params.rotation) || 0;
 
-    texture.repeat.set(scaleX, scaleY);
-    texture.offset.set(offsetX, offsetY);
-    texture.rotation = (rotDeg * Math.PI) / 180;
-    texture.center.set(0.5, 0.5);
-    texture.needsUpdate = true;
+    // Cache the transformed clone per node: re-cloning + re-uploading the source
+    // image every frame (needsUpdate) is wasted GPU traffic for an unchanged input.
+    const sig = [
+      source.uuid,
+      source.image?.width ?? 0,
+      source.image?.height ?? 0,
+      scaleX,
+      scaleY,
+      offsetX,
+      offsetY,
+      rotDeg,
+    ].join("|");
 
-    return { texture };
+    let state = textureTransformCache.get(ctx.nodeId);
+    if (!state) {
+      state = {};
+      textureTransformCache.set(ctx.nodeId, state);
+    }
+    if (state.lastSig !== sig) {
+      state.lastSig = sig;
+      if (state.texture) state.texture.dispose();
+      const texture = source.clone();
+      texture.repeat.set(scaleX, scaleY);
+      texture.offset.set(offsetX, offsetY);
+      texture.rotation = (rotDeg * Math.PI) / 180;
+      texture.center.set(0.5, 0.5);
+      texture.needsUpdate = true;
+      state.texture = texture;
+    }
+
+    return { texture: state.texture! };
   },
 };
 

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { EvalContext } from "../types";
 import { MaterialValue } from "../sockets";
 import { MATERIAL_NODE } from "./material";
-import { extractMaterialParams, OBJECT_BOX_NODE } from "./object";
+import { extractMaterialParams, OBJECT_BOX_NODE, applyMaterialParams } from "./object";
 
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "test" };
 
@@ -132,5 +132,19 @@ describe("material input priority", () => {
     );
     const mat = (out.geometry as THREE.Mesh).material as THREE.MeshStandardMaterial;
     expect(mat.transparent).toBe(true);
+  });
+
+  it("applyMaterialParams skips re-application (no per-frame needsUpdate) when unchanged", () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
+    const p = extractMaterialParams({}, { roughness: 0.5, metalness: 0.2 });
+    applyMaterialParams(mesh, p, THREE.FrontSide);
+    const mat = mesh.material as THREE.MeshStandardMaterial;
+    const appliedVersion = mat.version;
+
+    applyMaterialParams(mesh, p, THREE.FrontSide);
+    expect(mat.version).toBe(appliedVersion);
+
+    applyMaterialParams(mesh, { ...p, roughness: 0.9 }, THREE.FrontSide);
+    expect(mat.version).toBe(appliedVersion + 1);
   });
 });

@@ -13,6 +13,8 @@ interface ObjState {
   normalMap?: THREE.Texture;
   lastTexturePath?: string;
   lastNormalPath?: string;
+  /** Last material/texture signature applied — skip the per-frame re-apply when unchanged. */
+  lastMaterialSig?: string;
 }
 
 const objStateCache = createNodeCache<ObjState>();
@@ -246,72 +248,122 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
     const inputDiffuse = inputs.diffuse instanceof THREE.Texture && inputs.diffuse.image ? inputs.diffuse : null;
     const inputNormal = inputs.normal instanceof THREE.Texture && inputs.normal.image ? inputs.normal : null;
 
-    const activeDiffuse = inputDiffuse || state.textureMap;
-    const activeNormal = inputNormal || state.normalMap;
+    const activeDiffuse = (inputDiffuse || state.textureMap) ?? null;
+    const activeNormal = (inputNormal || state.normalMap) ?? null;
 
-    // Update material properties, textures, and UV scaling on all meshes inside group
-    group.traverse((child) => {
-      if (child instanceof THREE.Mesh) {
-        if (shadeless) {
-          if (!(child.material instanceof THREE.MeshBasicMaterial)) {
-            if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
-            else if (child.material) child.material.dispose();
-            child.material = new THREE.MeshBasicMaterial({ color });
-          }
-          const mat = child.material as THREE.MeshBasicMaterial;
-          mat.color.copy(color);
-          mat.wireframe = wireframe;
-          mat.transparent = isTransparent;
-          mat.opacity = opacity;
-
-          if (activeDiffuse) {
-            mat.map = activeDiffuse;
-            mat.map.colorSpace = THREE.SRGBColorSpace;
-            mat.map.repeat.set(scaleX, scaleY);
-            mat.map.offset.set(offsetX, offsetY);
-            mat.map.needsUpdate = true;
-          } else {
-            mat.map = null;
-          }
-          mat.needsUpdate = true;
-        } else {
-          if (!(child.material instanceof THREE.MeshStandardMaterial)) {
-            if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
-            else if (child.material) child.material.dispose();
-            child.material = new THREE.MeshStandardMaterial({ color });
-          }
-          const mat = child.material as THREE.MeshStandardMaterial;
-          mat.color.copy(color);
-          mat.roughness = roughness;
-          mat.metalness = metalness;
-          mat.wireframe = wireframe;
-          mat.transparent = isTransparent;
-          mat.opacity = opacity;
-
-          if (activeDiffuse) {
-            mat.map = activeDiffuse;
-            mat.map.colorSpace = THREE.SRGBColorSpace;
-            mat.map.repeat.set(scaleX, scaleY);
-            mat.map.offset.set(offsetX, offsetY);
-            mat.map.needsUpdate = true;
-          } else {
-            mat.map = null;
-          }
-
-          if (activeNormal) {
-            mat.normalMap = activeNormal;
-            mat.normalMap.repeat.set(scaleX, scaleY);
-            mat.normalMap.offset.set(offsetX, offsetY);
-            mat.normalMap.needsUpdate = true;
-          } else {
-            mat.normalMap = null;
-          }
-
-          mat.needsUpdate = true;
-        }
-      }
-    });
+    // Re-apply (and set needsUpdate on) materials only when something they
+    // depend on actually changed — doing it every frame recompiles the shader
+    // and re-uploads the 2MB texture 60×/s.
+    const sig = [
+      color.getHex(),
+      shadeless,
+      wireframe,
+      opacity,
+      roughness,
+      metalness,
+      activeDiffuse?.uuid ?? "",
+      activeNormal?.uuid ?? "",
+      scaleX,
+      scaleY,
+      offsetX,
+      offsetY,
+    ].join("|");
+    if (state.lastMaterialSig !== sig) {
+      state.lastMaterialSig = sig;
+      updateObjMaterials(group, {
+        color,
+        shadeless,
+        wireframe,
+        opacity,
+        isTransparent,
+        roughness,
+        metalness,
+        activeDiffuse,
+        activeNormal,
+        scaleX,
+        scaleY,
+        offsetX,
+        offsetY,
+      });
+    }
 
     return primitiveOutputs(group);
   },
 };
+
+interface ObjMaterialParams {
+  color: THREE.Color;
+  shadeless: boolean;
+  wireframe: boolean;
+  opacity: number;
+  isTransparent: boolean;
+  roughness: number;
+  metalness: number;
+  activeDiffuse: THREE.Texture | null;
+  activeNormal: THREE.Texture | null;
+  scaleX: number;
+  scaleY: number;
+  offsetX: number;
+  offsetY: number;
+}
+
+function updateObjMaterials(group: THREE.Group, p: ObjMaterialParams): void {
+  group.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      if (p.shadeless) {
+        if (!(child.material instanceof THREE.MeshBasicMaterial)) {
+          if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
+          else if (child.material) child.material.dispose();
+          child.material = new THREE.MeshBasicMaterial({ color: p.color });
+        }
+        const mat = child.material as THREE.MeshBasicMaterial;
+        mat.color.copy(p.color);
+        mat.wireframe = p.wireframe;
+        mat.transparent = p.isTransparent;
+        mat.opacity = p.opacity;
+
+        if (p.activeDiffuse) {
+          mat.map = p.activeDiffuse;
+          mat.map.colorSpace = THREE.SRGBColorSpace;
+          mat.map.repeat.set(p.scaleX, p.scaleY);
+          mat.map.offset.set(p.offsetX, p.offsetY);
+        } else {
+          mat.map = null;
+        }
+        mat.needsUpdate = true;
+      } else {
+        if (!(child.material instanceof THREE.MeshStandardMaterial)) {
+          if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
+          else if (child.material) child.material.dispose();
+          child.material = new THREE.MeshStandardMaterial({ color: p.color });
+        }
+        const mat = child.material as THREE.MeshStandardMaterial;
+        mat.color.copy(p.color);
+        mat.roughness = p.roughness;
+        mat.metalness = p.metalness;
+        mat.wireframe = p.wireframe;
+        mat.transparent = p.isTransparent;
+        mat.opacity = p.opacity;
+
+        if (p.activeDiffuse) {
+          mat.map = p.activeDiffuse;
+          mat.map.colorSpace = THREE.SRGBColorSpace;
+          mat.map.repeat.set(p.scaleX, p.scaleY);
+          mat.map.offset.set(p.offsetX, p.offsetY);
+        } else {
+          mat.map = null;
+        }
+
+        if (p.activeNormal) {
+          mat.normalMap = p.activeNormal;
+          mat.normalMap.repeat.set(p.scaleX, p.scaleY);
+          mat.normalMap.offset.set(p.offsetX, p.offsetY);
+        } else {
+          mat.normalMap = null;
+        }
+
+        mat.needsUpdate = true;
+      }
+    }
+  });
+}

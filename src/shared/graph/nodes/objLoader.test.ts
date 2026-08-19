@@ -67,4 +67,35 @@ describe("OBJECT_OBJ_NODE", () => {
     expect(mat.map).toBe(diffTex);
     expect(mat.normalMap).toBe(normTex);
   });
+
+  it("does not re-apply materials (or re-upload textures) when nothing changed", () => {
+    const diffTex = new THREE.Texture();
+    diffTex.image = { width: 100, height: 100 };
+
+    const first = OBJECT_OBJ_NODE.evaluate(
+      { diffuse: diffTex },
+      OBJECT_OBJ_NODE.defaultParams,
+      { ...CTX, nodeId: "obj-test-reapply" }
+    );
+    const mesh = (first.geometry as THREE.Group).children[0] as THREE.Mesh;
+    const mat = mesh.material as THREE.MeshStandardMaterial;
+    const appliedVersion = mat.version;
+
+    // Second evaluate with identical params must not touch the material
+    // (needsUpdate bumps version — no bump means no recompile/re-upload).
+    OBJECT_OBJ_NODE.evaluate(
+      { diffuse: diffTex },
+      OBJECT_OBJ_NODE.defaultParams,
+      { ...CTX, nodeId: "obj-test-reapply" }
+    );
+    expect(mat.version).toBe(appliedVersion);
+
+    // A real change bumps it.
+    OBJECT_OBJ_NODE.evaluate(
+      { diffuse: diffTex },
+      { ...OBJECT_OBJ_NODE.defaultParams, roughness: 0.9 },
+      { ...CTX, nodeId: "obj-test-reapply" }
+    );
+    expect(mat.version).toBe(appliedVersion + 1);
+  });
 });

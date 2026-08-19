@@ -587,6 +587,8 @@ interface SvgMeshState {
   meshRefs: THREE.Mesh[];
   /** The SVG-derived materials, kept separate so faithful mode can restore them after an override. */
   faithful: FaithfulMaterial[];
+  /** Last opacity/wireframe applied to the faithful materials — avoids per-frame needsUpdate. */
+  lastFaithfulSig?: string;
 }
 
 const svgMeshCache = createNodeCache<SvgMeshState>((s) => {
@@ -847,10 +849,14 @@ export const SVG_TO_MESH_NODE: NodeDefinition = {
     } else {
       const opacity = Math.min(1, Math.max(0, num(inputs.opacity, params.opacity)));
       const wireframe = Boolean(inputs.wireframe !== undefined ? inputs.wireframe : params.wireframe);
-      for (const { mat, baseOpacity } of state.faithful) {
-        mat.opacity = Math.min(1, Math.max(0, baseOpacity * opacity));
-        mat.wireframe = wireframe;
-        mat.needsUpdate = true;
+      const sig = `${opacity}|${wireframe}`;
+      if (sig !== state.lastFaithfulSig) {
+        state.lastFaithfulSig = sig;
+        for (const { mat, baseOpacity } of state.faithful) {
+          mat.opacity = Math.min(1, Math.max(0, baseOpacity * opacity));
+          mat.wireframe = wireframe;
+          mat.needsUpdate = true;
+        }
       }
     }
 

@@ -219,14 +219,46 @@ export function extractMaterialParams(
   return { color, emissive, emissiveIntensity, shadeless, roughness, metalness, wireframe, opacity, transmission, thickness };
 }
 
+/**
+ * Applied-signature cache: evaluate runs every frame and would otherwise set
+ * `material.needsUpdate = true` (shader recompile) and `texture.needsUpdate =
+ * true` (full GPU re-upload) on every single frame — catastrophic with a big
+ * texture. We only touch the material when something it depends on changed.
+ */
+const appliedMaterialSignatures = new WeakMap<THREE.Mesh, string>();
+
 export function applyMaterialParams(
   mesh: THREE.Mesh,
   matParams: MaterialParams,
   defaultSide: THREE.Side = THREE.FrontSide,
   texParams?: TextureParams
 ) {
-  const isTransparent =
-    matParams.opacity < 0.999 || (texParams?.activeDiffuse ? textureHasAlpha(texParams.activeDiffuse) : false);
+  const alpha = texParams?.activeDiffuse ? textureHasAlpha(texParams.activeDiffuse) : false;
+  const signature = [
+    matParams.color.getHex(),
+    matParams.emissive.getHex(),
+    matParams.emissiveIntensity,
+    matParams.shadeless,
+    matParams.roughness,
+    matParams.metalness,
+    matParams.wireframe,
+    matParams.opacity,
+    matParams.transmission,
+    matParams.thickness,
+    defaultSide,
+    texParams?.activeDiffuse?.uuid ?? "",
+    texParams?.activeNormal?.uuid ?? "",
+    texParams?.scaleX,
+    texParams?.scaleY,
+    texParams?.offsetX,
+    texParams?.offsetY,
+    alpha,
+  ].join("|");
+
+  if (appliedMaterialSignatures.get(mesh) === signature) return;
+  appliedMaterialSignatures.set(mesh, signature);
+
+  const isTransparent = matParams.opacity < 0.999 || alpha;
 
   if (matParams.shadeless) {
     if (!(mesh.material instanceof THREE.MeshBasicMaterial)) {
