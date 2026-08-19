@@ -13,6 +13,32 @@ export function numberInput(input: unknown, param: unknown, fallback: number): n
   return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * The time a time-driven node should run on.
+ *
+ * A node can't just test `inputs.time !== undefined` to see whether its Time
+ * socket is wired: the evaluator fills every unconnected socket with that
+ * socket's default param, so an unwired Time reads as a perfectly valid 0 and
+ * the node freezes at the first frame forever. `connectedInputs` is the only
+ * thing that actually knows, which is why it exists (see EvalContext).
+ *
+ * Wired: use the incoming value, so a Time Remap or a scrubbed clock drives the
+ * node. Unwired: fall back to the graph's own clock, so the node animates out
+ * of the box instead of standing still.
+ */
+export function clockInput(
+  inputs: Record<string, unknown>,
+  params: Record<string, unknown>,
+  ctx: { time?: number; connectedInputs?: ReadonlySet<string> },
+  socketId = "time",
+): number {
+  if (ctx.connectedInputs ? ctx.connectedInputs.has(socketId) : inputs[socketId] !== undefined) {
+    return numberInput(inputs[socketId], params[socketId], 0);
+  }
+  const clock = Number(ctx.time);
+  return Number.isFinite(clock) ? clock : 0;
+}
+
 export function asColor(v: unknown, fallback = new THREE.Color(0xffffff)): THREE.Color {
   if (v instanceof THREE.Color) return v;
   if (typeof v === "object" && v !== null && "r" in v && "g" in v && "b" in v) {

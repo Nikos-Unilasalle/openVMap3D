@@ -1,12 +1,19 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
 import { createNodeCache } from "../nodeCaches";
-import { numberInput } from "./object";
+import { clockInput, numberInput } from "./object";
 
 interface SquashState {
   prevPos?: THREE.Vector3;
   lastTime?: number;
   lastDir?: THREE.Vector3;
+  /**
+   * Last measured speed, normalized against Max Speed. The *speed* is cached
+   * rather than the stretch factor so that turning Intensity while paused
+   * still changes the deformation — the factor is derived from both, every
+   * call.
+   */
+  lastSpeed?: number;
 }
 
 const squashStateCache = createNodeCache<SquashState>();
@@ -69,7 +76,7 @@ export const SQUASH_STRETCH_NODE: NodeDefinition = {
     const state = getSquashState(ctx.nodeId);
     const object = inputs.geometry instanceof THREE.Object3D ? inputs.geometry : null;
 
-    const time = inputs.time !== undefined ? numberInput(inputs.time, params.time, 0) : (ctx.time ?? 0);
+    const time = clockInput(inputs, params, ctx);
     const intensity = clamp01(numberInput(inputs.intensity, params.intensity, 0.6));
     const maxSpeed = Math.max(0.01, numberInput(inputs.maxSpeed, params.maxSpeed, 3));
 
@@ -80,21 +87,39 @@ export const SQUASH_STRETCH_NODE: NodeDefinition = {
     object.updateWorldMatrix(true, false, true);
     const pos = new THREE.Vector3().setFromMatrixPosition(object.matrixWorld);
 
-    let dir = state.lastDir ?? new THREE.Vector3(0, 1, 0);
-    let factor = 1;
+    // clone, not the cached instance: `dir.copy(...)` below would otherwise
+    // rewrite the cache in place before it has been read.
+    const dir = state.lastDir ? state.lastDir.clone() : new THREE.Vector3(0, 1, 0);
+    // Re-evaluating the same instant must be a no-op, so the speed carries over
+    // by default. The editor and the camera-preview pane evaluate this node
+    // once each per frame off the same clock: the second pass saw
+    // `time === lastTime`, concluded "not moving", and reset the deformation to
+    // identity — on the Group *both* panes share, so the squash was wiped every
+    // frame and the node did nothing at all in split view.
+    let normalized = state.lastSpeed ?? 0;
 
-    if (state.prevPos && state.lastTime !== undefined && time > state.lastTime) {
+    const rewound = state.lastTime !== undefined && time < state.lastTime - 0.5;
+    if (rewound || state.lastTime === undefined || !state.prevPos) {
+      // First frame, or a real scrub backwards: reseed rather than measure a
+      // velocity across the jump.
+      normalized = 0;
+      state.prevPos = pos.clone();
+      state.lastTime = time;
+    } else if (time > state.lastTime) {
       const dt = time - state.lastTime;
       const vel = new THREE.Vector3().subVectors(pos, state.prevPos).divideScalar(dt);
       const speed = vel.length();
       if (speed > 1e-6) dir.copy(vel).normalize();
-      const normalized = Math.min(1, speed / maxSpeed);
-      // stretchFactor 1..1+0.5*intensity along motion; volume-preserving inverse sideways.
-      factor = 1 + intensity * 0.5 * normalized;
+      normalized = Math.min(1, speed / maxSpeed);
+      state.prevPos = pos.clone();
+      state.lastTime = time;
     }
-    state.prevPos = pos.clone();
-    state.lastTime = time;
+
     state.lastDir = dir.clone();
+    state.lastSpeed = normalized;
+
+    // stretchFactor 1..1+0.5*intensity along motion; volume-preserving inverse sideways.
+    const factor = 1 + intensity * 0.5 * normalized;
 
     if (Math.abs(factor - 1) < 1e-4) {
       group.matrix.identity();
