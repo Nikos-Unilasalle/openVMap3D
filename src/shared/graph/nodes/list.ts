@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
+import { ColorRamp, DEFAULT_COLOR_RAMP, sampleColorRamp } from "../colorRamp";
 
 /** Get List Item node — retrieves an element from a list at the specified index, with dynamic typing supporting any element type (Geometry, Vector, Matrix, Color, Value, Text). */
 export const GET_LIST_ITEM_NODE: NodeDefinition = {
@@ -270,37 +271,25 @@ export const COLOR_PALETTE_LIST_NODE: NodeDefinition = {
   type: "list/color-palette",
   label: "Color Palette List",
   category: "list",
-  inputs: [
-    { id: "count", label: "Count", type: "value" },
-    { id: "startColor", label: "Start Color", type: "color" },
-    { id: "endColor", label: "End Color", type: "color" },
-  ],
+  inputs: [{ id: "count", label: "Count", type: "value" }],
   outputs: [{ id: "list", label: "Colors", type: "list" }],
 
   defaultParams: {
     count: 10,
-    startColor: new THREE.Color(0x38bdf8),
-    endColor: new THREE.Color(0xec4899),
+    ramp: DEFAULT_COLOR_RAMP,
   },
   paramFields: [
     { id: "count", label: "Count", kind: "number" },
-    { id: "startColor", label: "Start Color", kind: "color" },
-    { id: "endColor", label: "End Color", kind: "color" },
+    { id: "ramp", label: "Ramp", kind: "color_ramp" },
   ],
   evaluate: (inputs, params) => {
     const count = Math.max(1, Math.min(500, Math.floor(inputs.count !== undefined ? Number(inputs.count) || 0 : Number(params.count) || 10)));
-    const startCol = inputs.startColor instanceof THREE.Color
-      ? inputs.startColor
-      : (params.startColor instanceof THREE.Color ? params.startColor : new THREE.Color(0x38bdf8));
-    const endCol = inputs.endColor instanceof THREE.Color
-      ? inputs.endColor
-      : (params.endColor instanceof THREE.Color ? params.endColor : new THREE.Color(0xec4899));
+    const ramp = params.ramp && typeof params.ramp === "object" ? (params.ramp as ColorRamp) : DEFAULT_COLOR_RAMP;
 
     const list: THREE.Color[] = [];
     for (let i = 0; i < count; i++) {
       const t = count > 1 ? i / (count - 1) : 0;
-      const c = startCol.clone().lerp(endCol, t);
-      list.push(c);
+      list.push(sampleColorRamp(ramp, t));
     }
 
     return { list };

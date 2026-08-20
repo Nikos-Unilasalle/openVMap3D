@@ -7,6 +7,7 @@ import { CATEGORY_COLOR, NodeCategory, UNKNOWN_CATEGORY_COLOR } from "../shared/
 import { KeyframeStore, ParamFieldDef } from "../shared/graph/types";
 import { ColorPickerInput } from "./ColorPickerInput";
 import { CurveProfileEditor } from "./CurveProfileEditor";
+import { ColorRampEditor } from "./ColorRampEditor";
 import { DragNumberInput } from "./DragNumberInput";
 import "./param-panel.css";
 
@@ -437,6 +438,12 @@ export function ParamPanel({
                       )}
                       {field.kind === "curve_profile" && (
                         <CurveProfileEditor
+                          value={params[field.id] as any}
+                          onChange={(v) => onChange(field.id, v)}
+                        />
+                      )}
+                      {field.kind === "color_ramp" && (
+                        <ColorRampEditor
                           value={params[field.id] as any}
                           onChange={(v) => onChange(field.id, v)}
                         />

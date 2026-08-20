@@ -20,6 +20,22 @@ import { Graph, NodeRegistry } from "./types";
  * received value's shape, which would be ambiguous (a Vector3 and a
  * Quaternion look identical minus the `w`).
  */
+/** Structural check for a colorRamp.ts ColorStop — position/color don't survive JSON with their real types, so this can't check `instanceof` on color yet. */
+function isColorStopShape(v: unknown): v is { position: unknown; color: unknown } {
+  return typeof v === "object" && v !== null && "position" in v && "color" in v;
+}
+
+/** Structural check for a colorRamp.ts ColorRamp ({stops, interpolation}). */
+function isColorRampShape(v: unknown): v is { stops: unknown[] } {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    Array.isArray((v as { stops?: unknown }).stops) &&
+    (v as { stops: unknown[] }).stops.length > 0 &&
+    isColorStopShape((v as { stops: unknown[] }).stops[0])
+  );
+}
+
 export function rehydrateGraphParams(graph: Graph, registry: NodeRegistry): Graph {
   return {
     ...graph,
@@ -63,6 +79,25 @@ export function rehydrateGraphParams(graph: Graph, registry: NodeRegistry): Grap
             const c = value as { r?: unknown; g?: unknown; b?: unknown };
             params[key] = new THREE.Color(Number(c.r) || 0, Number(c.g) || 0, Number(c.b) || 0);
             changed = true;
+          }
+        } else if (isColorRampShape(defaultValue) && typeof value === "object") {
+          // Color Ramp's stops (see colorRamp.ts) — a THREE.Color nested two
+          // levels inside the param value ({stops:[{position,color}]}), not
+          // the param value itself, so the instanceof checks above never see
+          // it. Same IPC/file-round-trip problem, one level deeper.
+          const v = value as { stops?: unknown; interpolation?: unknown };
+          if (Array.isArray(v.stops)) {
+            let stopsChanged = false;
+            const newStops = v.stops.map((stop) => {
+              if (!isColorStopShape(stop) || stop.color instanceof THREE.Color) return stop;
+              stopsChanged = true;
+              const c = stop.color as { r?: unknown; g?: unknown; b?: unknown };
+              return { ...stop, color: new THREE.Color(Number(c.r) || 0, Number(c.g) || 0, Number(c.b) || 0) };
+            });
+            if (stopsChanged) {
+              params[key] = { ...v, stops: newStops };
+              changed = true;
+            }
           }
         }
       }

@@ -4,6 +4,7 @@ import { CAMERA_NODE } from "./nodes/camera";
 import { DEFAULT_REGISTRY } from "./nodes";
 import { OBJECT_BOX_NODE } from "./nodes/object";
 import { TRANSFORM_NODE } from "./nodes/transform";
+import { COLOR_PALETTE_LIST_NODE } from "./nodes/list";
 import { rehydrateGraphParams } from "./rehydrateParams";
 import { Graph, NodeInstance } from "./types";
 
@@ -78,6 +79,41 @@ describe("rehydrateGraphParams", () => {
     const graph: Graph = { nodes: [node("x", "not/a/real/type", { location: plainVector(1, 1, 1) })], connections: [] };
     const result = rehydrateGraphParams(graph, DEFAULT_REGISTRY);
     expect(result.nodes[0].params.location).toEqual(plainVector(1, 1, 1));
+  });
+
+  it("rehydrates a Color Ramp's per-stop colors, buried two levels inside the param value", () => {
+    const graph: Graph = {
+      nodes: [
+        node("ramp1", COLOR_PALETTE_LIST_NODE.type, {
+          ramp: {
+            stops: [
+              { position: 0, color: plainColor(1, 0, 0) },
+              { position: 1, color: plainColor(0, 0, 1) },
+            ],
+            interpolation: "linear",
+          },
+        }),
+      ],
+      connections: [],
+    };
+
+    const result = rehydrateGraphParams(graph, DEFAULT_REGISTRY);
+    const ramp = result.nodes[0].params.ramp as { stops: { position: number; color: unknown }[]; interpolation: string };
+
+    expect(ramp.stops[0].color).toBeInstanceOf(THREE.Color);
+    expect((ramp.stops[0].color as THREE.Color).r).toBe(1);
+    expect(ramp.stops[1].color).toBeInstanceOf(THREE.Color);
+    expect((ramp.stops[1].color as THREE.Color).b).toBe(1);
+    expect(ramp.interpolation).toBe("linear");
+  });
+
+  it("leaves an already-real Color Ramp untouched (no unnecessary object churn)", () => {
+    const original = { stops: [{ position: 0, color: new THREE.Color(1, 0, 0) }], interpolation: "linear" as const };
+    const graph: Graph = { nodes: [node("ramp1", COLOR_PALETTE_LIST_NODE.type, { ramp: original })], connections: [] };
+
+    const result = rehydrateGraphParams(graph, DEFAULT_REGISTRY);
+
+    expect(result.nodes[0].params.ramp).toBe(original);
   });
 
   it("does not mutate the input graph", () => {

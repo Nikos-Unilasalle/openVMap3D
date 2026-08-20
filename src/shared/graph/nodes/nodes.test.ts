@@ -469,9 +469,14 @@ describe("LIST NODES", () => {
   });
 
   test("color palette list", () => {
-    const startColor = new THREE.Color(1, 0, 0);
-    const endColor = new THREE.Color(0, 0, 1);
-    const palette = COLOR_PALETTE_LIST_NODE.evaluate({ count: 3, startColor, endColor }, {}, CTX).list as THREE.Color[];
+    const ramp = {
+      stops: [
+        { position: 0, color: new THREE.Color(1, 0, 0) },
+        { position: 1, color: new THREE.Color(0, 0, 1) },
+      ],
+      interpolation: "linear" as const,
+    };
+    const palette = COLOR_PALETTE_LIST_NODE.evaluate({ count: 3 }, { ramp }, CTX).list as THREE.Color[];
 
     expect(palette.length).toBe(3);
     expect(palette[0].r).toBe(1);
