@@ -21,6 +21,8 @@ interface ParamPanelProps {
   keyframesEnabled?: boolean;
   onChange: (paramId: string, value: unknown) => void;
   onToggleKeyframe?: (nodeId: string, paramKey: string, frame: number, currentValue: any) => void;
+  /** Fired by a "button" field — see ParamFieldDef. */
+  onAction?: (nodeId: string, action: string) => void;
   /**
    * Input sockets of this node that have a wire in them. Such a field shows
    * the value arriving through the wire, not the param under it, so it is
@@ -295,6 +297,7 @@ export function ParamPanel({
   keyframesEnabled = true,
   onChange,
   onToggleKeyframe,
+  onAction,
   connectedSockets,
 }: ParamPanelProps) {
   const categoryColor = category ? CATEGORY_COLOR[category] : UNKNOWN_CATEGORY_COLOR;
@@ -383,7 +386,7 @@ export function ParamPanel({
                       title={isDriven ? `${field.label} comes from the wire plugged into this node — unplug it to set a value here` : undefined}
                     >
                       <label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                        {field.label}
+                        {field.kind !== "button" && field.label}
                         {hasUseToggle && (
                           <input
                             type="checkbox"
@@ -435,6 +438,11 @@ export function ParamPanel({
                         />
                       )}
                       {field.kind === "file" && fileField(nodeId, field, params[field.id], (v) => onChange(field.id, v))}
+                      {field.kind === "button" && (
+                        <button type="button" className="param-file-button" onClick={() => onAction?.(nodeId, field.action)}>
+                          {field.label}
+                        </button>
+                      )}
                     </div>
                   );
                 })}

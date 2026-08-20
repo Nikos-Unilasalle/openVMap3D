@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { SPAWN_NODE } from "./spawn";
-import { PARTICLE_RENDER_INSTANCES_NODE, bakeInstances } from "./particleInstances";
+import { PARTICLE_RENDER_INSTANCES_NODE, bakeInstances, bakeInstancesToGeometryData } from "./particleInstances";
 import { PARTICLE_EMITTER_NODE, resolveEmit } from "./particles";
 import { EmitterConfig } from "../particleRuntime";
 import { EvalContext } from "../types";
@@ -109,22 +109,15 @@ describe("resolveEmit — 'only when driven' stops production when the wire is p
 });
 
 describe("Particle Render (Instances) Bake to Mesh", () => {
-  it("hands back a real, vertex-addressable Mesh — not an InstancedMesh", () => {
+  it("bakeInstancesToGeometryData reads back plain, JSON-serializable arrays from the node's own live mesh", () => {
     const nodeId = "bk-a";
     const shape = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
-    PARTICLE_RENDER_INSTANCES_NODE.evaluate(
-      { shape, count: 4 },
-      PARTICLE_RENDER_INSTANCES_NODE.defaultParams,
-      CTX(nodeId),
-    );
-    const baked = PARTICLE_RENDER_INSTANCES_NODE.evaluate(
-      { shape, count: 4 },
-      { ...PARTICLE_RENDER_INSTANCES_NODE.defaultParams, bake: true },
-      CTX(nodeId),
-    ).geometry as THREE.Mesh;
+    PARTICLE_RENDER_INSTANCES_NODE.evaluate({ shape, count: 4 }, PARTICLE_RENDER_INSTANCES_NODE.defaultParams, CTX(nodeId));
 
-    expect(baked).toBeInstanceOf(THREE.Mesh);
-    expect(baked).not.toBeInstanceOf(THREE.InstancedMesh);
+    // Headless (no renderer): the node builds the InstancedMesh but reads no
+    // live positions into it, so there is nothing yet to bake.
+    expect(bakeInstancesToGeometryData(nodeId)).toBeNull();
+    expect(bakeInstancesToGeometryData("no-such-node")).toBeNull();
   });
 
   it("flattens live instances into one merged, vertex-addressable geometry", () => {
@@ -153,23 +146,6 @@ describe("Particle Render (Instances) Bake to Mesh", () => {
     expect(baked.geometry.boundingBox!.max.x).toBeCloseTo(20.5, 3);
   });
 
-  it("holds the same baked object across frames rather than re-baking", () => {
-    const nodeId = "bk-b";
-    const params = { ...PARTICLE_RENDER_INSTANCES_NODE.defaultParams, bake: true };
-    const first = PARTICLE_RENDER_INSTANCES_NODE.evaluate({ count: 4 }, params, CTX(nodeId)).geometry;
-    const second = PARTICLE_RENDER_INSTANCES_NODE.evaluate({ count: 4 }, params, CTX(nodeId)).geometry;
-    expect(second).toBe(first);
-  });
-
-  it("drops the snapshot when Bake is switched off, so re-enabling takes a fresh one", () => {
-    const nodeId = "bk-c";
-    const on = { ...PARTICLE_RENDER_INSTANCES_NODE.defaultParams, bake: true };
-    const off = { ...PARTICLE_RENDER_INSTANCES_NODE.defaultParams, bake: false };
-    const first = PARTICLE_RENDER_INSTANCES_NODE.evaluate({ count: 4 }, on, CTX(nodeId)).geometry;
-    PARTICLE_RENDER_INSTANCES_NODE.evaluate({ count: 4 }, off, CTX(nodeId));
-    const second = PARTICLE_RENDER_INSTANCES_NODE.evaluate({ count: 4 }, on, CTX(nodeId)).geometry;
-    expect(second).not.toBe(first);
-  });
 });
 
 describe("Particle Render (Instances) Freeze", () => {

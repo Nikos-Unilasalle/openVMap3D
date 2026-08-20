@@ -30,6 +30,7 @@ import { GEOMETRY_TRANSFORM_NODE, GET_INSTANCE_NODE, INSTANCES_TO_LIST_NODE, SET
 import { LIGHT_AMBIENT_NODE, LIGHT_DIRECTIONAL_NODE, LIGHT_POINT_NODE, LIGHT_SPOT_NODE } from "./light";
 import { ENVIRONMENT_NODE } from "./environment";
 import { OBJECT_OBJ_NODE } from "./objLoader";
+import { OBJECT_FROZEN_NODE } from "./frozenGeometry";
 import { TEXTURE_IMAGE_NODE, TEXTURE_PLANE_NODE, TEXTURE_PROCEDURAL_NODE, TEXTURE_TO_NORMAL_NODE, TEXTURE_TRANSFORM_NODE } from "./texture";
 import { PARTICLE_EMITTER_FROM_POINTS_NODE, PARTICLE_EMITTER_FROM_SURFACE_NODE, PARTICLE_EMITTER_NODE, PARTICLE_RENDER_NODE, PARTICLE_SIMULATE_NODE } from "./particles";
 import { GEOMETRY_TO_POINTS_NODE } from "./geometryToPoints";
@@ -140,6 +141,7 @@ export const STARTER_NODES = [
   SCATTER_PLOT_NODE,
   POINT_CLOUD_NODE,
   OBJECT_OBJ_NODE,
+  OBJECT_FROZEN_NODE,
   TEXTURE_IMAGE_NODE,
   TEXTURE_PLANE_NODE,
   TEXTURE_PROCEDURAL_NODE,
@@ -272,6 +274,7 @@ export * from "./grid";
 export * from "./roomCorner";
 export * from "./light";
 export * from "./objLoader";
+export * from "./frozenGeometry";
 export * from "./texture";
 export * from "./particles";
 export * from "./geometryToPoints";

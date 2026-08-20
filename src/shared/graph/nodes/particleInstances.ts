@@ -37,14 +37,29 @@ interface InstanceState {
   /** The geometry the instances were built from — swapping the Shape input rebuilds. */
   sourceGeometryId?: string;
   capacity?: number;
-  /** The baked snapshot, once Bake to Mesh has been taken. Outlives the simulation deliberately. */
-  baked?: THREE.Mesh;
 }
 
 const instanceCache = createNodeCache<InstanceState>((s) => {
   if (s.mesh) disposeObject3D(s.mesh);
-  if (s.baked) disposeObject3D(s.baked);
 });
+
+/**
+ * Injects a per-instance alpha into MeshStandardMaterial/MeshBasicMaterial/
+ * MeshPhysicalMaterial — three.js instancing has no built-in per-instance
+ * opacity (only `instanceColor`, which is RGB), so the birth/death opacity
+ * fade multiplies this in via onBeforeCompile instead. Always present, not
+ * only when the fade is toggled on: keeping the shader shape constant means
+ * toggling Fade Opacity never forces a recompile, only a different value in
+ * the attribute (1.0 when the fade is off).
+ */
+function withInstanceAlpha(shader: THREE.WebGLProgramParametersWithUniforms) {
+  shader.vertexShader = shader.vertexShader
+    .replace("#include <common>", "attribute float instanceAlpha;\nvarying float vInstanceAlpha;\n#include <common>")
+    .replace("#include <begin_vertex>", "#include <begin_vertex>\nvInstanceAlpha = instanceAlpha;");
+  shader.fragmentShader = shader.fragmentShader
+    .replace("#include <common>", "varying float vInstanceAlpha;\n#include <common>")
+    .replace("#include <color_fragment>", "#include <color_fragment>\ndiffuseColor.a *= vInstanceAlpha;");
+}
 
 function getState(nodeId: string): InstanceState {
   let state = instanceCache.get(nodeId);
@@ -79,11 +94,46 @@ export function bakeInstances(source: THREE.InstancedMesh, nodeId: string): THRE
   return mesh;
 }
 
+/** Action id the Bake button sends up to App.tsx's onAction — see bakeInstancesToGeometryData. */
+export const BAKE_INSTANCES_ACTION = "particles/bake-instances-to-node";
+
 const EXTRA_FIELDS = [
   { id: "instanceScale", label: "Instance Scale", kind: "number" as const, step: 0.01, group: "Geometry" },
   { id: "freeze", label: "Freeze (keep current instances)", kind: "boolean" as const, group: "Geometry" },
-  { id: "bake", label: "Bake to Mesh (real object, detached)", kind: "boolean" as const, group: "Geometry" },
+  { id: "bakeButton", label: "Bake to Mesh (new node)", kind: "button" as const, action: BAKE_INSTANCES_ACTION, group: "Geometry" },
+  { id: "fadeSize", label: "Fade Size (birth/death)", kind: "boolean" as const, group: "Geometry" },
+  { id: "fadeOpacity", label: "Fade Opacity (birth/death)", kind: "boolean" as const, group: "Geometry" },
+  { id: "fadeFraction", label: "Fade Envelope", kind: "number" as const, step: 0.01, group: "Geometry" },
 ];
+
+/**
+ * Reads the node's own live InstancedMesh straight out of the module cache
+ * and flattens it into plain, JSON-serializable arrays — this is what the
+ * Bake button (via App.tsx's onAction) hands to a freshly created
+ * "object/frozen" node, so the result is a real graph node with no tie back
+ * to this one, the simulation, or the InstancedMesh it was read from.
+ * Returns null with nothing live to bake (no mesh yet, or zero instances).
+ */
+export function bakeInstancesToGeometryData(
+  nodeId: string,
+): { positions: number[]; normals: number[]; uvs: number[]; index: number[] | null } | null {
+  const state = instanceCache.get(nodeId);
+  if (!state?.mesh || state.mesh.count === 0) return null;
+  const baked = bakeInstances(state.mesh, nodeId);
+  const geometry = baked.geometry;
+  const position = geometry.getAttribute("position");
+  const normal = geometry.getAttribute("normal");
+  const uv = geometry.getAttribute("uv");
+  const index = geometry.getIndex();
+  const data = {
+    positions: Array.from(position.array as ArrayLike<number>),
+    normals: normal ? Array.from(normal.array as ArrayLike<number>) : [],
+    uvs: uv ? Array.from(uv.array as ArrayLike<number>) : [],
+    index: index ? Array.from(index.array as ArrayLike<number>) : null,
+  };
+  disposeObject3D(baked);
+  return data;
+}
 
 /**
  * Particle Render (Instances) Node — draws each particle as a real mesh
@@ -113,6 +163,7 @@ export const PARTICLE_RENDER_INSTANCES_NODE: NodeDefinition = {
   inputs: [
     { id: "positions", label: "Positions", type: "texture" },
     { id: "count", label: "Count", type: "value" },
+    { id: "lifetime", label: "Lifetime", type: "value" },
     { id: "shape", label: "Shape (Mesh)", type: "geometry" },
     { id: "instanceScale", label: "Instance Scale", type: "value" },
     ...COMMON_PRIMITIVE_INPUTS,
@@ -122,7 +173,9 @@ export const PARTICLE_RENDER_INSTANCES_NODE: NodeDefinition = {
     ...COMMON_DEFAULT_PARAMS,
     instanceScale: 0.1,
     freeze: false,
-    bake: false,
+    fadeSize: false,
+    fadeOpacity: false,
+    fadeFraction: 0.15,
   },
   paramFields: buildPrimitiveDynamicParamFields(EXTRA_FIELDS)(),
   dynamicParamFields: buildPrimitiveDynamicParamFields(EXTRA_FIELDS),
@@ -140,15 +193,10 @@ export const PARTICLE_RENDER_INSTANCES_NODE: NodeDefinition = {
     // downstream (Merge, Transform, Boolean, export) while the simulation
     // behind it keeps running or not, indifferently.
     const freeze = params.freeze === true;
-    // Bake goes further than Freeze: instead of holding an InstancedMesh
-    // still, it flattens the live instances into one ordinary merged mesh and
-    // keeps *that*, from then on ignoring the simulation entirely. The
-    // difference matters beyond "detached": an InstancedMesh is not
-    // vertex-addressable, so Boolean, Subdivide and Lattice Deform all refuse
-    // it (see meshRequired.ts) — a baked mesh is a real mesh those nodes act
-    // on, and it survives the particle system being retuned, gated off, or
-    // deleted. Taken once, on the first frame Bake is switched on, then held.
-    const bake = params.bake === true;
+    const lifetime = typeof inputs.lifetime === "number" ? inputs.lifetime : 0;
+    const fadeFraction = Math.min(0.5, Math.max(0.001, Number(params.fadeFraction) || 0.15));
+    const fadeSize = params.fadeSize === true;
+    const fadeOpacity = params.fadeOpacity === true;
 
     // Fall back to a small box so the node shows something the moment it is
     // added, before a Shape is wired — same "useful with nothing connected"
@@ -167,6 +215,9 @@ export const PARTICLE_RENDER_INSTANCES_NODE: NodeDefinition = {
       // Cloned, not shared: InstancedMesh takes ownership of its geometry for
       // disposal, and the Shape node still owns and draws the original.
       const geometry = sourceGeometry ? sourceGeometry.clone() : new THREE.BoxGeometry(1, 1, 1);
+      // See withInstanceAlpha — always present so toggling Fade Opacity never
+      // needs a shader recompile, just different values in this attribute.
+      geometry.setAttribute("instanceAlpha", new THREE.InstancedBufferAttribute(new Float32Array(Math.max(1, capacity)).fill(1), 1));
       const mesh = new THREE.InstancedMesh(geometry, new THREE.MeshStandardMaterial({ color: 0xffffff }), Math.max(1, capacity));
       mesh.castShadow = true;
       mesh.receiveShadow = true;
@@ -186,25 +237,42 @@ export const PARTICLE_RENDER_INSTANCES_NODE: NodeDefinition = {
       mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
     }
 
+    const alphaAttr = mesh.geometry.getAttribute("instanceAlpha") as THREE.InstancedBufferAttribute | undefined;
+
     let live = mesh.count;
     if (!freeze && texture && capacity > 0 && ctx.renderer) {
       live = 0;
       const size = textureSizeFor(capacity);
       const buffer = readPositionsSync(ctx.renderer, texture, size, ctx.nodeId);
       const matrix = new THREE.Matrix4();
-      const scale = new THREE.Vector3(instanceScale, instanceScale, instanceScale);
+      const scale = new THREE.Vector3();
       const quaternion = new THREE.Quaternion();
       const position = new THREE.Vector3();
       for (let i = 0; i < capacity; i++) {
         // Same age >= 0 aliveness test particles/render's vertex shader uses —
         // a dead or still-pre-spawn texel is parked at the world origin, and
         // instancing those would stack a pile of meshes at (0,0,0).
-        if (!isAlive(buffer[i * 4 + 3])) continue;
+        const age = buffer[i * 4 + 3];
+        if (!isAlive(age)) continue;
+        // Same 0->1->0 birth/death envelope as particles/render's vertex
+        // shader (see POINT_VERTEX_SHADER) — lifetime <= 0 (unwired) holds it
+        // at a constant 1, i.e. no fade.
+        let envelope = 1;
+        if (lifetime > 0) {
+          const lifeT = Math.min(1, Math.max(0, age / lifetime));
+          const fadeIn = Math.min(1, Math.max(0, lifeT / fadeFraction));
+          const fadeOut = Math.min(1, Math.max(0, (1 - lifeT) / fadeFraction));
+          envelope = Math.min(fadeIn, fadeOut);
+        }
+        const sizeMul = fadeSize ? envelope : 1;
         position.set(buffer[i * 4], buffer[i * 4 + 1], buffer[i * 4 + 2]);
+        scale.set(instanceScale * sizeMul, instanceScale * sizeMul, instanceScale * sizeMul);
         mesh.setMatrixAt(live, matrix.compose(position, quaternion, scale));
+        if (alphaAttr) alphaAttr.setX(live, fadeOpacity ? envelope : 1);
         live++;
       }
       mesh.instanceMatrix.needsUpdate = true;
+      if (alphaAttr) alphaAttr.needsUpdate = true;
     } else if (!freeze) {
       // Live, but nothing to read (no texture / no renderer) — draw nothing
       // rather than leaving the previous frame's instances on screen.
@@ -218,22 +286,18 @@ export const PARTICLE_RENDER_INSTANCES_NODE: NodeDefinition = {
     const matParams = extractMaterialParams(inputs, params);
     const texParams = extractTextureParams(inputs, params, ctx.nodeId);
 
-    if (bake) {
-      if (!state.baked) state.baked = bakeInstances(mesh, ctx.nodeId);
-      const baked = state.baked;
-      baked.matrixAutoUpdate = false;
-      baked.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
-      applyMaterialParams(baked, matParams, THREE.FrontSide, texParams);
-      return primitiveOutputs(baked);
-    }
-    // Switching Bake back off drops the snapshot, so re-enabling it takes a
-    // fresh one rather than resurrecting a stale pose.
-    if (state.baked) {
-      disposeObject3D(state.baked);
-      state.baked = undefined;
-    }
-
     applyMaterialParams(mesh as unknown as THREE.Mesh, matParams, THREE.FrontSide, texParams);
+    // applyMaterialParams swaps in a brand-new material when Shadeless or
+    // Transmission changes class (MeshBasicMaterial / MeshPhysicalMaterial),
+    // which would silently drop the per-instance alpha chunk — reattach
+    // whenever the material isn't already ours. Comparing the function
+    // reference (not just truthiness) keeps this from forcing a recompile
+    // every frame in the steady state.
+    const mat = mesh.material as THREE.Material & { onBeforeCompile?: unknown };
+    if (mat.onBeforeCompile !== withInstanceAlpha) {
+      mat.onBeforeCompile = withInstanceAlpha;
+      mat.needsUpdate = true;
+    }
 
     return primitiveOutputs(mesh);
   },

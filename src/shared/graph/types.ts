@@ -154,6 +154,14 @@ export type ParamFieldDef =
        * param panel needing to know anything CSV-specific.
        */
       onLoaded?: (nodeId: string, path: string, content: any) => void;
+    }
+  | {
+      id: string;
+      label: string;
+      kind: "button";
+      group?: string;
+      /** Identifies the effect to the app shell (App.tsx's onAction) — the field itself carries no side effect. */
+      action: string;
     };
 
 /**

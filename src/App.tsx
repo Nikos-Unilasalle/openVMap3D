@@ -2,9 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { CAMERA_FLY_TO_NODE, CAMERA_NODE } from "./shared/graph/nodes/camera";
 import { DEFAULT_REGISTRY } from "./shared/graph/nodes";
+import { BAKE_INSTANCES_ACTION, bakeInstancesToGeometryData } from "./shared/graph/nodes/particleInstances";
+import { OBJECT_FROZEN_NODE } from "./shared/graph/nodes/frozenGeometry";
+import { randomId } from "./shared/randomId";
 import { findRenderNodeId } from "./shared/graph/nodes/render";
 import { rehydrateFileNodesFromDisk } from "./shared/graph/rehydrateFiles";
-import { cloneGraph, cloneParamValue } from "./shared/graph/cloneGraph";
+import { cloneGraph, cloneParams, cloneParamValue } from "./shared/graph/cloneGraph";
 import { consumeCameraHandoffRequest } from "./shared/graph/cameraHandoffStore";
 import { consumeCanvasSwitchRequest } from "./shared/graph/canvasSwitchStore";
 import { isGraphZone } from "./shared/graph/inputZoneStore";
@@ -823,6 +826,36 @@ function MainEditor() {
     }, `${nodeIdToUpdate}:${paramId}`);
   };
 
+  /**
+   * Handles a "button" ParamFieldDef click (see ParamPanel's onAction). Only
+   * one action exists today: baking Particle Render (Instances)' live
+   * instances into a brand-new, detached "object/frozen" node — see
+   * bakeInstancesToGeometryData for why this needs a real node rather than
+   * changing the source node's own output.
+   */
+  const onParamAction = useCallback(
+    (nodeId: string, action: string) => {
+      if (action !== BAKE_INSTANCES_ACTION) return;
+      const data = bakeInstancesToGeometryData(nodeId);
+      if (!data) {
+        console.warn("Bake to Mesh: no live instances to bake yet.");
+        return;
+      }
+      setGraphWithHistory((prevGraph) => {
+        const source = prevGraph.nodes.find((n) => n.id === nodeId);
+        const position = source ? { x: source.position.x + 260, y: source.position.y + 40 } : { x: 300, y: 180 };
+        const newNode = {
+          id: randomId(),
+          type: OBJECT_FROZEN_NODE.type,
+          params: { ...cloneParams(OBJECT_FROZEN_NODE.defaultParams), ...data },
+          position,
+        };
+        return { ...prevGraph, nodes: [...prevGraph.nodes, newNode] };
+      }, `bake:${nodeId}`);
+    },
+    [setGraphWithHistory],
+  );
+
   // Same functional-updater reasoning as onParamChange, but writing all
   // three fields in one setGraph call rather than three separate
   // onParamChange calls — the gizmo fires this every frame of a drag, and
@@ -1503,6 +1536,7 @@ function MainEditor() {
             keyframesEnabled={keyframesEnabled}
             onChange={onParamChange}
             onToggleKeyframe={onToggleKeyframe}
+            onAction={onParamAction}
             connectedSockets={connectedSocketIds(graph, selectedInstance.id)}
           />
         )}
