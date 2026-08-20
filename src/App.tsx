@@ -198,6 +198,9 @@ function MainEditor() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [isTimelineDrawerOpen, setIsTimelineDrawerOpen] = useState(false);
+  // The node graph is hidden by default while the full timeline is open —
+  // the drawer fills the space unless this is flipped back on.
+  const [showGraphWithTimeline, setShowGraphWithTimeline] = useState(false);
   const [timelineDrawerHeight, setTimelineDrawerHeight] = useState(280);
   const [splitPercent, setSplitPercent] = useState(50);
   const [currentFilename, setCurrentFilename] = useState(recovered?.filename ?? "project_v1.tsuji");
@@ -431,6 +434,11 @@ function MainEditor() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [keyframesEnabled]);
+
+  // Opening the full timeline hides the node graph by default every time.
+  useEffect(() => {
+    if (isTimelineDrawerOpen) setShowGraphWithTimeline(false);
+  }, [isTimelineDrawerOpen]);
 
   const onToggleKeyframe = useCallback(
     (nodeId: string, paramKey: string, frame: number, currentValue: any) => {
@@ -1473,6 +1481,8 @@ function MainEditor() {
         exportProgress={exportProgress}
         isTimelineOpen={isTimelineDrawerOpen}
         onToggleTimeline={() => setIsTimelineDrawerOpen((prev) => !prev)}
+        isGraphShown={showGraphWithTimeline}
+        onToggleGraph={() => setShowGraphWithTimeline((prev) => !prev)}
       />
       {isExporting && (
         // Off-screen (not display:none, which some webviews suspend rAF
@@ -1541,74 +1551,81 @@ function MainEditor() {
           />
         )}
       </div>
-      {!isTimelineDrawerOpen && (
-        <TimelineBar
-          currentFrame={currentFrame}
-          totalFrames={totalFrames}
-          isPlaying={isPlaying}
-          keyframesEnabled={keyframesEnabled}
-          selectedKeyframes={selectedKeyframesRecord}
-          markers={graph.markers ?? []}
-          waveformUrl={waveformClip?.url}
-          waveformStartFrame={waveformClip?.startFrame}
-          waveformDuration={waveformClip?.duration}
-          fps={exportFps}
-          onToggleMarker={onToggleMarker}
-          onMoveMarker={onMoveMarker}
-          onMoveKeyframe={onMoveKeyframe}
-          onUpdateKeyframeEasing={onUpdateKeyframeEasing}
-          onDeleteKeyframe={onDeleteKeyframe}
-          onFrameChange={setCurrentFrame}
-          onTogglePlay={() => setIsPlaying((p) => !p)}
-          onSplitHandleMouseDown={onSplitHandleMouseDown}
-          isDrawerOpen={isTimelineDrawerOpen}
-          onToggleDrawer={() => setIsTimelineDrawerOpen((prev) => !prev)}
-        />
-      )}
-      <TimelineDrawer
-        isOpen={isTimelineDrawerOpen}
-        onClose={() => setIsTimelineDrawerOpen(false)}
-        currentFrame={currentFrame}
-        totalFrames={totalFrames}
-        isPlaying={isPlaying}
-        keyframesEnabled={keyframesEnabled}
-        graph={graph}
-        registry={DEFAULT_REGISTRY}
-        selectedNodeIds={selectedNodeIds}
-        onSelectNode={handleSelectNode}
-        onFrameChange={setCurrentFrame}
-        onTogglePlay={() => setIsPlaying((p) => !p)}
-        onToggleKeyframe={onToggleKeyframe}
-        onBatchMoveKeyframes={onBatchMoveKeyframes}
-        onBatchDeleteKeyframes={onBatchDeleteKeyframes}
-        onBatchDuplicateKeyframes={onBatchDuplicateKeyframes}
-        onBatchUpdateEasing={onBatchUpdateEasing}
-        onChangeKeyframeValue={onChangeKeyframeValue}
-        onEditKeyframes={onEditKeyframes}
-        fps={exportFps}
-        onPasteKeyframes={onPasteKeyframes}
-        markers={graph.markers ?? []}
-        onToggleMarker={onToggleMarker}
-        onMoveMarker={onMoveMarker}
-        drawerHeight={timelineDrawerHeight}
-        onDrawerHeightChange={setTimelineDrawerHeight}
-        onSplitHandleMouseDown={onSplitHandleMouseDown}
-      />
-      <div style={{ flex: 1, minHeight: 0 }}>
-        <GraphEditor
-          key={`${activeCanvas}:${editorKey}`}
-          graph={graph}
-          registry={DEFAULT_REGISTRY}
-          onGraphChange={onGraphChange}
-          onSelectNode={handleSelectNode}
-          selectedNodeId={selectedNodeId}
-          onSelectNodes={handleSelectNodes}
-          selectedNodeIds={selectedNodeIds}
-          canvasCount={CANVAS_COUNT}
-          activeCanvas={activeCanvas}
-          emptyCanvases={canvases.map(isCanvasEmpty)}
-          onSelectCanvas={switchCanvas}
-        />
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+        {!isTimelineDrawerOpen && (
+          <TimelineBar
+            currentFrame={currentFrame}
+            totalFrames={totalFrames}
+            isPlaying={isPlaying}
+            keyframesEnabled={keyframesEnabled}
+            selectedKeyframes={selectedKeyframesRecord}
+            markers={graph.markers ?? []}
+            waveformUrl={waveformClip?.url}
+            waveformStartFrame={waveformClip?.startFrame}
+            waveformDuration={waveformClip?.duration}
+            fps={exportFps}
+            onToggleMarker={onToggleMarker}
+            onMoveMarker={onMoveMarker}
+            onMoveKeyframe={onMoveKeyframe}
+            onUpdateKeyframeEasing={onUpdateKeyframeEasing}
+            onDeleteKeyframe={onDeleteKeyframe}
+            onFrameChange={setCurrentFrame}
+            onTogglePlay={() => setIsPlaying((p) => !p)}
+            onSplitHandleMouseDown={onSplitHandleMouseDown}
+            isDrawerOpen={isTimelineDrawerOpen}
+            onToggleDrawer={() => setIsTimelineDrawerOpen((prev) => !prev)}
+          />
+        )}
+        {isTimelineDrawerOpen && !showGraphWithTimeline && (
+          <TimelineDrawer
+            isOpen={isTimelineDrawerOpen}
+            onClose={() => setIsTimelineDrawerOpen(false)}
+            currentFrame={currentFrame}
+            totalFrames={totalFrames}
+            isPlaying={isPlaying}
+            keyframesEnabled={keyframesEnabled}
+            graph={graph}
+            registry={DEFAULT_REGISTRY}
+            selectedNodeIds={selectedNodeIds}
+            onSelectNode={handleSelectNode}
+            onFrameChange={setCurrentFrame}
+            onTogglePlay={() => setIsPlaying((p) => !p)}
+            onToggleKeyframe={onToggleKeyframe}
+            onBatchMoveKeyframes={onBatchMoveKeyframes}
+            onBatchDeleteKeyframes={onBatchDeleteKeyframes}
+            onBatchDuplicateKeyframes={onBatchDuplicateKeyframes}
+            onBatchUpdateEasing={onBatchUpdateEasing}
+            onChangeKeyframeValue={onChangeKeyframeValue}
+            onEditKeyframes={onEditKeyframes}
+            fps={exportFps}
+            onPasteKeyframes={onPasteKeyframes}
+            markers={graph.markers ?? []}
+            onToggleMarker={onToggleMarker}
+            onMoveMarker={onMoveMarker}
+            drawerHeight={timelineDrawerHeight}
+            onDrawerHeightChange={setTimelineDrawerHeight}
+            onSplitHandleMouseDown={onSplitHandleMouseDown}
+            expandToFill
+          />
+        )}
+        {(!isTimelineDrawerOpen || showGraphWithTimeline) && (
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <GraphEditor
+              key={`${activeCanvas}:${editorKey}`}
+              graph={graph}
+              registry={DEFAULT_REGISTRY}
+              onGraphChange={onGraphChange}
+              onSelectNode={handleSelectNode}
+              selectedNodeId={selectedNodeId}
+              onSelectNodes={handleSelectNodes}
+              selectedNodeIds={selectedNodeIds}
+              canvasCount={CANVAS_COUNT}
+              activeCanvas={activeCanvas}
+              emptyCanvases={canvases.map(isCanvasEmpty)}
+              onSelectCanvas={switchCanvas}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
