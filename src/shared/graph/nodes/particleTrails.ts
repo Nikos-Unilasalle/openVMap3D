@@ -70,10 +70,29 @@ export function effectiveHistoryLength(requestedHistory: number, liveCount: numb
   return Math.max(2, Math.min(requestedHistory, Math.floor(MAX_TRAIL_SEGMENTS / Math.max(1, liveCount))));
 }
 
-interface TrailState {
-  /** One growing position list per live particle index — oldest first. */
-  histories: Map<number, number[]>;
-  lastAge: Map<number, number>;
+/**
+ * How many discrete opacity steps the tail fade is built from. LineMaterial
+ * has no per-vertex alpha — vertexColors only ever feeds RGB, and its
+ * fragment shader writes `gl_FragColor.a` from the single material-level
+ * `opacity` uniform, never from vertex color (see the fuller writeup where
+ * these buckets are used below) — so a smooth *transparency* fade needs
+ * several materials at different opacities rather than one. 6 steps reads
+ * as a smooth gradient at this node's line widths without paying for a
+ * draw call per segment.
+ */
+const FADE_BUCKETS = 6;
+
+/** Which fade bucket a segment at fade-position `t` (0 = tail, 1 = head) falls into. Exported for its own test. */
+export function bucketFor(t: number, buckets = FADE_BUCKETS): number {
+  return Math.max(0, Math.min(buckets - 1, Math.floor(t * buckets)));
+}
+
+/** The material opacity for bucket `index` — 0 is the most transparent (tail), `buckets - 1` is full `baseOpacity` (head). Exported for its own test. */
+export function bucketOpacity(baseOpacity: number, index: number, buckets = FADE_BUCKETS): number {
+  return (baseOpacity * (index + 1)) / buckets;
+}
+
+interface Bucket {
   line?: LineSegments2;
   lineGeometry?: LineSegmentsGeometry;
   material?: LineMaterial;
@@ -82,47 +101,75 @@ interface TrailState {
   colors?: Float32Array;
 }
 
+interface TrailState {
+  /** One growing position list per live particle index — oldest first. */
+  histories: Map<number, number[]>;
+  lastAge: Map<number, number>;
+  group?: THREE.Group;
+  buckets: Bucket[];
+}
+
 const trailCache = createNodeCache<TrailState>((s) => {
-  if (s.lineGeometry) s.lineGeometry.dispose();
-  if (s.material) s.material.dispose();
-  if (s.line) s.line.removeFromParent();
+  for (const b of s.buckets) {
+    if (b.lineGeometry) b.lineGeometry.dispose();
+    if (b.material) b.material.dispose();
+    if (b.line) b.line.removeFromParent();
+  }
+  if (s.group) s.group.removeFromParent();
 });
 
 function getState(nodeId: string): TrailState {
   let state = trailCache.get(nodeId);
   if (!state) {
-    state = { histories: new Map(), lastAge: new Map(), bufferCapacity: 0 };
+    state = { histories: new Map(), lastAge: new Map(), buckets: [] };
     trailCache.set(nodeId, state);
   }
   return state;
 }
 
-function ensureCapacity(state: TrailState, segments: number): void {
+function ensureBucketCapacity(bucket: Bucket, segments: number): void {
   // The lineGeometry truthy check matters on the very first real frame:
-  // bufferCapacity starts at 0, and a legitimate `segments` of 0 (every
-  // particle has only one sample so far, no segment to draw yet) would
+  // bufferCapacity starts at 0, and a legitimate `segments` of 0 would
   // otherwise short-circuit before the geometry is ever built at all.
-  if (state.bufferCapacity >= segments && state.lineGeometry) return;
-  const capacity = Math.max(segments, Math.ceil(state.bufferCapacity * 1.5) + 64);
-  state.bufferCapacity = capacity;
-  state.positions = new Float32Array(capacity * 6);
-  state.colors = new Float32Array(capacity * 6);
+  if (bucket.bufferCapacity >= segments && bucket.lineGeometry) return;
+  const capacity = Math.max(segments, Math.ceil(bucket.bufferCapacity * 1.5) + 64);
+  bucket.bufferCapacity = capacity;
+  bucket.positions = new Float32Array(capacity * 6);
+  bucket.colors = new Float32Array(capacity * 6);
 
-  if (state.lineGeometry) state.lineGeometry.dispose();
+  if (bucket.lineGeometry) bucket.lineGeometry.dispose();
   const lineGeometry = new LineSegmentsGeometry();
-  lineGeometry.setPositions(state.positions);
-  lineGeometry.setColors(state.colors);
-  state.lineGeometry = lineGeometry;
+  lineGeometry.setPositions(bucket.positions);
+  lineGeometry.setColors(bucket.colors);
+  bucket.lineGeometry = lineGeometry;
 
-  if (!state.material) {
-    state.material = new LineMaterial({ vertexColors: true, transparent: true, depthWrite: false });
+  if (!bucket.material) {
+    bucket.material = new LineMaterial({ vertexColors: true, transparent: true, depthWrite: false });
   }
-  if (!state.line) {
-    state.line = new LineSegments2(lineGeometry, state.material);
-    state.line.frustumCulled = false;
+  if (!bucket.line) {
+    bucket.line = new LineSegments2(lineGeometry, bucket.material);
+    bucket.line.frustumCulled = false;
   } else {
-    state.line.geometry = lineGeometry;
+    bucket.line.geometry = lineGeometry;
   }
+}
+
+/**
+ * Every bucket's Line2, parented under one Group — creating/reusing the
+ * buckets and the group itself only once per node, not once per frame.
+ */
+function getGroup(state: TrailState, nodeId: string): THREE.Group {
+  if (!state.group) {
+    state.group = new THREE.Group();
+    state.group.userData.nodeId = nodeId;
+  }
+  while (state.buckets.length < FADE_BUCKETS) {
+    const bucket: Bucket = { bufferCapacity: 0 };
+    ensureBucketCapacity(bucket, 0);
+    state.group.add(bucket.line!);
+    state.buckets.push(bucket);
+  }
+  return state.group;
 }
 
 /**
@@ -192,10 +239,11 @@ export const CAPTURE_TRAILS_NODE: NodeDefinition = {
     const opacity = numberInput(inputs.opacity, params.opacity, 0.85);
     const fadeAlongTrail = params.fadeAlongTrail !== false;
 
+    const group = getGroup(state, ctx.nodeId);
+
     if (!texture || capacity === 0 || !ctx.renderer) {
-      ensureCapacity(state, 0);
-      if (state.lineGeometry) state.lineGeometry.instanceCount = 0;
-      return { geometry: state.line ?? new THREE.Group(), segmentCount: 0, trails: [] as THREE.Vector3[][] };
+      for (const b of state.buckets) if (b.lineGeometry) b.lineGeometry.instanceCount = 0;
+      return { geometry: group, segmentCount: 0, trails: [] as THREE.Vector3[][] };
     }
 
     const size = textureSizeFor(capacity);
@@ -251,48 +299,63 @@ export const CAPTURE_TRAILS_NODE: NodeDefinition = {
       }
     }
 
-    ensureCapacity(state, segmentTotal);
-    const positions = state.positions!;
-    const colors = state.colors!;
-    let cursor = 0;
+    // s=0 is the oldest segment per particle (the tail), fading toward
+    // fully transparent; the newest segment (closest to the particle's
+    // current position) stays at full Opacity. LineMaterial has no
+    // per-vertex alpha — vertexColors only ever feeds RGB (three's own
+    // shader writes `gl_FragColor.a` from the single `opacity` uniform,
+    // never from vertex color) — so fading *color* toward black used to
+    // look like the tail turning solid black, not fading away. Real
+    // transparency needs a real opacity value, which only exists per
+    // *material* here, so the trail is split across FADE_BUCKETS separate
+    // LineSegments2 draws, each its own LineMaterial at a different opacity
+    // step; vertex color inside a bucket stays the plain user Color.
+    const linewidth = Math.max(0.01, numberInput(inputs.linewidth, params.linewidth, 1.5));
+    const worldUnits = Boolean(params.worldUnits);
+    const resWidth = ctx.renderSize?.width ?? 1920;
+    const resHeight = ctx.renderSize?.height ?? 1080;
+
+    const bucketPositions: number[][] = Array.from({ length: FADE_BUCKETS }, () => []);
+    const bucketColors: number[][] = Array.from({ length: FADE_BUCKETS }, () => []);
     for (const history of state.histories.values()) {
       const samples = history.length / 3;
       for (let s = 0; s < samples - 1; s++) {
-        const o = cursor * 6;
-        positions[o] = history[s * 3];
-        positions[o + 1] = history[s * 3 + 1];
-        positions[o + 2] = history[s * 3 + 2];
-        positions[o + 3] = history[(s + 1) * 3];
-        positions[o + 4] = history[(s + 1) * 3 + 1];
-        positions[o + 5] = history[(s + 1) * 3 + 2];
-
-        // s=0 is the oldest segment (the tail) — fades toward black; the
-        // newest segment (closest to the particle's current position) stays
-        // full brightness.
         const t = fadeAlongTrail ? (samples <= 2 ? 1 : s / (samples - 2)) : 1;
-        colors[o] = color.r * t;
-        colors[o + 1] = color.g * t;
-        colors[o + 2] = color.b * t;
-        colors[o + 3] = color.r * t;
-        colors[o + 4] = color.g * t;
-        colors[o + 5] = color.b * t;
-        cursor++;
+        const bucketIndex = bucketFor(t);
+        bucketPositions[bucketIndex].push(
+          history[s * 3], history[s * 3 + 1], history[s * 3 + 2],
+          history[(s + 1) * 3], history[(s + 1) * 3 + 1], history[(s + 1) * 3 + 2],
+        );
+        bucketColors[bucketIndex].push(color.r, color.g, color.b, color.r, color.g, color.b);
       }
     }
 
-    const lineGeometry = state.lineGeometry!;
-    (lineGeometry.attributes.instanceStart as THREE.InterleavedBufferAttribute).needsUpdate = true;
-    (lineGeometry.attributes.instanceColorStart as THREE.InterleavedBufferAttribute).needsUpdate = true;
-    lineGeometry.instanceCount = cursor;
+    let cursor = 0;
+    for (let i = 0; i < FADE_BUCKETS; i++) {
+      const bucket = state.buckets[i];
+      const segCount = bucketPositions[i].length / 6;
+      cursor += segCount;
+      ensureBucketCapacity(bucket, segCount);
+      bucket.positions!.set(bucketPositions[i]);
+      bucket.colors!.set(bucketColors[i]);
 
-    const material = state.material!;
-    material.color.set(color);
-    material.opacity = opacity;
-    material.linewidth = Math.max(0.01, numberInput(inputs.linewidth, params.linewidth, 1.5));
-    material.worldUnits = Boolean(params.worldUnits);
-    material.resolution.set(ctx.renderSize?.width ?? 1920, ctx.renderSize?.height ?? 1080);
+      const lineGeometry = bucket.lineGeometry!;
+      (lineGeometry.attributes.instanceStart as THREE.InterleavedBufferAttribute).needsUpdate = true;
+      (lineGeometry.attributes.instanceColorStart as THREE.InterleavedBufferAttribute).needsUpdate = true;
+      lineGeometry.instanceCount = segCount;
 
-    state.line!.userData.nodeId = ctx.nodeId;
+      const material = bucket.material!;
+      material.color.set(color);
+      // Bucket 0 is the tail (most transparent), the last bucket is the
+      // head (full Opacity) — fadeAlongTrail off puts everything in the
+      // last bucket already (see the `t` calc above), so this still lands
+      // on `opacity` exactly in that case.
+      material.opacity = bucketOpacity(opacity, i);
+      material.linewidth = linewidth;
+      material.worldUnits = worldUnits;
+      material.resolution.set(resWidth, resHeight);
+      bucket.line!.userData.nodeId = ctx.nodeId;
+    }
 
     // Sorted by particle index (stable identity — see the doc comment above)
     // rather than Map iteration order, so a respawn that re-inserts a key
@@ -307,6 +370,6 @@ export const CAPTURE_TRAILS_NODE: NodeDefinition = {
       return points;
     });
 
-    return { geometry: state.line!, segmentCount: cursor, trails };
+    return { geometry: group, segmentCount: cursor, trails };
   },
 };

@@ -1,8 +1,36 @@
 import { describe, expect, it } from "vitest";
-import { CAPTURE_TRAILS_NODE, effectiveHistoryLength, isAlive } from "./particleTrails";
+import { CAPTURE_TRAILS_NODE, bucketFor, bucketOpacity, effectiveHistoryLength, isAlive } from "./particleTrails";
 import { EvalContext } from "../types";
 
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "trails-test" };
+
+describe("bucketFor / bucketOpacity — tail fades to transparent, not black", () => {
+  it("puts the tail (t=0) in the most transparent bucket", () => {
+    const index = bucketFor(0, 6);
+    expect(index).toBe(0);
+    expect(bucketOpacity(0.8, index, 6)).toBeCloseTo(0.8 / 6);
+  });
+
+  it("puts the head (t=1) in the last, full-opacity bucket", () => {
+    const index = bucketFor(1, 6);
+    expect(index).toBe(5);
+    expect(bucketOpacity(0.8, index, 6)).toBeCloseTo(0.8);
+  });
+
+  it("never returns an out-of-range bucket for any t in [0, 1]", () => {
+    for (let i = 0; i <= 10; i++) {
+      const index = bucketFor(i / 10, 6);
+      expect(index).toBeGreaterThanOrEqual(0);
+      expect(index).toBeLessThan(6);
+    }
+  });
+
+  it("opacity strictly increases from tail to head — no bucket is ever fully opaque except the last", () => {
+    const opacities = Array.from({ length: 6 }, (_, i) => bucketOpacity(1, i, 6));
+    for (let i = 1; i < opacities.length; i++) expect(opacities[i]).toBeGreaterThan(opacities[i - 1]);
+    expect(opacities[opacities.length - 1]).toBeCloseTo(1);
+  });
+});
 
 describe("isAlive", () => {
   it("excludes a texel still in its staggered pre-spawn delay", () => {
