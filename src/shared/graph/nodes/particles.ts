@@ -354,6 +354,7 @@ export const PARTICLE_SIMULATE_NODE: NodeDefinition = {
   outputs: [
     { id: "positions", label: "Positions", type: "texture" },
     { id: "count", label: "Count", type: "value" },
+    { id: "lifetime", label: "Lifetime", type: "value" },
   ],
   defaultParams: {
     gravity: 5,
@@ -420,22 +421,39 @@ export const PARTICLE_SIMULATE_NODE: NodeDefinition = {
       maxSpeed,
       forces,
     );
-    if (!result) return { positions: null, count: 0 };
-    return { positions: result.positionsTexture, count: result.capacity };
+    if (!result) return { positions: null, count: 0, lifetime };
+    return { positions: result.positionsTexture, count: result.capacity, lifetime };
   },
 };
 
 const POINT_VERTEX_SHADER = /* glsl */ `
   uniform sampler2D positions;
   uniform float pointSize;
+  uniform float lifetime;
+  uniform float fadeFraction;
+  uniform float fadeSize;
   attribute vec2 reference;
   varying float vAlive;
+  varying float vEnvelope;
 
   void main() {
     vec4 data = texture2D(positions, reference);
     vAlive = data.a >= 0.0 ? 1.0 : 0.0;
+
+    // 0 at birth, 1 through the middle of the particle's life, 0 again at
+    // death — fadeFraction is how much of the lifetime each ramp takes (0.15
+    // = size/opacity reach full over the first 15% of life, and fade back out
+    // over the last 15%). lifetime <= 0 (no Lifetime wired) is the exact
+    // "no fade" case: age/lifetime is then always >= 1, so the fade-out ramp
+    // alone already sits at its max, and min() with fade-in leaves 1.0.
+    float lifeT = lifetime > 0.0 ? clamp(data.a / lifetime, 0.0, 1.0) : 1.0;
+    float fadeIn = smoothstep(0.0, max(fadeFraction, 0.0001), lifeT);
+    float fadeOut = 1.0 - smoothstep(1.0 - max(fadeFraction, 0.0001), 1.0, lifeT);
+    vEnvelope = min(fadeIn, fadeOut);
+
     vec4 mvPosition = modelViewMatrix * vec4(data.xyz, 1.0);
-    gl_PointSize = vAlive * pointSize * (300.0 / -mvPosition.z);
+    float sizeMul = mix(1.0, vEnvelope, fadeSize);
+    gl_PointSize = vAlive * pointSize * sizeMul * (300.0 / -mvPosition.z);
     gl_Position = projectionMatrix * mvPosition;
   }
 `;
@@ -444,7 +462,9 @@ const POINT_FRAGMENT_SHADER = /* glsl */ `
   uniform vec3 color;
   uniform sampler2D sprite;
   uniform float useSprite;
+  uniform float fadeOpacity;
   varying float vAlive;
+  varying float vEnvelope;
 
   void main() {
     if (vAlive < 0.5) discard;
@@ -452,6 +472,7 @@ const POINT_FRAGMENT_SHADER = /* glsl */ `
     // unbound uniform when useSprite is 0 is harmless, its result is thrown away.
     vec4 texel = useSprite > 0.5 ? texture2D(sprite, gl_PointCoord) : vec4(1.0);
     float alpha = useSprite > 0.5 ? texel.a : smoothstep(0.5, 0.3, distance(gl_PointCoord, vec2(0.5)));
+    alpha *= mix(1.0, vEnvelope, fadeOpacity);
     if (alpha < 0.02) discard;
     gl_FragColor = vec4(color * texel.rgb, alpha);
   }
@@ -507,6 +528,10 @@ function buildPoints(count: number): PointsEntry {
       color: { value: new THREE.Color(0xffffff) },
       sprite: { value: null },
       useSprite: { value: 0 },
+      lifetime: { value: 0 },
+      fadeFraction: { value: 0.15 },
+      fadeSize: { value: 0 },
+      fadeOpacity: { value: 0 },
     },
     transparent: true,
     depthWrite: false,
@@ -525,13 +550,24 @@ export const PARTICLE_RENDER_NODE: NodeDefinition = {
   inputs: [
     { id: "positions", label: "Positions", type: "texture" },
     { id: "count", label: "Count", type: "value" },
+    { id: "lifetime", label: "Lifetime", type: "value" },
   ],
   outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
-  defaultParams: { size: 4, color: new THREE.Color(0xffffff), sprite: "circle" },
+  defaultParams: {
+    size: 4,
+    color: new THREE.Color(0xffffff),
+    sprite: "circle",
+    fadeSize: false,
+    fadeOpacity: false,
+    fadeFraction: 0.15,
+  },
   paramFields: [
     { id: "size", label: "Point Size", kind: "number", step: 0.5 },
     { id: "color", label: "Color", kind: "color" },
     { id: "sprite", label: "Sprite", kind: "select", options: ["none", "circle", "fire", "smoke", "rad-grad"] },
+    { id: "fadeSize", label: "Fade Size (birth/death)", kind: "boolean" },
+    { id: "fadeOpacity", label: "Fade Opacity (birth/death)", kind: "boolean" },
+    { id: "fadeFraction", label: "Fade Envelope", kind: "number", step: 0.01 },
   ],
   evaluate: (inputs, params, ctx) => {
     const count = typeof inputs.count === "number" && inputs.count > 0 ? inputs.count : 0;
@@ -549,6 +585,13 @@ export const PARTICLE_RENDER_NODE: NodeDefinition = {
     entry.material.uniforms.color.value = asColor(params.color, new THREE.Color(0xffffff));
     entry.material.uniforms.sprite.value = spriteTexture;
     entry.material.uniforms.useSprite.value = spriteTexture ? 1 : 0;
+    // Lifetime <= 0 (nothing wired) collapses the envelope to "always 1" in
+    // the shader itself — see POINT_VERTEX_SHADER — so leaving this at 0 when
+    // unwired is the correct "no fade" default, not a guess that needs a param.
+    entry.material.uniforms.lifetime.value = typeof inputs.lifetime === "number" ? inputs.lifetime : 0;
+    entry.material.uniforms.fadeFraction.value = Math.min(0.5, Math.max(0.001, Number(params.fadeFraction) || 0.15));
+    entry.material.uniforms.fadeSize.value = params.fadeSize === true ? 1 : 0;
+    entry.material.uniforms.fadeOpacity.value = params.fadeOpacity === true ? 1 : 0;
 
     return { geometry: entry.points };
   },
