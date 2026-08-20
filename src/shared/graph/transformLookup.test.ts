@@ -170,6 +170,7 @@ describe("GIZMO_SELECTABLE_TYPES", () => {
       "curve/svg_solid",
       "curve/svg_mesh",
       "curve/to_line",
+      "curve/to_line_list",
       "curve/deform",
       "structure/merge",
       "object/empty",
