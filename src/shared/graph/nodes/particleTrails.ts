@@ -15,9 +15,22 @@ const DEAD_AGE_THRESHOLD = -1000;
  * one frame. The point of the node is a *few* particles with long, smooth
  * trails — not a particle-count node — so this caps the product rather than
  * either factor alone: a request for more particles than that leaves room
- * for quietly shortens every trail instead of refusing to render.
+ * quietly shortens every trail instead of refusing to render.
+ *
+ * Generous on purpose: Particle Simulate's active-particle count is
+ * spawnRate × lifetime (see activeParticleCount in particleRuntime.ts), not
+ * something this node controls — raising Lifetime to keep a particle (and
+ * its trail) around longer *also* raises the population, and a low cap here
+ * silently ate that population growth by shrinking History Length instead,
+ * which looked exactly like "the sliders don't work". A previous value of
+ * 20000 meant the default emitter's spawnRate (200) with a 10s lifetime
+ * (2000 active particles, not an unusual ask) floored History Length to 10
+ * regardless of what the param said. This cap still exists purely so an
+ * accidental few-thousand-particle graph can't hang the tab rebuilding a
+ * multi-million-segment buffer every frame — it should never bind for the
+ * "handful of particles, long trails" case the node is actually for.
  */
-const MAX_TRAIL_SEGMENTS = 20000;
+const MAX_TRAIL_SEGMENTS = 300000;
 
 /**
  * Safety cap on how many per-particle point lists "Point Lists" ever hands
@@ -29,6 +42,11 @@ const MAX_TRAIL_SEGMENTS = 20000;
  * scale (a handful of particles, per MAX_TRAIL_SEGMENTS).
  */
 const MAX_TRAIL_LISTS = 64;
+
+/** The History Length a live particle count actually gets to keep — see MAX_TRAIL_SEGMENTS. Exported for its own test rather than only reachable through a live GPU readback. */
+export function effectiveHistoryLength(requestedHistory: number, liveCount: number): number {
+  return Math.max(2, Math.min(requestedHistory, Math.floor(MAX_TRAIL_SEGMENTS / Math.max(1, liveCount))));
+}
 
 interface TrailState {
   /** One growing position list per live particle index — oldest first. */
@@ -147,7 +165,7 @@ export const CAPTURE_TRAILS_NODE: NodeDefinition = {
 
     const texture = inputs.positions instanceof THREE.Texture ? inputs.positions : null;
     const capacity = Math.max(0, Math.min(6000, Math.round(numberInput(inputs.count, params.count, 0))));
-    const requestedHistory = Math.max(2, Math.min(600, Math.round(numberInput(inputs.historyLength, params.historyLength, 60))));
+    const requestedHistory = Math.max(2, Math.min(5000, Math.round(numberInput(inputs.historyLength, params.historyLength, 60))));
     const color = asColor(inputs.color, asColor(params.color, new THREE.Color(0xffb86b)));
     const opacity = numberInput(inputs.opacity, params.opacity, 0.85);
     const fadeAlongTrail = params.fadeAlongTrail !== false;
@@ -173,7 +191,7 @@ export const CAPTURE_TRAILS_NODE: NodeDefinition = {
     for (let i = 0; i < capacity; i++) {
       if (buffer[i * 4 + 3] >= DEAD_AGE_THRESHOLD) liveCount++;
     }
-    const historyLength = Math.max(2, Math.min(requestedHistory, Math.floor(MAX_TRAIL_SEGMENTS / Math.max(1, liveCount))));
+    const historyLength = effectiveHistoryLength(requestedHistory, liveCount);
 
     const live = new Set<number>();
     let segmentTotal = 0;
