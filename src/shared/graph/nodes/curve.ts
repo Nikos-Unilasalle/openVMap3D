@@ -504,9 +504,9 @@ export function createVariableThicknessTubeGeometry(
  * cheaper than solving one). `sag` is a world-unit droop depth, peaking at
  * the segment's midpoint (t=0.5) and zero at both endpoints, so the two
  * points the segment was built from are exactly where the curve still meets
- * them — only the interior sags. Deliberately world -Z only, never a
- * direction derived from the segment itself: real gravity doesn't care
- * which way a wire happens to run.
+ * them — only the interior sags. Deliberately world -Y only (this app's up
+ * axis), never a direction derived from the segment itself: real gravity
+ * doesn't care which way a wire happens to run.
  */
 class SaggedLineCurve3 extends THREE.Curve<THREE.Vector3> {
   constructor(
@@ -519,7 +519,7 @@ class SaggedLineCurve3 extends THREE.Curve<THREE.Vector3> {
 
   getPoint(t: number, target: THREE.Vector3 = new THREE.Vector3()): THREE.Vector3 {
     target.lerpVectors(this.v1, this.v2, t);
-    target.z -= this.sag * 4 * t * (1 - t);
+    target.y -= this.sag * 4 * t * (1 - t);
     return target;
   }
 }
@@ -571,7 +571,7 @@ export const CURVE_FROM_POINTS_NODE: NodeDefinition = {
     { id: "type", label: "Type", kind: "select", options: ["catmull", "bezier", "linear"] },
     { id: "closed", label: "Closed", kind: "boolean" },
     { id: "tension", label: "Tension", kind: "number", step: 0.05 },
-    { id: "sag", label: "Sag (-Z droop, forces straight segments)", kind: "number", step: 0.05 },
+    { id: "sag", label: "Sag (-Y droop, forces straight segments)", kind: "number", step: 0.05 },
   ],
   evaluate: (inputs, params, ctx) => {
     let pts: THREE.Vector3[] = [];

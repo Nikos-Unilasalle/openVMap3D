@@ -202,7 +202,7 @@ describe("CURVE NODES", () => {
 });
 
 describe("CURVE_FROM_POINTS_NODE sag (linear type — slack wire droop)", () => {
-  const points = [new THREE.Vector3(0, 0, 5), new THREE.Vector3(10, 0, 5), new THREE.Vector3(20, 0, 5)];
+  const points = [new THREE.Vector3(0, 5, 0), new THREE.Vector3(10, 5, 0), new THREE.Vector3(20, 5, 0)];
 
   it("keeps the segment taut (a straight LineCurve3) when sag is 0", () => {
     const res = CURVE_FROM_POINTS_NODE.evaluate(
@@ -212,10 +212,10 @@ describe("CURVE_FROM_POINTS_NODE sag (linear type — slack wire droop)", () => 
     );
     const curve = res.curve as THREE.CurvePath<THREE.Vector3>;
     const mid = curve.getPoint(0.25); // midpoint of the first of two segments
-    expect(mid.z).toBeCloseTo(5, 5);
+    expect(mid.y).toBeCloseTo(5, 5);
   });
 
-  it("droops the midpoint along -Z only, by the Sag amount, while leaving both endpoints exactly where they were", () => {
+  it("droops the midpoint along -Y only (this app's up axis), by the Sag amount, while leaving both endpoints exactly where they were", () => {
     const res = CURVE_FROM_POINTS_NODE.evaluate(
       { points },
       { ...CURVE_FROM_POINTS_NODE.defaultParams, type: "linear", sag: 2 },
@@ -229,20 +229,20 @@ describe("CURVE_FROM_POINTS_NODE sag (linear type — slack wire droop)", () => 
     const end = curve.getPoint(0.5);
 
     expect(start.x).toBeCloseTo(0, 5);
-    expect(start.z).toBeCloseTo(5, 5); // untouched — droop is 0 at t=0
+    expect(start.y).toBeCloseTo(5, 5); // untouched — droop is 0 at t=0
     expect(end.x).toBeCloseTo(10, 5);
-    expect(end.z).toBeCloseTo(5, 5); // untouched — droop is 0 at t=1
+    expect(end.y).toBeCloseTo(5, 5); // untouched — droop is 0 at t=1
 
     // Peak droop at the segment's own midpoint: sag * 4*0.5*(1-0.5) = sag.
-    expect(mid.x).toBeCloseTo(5, 5); // X/Y interpolation itself is untouched
-    expect(mid.z).toBeCloseTo(5 - 2, 5);
+    expect(mid.x).toBeCloseTo(5, 5); // X/Z interpolation itself is untouched
+    expect(mid.y).toBeCloseTo(5 - 2, 5);
   });
 
   it("forces straight (linear) segments when Sag is on, even with Type left at its catmull default — otherwise the knob silently did nothing", () => {
     const res = CURVE_FROM_POINTS_NODE.evaluate({ points }, { ...CURVE_FROM_POINTS_NODE.defaultParams, sag: 5 }, CTX);
     expect(res.curve).toBeInstanceOf(THREE.CurvePath);
     const mid = (res.curve as THREE.CurvePath<THREE.Vector3>).getPoint(0.25);
-    expect(mid.z).toBeCloseTo(0, 5); // 5 (start Z) - 5 (sag) at the segment's own midpoint
+    expect(mid.y).toBeCloseTo(0, 5); // 5 (start Y) - 5 (sag) at the segment's own midpoint
   });
 });
 
