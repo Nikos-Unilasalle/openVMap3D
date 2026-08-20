@@ -28,6 +28,7 @@ import { SOCKET_COLOR } from "../shared/graph/sockets";
 import { Connection, Graph, KeyframeStore, NodeInstance, NodeRegistry } from "../shared/graph/types";
 import { GraphNode, GraphNodeData } from "./GraphNode";
 import { NodePalette } from "./NodePalette";
+import { QuickAddToolbar } from "./QuickAddToolbar";
 import { NodeSearchModal } from "./NodeSearchModal";
 import "./graph-editor.css";
 
@@ -1041,6 +1042,7 @@ function GraphEditorContent({
     >
       <NodePalette nodes={paletteNodes} onAddNode={addNode} />
       <div className="graph-editor-canvas">
+        <QuickAddToolbar onAddNode={addNode} />
         <ReactFlow
           nodes={nodes}
           edges={edges}

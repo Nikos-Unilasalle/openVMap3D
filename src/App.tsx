@@ -1502,7 +1502,6 @@ function MainEditor() {
         exportProgress={exportProgress}
         isTimelineOpen={isTimelineDrawerOpen}
         onToggleTimeline={() => setIsTimelineDrawerOpen((prev) => !prev)}
-        onToggleGraph={() => setIsTimelineDrawerOpen(false)}
       />
       {isExporting && (
         // Off-screen (not display:none, which some webviews suspend rAF
