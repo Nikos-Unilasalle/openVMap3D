@@ -49,7 +49,7 @@ function getState(nodeId: string): NodeState {
 }
 
 const EXTRA_FIELDS = [
-  { id: "thickness", label: "Thickness", kind: "number" as const, step: 0.01, group: "Geometry" },
+  { id: "radius", label: "Tube Radius", kind: "number" as const, step: 0.01, group: "Geometry" },
   { id: "radialSegments", label: "Radial Sides", kind: "number" as const, step: 1, group: "Geometry" },
   { id: "tubularSegments", label: "Length Segments", kind: "number" as const, step: 4, group: "Geometry" },
   { id: "closed", label: "Closed (loop each curve)", kind: "boolean" as const, group: "Geometry" },
@@ -81,7 +81,7 @@ export const CURVES_FROM_POINT_LISTS_NODE: NodeDefinition = {
   outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: {
     ...COMMON_DEFAULT_PARAMS,
-    thickness: 0.1,
+    radius: 0.1,
     radialSegments: 8,
     tubularSegments: 48,
     closed: false,
@@ -92,7 +92,7 @@ export const CURVES_FROM_POINT_LISTS_NODE: NodeDefinition = {
     const state = getState(ctx.nodeId);
 
     const pointLists = Array.isArray(inputs.pointLists) ? (inputs.pointLists as unknown[]) : [];
-    const thickness = Math.max(0.001, numberInput(inputs.thickness, params.thickness, 0.1));
+    const radius = Math.max(0.001, numberInput(inputs.radius, params.radius, 0.1));
     const radialSegments = Math.max(3, Math.round(numberInput(undefined, params.radialSegments, 8)));
     const tubularSegments = Math.max(2, Math.round(numberInput(undefined, params.tubularSegments, 48)));
     const closed = toBoolean(params.closed ?? 0);
@@ -118,7 +118,7 @@ export const CURVES_FROM_POINT_LISTS_NODE: NodeDefinition = {
       pointLists: pointLists.map((list) =>
         Array.isArray(list) ? list.map((p) => { const v = asVector3(p, new THREE.Vector3()); return [v.x, v.y, v.z]; }) : [],
       ),
-      thickness,
+      radius,
       radialSegments,
       tubularSegments,
       closed,
@@ -133,7 +133,7 @@ export const CURVES_FROM_POINT_LISTS_NODE: NodeDefinition = {
         if (!Array.isArray(list) || list.length < 2) continue;
         const points = list.map((p) => asVector3(p, new THREE.Vector3()));
         const curve = new THREE.CatmullRomCurve3(points, closed);
-        tubes.push(new THREE.TubeGeometry(curve, tubularSegments, thickness, radialSegments, closed));
+        tubes.push(new THREE.TubeGeometry(curve, tubularSegments, radius, radialSegments, closed));
       }
 
       mesh.geometry = tubes.length > 0 ? (mergeGeometries(tubes, false) ?? new THREE.BufferGeometry()) : new THREE.BufferGeometry();
