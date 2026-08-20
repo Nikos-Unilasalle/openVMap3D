@@ -4,6 +4,11 @@ import { NodeDefinition } from "../types";
 import { clearMeshWarning, warnMeshRequired } from "../meshRequired";
 import { sampleSurfacePoints } from "../../three/bvh";
 
+function toNumberList(v: unknown): number[] {
+  if (!Array.isArray(v)) return typeof v === "number" ? [v] : [];
+  return v.map((x) => Number(x) || 0);
+}
+
 const RAD = Math.PI / 180;
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -57,6 +62,9 @@ export const SPAWN_NODE: NodeDefinition = {
   inputs: [
     { id: "support", label: "Support (Surface)", type: "geometry" },
     { id: "items", label: "Items to Spawn", type: "any", owns: true },
+    { id: "xValues", label: "X Values (List)", type: "list" },
+    { id: "yValues", label: "Y Values (List)", type: "list" },
+    { id: "zValues", label: "Z Values (List)", type: "list" },
   ],
   outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
   defaultParams: {
@@ -88,12 +96,11 @@ export const SPAWN_NODE: NodeDefinition = {
     group.clear();
 
     const supportObj = inputs.support instanceof THREE.Object3D ? inputs.support : null;
-    if (!supportObj) return { geometry: group };
 
     const items = extractItems(inputs.items);
     if (items.length === 0) return { geometry: group };
 
-    const count = Math.max(1, Math.min(5000, Math.floor(Number(params.count) || 50)));
+    let count = Math.max(1, Math.min(5000, Math.floor(Number(params.count) || 50)));
     const seed = Number(params.seed) || 1;
     const scaleMin = Number.isFinite(Number(params.scaleMin)) ? Number(params.scaleMin) : 0.8;
     const scaleMax = Number.isFinite(Number(params.scaleMax)) ? Number(params.scaleMax) : 1.2;
@@ -109,12 +116,38 @@ export const SPAWN_NODE: NodeDefinition = {
     // Area-weighted surface sampling via the shared BVH module: cached per
     // geometry (vs. the old per-frame collectTriangles scan) and reused by the
     // physics/sample node. Returns world-space positions + normals.
-    const { positions: sampledPositions, normals: sampledNormals } = sampleSurfacePoints(supportObj, count, prng);
-    if (sampledPositions.length === 0) {
-      warnMeshRequired(ctx.nodeId, "Spawner", supportObj);
-      return { geometry: group };
+    // Explicit positions win over surface sampling — this is the point-cloud
+    // -> scatter bridge. Rather than a second scatter node duplicating all the
+    // anchoring/orientation work below, the existing Spawner just accepts
+    // where to put things from a list (Point Cloud, Particles to Points, CSV
+    // Reader, any list source) as an alternative to picking points itself.
+    // Support (Surface) stays wired-or-not independently: with lists driving
+    // position there is no surface normal to align to, so Align to Normal has
+    // nothing to act on and copies keep their own orientation.
+    const listX = toNumberList(inputs.xValues);
+    const listY = toNumberList(inputs.yValues);
+    const listZ = toNumberList(inputs.zValues);
+    const listCount = Math.min(listX.length, listY.length, listZ.length);
+
+    let sampledPositions: THREE.Vector3[];
+    let sampledNormals: THREE.Vector3[];
+    if (listCount > 0) {
+      const used = Math.min(listCount, count);
+      sampledPositions = Array.from({ length: used }, (_, i) => new THREE.Vector3(listX[i], listY[i], listZ[i]));
+      sampledNormals = Array.from({ length: used }, () => UP.clone());
+      count = used;
+    } else {
+      // No positions given and no surface to pick them from — nothing to do.
+      if (!supportObj) return { geometry: group };
+      const sampled = sampleSurfacePoints(supportObj, count, prng);
+      sampledPositions = sampled.positions;
+      sampledNormals = sampled.normals;
+      if (sampledPositions.length === 0) {
+        warnMeshRequired(ctx.nodeId, "Spawner", supportObj);
+        return { geometry: group };
+      }
+      clearMeshWarning(ctx.nodeId);
     }
-    clearMeshWarning(ctx.nodeId);
 
     for (let i = 0; i < count; i++) {
       const worldPos = sampledPositions[i];

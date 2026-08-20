@@ -53,6 +53,7 @@ function getState(nodeId: string): InstanceState {
 
 const EXTRA_FIELDS = [
   { id: "instanceScale", label: "Instance Scale", kind: "number" as const, step: 0.01, group: "Geometry" },
+  { id: "freeze", label: "Freeze (keep current instances)", kind: "boolean" as const, group: "Geometry" },
 ];
 
 /**
@@ -91,6 +92,7 @@ export const PARTICLE_RENDER_INSTANCES_NODE: NodeDefinition = {
   defaultParams: {
     ...COMMON_DEFAULT_PARAMS,
     instanceScale: 0.1,
+    freeze: false,
   },
   paramFields: buildPrimitiveDynamicParamFields(EXTRA_FIELDS)(),
   dynamicParamFields: buildPrimitiveDynamicParamFields(EXTRA_FIELDS),
@@ -100,6 +102,14 @@ export const PARTICLE_RENDER_INSTANCES_NODE: NodeDefinition = {
     const texture = inputs.positions instanceof THREE.Texture ? inputs.positions : null;
     const capacity = Math.max(0, Math.min(MAX_INSTANCES, Math.round(numberInput(inputs.count, params.count, 0))));
     const instanceScale = Math.max(0.0001, numberInput(inputs.instanceScale, params.instanceScale, 0.1));
+    // A boolean rather than a "bake" button on purpose: a button press is a
+    // moment, and nothing would carry it across a save/reload, whereas this
+    // is state the .tsuji stores — reopen the file and the frozen pose is
+    // still frozen. Freezing keeps the instance matrices exactly as they were
+    // on the last live frame, so the node becomes an ordinary static object
+    // downstream (Merge, Transform, Boolean, export) while the simulation
+    // behind it keeps running or not, indifferently.
+    const freeze = params.freeze === true;
 
     // Fall back to a small box so the node shows something the moment it is
     // added, before a Shape is wired — same "useful with nothing connected"
@@ -109,7 +119,11 @@ export const PARTICLE_RENDER_INSTANCES_NODE: NodeDefinition = {
     const sourceGeometry = shapeMesh?.geometry ?? null;
     const sourceGeometryId = sourceGeometry?.uuid ?? "__default_box__";
 
-    if (!state.mesh || state.sourceGeometryId !== sourceGeometryId || state.capacity !== capacity) {
+    // Rebuilding allocates a fresh InstancedMesh, which would discard the
+    // very matrices freezing exists to preserve — so once frozen, never
+    // rebuild, even if Shape or Count changes underneath.
+    const mustRebuild = !state.mesh || state.sourceGeometryId !== sourceGeometryId || state.capacity !== capacity;
+    if (mustRebuild && !(freeze && state.mesh)) {
       if (state.mesh) disposeObject3D(state.mesh);
       // Cloned, not shared: InstancedMesh takes ownership of its geometry for
       // disposal, and the Shape node still owns and draws the original.
@@ -123,15 +137,19 @@ export const PARTICLE_RENDER_INSTANCES_NODE: NodeDefinition = {
       state.sourceGeometryId = sourceGeometryId;
       state.capacity = capacity;
     }
-    const mesh = state.mesh;
+    // Always set: the rebuild guard above only skips when a mesh already
+    // exists to preserve (`freeze && state.mesh`), so a missing one is still
+    // built even with freeze on.
+    const mesh = state.mesh!;
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       mesh.matrixAutoUpdate = false;
       mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
     }
 
-    let live = 0;
-    if (texture && capacity > 0 && ctx.renderer) {
+    let live = mesh.count;
+    if (!freeze && texture && capacity > 0 && ctx.renderer) {
+      live = 0;
       const size = textureSizeFor(capacity);
       const buffer = readPositionsSync(ctx.renderer, texture, size, ctx.nodeId);
       const matrix = new THREE.Matrix4();
@@ -148,9 +166,14 @@ export const PARTICLE_RENDER_INSTANCES_NODE: NodeDefinition = {
         live++;
       }
       mesh.instanceMatrix.needsUpdate = true;
+    } else if (!freeze) {
+      // Live, but nothing to read (no texture / no renderer) — draw nothing
+      // rather than leaving the previous frame's instances on screen.
+      live = 0;
     }
     // Only the live prefix is drawn; the rest of the allocated capacity keeps
-    // whatever stale matrices it had, unread.
+    // whatever stale matrices it had, unread. Frozen, `live` is simply
+    // whatever the last live frame left here.
     mesh.count = live;
 
     const matParams = extractMaterialParams(inputs, params);

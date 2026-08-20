@@ -59,6 +59,14 @@ export interface EmitterConfig {
    * a point cloud exactly wants sequential. Ignored without seedPositions.
    */
   randomSpawnPick: boolean;
+  /**
+   * Whether the emitter is currently spawning. False lets particles die out
+   * as they age rather than respawning them — so an Oscillator, Trigger,
+   * Toggle or Compare node wired into the emitter's Emit input turns
+   * emission into something the graph drives over time, instead of a
+   * constant. Existing particles are untouched; only respawn is gated.
+   */
+  emit: boolean;
 }
 
 export function buildEmitterConfig(
@@ -68,8 +76,9 @@ export function buildEmitterConfig(
   seedPositions?: Float32Array,
   diameter = 0.25,
   randomSpawnPick = false,
+  emit = true,
 ): EmitterConfig {
-  return { position, velocity, spawnRate, seedPositions, diameter, randomSpawnPick };
+  return { position, velocity, spawnRate, seedPositions, diameter, randomSpawnPick, emit };
 }
 
 /** How many of `capacity` texels are actually alive-capable — population = rate × lifetime, capped. */
@@ -90,6 +99,7 @@ const POSITION_SHADER = /* glsl */ `
   uniform float spawnDiameter;
   uniform float seedRandomPick;
   uniform float time;
+  uniform float emitEnabled;
 
   void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;
@@ -111,6 +121,16 @@ const POSITION_SHADER = /* glsl */ `
       age = lifetime + 1.0;
     }
     if (age > lifetime) {
+      // Emission gated off: let this particle die instead of respawning it,
+      // using the same past-the-active-count sentinel so every consumer
+      // (particles/render's vAlive, isAlive() on the CPU side) already treats
+      // it as gone. Particles alive when the gate closed still finish their
+      // lifetime — closing the gate stops *new* emission, it doesn't
+      // teleport the existing population away.
+      if (emitEnabled < 0.5) {
+        gl_FragColor = vec4(pos.rgb, -1.0e6);
+        return;
+      }
       vec3 spawnPos;
       if (seedCount > 0.0) {
         // Which seed point this respawn lands on. No jitter either way: the
@@ -478,6 +498,7 @@ function createSimulation(nodeId: string, renderer: THREE.WebGLRenderer, size: n
   positionVar.material.uniforms.seedSize = { value: 1 };
   positionVar.material.uniforms.spawnDiameter = { value: 0.25 };
   positionVar.material.uniforms.seedRandomPick = { value: 0 };
+  positionVar.material.uniforms.emitEnabled = { value: 1 };
   positionVar.material.uniforms.time = { value: 0 };
   velocityVar.material.uniforms.emitterVelocity = { value: new THREE.Vector3() };
   velocityVar.material.uniforms.gravity = { value: 0 };
@@ -601,6 +622,7 @@ export function getOrCreateSimulation(
   sim.positionVar.material.uniforms.seedSize.value = seed.size;
   sim.positionVar.material.uniforms.spawnDiameter.value = Math.max(0, emitter.diameter);
   sim.positionVar.material.uniforms.seedRandomPick.value = emitter.randomSpawnPick ? 1 : 0;
+  sim.positionVar.material.uniforms.emitEnabled.value = emitter.emit ? 1 : 0;
   sim.velocityVar.material.uniforms.emitterVelocity.value.copy(emitter.velocity);
   sim.velocityVar.material.uniforms.gravity.value = gravity;
   sim.velocityVar.material.uniforms.wind.value.copy(wind);

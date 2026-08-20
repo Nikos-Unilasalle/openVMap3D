@@ -25,7 +25,7 @@ describe("buildEmitterConfig", () => {
 
     const config = buildEmitterConfig(position, velocity, 200);
 
-    expect(config).toEqual({ position, velocity, spawnRate: 200, seedPositions: undefined, diameter: 0.25, randomSpawnPick: false });
+    expect(config).toEqual({ position, velocity, spawnRate: 200, seedPositions: undefined, diameter: 0.25, randomSpawnPick: false, emit: true });
   });
 
   test("defaults diameter to 0.25 — the jitter magnitude every emitter used before this param existed", () => {
@@ -40,6 +40,10 @@ describe("buildEmitterConfig", () => {
 
   test("defaults to sequential spawn picking — the behavior that predates the flag", () => {
     expect(buildEmitterConfig(new THREE.Vector3(), new THREE.Vector3(), 200).randomSpawnPick).toBe(false);
+  });
+
+  test("emits by default — an unwired Emit input must not silence the emitter", () => {
+    expect(buildEmitterConfig(new THREE.Vector3(), new THREE.Vector3(), 200).emit).toBe(true);
   });
 
   test("accepts random spawn picking", () => {

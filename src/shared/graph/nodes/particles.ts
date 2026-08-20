@@ -47,6 +47,7 @@ export const PARTICLE_EMITTER_NODE: NodeDefinition = {
     { id: "velocity", label: "Velocity", type: "vector" },
     { id: "spawnRate", label: "Spawn Rate", type: "value" },
     { id: "diameter", label: "Diameter", type: "value" },
+    { id: "emit", label: "Emit", type: "value" },
   ],
   outputs: [{ id: "emitter", label: "Emitter", type: "any" }],
   defaultParams: {
@@ -57,19 +58,26 @@ export const PARTICLE_EMITTER_NODE: NodeDefinition = {
     // existed — 0 here would collapse every respawn onto the exact same
     // point, which reads as a rigid line/lattice rather than a cloud.
     diameter: 0.25,
+    emit: 1,
   },
   paramFields: [
     { id: "position", label: "Position (fallback)", kind: "vector" },
     { id: "velocity", label: "Velocity (fallback)", kind: "vector" },
     { id: "spawnRate", label: "Spawn Rate", kind: "number", step: 10 },
     { id: "diameter", label: "Diameter", kind: "number", step: 0.05 },
+    { id: "emit", label: "Emit", kind: "boolean" },
   ],
   evaluate: (inputs, params) => {
     const position = asVector(inputs.position, asVector(params.position, new THREE.Vector3()));
     const velocity = asVector(inputs.velocity, asVector(params.velocity, new THREE.Vector3()));
     const spawnRate = numberInput(inputs.spawnRate, params.spawnRate, 200);
     const diameter = Math.max(0, numberInput(inputs.diameter, params.diameter, 0.25));
-    return { emitter: buildEmitterConfig(position, velocity, spawnRate, undefined, diameter) };
+      // Not a param fallback of 1 by accident: an Emit input left unwired
+      // must keep emitting, so the socket only gates when something is
+      // actually driving it. Wire an Oscillator, Trigger, Toggle or Compare
+      // in to make emission a function of time rather than a constant.
+    const emit = numberInput(inputs.emit, params.emit, 1) > 0.5;
+    return { emitter: buildEmitterConfig(position, velocity, spawnRate, undefined, diameter, false, emit) };
   },
 };
 
@@ -119,9 +127,10 @@ export const PARTICLE_EMITTER_FROM_POINTS_NODE: NodeDefinition = {
     { id: "zValues", label: "Z Values (List)", type: "list" },
     { id: "velocity", label: "Velocity", type: "vector" },
     { id: "spawnRate", label: "Spawn Rate", type: "value" },
+    { id: "emit", label: "Emit", type: "value" },
   ],
   outputs: [{ id: "emitter", label: "Emitter", type: "any" }],
-  defaultParams: { velocity: new THREE.Vector3(0, 0, 0), spawnRate: 200, randomSpawnPick: false },
+  defaultParams: { velocity: new THREE.Vector3(0, 0, 0), spawnRate: 200, randomSpawnPick: false, emit: 1 },
   paramFields: [
     { id: "velocity", label: "Velocity (fallback)", kind: "vector" },
     {
@@ -129,6 +138,7 @@ export const PARTICLE_EMITTER_FROM_POINTS_NODE: NodeDefinition = {
       label: "Random Spawn Point (off = one particle per point)",
       kind: "boolean",
     },
+    { id: "emit", label: "Emit", kind: "boolean" },
     {
       id: "spawnRate",
       label: "Spawn Rate",
@@ -174,6 +184,7 @@ export const PARTICLE_EMITTER_FROM_POINTS_NODE: NodeDefinition = {
         state.seedPositions,
         undefined,
         params.randomSpawnPick === true,
+        numberInput(inputs.emit, params.emit, 1) > 0.5,
       ),
     };
   },
@@ -203,6 +214,7 @@ export const PARTICLE_EMITTER_FROM_SURFACE_NODE: NodeDefinition = {
     { id: "spawnRate", label: "Spawn Rate", type: "value" },
     { id: "points", label: "Surface Points", type: "value" },
     { id: "seed", label: "Seed", type: "value" },
+    { id: "emit", label: "Emit", type: "value" },
   ],
   outputs: [{ id: "emitter", label: "Emitter", type: "any" }],
   defaultParams: {
@@ -214,12 +226,14 @@ export const PARTICLE_EMITTER_FROM_SURFACE_NODE: NodeDefinition = {
     // point makes every particle retrace one identical path per life, which
     // reads as a handful of streaks rather than a surface emitting.
     randomSpawnPick: true,
+    emit: 1,
   },
   paramFields: [
     { id: "velocity", label: "Velocity (fallback)", kind: "vector" },
     { id: "spawnRate", label: "Spawn Rate", kind: "number", step: 10 },
     { id: "points", label: "Surface Points", kind: "number", step: 10 },
     { id: "randomSpawnPick", label: "Random Spawn Point", kind: "boolean" },
+    { id: "emit", label: "Emit", kind: "boolean" },
     { id: "seed", label: "Seed", kind: "number", step: 1 },
   ],
   evaluate: (inputs, params) => {
@@ -227,7 +241,19 @@ export const PARTICLE_EMITTER_FROM_SURFACE_NODE: NodeDefinition = {
     const velocity = asVector(inputs.velocity, asVector(params.velocity, new THREE.Vector3()));
     const spawnRate = numberInput(inputs.spawnRate, params.spawnRate, 200);
 
-    if (!object) return { emitter: buildEmitterConfig(new THREE.Vector3(), velocity, spawnRate) };
+    if (!object) {
+      return {
+        emitter: buildEmitterConfig(
+          new THREE.Vector3(),
+          velocity,
+          spawnRate,
+          undefined,
+          undefined,
+          false,
+          numberInput(inputs.emit, params.emit, 1) > 0.5,
+        ),
+      };
+    }
 
     const pointCount = Math.max(1, Math.min(20000, Math.round(numberInput(inputs.points, params.points, 200))));
     const seed = numberInput(inputs.seed, params.seed, 1);
@@ -250,6 +276,7 @@ export const PARTICLE_EMITTER_FROM_SURFACE_NODE: NodeDefinition = {
         seedPositions,
         undefined,
         params.randomSpawnPick !== false,
+        numberInput(inputs.emit, params.emit, 1) > 0.5,
       ),
     };
   },
