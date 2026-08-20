@@ -1,0 +1,186 @@
+{
+  "nodes": [
+    {
+      "id": "time",
+      "type": "time",
+      "position": { "x": -1400, "y": 60 },
+      "params": {}
+    },
+    {
+      "id": "emitter",
+      "type": "particles/emitter",
+      "position": { "x": -1160, "y": 60 },
+      "params": {
+        "position": { "x": 0, "y": 0, "z": 0 },
+        "velocity": { "x": 0, "y": 0, "z": 0 },
+        "spawnRate": 8
+      }
+    },
+    {
+      "id": "vortex",
+      "type": "particles/force-field",
+      "position": { "x": -1160, "y": 260 },
+      "params": {
+        "fieldType": "vortex",
+        "position": { "x": 0, "y": 0, "z": 0 },
+        "axis": { "x": 0, "y": 1, "z": 0 },
+        "strength": 4,
+        "radius": 0,
+        "scale": 1,
+        "speed": 0.1
+      }
+    },
+    {
+      "id": "attractor",
+      "type": "particles/force-field",
+      "position": { "x": -1160, "y": 440 },
+      "params": {
+        "fieldType": "attractor",
+        "position": { "x": 0, "y": 0, "z": 0 },
+        "axis": { "x": 0, "y": 1, "z": 0 },
+        "strength": 0.5,
+        "radius": 0,
+        "scale": 1,
+        "speed": 0.1
+      }
+    },
+    {
+      "id": "sim",
+      "type": "particles/simulate",
+      "position": { "x": -900, "y": 60 },
+      "params": {
+        "gravity": 0,
+        "wind": { "x": 0, "y": 0, "z": 0 },
+        "lifetime": 6,
+        "count": 64,
+        "flowStrength": 0,
+        "flowScale": 1,
+        "flowSpeed": 0.1,
+        "boundsRadius": 5,
+        "maxSpeed": 3
+      }
+    },
+    {
+      "id": "trails",
+      "type": "particles/capture-trails",
+      "position": { "x": -620, "y": 60 },
+      "params": {
+        "historyLength": 100,
+        "color": { "r": 0.55, "g": 0.75, "b": 1 },
+        "opacity": 0.35,
+        "linewidth": 1,
+        "worldUnits": false,
+        "fadeAlongTrail": true
+      }
+    },
+    {
+      "id": "curves",
+      "type": "curve/from_point_lists",
+      "position": { "x": -340, "y": -80 },
+      "params": {
+        "radius": 0.06,
+        "radialSegments": 10,
+        "tubularSegments": 48,
+        "closed": false,
+        "color": { "r": 1, "g": 0.55, "b": 0.15 },
+        "emissive": { "r": 0, "g": 0, "b": 0 },
+        "emissiveIntensity": 1,
+        "shadeless": false,
+        "roughness": 0.25,
+        "metalness": 0.55,
+        "wireframe": false,
+        "opacity": 1
+      }
+    },
+    {
+      "id": "merge",
+      "type": "structure/merge",
+      "position": { "x": -40, "y": 60 },
+      "params": {}
+    },
+    {
+      "id": "bloom",
+      "type": "postprocess/bloom",
+      "position": { "x": -40, "y": 300 },
+      "params": { "strength": 0.5, "radius": 0.4, "threshold": 0.4 }
+    },
+    {
+      "id": "output",
+      "type": "render",
+      "position": { "x": 260, "y": 60 },
+      "params": {}
+    }
+  ],
+  "connections": [
+    {
+      "id": "emitter.emitter->sim.emitter",
+      "fromNode": "emitter",
+      "fromSocket": "emitter",
+      "toNode": "sim",
+      "toSocket": "emitter"
+    },
+    {
+      "id": "vortex.field->sim.field0",
+      "fromNode": "vortex",
+      "fromSocket": "field",
+      "toNode": "sim",
+      "toSocket": "field0"
+    },
+    {
+      "id": "attractor.field->sim.field1",
+      "fromNode": "attractor",
+      "fromSocket": "field",
+      "toNode": "sim",
+      "toSocket": "field1"
+    },
+    {
+      "id": "sim.positions->trails.positions",
+      "fromNode": "sim",
+      "fromSocket": "positions",
+      "toNode": "trails",
+      "toSocket": "positions"
+    },
+    {
+      "id": "sim.count->trails.count",
+      "fromNode": "sim",
+      "fromSocket": "count",
+      "toNode": "trails",
+      "toSocket": "count"
+    },
+    {
+      "id": "trails.trails->curves.pointLists",
+      "fromNode": "trails",
+      "fromSocket": "trails",
+      "toNode": "curves",
+      "toSocket": "pointLists"
+    },
+    {
+      "id": "curves.geometry->merge.in0",
+      "fromNode": "curves",
+      "fromSocket": "geometry",
+      "toNode": "merge",
+      "toSocket": "in0"
+    },
+    {
+      "id": "trails.geometry->merge.in1",
+      "fromNode": "trails",
+      "fromSocket": "geometry",
+      "toNode": "merge",
+      "toSocket": "in1"
+    },
+    {
+      "id": "merge.geometry->output.geometry",
+      "fromNode": "merge",
+      "fromSocket": "geometry",
+      "toNode": "output",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "bloom.effect->output.postprocess",
+      "fromNode": "bloom",
+      "fromSocket": "effect",
+      "toNode": "output",
+      "toSocket": "postprocess"
+    }
+  ]
+}
