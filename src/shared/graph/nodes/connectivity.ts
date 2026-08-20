@@ -122,7 +122,12 @@ function getState(nodeId: string): ConnectState {
 }
 
 function ensureCapacity(state: ConnectState, segments: number): void {
-  if (state.bufferCapacity >= segments) return;
+  // The lineGeometry truthy check matters on the very first real frame:
+  // bufferCapacity starts at 0, and a legitimate `segments` of 0 (no pair of
+  // particles within range yet) would otherwise short-circuit before the
+  // geometry is ever built at all, and the unconditional `.attributes` read
+  // further down throws on the undefined geometry.
+  if (state.bufferCapacity >= segments && state.lineGeometry) return;
   // Grow in bigger jumps than the exact ask — a slowly climbing particle
   // count would otherwise reallocate (and rebuild the GPU buffers) on
   // practically every frame.
