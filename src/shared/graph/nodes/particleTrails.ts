@@ -6,6 +6,7 @@ import { NodeDefinition } from "../types";
 import { createNodeCache } from "../nodeCaches";
 import { asColor, numberInput } from "./object";
 import { readPositionsSync, textureSizeFor } from "../particleRuntime";
+import { toBoolean } from "../sockets";
 
 /**
  * A texel is "alive" once its age reaches 0 — the same test
@@ -237,7 +238,7 @@ export const CAPTURE_TRAILS_NODE: NodeDefinition = {
     const requestedHistory = Math.max(2, Math.min(5000, Math.round(numberInput(inputs.historyLength, params.historyLength, 60))));
     const color = asColor(inputs.color, asColor(params.color, new THREE.Color(0xffb86b)));
     const opacity = numberInput(inputs.opacity, params.opacity, 0.85);
-    const fadeAlongTrail = params.fadeAlongTrail !== false;
+    const fadeAlongTrail = toBoolean(params.fadeAlongTrail);
 
     const group = getGroup(state, ctx.nodeId);
 

@@ -6,6 +6,7 @@ import { NodeDefinition } from "../types";
 import { createNodeCache } from "../nodeCaches";
 import { asColor, numberInput } from "./object";
 import { readPositionsSync, textureSizeFor } from "../particleRuntime";
+import { toBoolean } from "../sockets";
 
 /**
  * A texel is "alive" once its age reaches 0 — the same test
@@ -222,7 +223,7 @@ export const CONNECT_NEARBY_NODE: NodeDefinition = {
     const maxConnections = Math.max(1, Math.min(64, Math.round(numberInput(inputs.maxConnections, params.maxConnections, 6))));
     const color = asColor(inputs.color, asColor(params.color, new THREE.Color(0xffffff)));
     const opacity = numberInput(inputs.opacity, params.opacity, 0.6);
-    const fadeByDistance = params.fadeByDistance !== false;
+    const fadeByDistance = toBoolean(params.fadeByDistance);
 
     if (!texture || capacity === 0 || !ctx.renderer) {
       ensureCapacity(state, 0);

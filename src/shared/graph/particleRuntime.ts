@@ -100,6 +100,7 @@ const POSITION_SHADER = /* glsl */ `
   uniform float seedRandomPick;
   uniform float time;
   uniform float emitEnabled;
+  uniform float lifetimeVariance;
 
   void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;
@@ -112,15 +113,25 @@ const POSITION_SHADER = /* glsl */ `
       return;
     }
 
+    // A fixed-per-texel random factor (not time-seeded, so it never changes
+    // across a particle's life) spreads each particle's own lifetime around
+    // the mean by up to +/-lifetimeVariance — without this, every particle
+    // sharing one exact lifetime dies in the same frame it was spawned in,
+    // which reads as a whole group popping out of existence at once rather
+    // than a population that thins out gradually. 0 keeps every particle at
+    // exactly lifetime, same as before this uniform existed.
+    float lifeRand = fract(sin(idx * 78.233) * 43758.5453);
+    float myLifetime = max(0.0001, lifetime * (1.0 + lifetimeVariance * (lifeRand * 2.0 - 1.0)));
+
     float age = pos.a + delta;
     // A particle that has drifted past the bounds radius is treated as if it
     // had just aged out — it respawns through the exact same spawn path
     // below, so there is only one spawn rule to keep in sync rather than a
     // second copy of it guarded by a distance check.
     if (boundsRadius > 0.0 && length(pos.rgb) > boundsRadius) {
-      age = lifetime + 1.0;
+      age = myLifetime + 1.0;
     }
-    if (age > lifetime) {
+    if (age > myLifetime) {
       // Emission gated off: let this particle die instead of respawning it,
       // using the same past-the-active-count sentinel so every consumer
       // (particles/render's vAlive, isAlive() on the CPU side) already treats
@@ -160,7 +171,7 @@ const POSITION_SHADER = /* glsl */ `
         vec3 jitter = (vec3(seed, fract(seed * 7.0), fract(seed * 13.0)) - 0.5) * spawnDiameter;
         spawnPos = emitterPosition + jitter;
       }
-      gl_FragColor = vec4(spawnPos, age - lifetime);
+      gl_FragColor = vec4(spawnPos, age - myLifetime);
     } else {
       gl_FragColor = vec4(pos.rgb + vel.rgb * delta, age);
     }
@@ -351,6 +362,7 @@ const VELOCITY_SHADER = /* glsl */ `
   uniform float noiseSpeed;
   uniform float time;
   uniform float maxSpeed;
+  uniform float lifetimeVariance;
 
   ${SIMPLEX_GRADIENT_NOISE_GLSL}
   ${FORCE_FIELD_GLSL}
@@ -366,8 +378,15 @@ const VELOCITY_SHADER = /* glsl */ `
       return;
     }
 
+    // Same per-texel hash as POSITION_SHADER's myLifetime — has to match
+    // exactly, or this shader's respawn branch (which resets velocity) and
+    // the position shader's (which resets position) disagree about which
+    // frame a given particle dies on.
+    float lifeRand = fract(sin(idx * 78.233) * 43758.5453);
+    float myLifetime = max(0.0001, lifetime * (1.0 + lifetimeVariance * (lifeRand * 2.0 - 1.0)));
+
     float age = pos.a + delta;
-    if (age > lifetime) {
+    if (age > myLifetime) {
       float seed = fract(sin(dot(uv, vec2(93.9898, 47.233))) * 24634.6345);
       vec3 jitter = (vec3(seed, fract(seed * 5.0), fract(seed * 11.0)) - 0.5) * 0.5;
       gl_FragColor = vec4(emitterVelocity + jitter, 0.0);
@@ -489,6 +508,7 @@ function createSimulation(nodeId: string, renderer: THREE.WebGLRenderer, size: n
   for (const uniforms of [positionVar.material.uniforms, velocityVar.material.uniforms]) {
     uniforms.delta = { value: STEP_SECONDS };
     uniforms.lifetime = { value: lifetimeGuess };
+    uniforms.lifetimeVariance = { value: 0 };
     uniforms.activeCount = { value: 0 };
   }
   positionVar.material.uniforms.emitterPosition = { value: new THREE.Vector3() };
@@ -580,6 +600,7 @@ export function getOrCreateSimulation(
   wind: THREE.Vector3,
   lifetime: number,
   currentStep: number,
+  lifetimeVariance = 0,
   flowField: FlowFieldConfig = { strength: 0, scale: 1, speed: 0.1 },
   boundsRadius = 0,
   maxSpeed = 0,
@@ -612,6 +633,7 @@ export function getOrCreateSimulation(
   const active = activeParticleCount(emitter.spawnRate, lifetime, size * size);
   for (const uniforms of [sim.positionVar.material.uniforms, sim.velocityVar.material.uniforms]) {
     uniforms.lifetime.value = lifetime;
+    uniforms.lifetimeVariance.value = Math.max(0, Math.min(1, lifetimeVariance));
     uniforms.activeCount.value = active;
   }
   sim.positionVar.material.uniforms.emitterPosition.value.copy(emitter.position);

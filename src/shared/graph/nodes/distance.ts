@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
+import { toBoolean } from "../sockets";
 
 /**
  * World matrix computed by walking the parent chain and multiplying local
@@ -212,7 +213,7 @@ export const PROXIMITY_OBJECT_NODE: NodeDefinition = {
     const targetPos = extractPosition(targetObj, new THREE.Vector3());
 
     const candidateObjects = collectCandidateObjects(inputs.candidates);
-    const ignoreSelf = params.ignoreSelf !== false;
+    const ignoreSelf = toBoolean(params.ignoreSelf);
 
     let minDistanceSq = Infinity;
     let nearestObj: THREE.Object3D | null = null;

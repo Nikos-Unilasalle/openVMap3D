@@ -160,6 +160,7 @@ describe("GIZMO_SELECTABLE_TYPES", () => {
       "object/scatter_plot",
       "object/point_cloud",
       "object/obj",
+      "object/frozen",
       "object/text",
       "curve/to_mesh",
       "curve/to_mesh_list",

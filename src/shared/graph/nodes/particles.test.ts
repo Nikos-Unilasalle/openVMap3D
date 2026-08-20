@@ -1,6 +1,12 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { PARTICLE_EMITTER_FROM_POINTS_NODE, PARTICLE_EMITTER_FROM_SURFACE_NODE, PARTICLE_EMITTER_NODE, clampParticleCapacity } from "./particles";
+import {
+  PARTICLE_EMITTER_FROM_POINTS_NODE,
+  PARTICLE_EMITTER_FROM_SURFACE_NODE,
+  PARTICLE_EMITTER_NODE,
+  PARTICLE_RENDER_NODE,
+  clampParticleCapacity,
+} from "./particles";
 import { EmitterConfig } from "../particleRuntime";
 import { EvalContext } from "../types";
 
@@ -73,6 +79,18 @@ describe("PARTICLE_EMITTER_FROM_SURFACE_NODE", () => {
     const a = PARTICLE_EMITTER_FROM_SURFACE_NODE.evaluate({ geometry: mesh }, params, CTX("surf-e1"));
     const b = PARTICLE_EMITTER_FROM_SURFACE_NODE.evaluate({ geometry: mesh }, params, CTX("surf-e2"));
     expect(Array.from((a.emitter as EmitterConfig).seedPositions!)).toEqual(Array.from((b.emitter as EmitterConfig).seedPositions!));
+  });
+
+  it("turns Random Spawn Point off from the panel-stored 0", () => {
+    // The param panel stores booleans as 1/0 numbers, so a strict `!== false`
+    // check could never turn random spawning off once the user unchecked it.
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2));
+    const res = PARTICLE_EMITTER_FROM_SURFACE_NODE.evaluate(
+      { geometry: mesh },
+      { ...PARTICLE_EMITTER_FROM_SURFACE_NODE.defaultParams, randomSpawnPick: 0 },
+      CTX("surf-f"),
+    );
+    expect((res.emitter as EmitterConfig).randomSpawnPick).toBe(false);
   });
 });
 
@@ -162,5 +180,38 @@ describe("PARTICLE_EMITTER_FROM_POINTS_NODE", () => {
     const emitter = res.emitter as EmitterConfig;
     expect(emitter.velocity).toEqual(new THREE.Vector3(0, 1, 0));
     expect(emitter.spawnRate).toBe(500);
+  });
+
+  it("resolves Random Spawn Point from the panel-stored 1", () => {
+    const res = PARTICLE_EMITTER_FROM_POINTS_NODE.evaluate(
+      { xValues: [0, 1], yValues: [0, 1], zValues: [0, 1] },
+      { ...PARTICLE_EMITTER_FROM_POINTS_NODE.defaultParams, randomSpawnPick: 1 },
+      CTX("seed-g"),
+    );
+    expect((res.emitter as EmitterConfig).randomSpawnPick).toBe(true);
+  });
+});
+
+describe("PARTICLE_RENDER_NODE", () => {
+  it("applies the Fade Size / Fade Opacity toggles stored as panel 1/0", () => {
+    const res = PARTICLE_RENDER_NODE.evaluate(
+      { count: 4 },
+      { ...PARTICLE_RENDER_NODE.defaultParams, sprite: "none", fadeSize: 1, fadeOpacity: 1 },
+      CTX("render-fade"),
+    );
+    const material = (res.geometry as THREE.Points).material as THREE.ShaderMaterial;
+    expect(material.uniforms.fadeSize.value).toBe(1);
+    expect(material.uniforms.fadeOpacity.value).toBe(1);
+  });
+
+  it("keeps the fades off when the toggles are unchecked (panel-stored 0)", () => {
+    const res = PARTICLE_RENDER_NODE.evaluate(
+      { count: 4 },
+      { ...PARTICLE_RENDER_NODE.defaultParams, sprite: "none", fadeSize: 0, fadeOpacity: 0 },
+      CTX("render-nofade"),
+    );
+    const material = (res.geometry as THREE.Points).material as THREE.ShaderMaterial;
+    expect(material.uniforms.fadeSize.value).toBe(0);
+    expect(material.uniforms.fadeOpacity.value).toBe(0);
   });
 });

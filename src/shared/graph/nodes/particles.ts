@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { NodeDefinition } from "../types";
 import { EmitterConfig, ForceFieldDescriptor, buildEmitterConfig, getOrCreateSimulation } from "../particleRuntime";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
+import { toBoolean } from "../sockets";
 import { growingSockets } from "../dynamicInputs";
 import { sampleSurfacePoints } from "../../three/bvh";
 import { createPRNG } from "../../math/random";
@@ -219,7 +220,7 @@ export const PARTICLE_EMITTER_FROM_POINTS_NODE: NodeDefinition = {
         spawnRate,
         state.seedPositions,
         undefined,
-        params.randomSpawnPick === true,
+        toBoolean(params.randomSpawnPick),
         resolveEmit(inputs, params, ctx.connectedInputs),
       ),
     };
@@ -313,7 +314,7 @@ export const PARTICLE_EMITTER_FROM_SURFACE_NODE: NodeDefinition = {
         spawnRate,
         seedPositions,
         undefined,
-        params.randomSpawnPick !== false,
+        toBoolean(params.randomSpawnPick),
         resolveEmit(inputs, params, ctx.connectedInputs),
       ),
     };
@@ -328,6 +329,7 @@ const FIELD_INPUTS: NodeDefinition["inputs"] = [
   { id: "gravity", label: "Gravity", type: "value" },
   { id: "wind", label: "Wind", type: "vector" },
   { id: "lifetime", label: "Lifetime", type: "value" },
+  { id: "lifetimeVariance", label: "Lifetime Variation (%)", type: "value" },
   { id: "flowStrength", label: "Flow Field Strength", type: "value" },
   { id: "flowScale", label: "Flow Field Scale", type: "value" },
   { id: "flowSpeed", label: "Flow Field Speed", type: "value" },
@@ -360,6 +362,10 @@ export const PARTICLE_SIMULATE_NODE: NodeDefinition = {
     gravity: 5,
     wind: new THREE.Vector3(0, 0, 0),
     lifetime: 3,
+    // 0 = every particle shares the exact same lifetime, same as before this
+    // param existed. Raise it so a whole group doesn't vanish in one frame —
+    // each particle's own lifetime is randomized within +/-this% of the mean.
+    lifetimeVariance: 0,
     count: 4096,
     // Off by default (0 strength) — every existing graph that only wires
     // gravity/wind keeps behaving exactly as before.
@@ -378,6 +384,7 @@ export const PARTICLE_SIMULATE_NODE: NodeDefinition = {
     { id: "gravity", label: "Gravity", kind: "number", step: 0.5 },
     { id: "wind", label: "Wind (fallback)", kind: "vector" },
     { id: "lifetime", label: "Lifetime (s)", kind: "number", step: 0.5 },
+    { id: "lifetimeVariance", label: "Lifetime Variation (%)", kind: "number", step: 5 },
     { id: "count", label: "Max Particles (capped at 65536)", kind: "number", step: 100 },
     { id: "flowStrength", label: "Flow Field Strength", kind: "number", step: 0.5, group: "Flow Field" },
     { id: "flowScale", label: "Flow Field Scale", kind: "number", step: 0.1, group: "Flow Field" },
@@ -392,6 +399,7 @@ export const PARTICLE_SIMULATE_NODE: NodeDefinition = {
     const gravity = numberInput(inputs.gravity, params.gravity, 5);
     const wind = asVector(inputs.wind, asVector(params.wind, new THREE.Vector3()));
     const lifetime = numberInput(inputs.lifetime, params.lifetime, 3);
+    const lifetimeVariance = Math.max(0, Math.min(100, numberInput(inputs.lifetimeVariance, params.lifetimeVariance, 0))) / 100;
     const capacity = clampParticleCapacity(params.count);
     const flowField = {
       strength: numberInput(inputs.flowStrength, params.flowStrength, 0),
@@ -416,6 +424,7 @@ export const PARTICLE_SIMULATE_NODE: NodeDefinition = {
       wind,
       lifetime,
       ctx.step,
+      lifetimeVariance,
       flowField,
       boundsRadius,
       maxSpeed,
@@ -590,8 +599,8 @@ export const PARTICLE_RENDER_NODE: NodeDefinition = {
     // unwired is the correct "no fade" default, not a guess that needs a param.
     entry.material.uniforms.lifetime.value = typeof inputs.lifetime === "number" ? inputs.lifetime : 0;
     entry.material.uniforms.fadeFraction.value = Math.min(0.5, Math.max(0.001, Number(params.fadeFraction) || 0.15));
-    entry.material.uniforms.fadeSize.value = params.fadeSize === true ? 1 : 0;
-    entry.material.uniforms.fadeOpacity.value = params.fadeOpacity === true ? 1 : 0;
+    entry.material.uniforms.fadeSize.value = toBoolean(params.fadeSize) ? 1 : 0;
+    entry.material.uniforms.fadeOpacity.value = toBoolean(params.fadeOpacity) ? 1 : 0;
 
     return { geometry: entry.points };
   },

@@ -5,6 +5,7 @@ import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { readPositionsSync, textureSizeFor } from "../particleRuntime";
 import { findFirstMesh } from "../meshRequired";
 import { isAlive } from "./particleTrails";
+import { toBoolean } from "../sockets";
 import {
   applyMaterialParams,
   buildPrimitiveDynamicParamFields,
@@ -192,11 +193,11 @@ export const PARTICLE_RENDER_INSTANCES_NODE: NodeDefinition = {
     // on the last live frame, so the node becomes an ordinary static object
     // downstream (Merge, Transform, Boolean, export) while the simulation
     // behind it keeps running or not, indifferently.
-    const freeze = params.freeze === true;
+    const freeze = toBoolean(params.freeze);
     const lifetime = typeof inputs.lifetime === "number" ? inputs.lifetime : 0;
     const fadeFraction = Math.min(0.5, Math.max(0.001, Number(params.fadeFraction) || 0.15));
-    const fadeSize = params.fadeSize === true;
-    const fadeOpacity = params.fadeOpacity === true;
+    const fadeSize = toBoolean(params.fadeSize);
+    const fadeOpacity = toBoolean(params.fadeOpacity);
 
     // Fall back to a small box so the node shows something the moment it is
     // added, before a Shape is wired — same "useful with nothing connected"
