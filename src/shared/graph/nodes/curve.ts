@@ -571,7 +571,7 @@ export const CURVE_FROM_POINTS_NODE: NodeDefinition = {
     { id: "type", label: "Type", kind: "select", options: ["catmull", "bezier", "linear"] },
     { id: "closed", label: "Closed", kind: "boolean" },
     { id: "tension", label: "Tension", kind: "number", step: 0.05 },
-    { id: "sag", label: "Sag (Linear only, -Z droop)", kind: "number", step: 0.05 },
+    { id: "sag", label: "Sag (-Z droop, forces straight segments)", kind: "number", step: 0.05 },
   ],
   evaluate: (inputs, params, ctx) => {
     let pts: THREE.Vector3[] = [];
@@ -584,9 +584,14 @@ export const CURVE_FROM_POINTS_NODE: NodeDefinition = {
     }
 
     const closed = inputs.closed !== undefined ? Boolean(inputs.closed) : Boolean(params.closed);
-    const type = String(params.type || "catmull");
     const tension = inputs.tension !== undefined ? asNumber(inputs.tension, 0.5) : asNumber(params.tension, 0.5);
     const sag = Math.max(0, inputs.sag !== undefined ? asNumber(inputs.sag, 0) : asNumber(params.sag, 0));
+    // Sag only has anything to droop when segments are straight lines
+    // between the points — catmull/bezier already bend smoothly through
+    // them. Type defaults to "catmull", so dialling up Sag without also
+    // remembering to flip Type to Linear silently did nothing; forcing
+    // linear here whenever Sag is on means the knob always visibly works.
+    const type = sag > 0 ? "linear" : String(params.type || "catmull");
 
     let curve: THREE.Curve<THREE.Vector3>;
     curve = buildPointsCurve(pts, type, closed, tension, sag);

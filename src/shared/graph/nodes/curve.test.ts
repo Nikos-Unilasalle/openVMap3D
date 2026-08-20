@@ -238,11 +238,11 @@ describe("CURVE_FROM_POINTS_NODE sag (linear type — slack wire droop)", () => 
     expect(mid.z).toBeCloseTo(5 - 2, 5);
   });
 
-  it("leaves catmull-rom (the default type) unaffected by Sag — it already bends smoothly through the points", () => {
+  it("forces straight (linear) segments when Sag is on, even with Type left at its catmull default — otherwise the knob silently did nothing", () => {
     const res = CURVE_FROM_POINTS_NODE.evaluate({ points }, { ...CURVE_FROM_POINTS_NODE.defaultParams, sag: 5 }, CTX);
-    // A CatmullRomCurve3 has no SaggedLineCurve3 segments to speak of — just
-    // confirms the sag param was never read down this path.
-    expect(res.curve).toBeInstanceOf(THREE.CatmullRomCurve3);
+    expect(res.curve).toBeInstanceOf(THREE.CurvePath);
+    const mid = (res.curve as THREE.CurvePath<THREE.Vector3>).getPoint(0.25);
+    expect(mid.z).toBeCloseTo(0, 5); // 5 (start Z) - 5 (sag) at the segment's own midpoint
   });
 });
 
