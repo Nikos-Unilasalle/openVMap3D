@@ -24,7 +24,7 @@ function numberInput(input: unknown, param: unknown, fallback: number): number {
  */
 export const GEOMETRY_TO_POINTS_NODE: NodeDefinition = {
   type: "list/points-from-geometry",
-  label: "Points from Geometry",
+  label: "Points from Geometry (Vertices)",
   category: "list",
   inputs: [
     { id: "geometry", label: "Geometry", type: "geometry" },

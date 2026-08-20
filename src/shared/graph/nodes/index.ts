@@ -33,6 +33,8 @@ import { OBJECT_OBJ_NODE } from "./objLoader";
 import { TEXTURE_IMAGE_NODE, TEXTURE_PLANE_NODE, TEXTURE_PROCEDURAL_NODE, TEXTURE_TO_NORMAL_NODE, TEXTURE_TRANSFORM_NODE } from "./texture";
 import { PARTICLE_EMITTER_FROM_POINTS_NODE, PARTICLE_EMITTER_FROM_SURFACE_NODE, PARTICLE_EMITTER_NODE, PARTICLE_RENDER_NODE, PARTICLE_SIMULATE_NODE } from "./particles";
 import { GEOMETRY_TO_POINTS_NODE } from "./geometryToPoints";
+import { PARTICLES_TO_POINTS_NODE } from "./particlesToPoints";
+import { PARTICLE_RENDER_INSTANCES_NODE } from "./particleInstances";
 import { FORCE_FIELD_NODE } from "./forceField";
 import { CAPTURE_TRAILS_NODE } from "./particleTrails";
 import {
@@ -195,6 +197,8 @@ export const STARTER_NODES = [
   PARTICLE_EMITTER_FROM_POINTS_NODE,
   PARTICLE_EMITTER_FROM_SURFACE_NODE,
   GEOMETRY_TO_POINTS_NODE,
+  PARTICLES_TO_POINTS_NODE,
+  PARTICLE_RENDER_INSTANCES_NODE,
   FORCE_FIELD_NODE,
   PARTICLE_SIMULATE_NODE,
   PARTICLE_RENDER_NODE,
@@ -271,6 +275,8 @@ export * from "./objLoader";
 export * from "./texture";
 export * from "./particles";
 export * from "./geometryToPoints";
+export * from "./particlesToPoints";
+export * from "./particleInstances";
 export * from "./postprocessing";
 export * from "./environment";
 export * from "./listGroup";

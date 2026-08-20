@@ -439,7 +439,7 @@ export const RAY_BURST_NODE: NodeDefinition = {
 /** Sample Surface Node — N random points + normals over a mesh's surface (area-weighted). */
 export const SAMPLE_SURFACE_NODE: NodeDefinition = {
   type: "physics/sample",
-  label: "Sample Surface",
+  label: "Scatter Points on Surface (Random)",
   category: "physics",
   inputs: [
     { id: "geometry", label: "Surface", type: "geometry" },

@@ -1,0 +1,162 @@
+import * as THREE from "three";
+import { NodeDefinition } from "../types";
+import { createNodeCache, disposeObject3D } from "../nodeCaches";
+import { readPositionsSync, textureSizeFor } from "../particleRuntime";
+import { findFirstMesh } from "../meshRequired";
+import { isAlive } from "./particleTrails";
+import {
+  applyMaterialParams,
+  buildPrimitiveDynamicParamFields,
+  COMMON_DEFAULT_PARAMS,
+  COMMON_PRIMITIVE_INPUTS,
+  COMMON_PRIMITIVE_OUTPUTS,
+  extractMaterialParams,
+  extractTextureParams,
+  primitiveOutputs,
+} from "./object";
+import { composeNativeMatrix } from "./transform";
+
+function numberInput(input: unknown, param: unknown, fallback: number): number {
+  const raw = input !== undefined ? input : param;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+/**
+ * Ceiling on instances built in one frame. An InstancedMesh is one draw call
+ * whatever the count, but each frame still walks the readback and writes a
+ * Matrix4 per live particle on the CPU, so this is a frame-time guard rather
+ * than a GPU one. Well above the "handful of particles" this node's mesh
+ * sources realistically pair with.
+ */
+const MAX_INSTANCES = 20000;
+
+interface InstanceState {
+  mesh?: THREE.InstancedMesh;
+  /** The geometry the instances were built from — swapping the Shape input rebuilds. */
+  sourceGeometryId?: string;
+  capacity?: number;
+}
+
+const instanceCache = createNodeCache<InstanceState>((s) => {
+  if (s.mesh) disposeObject3D(s.mesh);
+});
+
+function getState(nodeId: string): InstanceState {
+  let state = instanceCache.get(nodeId);
+  if (!state) {
+    state = {};
+    instanceCache.set(nodeId, state);
+  }
+  return state;
+}
+
+const EXTRA_FIELDS = [
+  { id: "instanceScale", label: "Instance Scale", kind: "number" as const, step: 0.01, group: "Geometry" },
+];
+
+/**
+ * Particle Render (Instances) Node — draws each particle as a real mesh
+ * instead of a sprite.
+ *
+ * particles/render is a THREE.Points with a bespoke shader: fast, but the
+ * particles can only ever be flat camera-facing sprites, and they sit outside
+ * the material system every other object node shares — no PBR, no shadows, no
+ * chosen geometry. That gap is what kept particles feeling like a separate
+ * world rather than another kind of object. This node closes it: wire any
+ * mesh into Shape and every live particle becomes a copy of it, through one
+ * InstancedMesh (one draw call) carrying the same standard material params as
+ * Box, Sphere and the rest.
+ *
+ * Positions come from the same CPU readback connect-nearby, capture-trails
+ * and particles/to-points already use, rather than a GPU instancing shader:
+ * it keeps the node inside the app's ordinary material/geometry machinery
+ * (a real THREE.InstancedMesh that shadows, raycasts and accepts a Material
+ * input) instead of a second bespoke shader that would have to reimplement
+ * all of it. The tradeoff is a per-frame matrix write per particle, bounded
+ * by MAX_INSTANCES.
+ */
+export const PARTICLE_RENDER_INSTANCES_NODE: NodeDefinition = {
+  type: "particles/render-instances",
+  label: "Particle Render (Instances)",
+  category: "particles",
+  inputs: [
+    { id: "positions", label: "Positions", type: "texture" },
+    { id: "count", label: "Count", type: "value" },
+    { id: "shape", label: "Shape (Mesh)", type: "geometry" },
+    { id: "instanceScale", label: "Instance Scale", type: "value" },
+    ...COMMON_PRIMITIVE_INPUTS,
+  ],
+  outputs: [...COMMON_PRIMITIVE_OUTPUTS],
+  defaultParams: {
+    ...COMMON_DEFAULT_PARAMS,
+    instanceScale: 0.1,
+  },
+  paramFields: buildPrimitiveDynamicParamFields(EXTRA_FIELDS)(),
+  dynamicParamFields: buildPrimitiveDynamicParamFields(EXTRA_FIELDS),
+  evaluate: (inputs, params, ctx) => {
+    const state = getState(ctx.nodeId);
+
+    const texture = inputs.positions instanceof THREE.Texture ? inputs.positions : null;
+    const capacity = Math.max(0, Math.min(MAX_INSTANCES, Math.round(numberInput(inputs.count, params.count, 0))));
+    const instanceScale = Math.max(0.0001, numberInput(inputs.instanceScale, params.instanceScale, 0.1));
+
+    // Fall back to a small box so the node shows something the moment it is
+    // added, before a Shape is wired — same "useful with nothing connected"
+    // contract every primitive node has.
+    const shapeObject = inputs.shape instanceof THREE.Object3D ? inputs.shape : null;
+    const shapeMesh = shapeObject ? findFirstMesh(shapeObject) : null;
+    const sourceGeometry = shapeMesh?.geometry ?? null;
+    const sourceGeometryId = sourceGeometry?.uuid ?? "__default_box__";
+
+    if (!state.mesh || state.sourceGeometryId !== sourceGeometryId || state.capacity !== capacity) {
+      if (state.mesh) disposeObject3D(state.mesh);
+      // Cloned, not shared: InstancedMesh takes ownership of its geometry for
+      // disposal, and the Shape node still owns and draws the original.
+      const geometry = sourceGeometry ? sourceGeometry.clone() : new THREE.BoxGeometry(1, 1, 1);
+      const mesh = new THREE.InstancedMesh(geometry, new THREE.MeshStandardMaterial({ color: 0xffffff }), Math.max(1, capacity));
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.frustumCulled = false;
+      mesh.userData.nodeId = ctx.nodeId;
+      state.mesh = mesh;
+      state.sourceGeometryId = sourceGeometryId;
+      state.capacity = capacity;
+    }
+    const mesh = state.mesh;
+
+    if (ctx.nodeId !== ctx.liveEditNodeId) {
+      mesh.matrixAutoUpdate = false;
+      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+    }
+
+    let live = 0;
+    if (texture && capacity > 0 && ctx.renderer) {
+      const size = textureSizeFor(capacity);
+      const buffer = readPositionsSync(ctx.renderer, texture, size, ctx.nodeId);
+      const matrix = new THREE.Matrix4();
+      const scale = new THREE.Vector3(instanceScale, instanceScale, instanceScale);
+      const quaternion = new THREE.Quaternion();
+      const position = new THREE.Vector3();
+      for (let i = 0; i < capacity; i++) {
+        // Same age >= 0 aliveness test particles/render's vertex shader uses —
+        // a dead or still-pre-spawn texel is parked at the world origin, and
+        // instancing those would stack a pile of meshes at (0,0,0).
+        if (!isAlive(buffer[i * 4 + 3])) continue;
+        position.set(buffer[i * 4], buffer[i * 4 + 1], buffer[i * 4 + 2]);
+        mesh.setMatrixAt(live, matrix.compose(position, quaternion, scale));
+        live++;
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+    // Only the live prefix is drawn; the rest of the allocated capacity keeps
+    // whatever stale matrices it had, unread.
+    mesh.count = live;
+
+    const matParams = extractMaterialParams(inputs, params);
+    const texParams = extractTextureParams(inputs, params, ctx.nodeId);
+    applyMaterialParams(mesh as unknown as THREE.Mesh, matParams, THREE.FrontSide, texParams);
+
+    return primitiveOutputs(mesh);
+  },
+};

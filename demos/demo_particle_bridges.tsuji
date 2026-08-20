@@ -1,0 +1,218 @@
+{
+  "nodes": [
+    {
+      "id": "time",
+      "type": "time",
+      "position": { "x": -1400, "y": 40 },
+      "params": {}
+    },
+    {
+      "id": "shape",
+      "type": "object/box",
+      "position": { "x": -1400, "y": 380 },
+      "params": {
+        "visible": 1,
+        "location": { "x": 0, "y": -100, "z": 0 },
+        "rotation": { "x": 0, "y": 0, "z": 0 },
+        "scale": { "x": 1, "y": 1, "z": 1 }
+      }
+    },
+    {
+      "id": "emitter",
+      "type": "particles/emitter",
+      "position": { "x": -1160, "y": 40 },
+      "params": {
+        "position": { "x": 0, "y": 0, "z": 0 },
+        "velocity": { "x": 0, "y": 0, "z": 0 },
+        "spawnRate": 12,
+        "diameter": 1.5
+      }
+    },
+    {
+      "id": "vortex",
+      "type": "particles/force-field",
+      "position": { "x": -1160, "y": 240 },
+      "params": {
+        "fieldType": "vortex",
+        "position": { "x": 0, "y": 0, "z": 0 },
+        "axis": { "x": 0, "y": 1, "z": 0 },
+        "strength": 3,
+        "radius": 0,
+        "scale": 1,
+        "speed": 0.1
+      }
+    },
+    {
+      "id": "sim",
+      "type": "particles/simulate",
+      "position": { "x": -900, "y": 40 },
+      "params": {
+        "gravity": 0,
+        "wind": { "x": 0, "y": 0, "z": 0 },
+        "lifetime": 5,
+        "count": 128,
+        "flowStrength": 0.8,
+        "flowScale": 0.6,
+        "flowSpeed": 0.1,
+        "boundsRadius": 6,
+        "maxSpeed": 3
+      }
+    },
+    {
+      "id": "instances",
+      "type": "particles/render-instances",
+      "position": { "x": -600, "y": -140 },
+      "params": {
+        "visible": 1,
+        "location": { "x": 0, "y": 0, "z": 0 },
+        "rotation": { "x": 0, "y": 0, "z": 0 },
+        "scale": { "x": 1, "y": 1, "z": 1 },
+        "instanceScale": 0.12,
+        "color": { "r": 1, "g": 0.62, "b": 0.25 },
+        "roughness": 0.3,
+        "metalness": 0.5,
+        "opacity": 1
+      }
+    },
+    {
+      "id": "toPoints",
+      "type": "particles/to-points",
+      "position": { "x": -600, "y": 200 },
+      "params": {}
+    },
+    {
+      "id": "cloud",
+      "type": "object/point_cloud",
+      "position": { "x": -320, "y": 200 },
+      "params": {
+        "location": { "x": 0, "y": 0, "z": 0 },
+        "rotation": { "x": 0, "y": 0, "z": 0 },
+        "scale": { "x": 1, "y": 1, "z": 1 },
+        "pointSize": 0.05,
+        "scaleX": 1,
+        "scaleY": 1,
+        "scaleZ": 1,
+        "color": { "r": 0.45, "g": 0.85, "b": 1 },
+        "emissiveIntensity": 1
+      }
+    },
+    {
+      "id": "merge",
+      "type": "structure/merge",
+      "position": { "x": -40, "y": 40 },
+      "params": {}
+    },
+    {
+      "id": "bloom",
+      "type": "postprocess/bloom",
+      "position": { "x": -40, "y": 320 },
+      "params": { "strength": 0.45, "radius": 0.4, "threshold": 0.4 }
+    },
+    {
+      "id": "output",
+      "type": "render",
+      "position": { "x": 240, "y": 40 },
+      "params": {}
+    }
+  ],
+  "connections": [
+    {
+      "id": "emitter.emitter->sim.emitter",
+      "fromNode": "emitter",
+      "fromSocket": "emitter",
+      "toNode": "sim",
+      "toSocket": "emitter"
+    },
+    {
+      "id": "vortex.field->sim.field0",
+      "fromNode": "vortex",
+      "fromSocket": "field",
+      "toNode": "sim",
+      "toSocket": "field0"
+    },
+    {
+      "id": "sim.positions->instances.positions",
+      "fromNode": "sim",
+      "fromSocket": "positions",
+      "toNode": "instances",
+      "toSocket": "positions"
+    },
+    {
+      "id": "sim.count->instances.count",
+      "fromNode": "sim",
+      "fromSocket": "count",
+      "toNode": "instances",
+      "toSocket": "count"
+    },
+    {
+      "id": "shape.geometry->instances.shape",
+      "fromNode": "shape",
+      "fromSocket": "geometry",
+      "toNode": "instances",
+      "toSocket": "shape"
+    },
+    {
+      "id": "sim.positions->toPoints.positions",
+      "fromNode": "sim",
+      "fromSocket": "positions",
+      "toNode": "toPoints",
+      "toSocket": "positions"
+    },
+    {
+      "id": "sim.count->toPoints.count",
+      "fromNode": "sim",
+      "fromSocket": "count",
+      "toNode": "toPoints",
+      "toSocket": "count"
+    },
+    {
+      "id": "toPoints.xValues->cloud.xValues",
+      "fromNode": "toPoints",
+      "fromSocket": "xValues",
+      "toNode": "cloud",
+      "toSocket": "xValues"
+    },
+    {
+      "id": "toPoints.yValues->cloud.yValues",
+      "fromNode": "toPoints",
+      "fromSocket": "yValues",
+      "toNode": "cloud",
+      "toSocket": "yValues"
+    },
+    {
+      "id": "toPoints.zValues->cloud.zValues",
+      "fromNode": "toPoints",
+      "fromSocket": "zValues",
+      "toNode": "cloud",
+      "toSocket": "zValues"
+    },
+    {
+      "id": "instances.geometry->merge.in0",
+      "fromNode": "instances",
+      "fromSocket": "geometry",
+      "toNode": "merge",
+      "toSocket": "in0"
+    },
+    {
+      "id": "cloud.geometry->merge.in1",
+      "fromNode": "cloud",
+      "fromSocket": "geometry",
+      "toNode": "merge",
+      "toSocket": "in1"
+    },
+    {
+      "id": "merge.geometry->output.geometry",
+      "fromNode": "merge",
+      "fromSocket": "geometry",
+      "toNode": "output",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "bloom.effect->output.postprocess",
+      "fromNode": "bloom",
+      "fromSocket": "effect",
+      "toNode": "output",
+      "toSocket": "postprocess"
+    }
+  ]
+}
