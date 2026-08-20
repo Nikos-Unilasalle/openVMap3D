@@ -121,9 +121,14 @@ export const PARTICLE_EMITTER_FROM_POINTS_NODE: NodeDefinition = {
     { id: "spawnRate", label: "Spawn Rate", type: "value" },
   ],
   outputs: [{ id: "emitter", label: "Emitter", type: "any" }],
-  defaultParams: { velocity: new THREE.Vector3(0, 0, 0), spawnRate: 200 },
+  defaultParams: { velocity: new THREE.Vector3(0, 0, 0), spawnRate: 200, randomSpawnPick: false },
   paramFields: [
     { id: "velocity", label: "Velocity (fallback)", kind: "vector" },
+    {
+      id: "randomSpawnPick",
+      label: "Random Spawn Point (off = one particle per point)",
+      kind: "boolean",
+    },
     {
       id: "spawnRate",
       label: "Spawn Rate",
@@ -161,7 +166,16 @@ export const PARTICLE_EMITTER_FROM_POINTS_NODE: NodeDefinition = {
       state.seedPositions = seedPositions;
     }
 
-    return { emitter: buildEmitterConfig(new THREE.Vector3(), velocity, spawnRate, state.seedPositions) };
+    return {
+      emitter: buildEmitterConfig(
+        new THREE.Vector3(),
+        velocity,
+        spawnRate,
+        state.seedPositions,
+        undefined,
+        params.randomSpawnPick === true,
+      ),
+    };
   },
 };
 
@@ -196,11 +210,16 @@ export const PARTICLE_EMITTER_FROM_SURFACE_NODE: NodeDefinition = {
     spawnRate: 200,
     points: 200,
     seed: 1,
+    // Default on: a surface emitter binding each particle to a fixed sample
+    // point makes every particle retrace one identical path per life, which
+    // reads as a handful of streaks rather than a surface emitting.
+    randomSpawnPick: true,
   },
   paramFields: [
     { id: "velocity", label: "Velocity (fallback)", kind: "vector" },
     { id: "spawnRate", label: "Spawn Rate", kind: "number", step: 10 },
     { id: "points", label: "Surface Points", kind: "number", step: 10 },
+    { id: "randomSpawnPick", label: "Random Spawn Point", kind: "boolean" },
     { id: "seed", label: "Seed", kind: "number", step: 1 },
   ],
   evaluate: (inputs, params) => {
@@ -223,7 +242,16 @@ export const PARTICLE_EMITTER_FROM_SURFACE_NODE: NodeDefinition = {
       seedPositions[i * 3 + 2] = p.z;
     });
 
-    return { emitter: buildEmitterConfig(new THREE.Vector3(), velocity, spawnRate, seedPositions) };
+    return {
+      emitter: buildEmitterConfig(
+        new THREE.Vector3(),
+        velocity,
+        spawnRate,
+        seedPositions,
+        undefined,
+        params.randomSpawnPick !== false,
+      ),
+    };
   },
 };
 

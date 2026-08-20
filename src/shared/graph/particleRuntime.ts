@@ -51,6 +51,14 @@ export interface EmitterConfig {
    * own, more specific idea of spread (the point cloud / the sampled mesh).
    */
   diameter: number;
+  /**
+   * With seedPositions set, whether each respawn picks a *fresh* random seed
+   * point (true) or keeps the texel permanently bound to one (false) — see
+   * the seedRandomPick branch in POSITION_SHADER for why the difference is
+   * visible rather than academic. Surface emission wants random; reproducing
+   * a point cloud exactly wants sequential. Ignored without seedPositions.
+   */
+  randomSpawnPick: boolean;
 }
 
 export function buildEmitterConfig(
@@ -59,8 +67,9 @@ export function buildEmitterConfig(
   spawnRate: number,
   seedPositions?: Float32Array,
   diameter = 0.25,
+  randomSpawnPick = false,
 ): EmitterConfig {
-  return { position, velocity, spawnRate, seedPositions, diameter };
+  return { position, velocity, spawnRate, seedPositions, diameter, randomSpawnPick };
 }
 
 /** How many of `capacity` texels are actually alive-capable — population = rate × lifetime, capped. */
@@ -79,6 +88,8 @@ const POSITION_SHADER = /* glsl */ `
   uniform float seedCount;
   uniform float seedSize;
   uniform float spawnDiameter;
+  uniform float seedRandomPick;
+  uniform float time;
 
   void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;
@@ -102,11 +113,26 @@ const POSITION_SHADER = /* glsl */ `
     if (age > lifetime) {
       vec3 spawnPos;
       if (seedCount > 0.0) {
-        // idx cycles through the seed set (mod), so a particle count larger
-        // than the point cloud just respawns several particles per point —
-        // the cloud's shape, not any one point, is what's being preserved.
-        // No jitter: the point cloud's own geometry is the spawn pattern.
+        // Which seed point this respawn lands on. No jitter either way: the
+        // seed set's own geometry is the spawn pattern.
+        //
+        // Sequential (mod of idx by seedCount) binds each texel to one seed
+        // point *for the lifetime of the simulation* — particle 7 respawns at
+        // seed point 7 every single time. That reproduces a point cloud
+        // exactly when the population matches the cloud, which is what
+        // Particle Emitter (From Points) wants, but it is wrong for a surface
+        // emitter: every particle then retraces an identical path each life
+        // (the flow field being deterministic), so the emission reads as a few
+        // fixed streaks instead of a surface actually emitting.
+        //
+        // Random picks a fresh point per respawn by hashing the texel against
+        // the simulation clock. time is the sim's own fixed-step clock, not
+        // wall time, so a scrub or a re-export replays the identical sequence.
         float seedIdx = mod(idx, seedCount);
+        if (seedRandomPick > 0.5) {
+          float h = fract(sin(idx * 12.9898 + floor(time * 60.0) * 78.233) * 43758.5453);
+          seedIdx = floor(h * seedCount);
+        }
         vec2 suv = (vec2(mod(seedIdx, seedSize), floor(seedIdx / seedSize)) + 0.5) / seedSize;
         spawnPos = texture2D(seedPositions, suv).rgb;
       } else {
@@ -451,6 +477,8 @@ function createSimulation(nodeId: string, renderer: THREE.WebGLRenderer, size: n
   positionVar.material.uniforms.seedCount = { value: 0 };
   positionVar.material.uniforms.seedSize = { value: 1 };
   positionVar.material.uniforms.spawnDiameter = { value: 0.25 };
+  positionVar.material.uniforms.seedRandomPick = { value: 0 };
+  positionVar.material.uniforms.time = { value: 0 };
   velocityVar.material.uniforms.emitterVelocity = { value: new THREE.Vector3() };
   velocityVar.material.uniforms.gravity = { value: 0 };
   velocityVar.material.uniforms.wind = { value: new THREE.Vector3() };
@@ -572,6 +600,7 @@ export function getOrCreateSimulation(
   sim.positionVar.material.uniforms.seedCount.value = seed.count;
   sim.positionVar.material.uniforms.seedSize.value = seed.size;
   sim.positionVar.material.uniforms.spawnDiameter.value = Math.max(0, emitter.diameter);
+  sim.positionVar.material.uniforms.seedRandomPick.value = emitter.randomSpawnPick ? 1 : 0;
   sim.velocityVar.material.uniforms.emitterVelocity.value.copy(emitter.velocity);
   sim.velocityVar.material.uniforms.gravity.value = gravity;
   sim.velocityVar.material.uniforms.wind.value.copy(wind);
@@ -597,6 +626,7 @@ export function getOrCreateSimulation(
   const steps = stepsSince(sim.lastSteppedStep, currentStep, MAX_STEPS_PER_FRAME);
   for (let i = 0; i < steps; i++) {
     sim.velocityVar.material.uniforms.time.value = sim.simSeconds;
+    sim.positionVar.material.uniforms.time.value = sim.simSeconds;
     sim.simSeconds += STEP_SECONDS;
     sim.gpuCompute.compute();
   }
