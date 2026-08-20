@@ -18,23 +18,39 @@ function fract(x: number): number {
 }
 
 /**
- * Cumulative linear offsets with each gap jittered by up to +/-variance —
- * a per-instance offset jitter (each pole nudged independently) would still
- * leave every *gap* exactly `spacing`, reading as perfectly even poles that
+ * Cumulative offsets with each gap jittered by up to +/-variance — a
+ * per-instance offset jitter (each item nudged independently) would still
+ * leave every *gap* exactly `step`, reading as perfectly even items that
  * merely wobble in place; varying the gap itself, and accumulating, is what
  * actually makes consecutive distances uneven the way real-world spacing is.
  * The hash is a pure function of the gap's own index, not of runtime state,
  * so re-evaluating the same Count/Spacing/Variance always reproduces the
- * same layout.
+ * same layout. `step` is whatever unit the caller is spacing in — world
+ * units for linear/grid, radians for circular, a dimensionless "cell" for
+ * curve mode (see its own normalization).
  */
-function linearOffsetsWithVariance(count: number, spacing: number, variance: number): number[] {
+function cumulativeOffsetsWithVariance(count: number, step: number, variance: number): number[] {
   const offsets = [0];
   for (let i = 1; i < count; i++) {
     const rand = fract(Math.sin(i * 78.233) * 43758.5453);
-    const gap = spacing * (1 + variance * (rand * 2 - 1));
+    const gap = step * (1 + variance * (rand * 2 - 1));
     offsets.push(offsets[i - 1] + gap);
   }
   return offsets;
+}
+
+/**
+ * A centered row of `count` cumulative offsets (see above), shifted so the
+ * row as a whole is centered on 0 — the jittered equivalent of grid/grid3d's
+ * `(i - (count-1)/2) * spacing`. With variance the row's total span is no
+ * longer exactly `(count-1)*spacing`, so it centers on the row's own actual
+ * span rather than the nominal one; individual gaps stay jittered either way.
+ */
+function centeredOffsetsWithVariance(count: number, step: number, variance: number, center: boolean): number[] {
+  const offsets = cumulativeOffsetsWithVariance(count, step, variance);
+  if (!center) return offsets;
+  const half = offsets[count - 1] / 2;
+  return offsets.map((o) => o - half);
 }
 
 /**
@@ -125,6 +141,7 @@ export const ARRAY_NODE: NodeDefinition = {
         { id: "plane", label: "Circular Plane", kind: "select", options: ["XZ", "XY", "YZ"], group: "Pattern & Grid" },
         { id: "totalAngle", label: "Total Angle (°)", kind: "number", step: 15, group: "Pattern & Grid" },
         { id: "orient", label: "Orient to Circle", kind: "boolean", group: "Pattern & Grid" },
+        { id: "spacingVariance", label: "Spacing Variance (%)", kind: "number", step: 5, group: "Pattern & Grid" },
       );
     } else if (mode === "grid") {
       fields.push(
@@ -132,6 +149,7 @@ export const ARRAY_NODE: NodeDefinition = {
         { id: "gridRows", label: "Rows (Y/Z)", kind: "number", step: 1, group: "Pattern & Grid" },
         { id: "spacingX", label: "Spacing X", kind: "number", step: 0.1, group: "Pattern & Grid" },
         { id: "spacingY", label: "Spacing Y/Z", kind: "number", step: 0.1, group: "Pattern & Grid" },
+        { id: "spacingVariance", label: "Spacing Variance (%)", kind: "number", step: 5, group: "Pattern & Grid" },
         { id: "plane", label: "Grid Plane", kind: "select", options: ["XZ", "XY", "YZ"], group: "Pattern & Grid" },
         { id: "centerGrid", label: "Center Grid", kind: "boolean", group: "Pattern & Grid" },
       );
@@ -143,12 +161,14 @@ export const ARRAY_NODE: NodeDefinition = {
         { id: "spacingX", label: "Spacing X", kind: "number", step: 0.1, group: "Pattern & Grid" },
         { id: "spacingY", label: "Spacing Y", kind: "number", step: 0.1, group: "Pattern & Grid" },
         { id: "spacingZ", label: "Spacing Z", kind: "number", step: 0.1, group: "Pattern & Grid" },
+        { id: "spacingVariance", label: "Spacing Variance (%)", kind: "number", step: 5, group: "Pattern & Grid" },
         { id: "centerGrid", label: "Center Grid", kind: "boolean", group: "Pattern & Grid" },
       );
     } else if (mode === "curve") {
       fields.push(
         { id: "count", label: "Count", kind: "number", step: 1, group: "Pattern & Grid" },
         { id: "curveOrient", label: "Orient to Curve", kind: "boolean", group: "Pattern & Grid" },
+        { id: "spacingVariance", label: "Spacing Variance (%)", kind: "number", step: 5, group: "Pattern & Grid" },
       );
     }
     return fields;
@@ -162,6 +182,9 @@ export const ARRAY_NODE: NodeDefinition = {
 
     const mode = String(params.mode || "linear");
 
+    const rawSpacingVariance = inputs.spacingVariance !== undefined ? Number(inputs.spacingVariance) : Number(params.spacingVariance);
+    const spacingVariance = Math.max(0, Math.min(100, isNaN(rawSpacingVariance) ? 0 : rawSpacingVariance)) / 100;
+
     if (mode === "grid") {
       const rows = Math.max(1, Math.floor(Number(params.gridRows) || 3));
       const cols = Math.max(1, Math.floor(Number(params.gridCols) || 3));
@@ -169,6 +192,8 @@ export const ARRAY_NODE: NodeDefinition = {
       const spY = inputs.spacingY !== undefined ? Number(inputs.spacingY) : (Number(params.spacingY) || 2.0);
       const plane = String(params.plane || "XZ");
       const center = Boolean(params.centerGrid ?? true);
+      const colOffsets = centeredOffsetsWithVariance(cols, spX, spacingVariance, center);
+      const rowOffsets = centeredOffsetsWithVariance(rows, spY, spacingVariance, center);
 
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
@@ -176,8 +201,8 @@ export const ARRAY_NODE: NodeDefinition = {
           const instanceMatrix = new THREE.Matrix4();
           const pos = new THREE.Vector3();
 
-          const offsetX = center ? (c - (cols - 1) / 2) * spX : c * spX;
-          const offsetY = center ? (r - (rows - 1) / 2) * spY : r * spY;
+          const offsetX = colOffsets[c];
+          const offsetY = rowOffsets[r];
 
           if (plane === "XY") {
             pos.set(offsetX, offsetY, 0);
@@ -208,17 +233,16 @@ export const ARRAY_NODE: NodeDefinition = {
       const spY = inputs.spacingY !== undefined ? Number(inputs.spacingY) : (Number(params.spacingY) || 2.0);
       const spZ = inputs.spacingZ !== undefined ? Number(inputs.spacingZ) : (Number(params.spacingZ) || 2.0);
       const center = Boolean(params.centerGrid ?? true);
+      const xOffsets = centeredOffsetsWithVariance(cX, spX, spacingVariance, center);
+      const yOffsets = centeredOffsetsWithVariance(cY, spY, spacingVariance, center);
+      const zOffsets = centeredOffsetsWithVariance(cZ, spZ, spacingVariance, center);
 
       for (let ix = 0; ix < cX; ix++) {
         for (let iy = 0; iy < cY; iy++) {
           for (let iz = 0; iz < cZ; iz++) {
             const clone = source.clone(true);
             const instanceMatrix = new THREE.Matrix4();
-            const pos = new THREE.Vector3(
-              center ? (ix - (cX - 1) / 2) * spX : ix * spX,
-              center ? (iy - (cY - 1) / 2) * spY : iy * spY,
-              center ? (iz - (cZ - 1) / 2) * spZ : iz * spZ,
-            );
+            const pos = new THREE.Vector3(xOffsets[ix], yOffsets[iy], zOffsets[iz]);
 
             instanceMatrix.compose(pos, new THREE.Quaternion(), new THREE.Vector3(1, 1, 1));
             const wrapper = new THREE.Group();
@@ -248,9 +272,30 @@ export const ARRAY_NODE: NodeDefinition = {
 
     const rawLinearSpacing = inputs.spacing !== undefined ? Number(inputs.spacing) : Number(params.spacing);
     const linearSpacing = isNaN(rawLinearSpacing) ? 2.0 : rawLinearSpacing;
-    const rawSpacingVariance = inputs.spacingVariance !== undefined ? Number(inputs.spacingVariance) : Number(params.spacingVariance);
-    const spacingVariance = Math.max(0, Math.min(100, isNaN(rawSpacingVariance) ? 0 : rawSpacingVariance)) / 100;
-    const linearOffsets = mode === "linear" ? linearOffsetsWithVariance(count, linearSpacing, spacingVariance) : null;
+    const linearOffsets = mode === "linear" ? cumulativeOffsetsWithVariance(count, linearSpacing, spacingVariance) : null;
+
+    // Circular: jitter the angular step the same way, so consecutive
+    // instances sit unevenly around the ring instead of at a perfectly
+    // uniform angle.
+    let circularAngleOffsets: number[] | null = null;
+    if (mode === "circular") {
+      const totalAngleDeg = Number(params.totalAngle) || 360;
+      const totalAngleRad = (totalAngleDeg * Math.PI) / 180;
+      const stepAngleRad = count > 1 && totalAngleDeg < 360 ? totalAngleRad / (count - 1) : totalAngleRad / count;
+      circularAngleOffsets = cumulativeOffsetsWithVariance(count, stepAngleRad, spacingVariance);
+    }
+
+    // Curve: jitter the arc-length "cell" step the same way, then normalize
+    // by the row's own actual span — the endpoints stay exactly where they
+    // were (open) and the loop still closes without a seam duplicate
+    // (closed), same as the unjittered curveDivisions math above. Degrades
+    // to the exact old i/curveDivisions steps at 0 variance.
+    let curveUOffsets: number[] | null = null;
+    if (mode === "curve" && curveInput) {
+      const raw = cumulativeOffsetsWithVariance(curveDivisions + 1, 1, spacingVariance);
+      const total = raw[curveDivisions] || 1;
+      curveUOffsets = raw.map((v) => v / total);
+    }
 
     for (let i = 0; i < count; i++) {
       const clone = source.clone(true);
@@ -266,7 +311,7 @@ export const ARRAY_NODE: NodeDefinition = {
       let quatOverride: THREE.Quaternion | null = null;
 
       if (mode === "curve" && curveInput) {
-        const u = curveDivisions > 0 ? i / curveDivisions : 0;
+        const u = curveUOffsets ? curveUOffsets[i] : 0;
         pos.copy(curveInput.getPointAt(Math.min(1, u)));
         if (Boolean(params.curveOrient)) {
           const tangent = curveInput.getTangentAt(Math.min(1, u));
@@ -290,16 +335,9 @@ export const ARRAY_NODE: NodeDefinition = {
         const rawRadius = inputs.radius !== undefined ? Number(inputs.radius) : Number(params.radius);
         const radius = isNaN(rawRadius) ? 3.0 : rawRadius;
         const plane = String(params.plane || "XZ");
-        const totalAngleDeg = Number(params.totalAngle) || 360;
         const orient = Boolean(params.orient ?? true);
 
-        const totalAngleRad = (totalAngleDeg * Math.PI) / 180;
-        const stepAngleRad =
-          count > 1 && totalAngleDeg < 360
-            ? totalAngleRad / (count - 1)
-            : totalAngleRad / count;
-
-        const angle = i * stepAngleRad;
+        const angle = circularAngleOffsets![i];
 
         if (plane === "XY") {
           pos.set(Math.cos(angle) * radius, Math.sin(angle) * radius, 0);

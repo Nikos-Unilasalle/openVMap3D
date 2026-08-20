@@ -206,3 +206,74 @@ describe("ARRAY_NODE linear spacing variance", () => {
     expect(getChildPosition((res.geometry as THREE.Group).children[0]).x).toBeCloseTo(0);
   });
 });
+
+describe("ARRAY_NODE spacing variance for every mode", () => {
+  it("circular: jitters the angular step, first instance still at angle 0", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const res = ARRAY_NODE.evaluate(
+      { geometry: box },
+      { mode: "circular", count: 6, radius: 5, plane: "XZ", totalAngle: 360, orient: false, spacingVariance: 50 },
+      CTX,
+    );
+    const positions = (res.geometry as THREE.Group).children.map((c) => getChildPosition(c));
+    expect(positions[0].x).toBeCloseTo(5);
+    expect(positions[0].z).toBeCloseTo(0);
+    // Radii stay exact (only the angle jitters) — every point still on the circle.
+    for (const p of positions) expect(Math.hypot(p.x, p.z)).toBeCloseTo(5, 4);
+  });
+
+  it("grid: jitters column/row spacing, still centered on the row/column's own span", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const res = ARRAY_NODE.evaluate(
+      { geometry: box },
+      { mode: "grid", gridCols: 5, gridRows: 1, spacingX: 2, spacingY: 2, plane: "XZ", centerGrid: true, spacingVariance: 50 },
+      CTX,
+    );
+    const xs = (res.geometry as THREE.Group).children.map((c) => getChildPosition(c).x).sort((a, b) => a - b);
+    const gaps = xs.slice(1).map((x, i) => x - xs[i]);
+    expect(new Set(gaps.map((g) => g.toFixed(4))).size).toBeGreaterThan(1);
+    // Centered: the span sits symmetrically around 0.
+    expect(xs[0] + xs[xs.length - 1]).toBeCloseTo(0, 4);
+  });
+
+  it("grid3d: jitters spacing independently per axis", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const res = ARRAY_NODE.evaluate(
+      { geometry: box },
+      { mode: "grid3d", countX: 4, countY: 1, countZ: 1, spacingX: 2, spacingY: 2, spacingZ: 2, centerGrid: false, spacingVariance: 50 },
+      CTX,
+    );
+    const xs = (res.geometry as THREE.Group).children.map((c) => getChildPosition(c).x);
+    expect(xs[0]).toBeCloseTo(0);
+    const gaps = xs.slice(1).map((x, i) => x - xs[i]);
+    expect(new Set(gaps.map((g) => g.toFixed(4))).size).toBeGreaterThan(1);
+  });
+
+  it("curve: jitters arc-length spacing, first and last instances still land exactly on the curve's own ends", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const curve = new THREE.LineCurve3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(20, 0, 0));
+    const res = ARRAY_NODE.evaluate(
+      { geometry: box, curve },
+      { mode: "curve", count: 6, spacingVariance: 60 },
+      CTX,
+    );
+    const xs = (res.geometry as THREE.Group).children.map((c) => getChildPosition(c).x);
+    expect(xs[0]).toBeCloseTo(0);
+    expect(xs[xs.length - 1]).toBeCloseTo(20);
+    const gaps = xs.slice(1).map((x, i) => x - xs[i]);
+    expect(new Set(gaps.map((g) => g.toFixed(4))).size).toBeGreaterThan(1);
+  });
+
+  it("curve: still wraps a closed curve without a duplicate at the seam, even with variance on", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const points = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(10, 0, 0), new THREE.Vector3(10, 0, 10), new THREE.Vector3(0, 0, 10)];
+    const curve = new THREE.CatmullRomCurve3(points, true, "catmullrom", 0);
+    const res = ARRAY_NODE.evaluate({ geometry: box, curve }, { mode: "curve", count: 5, spacingVariance: 40 }, CTX);
+    const positions = (res.geometry as THREE.Group).children.map((c) => getChildPosition(c));
+    for (let i = 0; i < positions.length; i++) {
+      for (let j = i + 1; j < positions.length; j++) {
+        expect(positions[i].distanceTo(positions[j])).toBeGreaterThan(0.5);
+      }
+    }
+  });
+});
