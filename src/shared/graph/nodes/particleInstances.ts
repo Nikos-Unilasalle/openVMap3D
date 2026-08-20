@@ -24,6 +24,11 @@ function numberInput(input: unknown, param: unknown, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/** GLSL's fract() — the JS side of the hash shared with POSITION_SHADER's myLifetime. */
+function fract(x: number): number {
+  return x - Math.floor(x);
+}
+
 /**
  * Ceiling on instances built in one frame. An InstancedMesh is one draw call
  * whatever the count, but each frame still walks the readback and writes a
@@ -105,6 +110,7 @@ const EXTRA_FIELDS = [
   { id: "fadeSize", label: "Fade Size (birth/death)", kind: "boolean" as const, group: "Geometry" },
   { id: "fadeOpacity", label: "Fade Opacity (birth/death)", kind: "boolean" as const, group: "Geometry" },
   { id: "fadeFraction", label: "Fade Envelope", kind: "number" as const, step: 0.01, group: "Geometry" },
+  { id: "lifetimeVariance", label: "Lifetime Variation (%)", kind: "number" as const, step: 5, group: "Geometry" },
 ];
 
 /**
@@ -165,6 +171,7 @@ export const PARTICLE_RENDER_INSTANCES_NODE: NodeDefinition = {
     { id: "positions", label: "Positions", type: "texture" },
     { id: "count", label: "Count", type: "value" },
     { id: "lifetime", label: "Lifetime", type: "value" },
+    { id: "lifetimeVariance", label: "Lifetime Variation (%)", type: "value" },
     { id: "shape", label: "Shape (Mesh)", type: "geometry" },
     { id: "instanceScale", label: "Instance Scale", type: "value" },
     ...COMMON_PRIMITIVE_INPUTS,
@@ -177,6 +184,10 @@ export const PARTICLE_RENDER_INSTANCES_NODE: NodeDefinition = {
     fadeSize: false,
     fadeOpacity: false,
     fadeFraction: 0.15,
+    // Matches Particle Simulate's own field — enter the same % here as on
+    // the Simulate node feeding this one, so the fade envelope (below) knows
+    // each particle's *actual* randomized lifetime instead of the mean.
+    lifetimeVariance: 0,
   },
   paramFields: buildPrimitiveDynamicParamFields(EXTRA_FIELDS)(),
   dynamicParamFields: buildPrimitiveDynamicParamFields(EXTRA_FIELDS),
@@ -195,6 +206,8 @@ export const PARTICLE_RENDER_INSTANCES_NODE: NodeDefinition = {
     // behind it keeps running or not, indifferently.
     const freeze = toBoolean(params.freeze);
     const lifetime = typeof inputs.lifetime === "number" ? inputs.lifetime : 0;
+    const lifetimeVariance =
+      Math.max(0, Math.min(100, numberInput(inputs.lifetimeVariance, params.lifetimeVariance, 0))) / 100;
     const fadeFraction = Math.min(0.5, Math.max(0.001, Number(params.fadeFraction) || 0.15));
     const fadeSize = toBoolean(params.fadeSize);
     const fadeOpacity = toBoolean(params.fadeOpacity);
@@ -260,7 +273,14 @@ export const PARTICLE_RENDER_INSTANCES_NODE: NodeDefinition = {
         // at a constant 1, i.e. no fade.
         let envelope = 1;
         if (lifetime > 0) {
-          const lifeT = Math.min(1, Math.max(0, age / lifetime));
+          // Same per-texel hash as particleRuntime.ts's POSITION_SHADER
+          // myLifetime — has to match exactly, or the fade here (computed
+          // from the mean Lifetime) finishes before or after the particle's
+          // *actual* randomized death, popping it out mid-fade or leaving it
+          // fully faded but still alive for a while.
+          const lifeRand = fract(Math.sin(i * 78.233) * 43758.5453);
+          const myLifetime = Math.max(0.0001, lifetime * (1 + lifetimeVariance * (lifeRand * 2 - 1)));
+          const lifeT = Math.min(1, Math.max(0, age / myLifetime));
           const fadeIn = Math.min(1, Math.max(0, lifeT / fadeFraction));
           const fadeOut = Math.min(1, Math.max(0, (1 - lifeT) / fadeFraction));
           envelope = Math.min(fadeIn, fadeOut);
