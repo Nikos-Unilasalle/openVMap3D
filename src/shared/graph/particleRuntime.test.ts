@@ -25,7 +25,17 @@ describe("buildEmitterConfig", () => {
 
     const config = buildEmitterConfig(position, velocity, 200);
 
-    expect(config).toEqual({ position, velocity, spawnRate: 200 });
+    expect(config).toEqual({ position, velocity, spawnRate: 200, seedPositions: undefined, diameter: 0.25 });
+  });
+
+  test("defaults diameter to 0.25 — the jitter magnitude every emitter used before this param existed", () => {
+    const config = buildEmitterConfig(new THREE.Vector3(), new THREE.Vector3(), 200);
+    expect(config.diameter).toBe(0.25);
+  });
+
+  test("accepts an explicit diameter", () => {
+    const config = buildEmitterConfig(new THREE.Vector3(), new THREE.Vector3(), 200, undefined, 3);
+    expect(config.diameter).toBe(3);
   });
 });
 

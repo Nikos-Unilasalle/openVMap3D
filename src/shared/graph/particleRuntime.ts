@@ -39,6 +39,18 @@ export interface EmitterConfig {
    * sets this).
    */
   seedPositions?: Float32Array;
+  /**
+   * Side length of the cube a respawning particle is jittered within around
+   * `position` (a cube, not a true sphere, for the same reason the jitter
+   * itself is per-axis uniform noise rather than a rejection-sampled sphere
+   * point — cheap, and close enough at this scale). Ignored once
+   * seedPositions is set — a seeded emitter's spawn pattern is the point
+   * cloud's own shape, not a jittered point. Only particles/emitter (the
+   * single-point emitter) exposes this as "Diameter"; particles/emitter-
+   * from-points and particles/emitter-from-surface both already have their
+   * own, more specific idea of spread (the point cloud / the sampled mesh).
+   */
+  diameter: number;
 }
 
 export function buildEmitterConfig(
@@ -46,8 +58,9 @@ export function buildEmitterConfig(
   velocity: THREE.Vector3,
   spawnRate: number,
   seedPositions?: Float32Array,
+  diameter = 0.25,
 ): EmitterConfig {
-  return { position, velocity, spawnRate, seedPositions };
+  return { position, velocity, spawnRate, seedPositions, diameter };
 }
 
 /** How many of `capacity` texels are actually alive-capable — population = rate × lifetime, capped. */
@@ -65,6 +78,7 @@ const POSITION_SHADER = /* glsl */ `
   uniform sampler2D seedPositions;
   uniform float seedCount;
   uniform float seedSize;
+  uniform float spawnDiameter;
 
   void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;
@@ -97,7 +111,7 @@ const POSITION_SHADER = /* glsl */ `
         spawnPos = texture2D(seedPositions, suv).rgb;
       } else {
         float seed = fract(sin(dot(uv, vec2(12.9898, 78.233))) * 43758.5453);
-        vec3 jitter = (vec3(seed, fract(seed * 7.0), fract(seed * 13.0)) - 0.5) * 0.25;
+        vec3 jitter = (vec3(seed, fract(seed * 7.0), fract(seed * 13.0)) - 0.5) * spawnDiameter;
         spawnPos = emitterPosition + jitter;
       }
       gl_FragColor = vec4(spawnPos, age - lifetime);
@@ -436,6 +450,7 @@ function createSimulation(nodeId: string, renderer: THREE.WebGLRenderer, size: n
   positionVar.material.uniforms.seedPositions = { value: getPlaceholderSeedTexture() };
   positionVar.material.uniforms.seedCount = { value: 0 };
   positionVar.material.uniforms.seedSize = { value: 1 };
+  positionVar.material.uniforms.spawnDiameter = { value: 0.25 };
   velocityVar.material.uniforms.emitterVelocity = { value: new THREE.Vector3() };
   velocityVar.material.uniforms.gravity = { value: 0 };
   velocityVar.material.uniforms.wind = { value: new THREE.Vector3() };
@@ -556,6 +571,7 @@ export function getOrCreateSimulation(
   sim.positionVar.material.uniforms.seedPositions.value = seed.texture;
   sim.positionVar.material.uniforms.seedCount.value = seed.count;
   sim.positionVar.material.uniforms.seedSize.value = seed.size;
+  sim.positionVar.material.uniforms.spawnDiameter.value = Math.max(0, emitter.diameter);
   sim.velocityVar.material.uniforms.emitterVelocity.value.copy(emitter.velocity);
   sim.velocityVar.material.uniforms.gravity.value = gravity;
   sim.velocityVar.material.uniforms.wind.value.copy(wind);

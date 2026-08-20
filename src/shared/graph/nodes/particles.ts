@@ -46,19 +46,30 @@ export const PARTICLE_EMITTER_NODE: NodeDefinition = {
     { id: "position", label: "Position", type: "vector" },
     { id: "velocity", label: "Velocity", type: "vector" },
     { id: "spawnRate", label: "Spawn Rate", type: "value" },
+    { id: "diameter", label: "Diameter", type: "value" },
   ],
   outputs: [{ id: "emitter", label: "Emitter", type: "any" }],
-  defaultParams: { position: new THREE.Vector3(0, 0, 0), velocity: new THREE.Vector3(0, 0, 0), spawnRate: 200 },
+  defaultParams: {
+    position: new THREE.Vector3(0, 0, 0),
+    velocity: new THREE.Vector3(0, 0, 0),
+    spawnRate: 200,
+    // Matches the jitter magnitude every emitter used before this param
+    // existed — 0 here would collapse every respawn onto the exact same
+    // point, which reads as a rigid line/lattice rather than a cloud.
+    diameter: 0.25,
+  },
   paramFields: [
     { id: "position", label: "Position (fallback)", kind: "vector" },
     { id: "velocity", label: "Velocity (fallback)", kind: "vector" },
     { id: "spawnRate", label: "Spawn Rate", kind: "number", step: 10 },
+    { id: "diameter", label: "Diameter", kind: "number", step: 0.05 },
   ],
   evaluate: (inputs, params) => {
     const position = asVector(inputs.position, asVector(params.position, new THREE.Vector3()));
     const velocity = asVector(inputs.velocity, asVector(params.velocity, new THREE.Vector3()));
     const spawnRate = numberInput(inputs.spawnRate, params.spawnRate, 200);
-    return { emitter: buildEmitterConfig(position, velocity, spawnRate) };
+    const diameter = Math.max(0, numberInput(inputs.diameter, params.diameter, 0.25));
+    return { emitter: buildEmitterConfig(position, velocity, spawnRate, undefined, diameter) };
   },
 };
 
@@ -177,7 +188,6 @@ export const PARTICLE_EMITTER_FROM_SURFACE_NODE: NodeDefinition = {
     { id: "velocity", label: "Velocity", type: "vector" },
     { id: "spawnRate", label: "Spawn Rate", type: "value" },
     { id: "points", label: "Surface Points", type: "value" },
-    { id: "diameter", label: "Diameter", type: "value" },
     { id: "seed", label: "Seed", type: "value" },
   ],
   outputs: [{ id: "emitter", label: "Emitter", type: "any" }],
@@ -185,15 +195,12 @@ export const PARTICLE_EMITTER_FROM_SURFACE_NODE: NodeDefinition = {
     velocity: new THREE.Vector3(0, 0, 0),
     spawnRate: 200,
     points: 200,
-    // 0 = the geometry's own size, unscaled.
-    diameter: 0,
     seed: 1,
   },
   paramFields: [
     { id: "velocity", label: "Velocity (fallback)", kind: "vector" },
     { id: "spawnRate", label: "Spawn Rate", kind: "number", step: 10 },
     { id: "points", label: "Surface Points", kind: "number", step: 10 },
-    { id: "diameter", label: "Diameter (0 = geometry's own size)", kind: "number", step: 0.1 },
     { id: "seed", label: "Seed", kind: "number", step: 1 },
   ],
   evaluate: (inputs, params) => {
@@ -204,22 +211,10 @@ export const PARTICLE_EMITTER_FROM_SURFACE_NODE: NodeDefinition = {
     if (!object) return { emitter: buildEmitterConfig(new THREE.Vector3(), velocity, spawnRate) };
 
     const pointCount = Math.max(1, Math.min(20000, Math.round(numberInput(inputs.points, params.points, 200))));
-    const diameter = Math.max(0, numberInput(inputs.diameter, params.diameter, 0));
     const seed = numberInput(inputs.seed, params.seed, 1);
 
     const prng = createPRNG(seed);
-    let { positions } = sampleSurfacePoints(object, pointCount, prng);
-
-    // diameter > 0 rescales the sampled cloud around its own center — grow
-    // or shrink the emission spread without resizing the source mesh.
-    if (diameter > 0 && positions.length > 0) {
-      const sphere = new THREE.Sphere().setFromPoints(positions);
-      const naturalDiameter = sphere.radius * 2;
-      if (naturalDiameter > 1e-6) {
-        const scale = diameter / naturalDiameter;
-        positions = positions.map((p) => sphere.center.clone().addScaledVector(p.clone().sub(sphere.center), scale));
-      }
-    }
+    const { positions } = sampleSurfacePoints(object, pointCount, prng);
 
     const seedPositions = new Float32Array(positions.length * 3);
     positions.forEach((p, i) => {

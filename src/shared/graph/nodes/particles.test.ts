@@ -1,10 +1,37 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { PARTICLE_EMITTER_FROM_POINTS_NODE, PARTICLE_EMITTER_FROM_SURFACE_NODE, clampParticleCapacity } from "./particles";
+import { PARTICLE_EMITTER_FROM_POINTS_NODE, PARTICLE_EMITTER_FROM_SURFACE_NODE, PARTICLE_EMITTER_NODE, clampParticleCapacity } from "./particles";
 import { EmitterConfig } from "../particleRuntime";
 import { EvalContext } from "../types";
 
 const CTX = (nodeId: string): EvalContext => ({ time: 0, step: 0, nodeId });
+
+describe("PARTICLE_EMITTER_NODE", () => {
+  it("defaults diameter to 0.25", () => {
+    const res = PARTICLE_EMITTER_NODE.evaluate({}, PARTICLE_EMITTER_NODE.defaultParams, CTX("emit-a"));
+    expect((res.emitter as EmitterConfig).diameter).toBe(0.25);
+  });
+
+  it("passes a param diameter through", () => {
+    const res = PARTICLE_EMITTER_NODE.evaluate({}, { ...PARTICLE_EMITTER_NODE.defaultParams, diameter: 2 }, CTX("emit-b"));
+    expect((res.emitter as EmitterConfig).diameter).toBe(2);
+  });
+
+  it("prefers a wired diameter input over the param", () => {
+    const res = PARTICLE_EMITTER_NODE.evaluate({ diameter: 5 }, { ...PARTICLE_EMITTER_NODE.defaultParams, diameter: 2 }, CTX("emit-c"));
+    expect((res.emitter as EmitterConfig).diameter).toBe(5);
+  });
+
+  it("clamps a negative diameter to 0 rather than passing it through", () => {
+    const res = PARTICLE_EMITTER_NODE.evaluate({}, { ...PARTICLE_EMITTER_NODE.defaultParams, diameter: -3 }, CTX("emit-d"));
+    expect((res.emitter as EmitterConfig).diameter).toBe(0);
+  });
+
+  it("has no seedPositions — the plain emitter never seeds from a point list", () => {
+    const res = PARTICLE_EMITTER_NODE.evaluate({}, PARTICLE_EMITTER_NODE.defaultParams, CTX("emit-e"));
+    expect((res.emitter as EmitterConfig).seedPositions).toBeUndefined();
+  });
+});
 
 describe("PARTICLE_EMITTER_FROM_SURFACE_NODE", () => {
   it("has no seedPositions with nothing wired", () => {
@@ -24,7 +51,7 @@ describe("PARTICLE_EMITTER_FROM_SURFACE_NODE", () => {
     expect(emitter.seedPositions!.length).toBe(30 * 3);
   });
 
-  it("samples points that actually sit on the box's surface (diameter = 0, natural size)", () => {
+  it("samples points that actually sit on the box's surface", () => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2)); // extent -1..1 on every axis
     const res = PARTICLE_EMITTER_FROM_SURFACE_NODE.evaluate(
       { geometry: mesh },
@@ -38,23 +65,6 @@ describe("PARTICLE_EMITTER_FROM_SURFACE_NODE", () => {
       // least one coordinate at +/-1, and none exceed it.
       expect(Math.max(Math.abs(x), Math.abs(y), Math.abs(z))).toBeCloseTo(1, 5);
     }
-  });
-
-  it("diameter rescales the sampled cloud around its own center", () => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2)); // natural bounding-sphere diameter = 2*sqrt(3)
-    const res = PARTICLE_EMITTER_FROM_SURFACE_NODE.evaluate(
-      { geometry: mesh },
-      { ...PARTICLE_EMITTER_FROM_SURFACE_NODE.defaultParams, points: 50, seed: 3, diameter: 4 * Math.sqrt(3) }, // 2x natural
-      CTX("surf-d"),
-    );
-    const seed = (res.emitter as EmitterConfig).seedPositions!;
-    let maxRadius = 0;
-    for (let i = 0; i < seed.length; i += 3) {
-      maxRadius = Math.max(maxRadius, Math.hypot(seed[i], seed[i + 1], seed[i + 2]));
-    }
-    // Natural half-diagonal is sqrt(3) (~1.73); doubling the diameter should
-    // roughly double the sampled radii too.
-    expect(maxRadius).toBeGreaterThan(Math.sqrt(3) * 1.5);
   });
 
   it("is deterministic for a fixed seed", () => {
