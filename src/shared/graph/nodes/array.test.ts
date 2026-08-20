@@ -170,3 +170,39 @@ describe("ARRAY_NODE curve mode", () => {
     expect(rot.angleTo(new THREE.Quaternion())).toBeCloseTo(0, 4);
   });
 });
+
+describe("ARRAY_NODE linear spacing variance", () => {
+  it("keeps every gap exactly Spacing when variance is 0 (default)", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const res = ARRAY_NODE.evaluate({ geometry: box }, { mode: "linear", count: 4, axis: "X", spacing: 3, spacingVariance: 0 }, CTX);
+    const xs = (res.geometry as THREE.Group).children.map((c) => getChildPosition(c).x);
+    expect(xs).toEqual([0, 3, 6, 9]);
+  });
+
+  it("jitters each gap, not just each instance — consecutive distances differ, and it's reproducible", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const params = { mode: "linear", count: 6, axis: "X", spacing: 3, spacingVariance: 50 };
+    const res1 = ARRAY_NODE.evaluate({ geometry: box }, params, CTX);
+    const xs1 = (res1.geometry as THREE.Group).children.map((c) => getChildPosition(c).x);
+
+    const gaps = xs1.slice(1).map((x, i) => x - xs1[i]);
+    // 50% variance means each gap is spacing * [0.5, 1.5] — not all identical.
+    expect(new Set(gaps.map((g) => g.toFixed(4))).size).toBeGreaterThan(1);
+    for (const gap of gaps) {
+      expect(gap).toBeGreaterThanOrEqual(3 * 0.5 - 1e-6);
+      expect(gap).toBeLessThanOrEqual(3 * 1.5 + 1e-6);
+    }
+
+    // Same inputs, same layout — the jitter is a pure function of index, not
+    // of anything time- or call-order-dependent.
+    const res2 = ARRAY_NODE.evaluate({ geometry: box }, params, CTX);
+    const xs2 = (res2.geometry as THREE.Group).children.map((c) => getChildPosition(c).x);
+    expect(xs2).toEqual(xs1);
+  });
+
+  it("leaves the first instance at the origin regardless of variance", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const res = ARRAY_NODE.evaluate({ geometry: box }, { mode: "linear", count: 5, axis: "X", spacing: 2, spacingVariance: 80 }, CTX);
+    expect(getChildPosition((res.geometry as THREE.Group).children[0]).x).toBeCloseTo(0);
+  });
+});

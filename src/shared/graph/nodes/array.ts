@@ -12,6 +12,31 @@ function getGroup(nodeId: string): THREE.Group {
   return group;
 }
 
+/** GLSL-style fract() — deterministic per-index hash, same construct used for lifetime variance elsewhere. */
+function fract(x: number): number {
+  return x - Math.floor(x);
+}
+
+/**
+ * Cumulative linear offsets with each gap jittered by up to +/-variance —
+ * a per-instance offset jitter (each pole nudged independently) would still
+ * leave every *gap* exactly `spacing`, reading as perfectly even poles that
+ * merely wobble in place; varying the gap itself, and accumulating, is what
+ * actually makes consecutive distances uneven the way real-world spacing is.
+ * The hash is a pure function of the gap's own index, not of runtime state,
+ * so re-evaluating the same Count/Spacing/Variance always reproduces the
+ * same layout.
+ */
+function linearOffsetsWithVariance(count: number, spacing: number, variance: number): number[] {
+  const offsets = [0];
+  for (let i = 1; i < count; i++) {
+    const rand = fract(Math.sin(i * 78.233) * 43758.5453);
+    const gap = spacing * (1 + variance * (rand * 2 - 1));
+    offsets.push(offsets[i - 1] + gap);
+  }
+  return offsets;
+}
+
 /**
  * Array node — duplicates a 3D Geometry input multiple times.
  * Supports Linear, Circular, 2D Grid, and 3D Grid Volume arrays.
@@ -25,6 +50,7 @@ export const ARRAY_NODE: NodeDefinition = {
     { id: "geometry", label: "Geometry", type: "geometry", owns: true },
     { id: "count", label: "Count", type: "value" },
     { id: "spacing", label: "Spacing", type: "value" },
+    { id: "spacingVariance", label: "Spacing Variance (%)", type: "value" },
     { id: "radius", label: "Radius", type: "value" },
     { id: "countX", label: "Count X", type: "value" },
     { id: "countY", label: "Count Y", type: "value" },
@@ -42,6 +68,8 @@ export const ARRAY_NODE: NodeDefinition = {
     curveOrient: false,
     axis: "X",
     spacing: 2.0,
+    // 0 = every gap is exactly Spacing, same as before this param existed.
+    spacingVariance: 0,
     radius: 3.0,
     plane: "XZ",
     totalAngle: 360,
@@ -62,6 +90,7 @@ export const ARRAY_NODE: NodeDefinition = {
     { id: "count", label: "Count", kind: "number", step: 1 },
     { id: "axis", label: "Linear Axis", kind: "select", options: ["X", "Y", "Z"] },
     { id: "spacing", label: "Linear Spacing", kind: "number", step: 0.1 },
+    { id: "spacingVariance", label: "Spacing Variance (%)", kind: "number", step: 5 },
     { id: "radius", label: "Circular Radius", kind: "number", step: 0.1 },
     { id: "plane", label: "Plane", kind: "select", options: ["XZ", "XY", "YZ"] },
     { id: "totalAngle", label: "Total Angle (°)", kind: "number", step: 15 },
@@ -87,6 +116,7 @@ export const ARRAY_NODE: NodeDefinition = {
         { id: "count", label: "Count", kind: "number", step: 1, group: "Pattern & Grid" },
         { id: "axis", label: "Linear Axis", kind: "select", options: ["X", "Y", "Z"], group: "Pattern & Grid" },
         { id: "spacing", label: "Linear Spacing", kind: "number", step: 0.1, group: "Pattern & Grid" },
+        { id: "spacingVariance", label: "Spacing Variance (%)", kind: "number", step: 5, group: "Pattern & Grid" },
       );
     } else if (mode === "circular") {
       fields.push(
@@ -216,6 +246,12 @@ export const ARRAY_NODE: NodeDefinition = {
     const curveClosed = curveInput ? Boolean((curveInput as unknown as { closed?: boolean }).closed) : false;
     const curveDivisions = curveClosed ? count : Math.max(1, count - 1);
 
+    const rawLinearSpacing = inputs.spacing !== undefined ? Number(inputs.spacing) : Number(params.spacing);
+    const linearSpacing = isNaN(rawLinearSpacing) ? 2.0 : rawLinearSpacing;
+    const rawSpacingVariance = inputs.spacingVariance !== undefined ? Number(inputs.spacingVariance) : Number(params.spacingVariance);
+    const spacingVariance = Math.max(0, Math.min(100, isNaN(rawSpacingVariance) ? 0 : rawSpacingVariance)) / 100;
+    const linearOffsets = mode === "linear" ? linearOffsetsWithVariance(count, linearSpacing, spacingVariance) : null;
+
     for (let i = 0; i < count; i++) {
       const clone = source.clone(true);
 
@@ -240,9 +276,7 @@ export const ARRAY_NODE: NodeDefinition = {
         }
       } else if (mode === "linear") {
         const axis = String(params.axis || "X");
-        const rawSpacing = inputs.spacing !== undefined ? Number(inputs.spacing) : Number(params.spacing);
-        const spacing = isNaN(rawSpacing) ? 2.0 : rawSpacing;
-        const offset = i * spacing;
+        const offset = linearOffsets![i];
 
         if (axis === "Y") {
           pos.set(0, offset, 0);
