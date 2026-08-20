@@ -37,6 +37,39 @@ export function clampParticleCapacity(raw: unknown): number {
   return Math.max(1, Math.min(MAX_PARTICLE_CAPACITY, Math.round(Number(raw) || 4096)));
 }
 
+/** Emit-gate modes — see resolveEmit. */
+export const EMIT_MODES = ["always", "only when driven"] as const;
+
+/**
+ * Whether an emitter is currently spawning.
+ *
+ * "always" (the default, and what every emitter did before this existed):
+ * the Emit socket gates emission while it is wired, and an unwired socket
+ * falls back to the Emit param — so adding an emitter and wiring nothing
+ * emits, as it always has.
+ *
+ * "only when driven": an unwired Emit socket means *stop*. That is the mode
+ * for a trigger- or clock-driven emitter, where pulling the wire out should
+ * halt production rather than silently revert to free-running. Particles
+ * already alive are untouched either way — the gate only blocks respawn (see
+ * emitEnabled in POSITION_SHADER) — so emission stops while the existing
+ * population lives out its lifetime.
+ *
+ * A mode rather than inferring intent from connection history: whether a
+ * socket "used to" be wired is not something the graph records, it would not
+ * survive a save, and a node that behaves differently depending on what you
+ * did earlier in the session is worse than one that asks.
+ */
+export function resolveEmit(
+  inputs: Record<string, unknown>,
+  params: Record<string, unknown>,
+  connectedInputs: ReadonlySet<string> | undefined,
+): boolean {
+  const driven = connectedInputs?.has("emit") ?? inputs.emit !== undefined;
+  if (String(params.emitMode ?? "always") === "only when driven" && !driven) return false;
+  return numberInput(inputs.emit, params.emit, 1) > 0.5;
+}
+
 /** BIBLE.md's Particle Emitter — spawn rate, initial position/velocity. Pure config bundle, no GPU state of its own. */
 export const PARTICLE_EMITTER_NODE: NodeDefinition = {
   type: "particles/emitter",
@@ -59,6 +92,7 @@ export const PARTICLE_EMITTER_NODE: NodeDefinition = {
     // point, which reads as a rigid line/lattice rather than a cloud.
     diameter: 0.25,
     emit: 1,
+    emitMode: "always",
   },
   paramFields: [
     { id: "position", label: "Position (fallback)", kind: "vector" },
@@ -66,8 +100,9 @@ export const PARTICLE_EMITTER_NODE: NodeDefinition = {
     { id: "spawnRate", label: "Spawn Rate", kind: "number", step: 10 },
     { id: "diameter", label: "Diameter", kind: "number", step: 0.05 },
     { id: "emit", label: "Emit", kind: "boolean" },
+    { id: "emitMode", label: "Emit When", kind: "select", options: [...EMIT_MODES] },
   ],
-  evaluate: (inputs, params) => {
+  evaluate: (inputs, params, ctx) => {
     const position = asVector(inputs.position, asVector(params.position, new THREE.Vector3()));
     const velocity = asVector(inputs.velocity, asVector(params.velocity, new THREE.Vector3()));
     const spawnRate = numberInput(inputs.spawnRate, params.spawnRate, 200);
@@ -76,7 +111,7 @@ export const PARTICLE_EMITTER_NODE: NodeDefinition = {
       // must keep emitting, so the socket only gates when something is
       // actually driving it. Wire an Oscillator, Trigger, Toggle or Compare
       // in to make emission a function of time rather than a constant.
-    const emit = numberInput(inputs.emit, params.emit, 1) > 0.5;
+    const emit = resolveEmit(inputs, params, ctx.connectedInputs);
     return { emitter: buildEmitterConfig(position, velocity, spawnRate, undefined, diameter, false, emit) };
   },
 };
@@ -130,7 +165,7 @@ export const PARTICLE_EMITTER_FROM_POINTS_NODE: NodeDefinition = {
     { id: "emit", label: "Emit", type: "value" },
   ],
   outputs: [{ id: "emitter", label: "Emitter", type: "any" }],
-  defaultParams: { velocity: new THREE.Vector3(0, 0, 0), spawnRate: 200, randomSpawnPick: false, emit: 1 },
+  defaultParams: { velocity: new THREE.Vector3(0, 0, 0), spawnRate: 200, randomSpawnPick: false, emit: 1, emitMode: "always" },
   paramFields: [
     { id: "velocity", label: "Velocity (fallback)", kind: "vector" },
     {
@@ -139,6 +174,7 @@ export const PARTICLE_EMITTER_FROM_POINTS_NODE: NodeDefinition = {
       kind: "boolean",
     },
     { id: "emit", label: "Emit", kind: "boolean" },
+    { id: "emitMode", label: "Emit When", kind: "select", options: [...EMIT_MODES] },
     {
       id: "spawnRate",
       label: "Spawn Rate",
@@ -184,7 +220,7 @@ export const PARTICLE_EMITTER_FROM_POINTS_NODE: NodeDefinition = {
         state.seedPositions,
         undefined,
         params.randomSpawnPick === true,
-        numberInput(inputs.emit, params.emit, 1) > 0.5,
+        resolveEmit(inputs, params, ctx.connectedInputs),
       ),
     };
   },
@@ -227,6 +263,7 @@ export const PARTICLE_EMITTER_FROM_SURFACE_NODE: NodeDefinition = {
     // reads as a handful of streaks rather than a surface emitting.
     randomSpawnPick: true,
     emit: 1,
+    emitMode: "always",
   },
   paramFields: [
     { id: "velocity", label: "Velocity (fallback)", kind: "vector" },
@@ -234,9 +271,10 @@ export const PARTICLE_EMITTER_FROM_SURFACE_NODE: NodeDefinition = {
     { id: "points", label: "Surface Points", kind: "number", step: 10 },
     { id: "randomSpawnPick", label: "Random Spawn Point", kind: "boolean" },
     { id: "emit", label: "Emit", kind: "boolean" },
+    { id: "emitMode", label: "Emit When", kind: "select", options: [...EMIT_MODES] },
     { id: "seed", label: "Seed", kind: "number", step: 1 },
   ],
-  evaluate: (inputs, params) => {
+  evaluate: (inputs, params, ctx) => {
     const object = inputs.geometry instanceof THREE.Object3D ? inputs.geometry : null;
     const velocity = asVector(inputs.velocity, asVector(params.velocity, new THREE.Vector3()));
     const spawnRate = numberInput(inputs.spawnRate, params.spawnRate, 200);
@@ -250,7 +288,7 @@ export const PARTICLE_EMITTER_FROM_SURFACE_NODE: NodeDefinition = {
           undefined,
           undefined,
           false,
-          numberInput(inputs.emit, params.emit, 1) > 0.5,
+          resolveEmit(inputs, params, ctx.connectedInputs),
         ),
       };
     }
@@ -276,7 +314,7 @@ export const PARTICLE_EMITTER_FROM_SURFACE_NODE: NodeDefinition = {
         seedPositions,
         undefined,
         params.randomSpawnPick !== false,
-        numberInput(inputs.emit, params.emit, 1) > 0.5,
+        resolveEmit(inputs, params, ctx.connectedInputs),
       ),
     };
   },

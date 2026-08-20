@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { NodeDefinition } from "../types";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { readPositionsSync, textureSizeFor } from "../particleRuntime";
@@ -36,10 +37,13 @@ interface InstanceState {
   /** The geometry the instances were built from — swapping the Shape input rebuilds. */
   sourceGeometryId?: string;
   capacity?: number;
+  /** The baked snapshot, once Bake to Mesh has been taken. Outlives the simulation deliberately. */
+  baked?: THREE.Mesh;
 }
 
 const instanceCache = createNodeCache<InstanceState>((s) => {
   if (s.mesh) disposeObject3D(s.mesh);
+  if (s.baked) disposeObject3D(s.baked);
 });
 
 function getState(nodeId: string): InstanceState {
@@ -51,9 +55,34 @@ function getState(nodeId: string): InstanceState {
   return state;
 }
 
+/**
+ * Flattens an InstancedMesh's live instances into one ordinary Mesh — each
+ * instance's matrix baked into a copy of the source geometry, all merged into
+ * a single BufferGeometry. The result has no tie to the simulation, the
+ * InstancedMesh, or this node's per-frame work: it is exactly what a Box or
+ * an imported .obj hands downstream.
+ */
+export function bakeInstances(source: THREE.InstancedMesh, nodeId: string): THREE.Mesh {
+  const matrix = new THREE.Matrix4();
+  const parts: THREE.BufferGeometry[] = [];
+  for (let i = 0; i < source.count; i++) {
+    source.getMatrixAt(i, matrix);
+    parts.push(source.geometry.clone().applyMatrix4(matrix));
+  }
+  const merged = parts.length > 0 ? mergeGeometries(parts, false) ?? new THREE.BufferGeometry() : new THREE.BufferGeometry();
+  for (const part of parts) part.dispose();
+
+  const mesh = new THREE.Mesh(merged, new THREE.MeshStandardMaterial({ color: 0xffffff }));
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  mesh.userData.nodeId = nodeId;
+  return mesh;
+}
+
 const EXTRA_FIELDS = [
   { id: "instanceScale", label: "Instance Scale", kind: "number" as const, step: 0.01, group: "Geometry" },
   { id: "freeze", label: "Freeze (keep current instances)", kind: "boolean" as const, group: "Geometry" },
+  { id: "bake", label: "Bake to Mesh (real object, detached)", kind: "boolean" as const, group: "Geometry" },
 ];
 
 /**
@@ -93,6 +122,7 @@ export const PARTICLE_RENDER_INSTANCES_NODE: NodeDefinition = {
     ...COMMON_DEFAULT_PARAMS,
     instanceScale: 0.1,
     freeze: false,
+    bake: false,
   },
   paramFields: buildPrimitiveDynamicParamFields(EXTRA_FIELDS)(),
   dynamicParamFields: buildPrimitiveDynamicParamFields(EXTRA_FIELDS),
@@ -110,6 +140,15 @@ export const PARTICLE_RENDER_INSTANCES_NODE: NodeDefinition = {
     // downstream (Merge, Transform, Boolean, export) while the simulation
     // behind it keeps running or not, indifferently.
     const freeze = params.freeze === true;
+    // Bake goes further than Freeze: instead of holding an InstancedMesh
+    // still, it flattens the live instances into one ordinary merged mesh and
+    // keeps *that*, from then on ignoring the simulation entirely. The
+    // difference matters beyond "detached": an InstancedMesh is not
+    // vertex-addressable, so Boolean, Subdivide and Lattice Deform all refuse
+    // it (see meshRequired.ts) — a baked mesh is a real mesh those nodes act
+    // on, and it survives the particle system being retuned, gated off, or
+    // deleted. Taken once, on the first frame Bake is switched on, then held.
+    const bake = params.bake === true;
 
     // Fall back to a small box so the node shows something the moment it is
     // added, before a Shape is wired — same "useful with nothing connected"
@@ -178,6 +217,22 @@ export const PARTICLE_RENDER_INSTANCES_NODE: NodeDefinition = {
 
     const matParams = extractMaterialParams(inputs, params);
     const texParams = extractTextureParams(inputs, params, ctx.nodeId);
+
+    if (bake) {
+      if (!state.baked) state.baked = bakeInstances(mesh, ctx.nodeId);
+      const baked = state.baked;
+      baked.matrixAutoUpdate = false;
+      baked.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      applyMaterialParams(baked, matParams, THREE.FrontSide, texParams);
+      return primitiveOutputs(baked);
+    }
+    // Switching Bake back off drops the snapshot, so re-enabling it takes a
+    // fresh one rather than resurrecting a stale pose.
+    if (state.baked) {
+      disposeObject3D(state.baked);
+      state.baked = undefined;
+    }
+
     applyMaterialParams(mesh as unknown as THREE.Mesh, matParams, THREE.FrontSide, texParams);
 
     return primitiveOutputs(mesh);
