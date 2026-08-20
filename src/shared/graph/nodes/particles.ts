@@ -54,17 +54,44 @@ export const PARTICLE_SIMULATE_NODE: NodeDefinition = {
     { id: "gravity", label: "Gravity", type: "value" },
     { id: "wind", label: "Wind", type: "vector" },
     { id: "lifetime", label: "Lifetime", type: "value" },
+    { id: "flowStrength", label: "Flow Field Strength", type: "value" },
+    { id: "flowScale", label: "Flow Field Scale", type: "value" },
+    { id: "flowSpeed", label: "Flow Field Speed", type: "value" },
+    { id: "boundsRadius", label: "Bounds Radius", type: "value" },
+    { id: "maxSpeed", label: "Max Speed", type: "value" },
   ],
   outputs: [
     { id: "positions", label: "Positions", type: "texture" },
     { id: "count", label: "Count", type: "value" },
   ],
-  defaultParams: { gravity: 5, wind: new THREE.Vector3(0, 0, 0), lifetime: 3, count: 4096 },
+  defaultParams: {
+    gravity: 5,
+    wind: new THREE.Vector3(0, 0, 0),
+    lifetime: 3,
+    count: 4096,
+    // Off by default (0 strength) — every existing graph that only wires
+    // gravity/wind keeps behaving exactly as before.
+    flowStrength: 0,
+    flowScale: 1,
+    flowSpeed: 0.1,
+    // 0 = unbounded, same as before this param existed.
+    boundsRadius: 0,
+    // 0 = unclamped, same as before this param existed. Worth setting once
+    // Flow Field Strength is non-zero — an accelerating force with no drag
+    // otherwise grows velocity without bound (see maxSpeed's comment in
+    // particleRuntime.ts's VELOCITY_SHADER).
+    maxSpeed: 0,
+  },
   paramFields: [
     { id: "gravity", label: "Gravity", kind: "number", step: 0.5 },
     { id: "wind", label: "Wind (fallback)", kind: "vector" },
     { id: "lifetime", label: "Lifetime (s)", kind: "number", step: 0.5 },
     { id: "count", label: "Max Particles", kind: "number", step: 100 },
+    { id: "flowStrength", label: "Flow Field Strength", kind: "number", step: 0.5, group: "Flow Field" },
+    { id: "flowScale", label: "Flow Field Scale", kind: "number", step: 0.1, group: "Flow Field" },
+    { id: "flowSpeed", label: "Flow Field Speed", kind: "number", step: 0.05, group: "Flow Field" },
+    { id: "boundsRadius", label: "Bounds Radius (0 = unbounded)", kind: "number", step: 0.5, group: "Flow Field" },
+    { id: "maxSpeed", label: "Max Speed (0 = unclamped)", kind: "number", step: 0.5, group: "Flow Field" },
   ],
   evaluate: (inputs, params, ctx) => {
     const emitter = inputs.emitter as EmitterConfig | undefined;
@@ -74,8 +101,27 @@ export const PARTICLE_SIMULATE_NODE: NodeDefinition = {
     const wind = asVector(inputs.wind, asVector(params.wind, new THREE.Vector3()));
     const lifetime = numberInput(inputs.lifetime, params.lifetime, 3);
     const capacity = Number(params.count) || 4096;
+    const flowField = {
+      strength: numberInput(inputs.flowStrength, params.flowStrength, 0),
+      scale: numberInput(inputs.flowScale, params.flowScale, 1),
+      speed: numberInput(inputs.flowSpeed, params.flowSpeed, 0.1),
+    };
+    const boundsRadius = numberInput(inputs.boundsRadius, params.boundsRadius, 0);
+    const maxSpeed = numberInput(inputs.maxSpeed, params.maxSpeed, 0);
 
-    const result = getOrCreateSimulation(ctx.nodeId, ctx.renderer, capacity, emitter, gravity, wind, lifetime, ctx.step);
+    const result = getOrCreateSimulation(
+      ctx.nodeId,
+      ctx.renderer,
+      capacity,
+      emitter,
+      gravity,
+      wind,
+      lifetime,
+      ctx.step,
+      flowField,
+      boundsRadius,
+      maxSpeed,
+    );
     if (!result) return { positions: null, count: 0 };
     return { positions: result.positionsTexture, count: result.capacity };
   },
