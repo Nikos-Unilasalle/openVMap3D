@@ -1,9 +1,29 @@
 import { describe, expect, test } from "vitest";
-import { Candidate, findConnections } from "./connectivity";
+import { Candidate, findConnections, isAliveParticle } from "./connectivity";
 
 function pt(index: number, x: number, y: number, z = 0): Candidate {
   return { index, x, y, z };
 }
+
+describe("isAliveParticle", () => {
+  test("excludes a texel still in its staggered pre-spawn delay", () => {
+    // Same bug particleTrails.ts's isAlive guards: connecting this texel's
+    // position (still world origin, not a real spot yet) drew lines to a
+    // cluster of not-really-there particles during the first lifetime of
+    // playback.
+    expect(isAliveParticle(-0.001)).toBe(false);
+    expect(isAliveParticle(-3)).toBe(false);
+  });
+
+  test("excludes the genuinely dead sentinel", () => {
+    expect(isAliveParticle(-1.0e6)).toBe(false);
+  });
+
+  test("includes a real particle", () => {
+    expect(isAliveParticle(0)).toBe(true);
+    expect(isAliveParticle(5)).toBe(true);
+  });
+});
 
 describe("findConnections", () => {
   test("connects two points within range", () => {

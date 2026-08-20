@@ -1,8 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { CAPTURE_TRAILS_NODE, effectiveHistoryLength } from "./particleTrails";
+import { CAPTURE_TRAILS_NODE, effectiveHistoryLength, isAlive } from "./particleTrails";
 import { EvalContext } from "../types";
 
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "trails-test" };
+
+describe("isAlive", () => {
+  it("excludes a texel still in its staggered pre-spawn delay", () => {
+    // The bug this guards: recording this texel's position (still the
+    // texture's zeroed default, world origin — not a real particle location
+    // yet) into the trail history produced one huge fast segment the moment
+    // the texel took its real first spawn, staggered across roughly the
+    // first lifetime of playback.
+    expect(isAlive(-0.001)).toBe(false);
+    expect(isAlive(-3)).toBe(false);
+  });
+
+  it("excludes the genuinely dead sentinel", () => {
+    expect(isAlive(-1.0e6)).toBe(false);
+  });
+
+  it("includes a real, just-spawned or long-lived particle", () => {
+    expect(isAlive(0)).toBe(true);
+    expect(isAlive(0.001)).toBe(true);
+    expect(isAlive(5)).toBe(true);
+  });
+});
 
 describe("effectiveHistoryLength", () => {
   it("grants the full requested history for a handful of particles", () => {

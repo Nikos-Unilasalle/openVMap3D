@@ -8,11 +8,22 @@ import { asColor, numberInput } from "./object";
 import { readPositionsSync, textureSizeFor } from "../particleRuntime";
 
 /**
- * A point still spawning-in — the -1.0e6 sentinel particles/simulate's
- * POSITION_SHADER writes for a texel past the active count (see
- * particleRuntime.ts). Anything short of a real age never gets this low.
+ * A texel is "alive" once its age reaches 0 — the same test
+ * POINT_VERTEX_SHADER uses for `vAlive` (particles/render hides anything
+ * with age < 0). Covers both the genuinely dead sentinel (-1.0e6,
+ * `idx >= activeCount`) and a texel still in its staggered startup delay:
+ * createSimulation seeds every texel's age negative on purpose so the
+ * population doesn't all burst-spawn on frame 1, and until that age counts
+ * up past 0 the texel's *position* is still the texture's zeroed default
+ * (world origin), not a real particle location yet. A looser threshold here
+ * drew connections to that origin-parked cluster during the first
+ * lifetime of playback — see particleTrails.ts's identical fix for the
+ * fuller writeup (same bug, worse there since it corrupts recorded history,
+ * not just one frame's line positions).
  */
-const DEAD_AGE_THRESHOLD = -1000;
+export function isAliveParticle(age: number): boolean {
+  return age >= 0;
+}
 
 export interface Candidate {
   index: number;
@@ -204,8 +215,8 @@ export const CONNECT_NEARBY_NODE: NodeDefinition = {
     const texture = inputs.positions instanceof THREE.Texture ? inputs.positions : null;
     // Capacity of the source texture (particles/simulate's "count" output is
     // the texture's texel count, not how many of those are alive right now —
-    // see DEAD_AGE_THRESHOLD below), clamped the same way Ray Burst clamps
-    // its own particle-scale input against a CPU pass blowing up.
+    // see isAliveParticle above), clamped the same way Ray Burst clamps its own
+    // particle-scale input against a CPU pass blowing up.
     const capacity = Math.max(0, Math.min(6000, Math.round(numberInput(inputs.count, params.count, 0))));
     const maxDistance = Math.max(0.0001, numberInput(inputs.maxDistance, params.maxDistance, 1.5));
     const maxConnections = Math.max(1, Math.min(64, Math.round(numberInput(inputs.maxConnections, params.maxConnections, 6))));
@@ -225,7 +236,7 @@ export const CONNECT_NEARBY_NODE: NodeDefinition = {
     const points: Candidate[] = [];
     for (let i = 0; i < capacity; i++) {
       const age = buffer[i * 4 + 3];
-      if (age < DEAD_AGE_THRESHOLD) continue;
+      if (!isAliveParticle(age)) continue;
       points.push({ index: i, x: buffer[i * 4], y: buffer[i * 4 + 1], z: buffer[i * 4 + 2] });
     }
 

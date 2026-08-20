@@ -7,8 +7,30 @@ import { createNodeCache } from "../nodeCaches";
 import { asColor, numberInput } from "./object";
 import { readPositionsSync, textureSizeFor } from "../particleRuntime";
 
-/** Same "past the active count" sentinel POSITION_SHADER writes — see connectivity.ts's identical constant for the full explanation. */
-const DEAD_AGE_THRESHOLD = -1000;
+/**
+ * A texel is "alive" once its age reaches 0 — the same test
+ * POINT_VERTEX_SHADER already uses for `vAlive` (particles/render hides
+ * anything with age < 0). Two things share the "not alive yet" bucket this
+ * one check covers: the genuinely dead sentinel POSITION_SHADER writes for
+ * a texel past the active count (-1.0e6, `idx >= activeCount`), and — this
+ * is the one that actually matters for a node that records history — every
+ * texel's *own* staggered startup age. createSimulation seeds age as
+ * `-((i / capacity) * lifetimeGuess)` for every texel so the population
+ * doesn't all burst-spawn on frame 1, but that seed only writes the alpha
+ * channel — the position stays at the texture's zeroed default (world
+ * origin) until that texel's age counts up past 0 and it takes its first
+ * real respawn. Using the old, looser "not the dead sentinel" test recorded
+ * that parked-at-the-origin position into the trail for however many frames
+ * of stagger it had left, then jumped straight to the real spawn point the
+ * instant it activated — one huge, fast segment per particle, staggered
+ * across roughly the first lifetime of playback, exactly the "curves rush
+ * in fast and hirsute, then settle" symptom reported. Matching
+ * POINT_VERTEX_SHADER's own alive test skips both cases in one comparison:
+ * a pre-spawn texel's age is a small negative number, well short of 0.
+ */
+export function isAlive(age: number): boolean {
+  return age >= 0;
+}
 
 /**
  * Total segments (particles × history samples) this node will ever build in
@@ -189,7 +211,7 @@ export const CAPTURE_TRAILS_NODE: NodeDefinition = {
     // real denominator before the accumulation loop needs it.
     let liveCount = 0;
     for (let i = 0; i < capacity; i++) {
-      if (buffer[i * 4 + 3] >= DEAD_AGE_THRESHOLD) liveCount++;
+      if (isAlive(buffer[i * 4 + 3])) liveCount++;
     }
     const historyLength = effectiveHistoryLength(requestedHistory, liveCount);
 
@@ -197,7 +219,7 @@ export const CAPTURE_TRAILS_NODE: NodeDefinition = {
     let segmentTotal = 0;
     for (let i = 0; i < capacity; i++) {
       const age = buffer[i * 4 + 3];
-      if (age < DEAD_AGE_THRESHOLD) continue;
+      if (!isAlive(age)) continue;
       live.add(i);
 
       const lastAge = state.lastAge.get(i);
