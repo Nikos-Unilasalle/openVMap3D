@@ -29,6 +29,7 @@ export const GIZMO_SELECTABLE_TYPES = [
   "curve/primitive",
   "curve/svg",
   "curve/svg_solid",
+  "curve/svg_mesh",
   "curve/to_line",
   "curve/deform",
   "structure/merge",

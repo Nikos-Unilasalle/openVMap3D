@@ -60,7 +60,7 @@ describe("resolveGizmoTarget", () => {
   });
 
   it("curve nodes (from_points, primitive, svg, to_line) resolve to a native target", () => {
-    for (const type of ["curve/from_points", "curve/primitive", "curve/svg", "curve/svg_solid", "curve/to_line"]) {
+    for (const type of ["curve/from_points", "curve/primitive", "curve/svg", "curve/svg_solid", "curve/svg_mesh", "curve/to_line"]) {
       const graph: Graph = { nodes: [node("c1", type)], connections: [] };
       expect(resolveGizmoTarget(graph, "c1")).toEqual({ kind: "native", objectNodeId: "c1", deltaSourceNodeId: null });
     }
@@ -168,6 +168,7 @@ describe("GIZMO_SELECTABLE_TYPES", () => {
       "curve/primitive",
       "curve/svg",
       "curve/svg_solid",
+      "curve/svg_mesh",
       "curve/to_line",
       "curve/deform",
       "structure/merge",
