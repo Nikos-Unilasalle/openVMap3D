@@ -827,11 +827,15 @@ function MainEditor() {
     }, `${nodeIdToUpdate}:${paramId}`);
   };
 
-  // Tab toggles the selected object's own Visible param — only while a node
-  // with one is selected, so it doesn't fight the browser's own focus-Tab
-  // when nothing (or a non-object node) is selected. A separate effect from
-  // the Space/T handler above (rather than folding this branch into it)
-  // because it needs onParamChange, which isn't defined until after that one.
+  // Tab toggles the selected object's own Visible param — only while the
+  // mouse is over the node graph canvas (isGraphZone), since the 3D
+  // viewport already binds plain Tab to its own UI-overlay toggle (see
+  // Viewport.tsx) and Shift+Tab to cycling views; without this gate both
+  // fired on every Tab press regardless of where the mouse was. Also only
+  // while a node with a Visible param is selected, so it doesn't fight the
+  // browser's own focus-Tab otherwise. A separate effect from the Space/T
+  // handler above (rather than folding this branch into it) because it
+  // needs onParamChange, which isn't defined until after that one.
   useEffect(() => {
     function handleTab(e: KeyboardEvent) {
       const activeEl = document.activeElement;
@@ -841,7 +845,7 @@ function MainEditor() {
           activeEl.tagName === "TEXTAREA" ||
           activeEl.tagName === "SELECT" ||
           (activeEl as HTMLElement).isContentEditable);
-      if (isInput || e.key !== "Tab" || e.metaKey || e.ctrlKey || e.altKey || !selectedNodeId) return;
+      if (isInput || e.key !== "Tab" || e.metaKey || e.ctrlKey || e.altKey || !selectedNodeId || !isGraphZone()) return;
 
       const instance = graph.nodes.find((n) => n.id === selectedNodeId);
       const def = instance ? DEFAULT_REGISTRY.get(instance.type) : undefined;
