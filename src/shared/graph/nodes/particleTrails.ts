@@ -20,22 +20,15 @@ const DEAD_AGE_THRESHOLD = -1000;
 const MAX_TRAIL_SEGMENTS = 20000;
 
 /**
- * Fixed count of per-particle "Trail N Points" list outputs — a Vector3[]
- * per socket, ready to wire straight into a Curve from Points (then Curve to
- * Line/Mesh) for an actual curve, not just the LineSegments2 preview this
- * node draws itself. Static sockets rather than one dynamically grown per
- * live particle: which particles exist is GPU/runtime data, only known
- * inside evaluate(), while a node's socket list has to be decidable before
- * that (see NodeDefinition.dynamicInputs/dynamicOutputs — both are functions
- * of *graph connections*, not of evaluated data). Particle index 0..N-1 maps
- * to Trail 1..N Points in order — stable since GPU particles keep their
- * texel identity across frames (unlike Array/Instance's clones), so "Trail 1"
- * is the same particle every frame, not just whichever came first. Beyond
- * this node's "a handful of particles" scale (MAX_TRAIL_SEGMENTS), the rest
- * still draw in Trails (Geometry) — they just don't get an individual curve
- * output.
+ * Safety cap on how many per-particle point lists "Point Lists" ever hands
+ * back in one array — not a fixed socket count (a single "list" output can
+ * hold as many sub-lists as there are live particles, however many that is
+ * this frame; see the "trails" output below), just a ceiling so a graph
+ * that accidentally feeds this node thousands of particles doesn't build an
+ * enormous nested array every frame. Well above this node's actual target
+ * scale (a handful of particles, per MAX_TRAIL_SEGMENTS).
  */
-const MAX_TRACKED_TRAILS = 8;
+const MAX_TRAIL_LISTS = 64;
 
 interface TrailState {
   /** One growing position list per live particle index — oldest first. */
@@ -100,9 +93,11 @@ function ensureCapacity(state: TrailState, segments: number): void {
  * curl-noise flow, and get their paths out as a curve rather than a snapshot
  * of where they are right now — "jolies courbes representatives du
  * mouvement", not a point cloud. The node draws its own LineSegments2
- * preview (Trails (Geometry)), but also hands back each tracked particle's
- * raw point history as its own "Trail N Points" list output — wire one
- * straight into a Curve from Points for an actual editable curve.
+ * preview (Trails (Geometry)), but also hands back every tracked particle's
+ * raw point history as "Point Lists" — a list of Vector3[] lists, one per
+ * live particle, however many that is this frame. A node that fans a list
+ * of lists out into one curve each (not built yet) turns that into N actual
+ * editable curves.
  *
  * Per-particle history rather than a GPU ring buffer: a texel's index is a
  * stable particle identity frame to frame (unlike Array/Instance's cloned
@@ -129,11 +124,7 @@ export const CAPTURE_TRAILS_NODE: NodeDefinition = {
   outputs: [
     { id: "geometry", label: "Trails (Geometry)", type: "geometry" },
     { id: "segmentCount", label: "Segment Count", type: "value" },
-    ...Array.from({ length: MAX_TRACKED_TRAILS }, (_, i) => ({
-      id: `trail${i}`,
-      label: `Trail ${i + 1} Points`,
-      type: "list" as const,
-    })),
+    { id: "trails", label: "Point Lists (List of Lists)", type: "list" },
   ],
   defaultParams: {
     historyLength: 60,
@@ -153,7 +144,6 @@ export const CAPTURE_TRAILS_NODE: NodeDefinition = {
   ],
   evaluate: (inputs, params, ctx) => {
     const state = getState(ctx.nodeId);
-    const emptyTrails = Object.fromEntries(Array.from({ length: MAX_TRACKED_TRAILS }, (_, i) => [`trail${i}`, [] as THREE.Vector3[]]));
 
     const texture = inputs.positions instanceof THREE.Texture ? inputs.positions : null;
     const capacity = Math.max(0, Math.min(6000, Math.round(numberInput(inputs.count, params.count, 0))));
@@ -165,7 +155,7 @@ export const CAPTURE_TRAILS_NODE: NodeDefinition = {
     if (!texture || capacity === 0 || !ctx.renderer) {
       ensureCapacity(state, 0);
       if (state.lineGeometry) state.lineGeometry.instanceCount = 0;
-      return { geometry: state.line ?? new THREE.Group(), segmentCount: 0, ...emptyTrails };
+      return { geometry: state.line ?? new THREE.Group(), segmentCount: 0, trails: [] as THREE.Vector3[][] };
     }
 
     // A live particle count this small can afford a much longer history than
@@ -254,20 +244,19 @@ export const CAPTURE_TRAILS_NODE: NodeDefinition = {
 
     state.line!.userData.nodeId = ctx.nodeId;
 
-    // Lowest-N live particle indices, in order — "Trail 1" names the same
-    // particle every frame (see MAX_TRACKED_TRAILS's doc), not just whoever
-    // happens to sort first this frame.
-    const trailOutputs: Record<string, THREE.Vector3[]> = { ...emptyTrails };
-    const liveIndices = [...state.histories.keys()].sort((a, b) => a - b).slice(0, MAX_TRACKED_TRAILS);
-    liveIndices.forEach((idx, slot) => {
+    // Sorted by particle index (stable identity — see the doc comment above)
+    // rather than Map iteration order, so a respawn that re-inserts a key
+    // doesn't shuffle which sub-list is "first" from one frame to the next.
+    const liveIndices = [...state.histories.keys()].sort((a, b) => a - b).slice(0, MAX_TRAIL_LISTS);
+    const trails: THREE.Vector3[][] = liveIndices.map((idx) => {
       const history = state.histories.get(idx)!;
       const points: THREE.Vector3[] = [];
       for (let s = 0; s < history.length; s += 3) {
         points.push(new THREE.Vector3(history[s], history[s + 1], history[s + 2]));
       }
-      trailOutputs[`trail${slot}`] = points;
+      return points;
     });
 
-    return { geometry: state.line!, segmentCount: cursor, ...trailOutputs };
+    return { geometry: state.line!, segmentCount: cursor, trails };
   },
 };
