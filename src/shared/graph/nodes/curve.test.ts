@@ -201,6 +201,51 @@ describe("CURVE NODES", () => {
   });
 });
 
+describe("CURVE_FROM_POINTS_NODE sag (linear type — slack wire droop)", () => {
+  const points = [new THREE.Vector3(0, 0, 5), new THREE.Vector3(10, 0, 5), new THREE.Vector3(20, 0, 5)];
+
+  it("keeps the segment taut (a straight LineCurve3) when sag is 0", () => {
+    const res = CURVE_FROM_POINTS_NODE.evaluate(
+      { points },
+      { ...CURVE_FROM_POINTS_NODE.defaultParams, type: "linear", sag: 0 },
+      CTX,
+    );
+    const curve = res.curve as THREE.CurvePath<THREE.Vector3>;
+    const mid = curve.getPoint(0.25); // midpoint of the first of two segments
+    expect(mid.z).toBeCloseTo(5, 5);
+  });
+
+  it("droops the midpoint along -Z only, by the Sag amount, while leaving both endpoints exactly where they were", () => {
+    const res = CURVE_FROM_POINTS_NODE.evaluate(
+      { points },
+      { ...CURVE_FROM_POINTS_NODE.defaultParams, type: "linear", sag: 2 },
+      CTX,
+    );
+    const curve = res.curve as THREE.CurvePath<THREE.Vector3>;
+
+    // First segment spans t in [0, 0.5] of the whole two-segment path.
+    const start = curve.getPoint(0);
+    const mid = curve.getPoint(0.25);
+    const end = curve.getPoint(0.5);
+
+    expect(start.x).toBeCloseTo(0, 5);
+    expect(start.z).toBeCloseTo(5, 5); // untouched — droop is 0 at t=0
+    expect(end.x).toBeCloseTo(10, 5);
+    expect(end.z).toBeCloseTo(5, 5); // untouched — droop is 0 at t=1
+
+    // Peak droop at the segment's own midpoint: sag * 4*0.5*(1-0.5) = sag.
+    expect(mid.x).toBeCloseTo(5, 5); // X/Y interpolation itself is untouched
+    expect(mid.z).toBeCloseTo(5 - 2, 5);
+  });
+
+  it("leaves catmull-rom (the default type) unaffected by Sag — it already bends smoothly through the points", () => {
+    const res = CURVE_FROM_POINTS_NODE.evaluate({ points }, { ...CURVE_FROM_POINTS_NODE.defaultParams, sag: 5 }, CTX);
+    // A CatmullRomCurve3 has no SaggedLineCurve3 segments to speak of — just
+    // confirms the sag param was never read down this path.
+    expect(res.curve).toBeInstanceOf(THREE.CatmullRomCurve3);
+  });
+});
+
 describe("CURVE_FROM_POINTS_NODE bezier mode", () => {
   const points = (count: number) =>
     Array.from({ length: count }, (_, i) => new THREE.Vector3(i, i % 2, 0));

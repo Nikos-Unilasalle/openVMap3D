@@ -497,13 +497,43 @@ export function createVariableThicknessTubeGeometry(
 
 /** 1. Curve from Points Node */
 
+/**
+ * A straight segment between two points that droops under its own weight,
+ * like a slack wire strung pole-to-pole — a parabolic approximation of a
+ * catenary (exact enough at the sag depths this is used for, and far
+ * cheaper than solving one). `sag` is a world-unit droop depth, peaking at
+ * the segment's midpoint (t=0.5) and zero at both endpoints, so the two
+ * points the segment was built from are exactly where the curve still meets
+ * them — only the interior sags. Deliberately world -Z only, never a
+ * direction derived from the segment itself: real gravity doesn't care
+ * which way a wire happens to run.
+ */
+class SaggedLineCurve3 extends THREE.Curve<THREE.Vector3> {
+  constructor(
+    private v1: THREE.Vector3,
+    private v2: THREE.Vector3,
+    private sag: number,
+  ) {
+    super();
+  }
+
+  getPoint(t: number, target: THREE.Vector3 = new THREE.Vector3()): THREE.Vector3 {
+    target.lerpVectors(this.v1, this.v2, t);
+    target.z -= this.sag * 4 * t * (1 - t);
+    return target;
+  }
+}
+
 /** Builds a curve (linear / bezier / catmull-rom) through `pts` — shared by the
- * local preview and the pose-baked world output. */
-function buildPointsCurve(pts: THREE.Vector3[], type: string, closed: boolean, tension: number): THREE.Curve<THREE.Vector3> {
+ * local preview and the pose-baked world output. `sag` only affects the
+ * "linear" type — see SaggedLineCurve3 — the other two already bend smoothly
+ * through the points on their own. */
+function buildPointsCurve(pts: THREE.Vector3[], type: string, closed: boolean, tension: number, sag = 0): THREE.Curve<THREE.Vector3> {
   if (type === "linear") {
+    const segment = (a: THREE.Vector3, b: THREE.Vector3) => (sag > 0 ? new SaggedLineCurve3(a, b, sag) : new THREE.LineCurve3(a, b));
     const path = new THREE.CurvePath<THREE.Vector3>();
-    for (let i = 0; i < pts.length - 1; i++) path.add(new THREE.LineCurve3(pts[i], pts[i + 1]));
-    if (closed && pts.length > 2) path.add(new THREE.LineCurve3(pts[pts.length - 1], pts[0]));
+    for (let i = 0; i < pts.length - 1; i++) path.add(segment(pts[i], pts[i + 1]));
+    if (closed && pts.length > 2) path.add(segment(pts[pts.length - 1], pts[0]));
     return path;
   }
   if (type === "bezier" && pts.length >= 4) return buildBezierPath(pts, closed);
@@ -518,6 +548,7 @@ export const CURVE_FROM_POINTS_NODE: NodeDefinition = {
     { id: "points", label: "Points", type: "list" },
     { id: "closed", label: "Closed", type: "value" },
     { id: "tension", label: "Tension", type: "value" },
+    { id: "sag", label: "Sag", type: "value" },
     CURVE_TRANSFORM_INPUT,
   ],
   outputs: [
@@ -528,6 +559,10 @@ export const CURVE_FROM_POINTS_NODE: NodeDefinition = {
     type: "catmull",
     closed: false,
     tension: 0.5,
+    // 0 = taut, same as before this param existed. Only the "linear" type
+    // sags — see SaggedLineCurve3 — catmull/bezier already curve smoothly
+    // through the points on their own.
+    sag: 0,
     pointsList: defaultCurvePoints(),
     ...CURVE_TRANSFORM_DEFAULTS,
   },
@@ -536,6 +571,7 @@ export const CURVE_FROM_POINTS_NODE: NodeDefinition = {
     { id: "type", label: "Type", kind: "select", options: ["catmull", "bezier", "linear"] },
     { id: "closed", label: "Closed", kind: "boolean" },
     { id: "tension", label: "Tension", kind: "number", step: 0.05 },
+    { id: "sag", label: "Sag (Linear only, -Z droop)", kind: "number", step: 0.05 },
   ],
   evaluate: (inputs, params, ctx) => {
     let pts: THREE.Vector3[] = [];
@@ -550,9 +586,10 @@ export const CURVE_FROM_POINTS_NODE: NodeDefinition = {
     const closed = inputs.closed !== undefined ? Boolean(inputs.closed) : Boolean(params.closed);
     const type = String(params.type || "catmull");
     const tension = inputs.tension !== undefined ? asNumber(inputs.tension, 0.5) : asNumber(params.tension, 0.5);
+    const sag = Math.max(0, inputs.sag !== undefined ? asNumber(inputs.sag, 0) : asNumber(params.sag, 0));
 
     let curve: THREE.Curve<THREE.Vector3>;
-    curve = buildPointsCurve(pts, type, closed, tension);
+    curve = buildPointsCurve(pts, type, closed, tension, sag);
 
     const preview = getCurvePreviewLine(getState(ctx.nodeId), ctx.nodeId, curve);
     applyNativePose(preview, inputs, params, ctx);
