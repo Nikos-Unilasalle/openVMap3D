@@ -1,4 +1,5 @@
 import { GPUComputationRenderer, Variable } from "three/examples/jsm/misc/GPUComputationRenderer.js";
+import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
 import * as THREE from "three";
 import { STEP_SECONDS, stepsSince } from "./clock";
 import { createNodeCache } from "./nodeCaches";
@@ -414,4 +415,91 @@ export function getOrCreateSimulation(
 export function resetAllParticleSimulations(): void {
   for (const sim of simCache.values()) sim.gpuCompute.dispose();
   simCache.clear();
+}
+
+const BLIT_VERTEX_SHADER = /* glsl */ `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const BLIT_FRAGMENT_SHADER = /* glsl */ `
+  varying vec2 vUv;
+  uniform sampler2D tex;
+  void main() {
+    gl_FragColor = texture2D(tex, vUv);
+  }
+`;
+
+interface ReadbackState {
+  target: THREE.WebGLRenderTarget;
+  quad: FullScreenQuad;
+  material: THREE.ShaderMaterial;
+  size: number;
+  buffer: Float32Array;
+}
+
+const readbackCache = createNodeCache<ReadbackState>((s) => {
+  s.target.dispose();
+  s.quad.dispose();
+  s.material.dispose();
+});
+
+/**
+ * Pulls a GPGPU positions texture back to the CPU as a flat (x,y,z,age)×N
+ * array — what a node that can't work purely on the GPU (nearest-neighbor
+ * search for connect-nearby) needs.
+ *
+ * `texture` alone doesn't carry pixels off the GPU: `readRenderTargetPixels`
+ * reads a *render target*, and the positions texture arriving over the
+ * "positions" socket is just the plain THREE.Texture face of one (see
+ * particles/simulate's positions output) — the WebGLRenderTarget wrapper
+ * that owns it lives inside GPUComputationRenderer and isn't exposed. Rather
+ * than plumb that target across the socket (which would break every other
+ * consumer expecting a THREE.Texture, e.g. particles/render's material
+ * uniform), this blits the incoming texture into a small render target of
+ * its own — one fullscreen-quad draw call, using three's own postprocessing
+ * FullScreenQuad rather than a hand-rolled one — and reads pixels from that
+ * instead. Cheap at the particle counts this node targets (low thousands, a
+ * few dozen texels square).
+ */
+export function readPositionsSync(
+  renderer: THREE.WebGLRenderer,
+  texture: THREE.Texture,
+  size: number,
+  nodeId: string,
+): Float32Array {
+  let state = readbackCache.get(nodeId);
+  if (!state || state.size !== size) {
+    if (state) {
+      state.target.dispose();
+      state.quad.dispose();
+      state.material.dispose();
+    }
+    const target = new THREE.WebGLRenderTarget(size, size, {
+      type: THREE.FloatType,
+      depthBuffer: false,
+      stencilBuffer: false,
+    });
+    const material = new THREE.ShaderMaterial({
+      uniforms: { tex: { value: null } },
+      vertexShader: BLIT_VERTEX_SHADER,
+      fragmentShader: BLIT_FRAGMENT_SHADER,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const quad = new FullScreenQuad(material);
+    state = { target, quad, material, size, buffer: new Float32Array(size * size * 4) };
+    readbackCache.set(nodeId, state);
+  }
+
+  state.material.uniforms.tex.value = texture;
+  const previousTarget = renderer.getRenderTarget();
+  renderer.setRenderTarget(state.target);
+  state.quad.render(renderer);
+  renderer.setRenderTarget(previousTarget);
+  renderer.readRenderTargetPixels(state.target, 0, 0, size, size, state.buffer);
+  return state.buffer;
 }

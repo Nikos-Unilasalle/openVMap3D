@@ -68,6 +68,7 @@ import { MATERIAL_NODE } from "./material";
 import { HUB_TEXT_NODE, HUB_IMAGE_NODE } from "./hub";
 import { SVG_TO_CURVES_NODE, SVG_TO_MESH_NODE, SVG_TO_SOLID_NODE } from "./svg";
 import { RAYCAST_NODE, RAY_BURST_NODE, SAMPLE_SURFACE_NODE } from "./raycast";
+import { CONNECT_NEARBY_NODE } from "./connectivity";
 import { MATRIX_MATH_NODE } from "./matrixMath";
 import { ORBIT_NODE, STAGGER_NODE, TIME_REMAP_NODE } from "./motion";
 import { TRAIL_NODE } from "./trail";
@@ -225,6 +226,7 @@ export const STARTER_NODES = [
   MATRIX_MATH_NODE,
   TRAIL_NODE,
   SQUASH_STRETCH_NODE,
+  CONNECT_NEARBY_NODE,
 ];
 
 export const DEFAULT_REGISTRY = createRegistry(STARTER_NODES);
@@ -274,3 +276,4 @@ export * from "./raycast";
 export * from "./motion";
 export * from "./trail";
 export * from "./squash";
+export * from "./connectivity";
