@@ -158,12 +158,22 @@ export const CAPTURE_TRAILS_NODE: NodeDefinition = {
       return { geometry: state.line ?? new THREE.Group(), segmentCount: 0, trails: [] as THREE.Vector3[][] };
     }
 
-    // A live particle count this small can afford a much longer history than
-    // a dense cloud could — see MAX_TRAIL_SEGMENTS.
-    const historyLength = Math.max(2, Math.min(requestedHistory, Math.floor(MAX_TRAIL_SEGMENTS / Math.max(1, capacity))));
-
     const size = textureSizeFor(capacity);
     const buffer = readPositionsSync(ctx.renderer, texture, size, ctx.nodeId);
+
+    // The history-length budget divides by how many particles are actually
+    // *alive* right now, not `capacity` (the texture's full size, i.e. Max
+    // Particles on Particle Simulate) — capacity is routinely much bigger
+    // than the live count (headroom, or a low spawn rate), and dividing by
+    // it instead silently floored every trail to a handful of samples
+    // regardless of the History Length param. A quick pass over the ages
+    // already in `buffer` (cheap: one float compare per texel) gets the
+    // real denominator before the accumulation loop needs it.
+    let liveCount = 0;
+    for (let i = 0; i < capacity; i++) {
+      if (buffer[i * 4 + 3] >= DEAD_AGE_THRESHOLD) liveCount++;
+    }
+    const historyLength = Math.max(2, Math.min(requestedHistory, Math.floor(MAX_TRAIL_SEGMENTS / Math.max(1, liveCount))));
 
     const live = new Set<number>();
     let segmentTotal = 0;
