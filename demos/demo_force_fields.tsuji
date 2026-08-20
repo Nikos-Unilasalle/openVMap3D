@@ -1,0 +1,184 @@
+{
+  "nodes": [
+    {
+      "id": "time",
+      "type": "time",
+      "position": { "x": -1180, "y": 60 },
+      "params": {}
+    },
+    {
+      "id": "emitter",
+      "type": "particles/emitter",
+      "position": { "x": -940, "y": 60 },
+      "params": {
+        "position": { "x": 0, "y": 0, "z": 0 },
+        "velocity": { "x": 0, "y": 0, "z": 0 },
+        "spawnRate": 6
+      }
+    },
+    {
+      "id": "vortex",
+      "type": "particles/force-field",
+      "position": { "x": -940, "y": 260 },
+      "params": {
+        "fieldType": "vortex",
+        "position": { "x": 0, "y": 0, "z": 0 },
+        "axis": { "x": 0, "y": 1, "z": 0 },
+        "strength": 3,
+        "radius": 0,
+        "scale": 1,
+        "speed": 0.1
+      }
+    },
+    {
+      "id": "attractor",
+      "type": "particles/force-field",
+      "position": { "x": -940, "y": 440 },
+      "params": {
+        "fieldType": "attractor",
+        "position": { "x": 0, "y": 0, "z": 0 },
+        "axis": { "x": 0, "y": 1, "z": 0 },
+        "strength": 0.6,
+        "radius": 0,
+        "scale": 1,
+        "speed": 0.1
+      }
+    },
+    {
+      "id": "sim",
+      "type": "particles/simulate",
+      "position": { "x": -680, "y": 60 },
+      "params": {
+        "gravity": 0,
+        "wind": { "x": 0, "y": 0, "z": 0 },
+        "lifetime": 8,
+        "count": 64,
+        "flowStrength": 0,
+        "flowScale": 1,
+        "flowSpeed": 0.1,
+        "boundsRadius": 8,
+        "maxSpeed": 3
+      }
+    },
+    {
+      "id": "render",
+      "type": "particles/render",
+      "position": { "x": -380, "y": -60 },
+      "params": {
+        "size": 5,
+        "color": { "r": 1, "g": 0.85, "b": 0.6 },
+        "sprite": "circle"
+      }
+    },
+    {
+      "id": "trails",
+      "type": "particles/capture-trails",
+      "position": { "x": -380, "y": 180 },
+      "params": {
+        "historyLength": 120,
+        "color": { "r": 1, "g": 0.6, "b": 0.25 },
+        "opacity": 0.9,
+        "linewidth": 1.6,
+        "worldUnits": false,
+        "fadeAlongTrail": true
+      }
+    },
+    {
+      "id": "merge",
+      "type": "structure/merge",
+      "position": { "x": -80, "y": 60 },
+      "params": {}
+    },
+    {
+      "id": "bloom",
+      "type": "postprocess/bloom",
+      "position": { "x": -80, "y": 260 },
+      "params": { "strength": 0.6, "radius": 0.5, "threshold": 0.3 }
+    },
+    {
+      "id": "output",
+      "type": "render",
+      "position": { "x": 220, "y": 60 },
+      "params": {}
+    }
+  ],
+  "connections": [
+    {
+      "id": "emitter.emitter->sim.emitter",
+      "fromNode": "emitter",
+      "fromSocket": "emitter",
+      "toNode": "sim",
+      "toSocket": "emitter"
+    },
+    {
+      "id": "vortex.field->sim.field0",
+      "fromNode": "vortex",
+      "fromSocket": "field",
+      "toNode": "sim",
+      "toSocket": "field0"
+    },
+    {
+      "id": "attractor.field->sim.field1",
+      "fromNode": "attractor",
+      "fromSocket": "field",
+      "toNode": "sim",
+      "toSocket": "field1"
+    },
+    {
+      "id": "sim.positions->render.positions",
+      "fromNode": "sim",
+      "fromSocket": "positions",
+      "toNode": "render",
+      "toSocket": "positions"
+    },
+    {
+      "id": "sim.count->render.count",
+      "fromNode": "sim",
+      "fromSocket": "count",
+      "toNode": "render",
+      "toSocket": "count"
+    },
+    {
+      "id": "sim.positions->trails.positions",
+      "fromNode": "sim",
+      "fromSocket": "positions",
+      "toNode": "trails",
+      "toSocket": "positions"
+    },
+    {
+      "id": "sim.count->trails.count",
+      "fromNode": "sim",
+      "fromSocket": "count",
+      "toNode": "trails",
+      "toSocket": "count"
+    },
+    {
+      "id": "render.geometry->merge.in0",
+      "fromNode": "render",
+      "fromSocket": "geometry",
+      "toNode": "merge",
+      "toSocket": "in0"
+    },
+    {
+      "id": "trails.geometry->merge.in1",
+      "fromNode": "trails",
+      "fromSocket": "geometry",
+      "toNode": "merge",
+      "toSocket": "in1"
+    },
+    {
+      "id": "merge.geometry->output.geometry",
+      "fromNode": "merge",
+      "fromSocket": "geometry",
+      "toNode": "output",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "bloom.effect->output.postprocess",
+      "fromNode": "bloom",
+      "fromSocket": "effect",
+      "toNode": "output",
+      "toSocket": "postprocess"
+    }
+  ]
+}
