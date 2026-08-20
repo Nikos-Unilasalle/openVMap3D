@@ -2,17 +2,9 @@ import * as THREE from "three";
 import { Brush, Evaluator, ADDITION, SUBTRACTION, INTERSECTION } from "three-bvh-csg";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { NodeDefinition } from "../types";
+import { clearMeshWarning, findFirstMesh, warnMeshRequired } from "../meshRequired";
 import { primitiveOutputs } from "./object";
 
-/** The first Mesh anywhere in an object tree — what a boolean actually CSGs. */
-function findFirstMesh(root: THREE.Object3D): THREE.Mesh | null {
-  if (root instanceof THREE.Mesh) return root;
-  let found: THREE.Mesh | null = null;
-  root.traverse((child) => {
-    if (!found && child instanceof THREE.Mesh) found = child;
-  });
-  return found;
-}
 
 interface BooleanState {
   mesh?: THREE.Mesh;
@@ -104,8 +96,10 @@ export const BOOLEAN_NODE: NodeDefinition = {
     const srcA = findFirstMesh(inputA);
     const srcB = findFirstMesh(inputB);
     if (!srcA || !srcB || !srcA.geometry?.attributes.position || !srcB.geometry?.attributes.position) {
+      warnMeshRequired(ctx.nodeId, "Boolean", srcA ? inputB : inputA);
       return primitiveOutputs(inputA);
     }
+    clearMeshWarning(ctx.nodeId);
 
     // Recompute the source's world matrix with `force` — see lattice.ts's note:
     // a source feeding a modifier is no longer drawn itself, so its matrixWorld

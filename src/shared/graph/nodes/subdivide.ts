@@ -3,16 +3,9 @@ import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { IndexedMesh, subdivide as runSubdivide, SubdivisionMode } from "../subdivision";
 import { NodeDefinition } from "../types";
+import { clearMeshWarning, findFirstMesh, warnMeshRequired } from "../meshRequired";
 import { primitiveOutputs } from "./object";
 
-function findFirstMesh(root: THREE.Object3D): THREE.Mesh | null {
-  if (root instanceof THREE.Mesh) return root;
-  let found: THREE.Mesh | null = null;
-  root.traverse((child) => {
-    if (!found && child instanceof THREE.Mesh) found = child;
-  });
-  return found;
-}
 
 interface SubdivideState {
   mesh?: THREE.Mesh;
@@ -117,8 +110,10 @@ export const SUBDIVIDE_NODE: NodeDefinition = {
     const srcMesh = findFirstMesh(inputObj);
     const srcGeom = srcMesh?.geometry;
     if (!srcMesh || !srcGeom || !srcGeom.attributes.position) {
+      warnMeshRequired(ctx.nodeId, "Subdivide", inputObj);
       return primitiveOutputs(inputObj);
     }
+    clearMeshWarning(ctx.nodeId);
 
     const mode: SubdivisionMode = params.mode === "simple" ? "simple" : "catmull-clark";
     const levels = Math.max(0, Math.min(5, Math.round(Number(params.levels) || 0)));

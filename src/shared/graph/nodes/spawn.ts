@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { createNodeCache } from "../nodeCaches";
 import { NodeDefinition } from "../types";
+import { clearMeshWarning, warnMeshRequired } from "../meshRequired";
 import { sampleSurfacePoints } from "../../three/bvh";
 
 const RAD = Math.PI / 180;
@@ -109,7 +110,11 @@ export const SPAWN_NODE: NodeDefinition = {
     // geometry (vs. the old per-frame collectTriangles scan) and reused by the
     // physics/sample node. Returns world-space positions + normals.
     const { positions: sampledPositions, normals: sampledNormals } = sampleSurfacePoints(supportObj, count, prng);
-    if (sampledPositions.length === 0) return { geometry: group };
+    if (sampledPositions.length === 0) {
+      warnMeshRequired(ctx.nodeId, "Spawner", supportObj);
+      return { geometry: group };
+    }
+    clearMeshWarning(ctx.nodeId);
 
     for (let i = 0; i < count; i++) {
       const worldPos = sampledPositions[i];

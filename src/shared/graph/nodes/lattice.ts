@@ -1,17 +1,10 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
+import { clearMeshWarning, findFirstMesh, warnMeshRequired } from "../meshRequired";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { asVector3, composeNativeMatrix } from "./transform";
 import { COMMON_PRIMITIVE_OUTPUTS, primitiveOutputs } from "./object";
 
-function findFirstMesh(root: THREE.Object3D): THREE.Mesh | null {
-  if (root instanceof THREE.Mesh) return root;
-  let found: THREE.Mesh | null = null;
-  root.traverse((child) => {
-    if (!found && child instanceof THREE.Mesh) found = child;
-  });
-  return found;
-}
 
 export interface LatticeGridConfig {
   sizeX: number;
@@ -734,11 +727,13 @@ export const LATTICE_DEFORM_NODE: NodeDefinition = {
     const srcGeom = srcMesh?.geometry;
 
     if (!srcMesh || !srcGeom || !srcGeom.attributes.position) {
+      warnMeshRequired(ctx.nodeId, "Lattice Deform", inputObj);
       return {
         ...primitiveOutputs(inputObj),
         cage: state.cageLines,
       };
     }
+    clearMeshWarning(ctx.nodeId);
 
     if (!state.deformedMesh) {
       state.deformedMesh = new THREE.Mesh(new THREE.BufferGeometry(), srcMesh.material);

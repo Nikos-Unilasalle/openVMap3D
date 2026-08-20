@@ -1,5 +1,7 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
+import { isRealMesh } from "../../three/objectKinds";
+import { clearMeshWarning, warnMeshRequired } from "../meshRequired";
 import { createNodeCache } from "../nodeCaches";
 import { getBoundsTree, sampleSurfacePoints } from "../../three/bvh";
 import { asColor, numberInput } from "./object";
@@ -31,7 +33,7 @@ function asVector3(val: unknown, fallback: THREE.Vector3): THREE.Vector3 {
 function collectTargets(object: THREE.Object3D): THREE.Mesh[] {
   const meshes: THREE.Mesh[] = [];
   object.traverse((child) => {
-    if (!(child instanceof THREE.Mesh) || !child.geometry?.attributes?.position) return;
+    if (!isRealMesh(child) || !child.geometry?.attributes?.position) return;
     // updateWorldMatrix (NOT updateMatrix): graph-driven meshes carry their
     // pose in `matrix` with matrixAutoUpdate off — updateMatrix() would
     // recompute `matrix` from the untouched defaults and destroy it. `force`
@@ -334,6 +336,8 @@ export const RAY_BURST_NODE: NodeDefinition = {
     // World matrices + BVHs are refreshed once for the whole burst, not once
     // per ray (see collectTargets).
     const targets = object ? collectTargets(object) : [];
+    if (object && targets.length === 0) warnMeshRequired(ctx.nodeId, "Ray Burst", object);
+    else clearMeshWarning(ctx.nodeId);
 
     const rotateRad = (rotate * Math.PI) / 180;
     for (let i = 0; i < count; i++) {
@@ -454,7 +458,7 @@ export const SAMPLE_SURFACE_NODE: NodeDefinition = {
     { id: "count", label: "Count", kind: "number", step: 5 },
     { id: "seed", label: "Seed", kind: "number", step: 1 },
   ],
-  evaluate: (inputs, params) => {
+  evaluate: (inputs, params, ctx) => {
     const object = inputs.geometry instanceof THREE.Object3D ? inputs.geometry : null;
     if (!object) return { points: [], normals: [] };
 
@@ -463,6 +467,8 @@ export const SAMPLE_SURFACE_NODE: NodeDefinition = {
     const prng = createPrng(seed);
 
     const { positions, normals } = sampleSurfacePoints(object, count, prng);
+    if (positions.length === 0 && count > 0) warnMeshRequired(ctx.nodeId, "Sample Surface", object);
+    else clearMeshWarning(ctx.nodeId);
     return { points: positions, normals };
   },
 };

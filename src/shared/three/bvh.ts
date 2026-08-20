@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { isRealMesh } from "./objectKinds";
 import {
   acceleratedRaycast,
   computeBoundsTree,
@@ -152,7 +153,7 @@ export function sampleSurfacePoints(
   }[] = [];
 
   object.traverse((child) => {
-    if (!(child instanceof THREE.Mesh) || !child.geometry) return;
+    if (!isRealMesh(child) || !child.geometry) return;
     const tris = getSurfaceTriangles(child.geometry);
     if (tris.triangles.length === 0) return;
     // updateWorldMatrix (NOT updateMatrix): graph-driven meshes carry their
