@@ -66,13 +66,6 @@ export interface TimelineDrawerProps {
   drawerHeight: number;
   onDrawerHeightChange: (height: number) => void;
   onSplitHandleMouseDown: (e: React.MouseEvent) => void;
-  /**
-   * The node graph is hidden while the timeline is open (default). When true,
-   * the drawer fills all the space the graph would take; the fixed
-   * drawerHeight is ignored until the graph is shown again.
-   */
-  /** True whenever this drawer is rendered — see App.tsx: it and the node graph swap places, never both at once, so this always fills the row it's given. */
-  expandToFill?: boolean;
 }
 
 function renderKeyframeGlyph(easeIn: EasingType = "smooth", isSummary = false) {
@@ -141,7 +134,6 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
   drawerHeight,
   onDrawerHeightChange,
   onSplitHandleMouseDown,
-  expandToFill = false,
 }) => {
   const [viewMode, setViewMode] = useState<"selected" | "all">("selected");
   const [pixelsPerFrame, setPixelsPerFrame] = useState(6);
@@ -649,8 +641,8 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
   return (
     <div
       ref={drawerRootRef}
-      className={`timeline-drawer-root ${isResizingDrawer ? "resizing" : ""} ${isOpen ? "open" : "closed"}${expandToFill ? " fill" : ""}`}
-      style={{ height: expandToFill ? undefined : `${drawerHeight}px`, flex: expandToFill ? 1 : undefined }}
+      className={`timeline-drawer-root ${isResizingDrawer ? "resizing" : ""} ${isOpen ? "open" : "closed"}`}
+      style={{ height: `${drawerHeight}px` }}
       onMouseEnter={() => setInputZone("timeline")}
       onMouseLeave={() => setInputZone(null)}
       onClick={() => {

@@ -336,7 +336,7 @@ export const SLICE_LIST_NODE: NodeDefinition = {
 /** Combine Vector Lists node — composes 3 scalar lists (X, Y, Z) into a list of THREE.Vector3 objects. */
 export const COMBINE_VECTOR_LISTS_NODE: NodeDefinition = {
   type: "list/combine-vectors",
-  label: "Combine Vector Lists",
+  label: "Combine Vectors",
   category: "list",
   inputs: [
     { id: "xList", label: "X List", type: "list" },
@@ -382,7 +382,7 @@ export const COMBINE_VECTOR_LISTS_NODE: NodeDefinition = {
 /** Split Vector List node — decomposes a list of THREE.Vector3 objects into 3 scalar number lists (X, Y, Z). */
 export const SPLIT_VECTOR_LIST_NODE: NodeDefinition = {
   type: "list/split-vectors",
-  label: "Decompose Vector List",
+  label: "Split Vector List",
   category: "list",
   inputs: [{ id: "vectorList", label: "Vector List", type: "list" }],
   outputs: [

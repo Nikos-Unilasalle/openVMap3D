@@ -211,7 +211,7 @@ function resampleArray(source: number[], targetLength: number): number[] {
 /** Audio Spectrum (FFT) node — performs real-time frequency analysis and outputs spectrum array & bass/mid/treble volume levels. */
 export const AUDIO_SPECTRUM_NODE: NodeDefinition = {
   type: "sound/spectrum",
-  label: "Audio Spectrum (FFT)",
+  label: "Audio Spectrum",
   category: "sound",
   inputs: [
     { id: "audio", label: "Audio In", type: "any" },

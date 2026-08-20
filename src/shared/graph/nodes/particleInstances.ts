@@ -165,7 +165,7 @@ export function bakeInstancesToGeometryData(
  */
 export const PARTICLE_RENDER_INSTANCES_NODE: NodeDefinition = {
   type: "particles/render-instances",
-  label: "Particle Render (Instances)",
+  label: "Particle Instances",
   category: "particles",
   inputs: [
     { id: "positions", label: "Positions", type: "texture" },

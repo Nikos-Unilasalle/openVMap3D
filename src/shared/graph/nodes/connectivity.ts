@@ -180,7 +180,7 @@ function ensureCapacity(state: ConnectState, segments: number): void {
  */
 export const CONNECT_NEARBY_NODE: NodeDefinition = {
   type: "particles/connect-nearby",
-  label: "Connect Nearby Points",
+  label: "Connect Nearby",
   category: "particles",
   inputs: [
     { id: "positions", label: "Positions", type: "texture" },

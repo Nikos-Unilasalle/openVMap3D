@@ -155,7 +155,7 @@ function getSeedState(nodeId: string): SeedState {
  */
 export const PARTICLE_EMITTER_FROM_POINTS_NODE: NodeDefinition = {
   type: "particles/emitter-from-points",
-  label: "Particle Emitter (From Points)",
+  label: "Point Emitter",
   category: "particles",
   inputs: [
     { id: "xValues", label: "X Values (List)", type: "list" },
@@ -243,7 +243,7 @@ export const PARTICLE_EMITTER_FROM_POINTS_NODE: NodeDefinition = {
  */
 export const PARTICLE_EMITTER_FROM_SURFACE_NODE: NodeDefinition = {
   type: "particles/emitter-from-surface",
-  label: "Particle Emitter (From Surface)",
+  label: "Surface Emitter",
   category: "particles",
   inputs: [
     { id: "geometry", label: "Geometry", type: "geometry" },

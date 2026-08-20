@@ -1045,7 +1045,7 @@ export const SAMPLE_CURVE_NODE: NodeDefinition = {
 /** 5. Curve Modifier / Mesh Deform Node */
 export const CURVE_DEFORM_NODE: NodeDefinition = {
   type: "curve/deform",
-  label: "Curve Deform (Modifier)",
+  label: "Curve Deform",
   category: "curve",
   inputs: [
     { id: "visible", label: "Visible", type: "value" },
@@ -1206,7 +1206,7 @@ export const CURVE_DEFORM_NODE: NodeDefinition = {
 /** 6. Curves to Mesh (List) Node — extrudes every curve in a list and merges them into one mesh. */
 export const CURVES_TO_MESH_NODE: NodeDefinition = {
   type: "curve/to_mesh_list",
-  label: "Curves to Mesh (List)",
+  label: "Curves to Meshes",
   category: "curve",
   inputs: [
     { id: "curves", label: "Curves (List)", type: "list" },

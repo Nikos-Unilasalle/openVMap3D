@@ -30,8 +30,7 @@ export interface TopBarProps {
   exportProgress?: number;
   isTimelineOpen?: boolean;
   onToggleTimeline?: () => void;
-  /** Whether the node graph (rather than the timeline) currently fills the bottom row — see App.tsx's showGraphWithTimeline. Only meaningful while isTimelineOpen. */
-  isGraphShown?: boolean;
+  /** Closes the Timeline drawer, giving the node graph (always present underneath it) its full height back. Only shown while isTimelineOpen. */
   onToggleGraph?: () => void;
 }
 
@@ -49,7 +48,6 @@ export const TopBar: React.FC<TopBarProps> = ({
   exportProgress = 0,
   isTimelineOpen = false,
   onToggleTimeline,
-  isGraphShown = false,
   onToggleGraph,
 }) => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -302,13 +300,9 @@ export const TopBar: React.FC<TopBarProps> = ({
           </button>
         )}
 
-        {/* GRAPH — swaps the bottom row between the Timeline and the node graph while the Timeline is open (see App.tsx's showGraphWithTimeline) */}
+        {/* GRAPH — closes the Timeline drawer, handing its space back to the node graph underneath */}
         {isTimelineOpen && onToggleGraph && (
-          <button
-            className={`top-bar-button${isGraphShown ? " top-bar-button-output-active" : ""}`}
-            onClick={onToggleGraph}
-            title={isGraphShown ? "Show the Timeline instead" : "Show the node graph instead of the Timeline"}
-          >
+          <button className="top-bar-button" onClick={onToggleGraph} title="Close the Timeline, show the node graph">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="6" cy="6" r="2.5" />
               <circle cx="18" cy="6" r="2.5" />

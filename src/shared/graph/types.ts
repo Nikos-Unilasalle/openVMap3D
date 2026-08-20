@@ -133,7 +133,8 @@ export type ParamFieldDef =
    * tells the panel to show and accept degrees, which is what anyone
    * dialling in an angle by hand actually wants to type.
    */
-  | { id: string; label: string; kind: "number"; step?: number; degrees?: boolean; group?: string }
+  /** `percent` is the same display-only convention as `degrees` — shows/edits the value ×100, stores it unscaled (0-1 fraction). Mutually exclusive with `degrees`. */
+  | { id: string; label: string; kind: "number"; step?: number; degrees?: boolean; percent?: boolean; group?: string }
   | { id: string; label: string; kind: "boolean"; group?: string }
   | { id: string; label: string; kind: "select"; options: string[]; group?: string }
   | { id: string; label: string; kind: "color"; group?: string }

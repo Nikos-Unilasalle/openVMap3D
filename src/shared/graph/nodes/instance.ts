@@ -275,7 +275,7 @@ function resolveScalarOrListItem(
  */
 export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
   type: "structure/instance-transform",
-  label: "Set Instance Transform",
+  label: "Instance Transform",
   category: "instance",
   inputs: [
     { id: "geometry", label: "Geometry", type: "geometry", owns: true },

@@ -554,7 +554,7 @@ export const LATTICE_DEFORM_NODE: NodeDefinition = {
   inputs: [
     { id: "geometry", label: "Geometry", type: "geometry", owns: true },
     { id: "matrix", label: "Matrix", type: "matrix" },
-    { id: "strength", label: "Strength", type: "value" },
+    { id: "strength", label: "Influence", type: "value" },
     { id: "points", label: "Points List", type: "list" },
     { id: "bulge", label: "Bulge", type: "value" },
     { id: "twist", label: "Twist (°)", type: "value" },
@@ -603,7 +603,10 @@ export const LATTICE_DEFORM_NODE: NodeDefinition = {
     { id: "subdivisionsV", label: "Subdivisions V", kind: "number", step: 1, group: "Lattice Grid" },
     { id: "subdivisionsW", label: "Subdivisions W", kind: "number", step: 1, group: "Lattice Grid" },
     { id: "interpolation", label: "Interpolation", kind: "select", options: ["linear", "smooth"], group: "Lattice Grid" },
-    { id: "strength", label: "Strength", kind: "number", step: 0.05, group: "Lattice Grid" },
+    // percent: true is display-only (see ParamPanel) — shown/typed as 0-100,
+    // still stored as the 0-1 fraction `strength` already was, so existing
+    // saved .tsuji scenes render identically.
+    { id: "strength", label: "Influence (%)", kind: "number", step: 5, percent: true, group: "Lattice Grid" },
     { id: "showCage", label: "Show Cage", kind: "boolean", group: "Lattice Grid" },
 
     { id: "deformAxis", label: "Deform Axis", kind: "select", options: ["x", "y", "z"], group: "Deformations" },

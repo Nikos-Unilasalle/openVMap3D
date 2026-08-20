@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { CAMERA_FLY_TO_NODE, CAMERA_NODE } from "./shared/graph/nodes/camera";
 import { DEFAULT_REGISTRY } from "./shared/graph/nodes";
+import { toBoolean } from "./shared/graph/sockets";
 import { BAKE_INSTANCES_ACTION, bakeInstancesToGeometryData } from "./shared/graph/nodes/particleInstances";
 import { OBJECT_FROZEN_NODE } from "./shared/graph/nodes/frozenGeometry";
 import { randomId } from "./shared/randomId";
@@ -198,9 +199,6 @@ function MainEditor() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [isTimelineDrawerOpen, setIsTimelineDrawerOpen] = useState(false);
-  // The node graph is hidden by default while the full timeline is open —
-  // the drawer fills the space unless this is flipped back on.
-  const [showGraphWithTimeline, setShowGraphWithTimeline] = useState(false);
   const [timelineDrawerHeight, setTimelineDrawerHeight] = useState(280);
   const [splitPercent, setSplitPercent] = useState(50);
   const [currentFilename, setCurrentFilename] = useState(recovered?.filename ?? "project_v1.tsuji");
@@ -434,11 +432,6 @@ function MainEditor() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [keyframesEnabled]);
-
-  // Opening the full timeline hides the node graph by default every time.
-  useEffect(() => {
-    if (isTimelineDrawerOpen) setShowGraphWithTimeline(false);
-  }, [isTimelineDrawerOpen]);
 
   const onToggleKeyframe = useCallback(
     (nodeId: string, paramKey: string, frame: number, currentValue: any) => {
@@ -833,6 +826,34 @@ function MainEditor() {
       };
     }, `${nodeIdToUpdate}:${paramId}`);
   };
+
+  // Tab toggles the selected object's own Visible param — only while a node
+  // with one is selected, so it doesn't fight the browser's own focus-Tab
+  // when nothing (or a non-object node) is selected. A separate effect from
+  // the Space/T handler above (rather than folding this branch into it)
+  // because it needs onParamChange, which isn't defined until after that one.
+  useEffect(() => {
+    function handleTab(e: KeyboardEvent) {
+      const activeEl = document.activeElement;
+      const isInput =
+        activeEl &&
+        (activeEl.tagName === "INPUT" ||
+          activeEl.tagName === "TEXTAREA" ||
+          activeEl.tagName === "SELECT" ||
+          (activeEl as HTMLElement).isContentEditable);
+      if (isInput || e.key !== "Tab" || e.metaKey || e.ctrlKey || e.altKey || !selectedNodeId) return;
+
+      const instance = graph.nodes.find((n) => n.id === selectedNodeId);
+      const def = instance ? DEFAULT_REGISTRY.get(instance.type) : undefined;
+      if (!instance || !def || !("visible" in def.defaultParams)) return;
+
+      e.preventDefault();
+      const current = instance.params.visible !== undefined ? instance.params.visible : def.defaultParams.visible;
+      onParamChange("visible", toBoolean(current) ? 0 : 1, selectedNodeId);
+    }
+    window.addEventListener("keydown", handleTab);
+    return () => window.removeEventListener("keydown", handleTab);
+  }, [selectedNodeId, graph.nodes, onParamChange]);
 
   /**
    * Handles a "button" ParamFieldDef click (see ParamPanel's onAction). Only
@@ -1481,8 +1502,7 @@ function MainEditor() {
         exportProgress={exportProgress}
         isTimelineOpen={isTimelineDrawerOpen}
         onToggleTimeline={() => setIsTimelineDrawerOpen((prev) => !prev)}
-        isGraphShown={showGraphWithTimeline}
-        onToggleGraph={() => setShowGraphWithTimeline((prev) => !prev)}
+        onToggleGraph={() => setIsTimelineDrawerOpen(false)}
       />
       {isExporting && (
         // Off-screen (not display:none, which some webviews suspend rAF
@@ -1576,56 +1596,51 @@ function MainEditor() {
             onToggleDrawer={() => setIsTimelineDrawerOpen((prev) => !prev)}
           />
         )}
-        {isTimelineDrawerOpen && !showGraphWithTimeline && (
-          <TimelineDrawer
-            isOpen={isTimelineDrawerOpen}
-            onClose={() => setIsTimelineDrawerOpen(false)}
-            currentFrame={currentFrame}
-            totalFrames={totalFrames}
-            isPlaying={isPlaying}
-            keyframesEnabled={keyframesEnabled}
+        <TimelineDrawer
+          isOpen={isTimelineDrawerOpen}
+          onClose={() => setIsTimelineDrawerOpen(false)}
+          currentFrame={currentFrame}
+          totalFrames={totalFrames}
+          isPlaying={isPlaying}
+          keyframesEnabled={keyframesEnabled}
+          graph={graph}
+          registry={DEFAULT_REGISTRY}
+          selectedNodeIds={selectedNodeIds}
+          onSelectNode={handleSelectNode}
+          onFrameChange={setCurrentFrame}
+          onTogglePlay={() => setIsPlaying((p) => !p)}
+          onToggleKeyframe={onToggleKeyframe}
+          onBatchMoveKeyframes={onBatchMoveKeyframes}
+          onBatchDeleteKeyframes={onBatchDeleteKeyframes}
+          onBatchDuplicateKeyframes={onBatchDuplicateKeyframes}
+          onBatchUpdateEasing={onBatchUpdateEasing}
+          onChangeKeyframeValue={onChangeKeyframeValue}
+          onEditKeyframes={onEditKeyframes}
+          fps={exportFps}
+          onPasteKeyframes={onPasteKeyframes}
+          markers={graph.markers ?? []}
+          onToggleMarker={onToggleMarker}
+          onMoveMarker={onMoveMarker}
+          drawerHeight={timelineDrawerHeight}
+          onDrawerHeightChange={setTimelineDrawerHeight}
+          onSplitHandleMouseDown={onSplitHandleMouseDown}
+        />
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <GraphEditor
+            key={`${activeCanvas}:${editorKey}`}
             graph={graph}
             registry={DEFAULT_REGISTRY}
-            selectedNodeIds={selectedNodeIds}
+            onGraphChange={onGraphChange}
             onSelectNode={handleSelectNode}
-            onFrameChange={setCurrentFrame}
-            onTogglePlay={() => setIsPlaying((p) => !p)}
-            onToggleKeyframe={onToggleKeyframe}
-            onBatchMoveKeyframes={onBatchMoveKeyframes}
-            onBatchDeleteKeyframes={onBatchDeleteKeyframes}
-            onBatchDuplicateKeyframes={onBatchDuplicateKeyframes}
-            onBatchUpdateEasing={onBatchUpdateEasing}
-            onChangeKeyframeValue={onChangeKeyframeValue}
-            onEditKeyframes={onEditKeyframes}
-            fps={exportFps}
-            onPasteKeyframes={onPasteKeyframes}
-            markers={graph.markers ?? []}
-            onToggleMarker={onToggleMarker}
-            onMoveMarker={onMoveMarker}
-            drawerHeight={timelineDrawerHeight}
-            onDrawerHeightChange={setTimelineDrawerHeight}
-            onSplitHandleMouseDown={onSplitHandleMouseDown}
-            expandToFill
+            selectedNodeId={selectedNodeId}
+            onSelectNodes={handleSelectNodes}
+            selectedNodeIds={selectedNodeIds}
+            canvasCount={CANVAS_COUNT}
+            activeCanvas={activeCanvas}
+            emptyCanvases={canvases.map(isCanvasEmpty)}
+            onSelectCanvas={switchCanvas}
           />
-        )}
-        {(!isTimelineDrawerOpen || showGraphWithTimeline) && (
-          <div style={{ flex: 1, minHeight: 0 }}>
-            <GraphEditor
-              key={`${activeCanvas}:${editorKey}`}
-              graph={graph}
-              registry={DEFAULT_REGISTRY}
-              onGraphChange={onGraphChange}
-              onSelectNode={handleSelectNode}
-              selectedNodeId={selectedNodeId}
-              onSelectNodes={handleSelectNodes}
-              selectedNodeIds={selectedNodeIds}
-              canvasCount={CANVAS_COUNT}
-              activeCanvas={activeCanvas}
-              emptyCanvases={canvases.map(isCanvasEmpty)}
-              onSelectCanvas={switchCanvas}
-            />
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );

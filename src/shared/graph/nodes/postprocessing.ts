@@ -80,7 +80,7 @@ export const POSTPROCESS_VIGNETTE_NODE: NodeDefinition = {
 /** RGB Shift / Chromatic Aberration Post-Processing Node */
 export const POSTPROCESS_RGB_SHIFT_NODE: NodeDefinition = {
   type: "postprocess/rgb-shift",
-  label: "RGB Shift / Aberration",
+  label: "RGB Shift",
   category: "postprocess",
   inputs: [
     { id: "effect", label: "Post-Process", type: "postprocess" },
@@ -143,7 +143,7 @@ export const POSTPROCESS_DOF_NODE: NodeDefinition = {
 /** Outline / Edge Detection Post-Processing Node */
 export const POSTPROCESS_OUTLINE_NODE: NodeDefinition = {
   type: "postprocess/outline",
-  label: "Outline / Edge Detect",
+  label: "Outline",
   category: "postprocess",
   inputs: [
     { id: "effect", label: "Post-Process", type: "postprocess" },
@@ -180,7 +180,7 @@ export const POSTPROCESS_OUTLINE_NODE: NodeDefinition = {
 /** Film Grain & Scanlines Post-Processing Node */
 export const POSTPROCESS_FILM_GRAIN_NODE: NodeDefinition = {
   type: "postprocess/film-grain",
-  label: "Film Grain & Scanlines",
+  label: "Film Grain",
   category: "postprocess",
   inputs: [
     { id: "effect", label: "Post-Process", type: "postprocess" },

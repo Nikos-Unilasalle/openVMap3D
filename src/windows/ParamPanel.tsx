@@ -180,12 +180,16 @@ function fileField(nodeId: string, field: ParamFieldDef & { kind: "file" }, valu
 
 const RAD_TO_DEG = 180 / Math.PI;
 
-function toDisplayUnit(value: number, degrees?: boolean): number {
-  return degrees ? value * RAD_TO_DEG : value;
+function toDisplayUnit(value: number, degrees?: boolean, percent?: boolean): number {
+  if (degrees) return value * RAD_TO_DEG;
+  if (percent) return value * 100;
+  return value;
 }
 
-function toStoredUnit(value: number, degrees?: boolean): number {
-  return degrees ? value / RAD_TO_DEG : value;
+function toStoredUnit(value: number, degrees?: boolean, percent?: boolean): number {
+  if (degrees) return value / RAD_TO_DEG;
+  if (percent) return value / 100;
+  return value;
 }
 
 export function parseVector3(value: unknown): THREE.Vector3 {
@@ -399,12 +403,12 @@ export function ParamPanel({
                       </label>
                       {field.kind === "number" && (
                         <DragNumberInput
-                          value={toDisplayUnit(Number(params[field.id]) || 0, field.degrees)}
+                          value={toDisplayUnit(Number(params[field.id]) || 0, field.degrees, field.percent)}
                           step={field.step}
                           status={status}
                           onMouseEnter={() => setHoveredParamKey(field.id)}
                           onMouseLeave={() => setHoveredParamKey((prev) => (prev === field.id ? null : prev))}
-                          onChange={(v) => onChange(field.id, toStoredUnit(v, field.degrees))}
+                          onChange={(v) => onChange(field.id, toStoredUnit(v, field.degrees, field.percent))}
                         />
                       )}
                       {field.kind === "vector" &&
