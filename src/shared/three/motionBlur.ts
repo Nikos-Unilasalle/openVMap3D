@@ -38,9 +38,41 @@ const SAMPLES = 16;
 const MAX_VELOCITY_UV = 0.05;
 
 /**
- * Maps the node's 0..1 knob onto shutter length.
+ * Maps the node's 0..1 knob onto shutter length, counted in frames of travel.
+ *
+ * The velocity buffer measures exactly one frame of movement, so a scale of 1
+ * capped the smear at "however far this thing moved since the last frame" —
+ * about 1% of the screen for something crossing the viewport in a second at
+ * 60fps, which read as no blur at all. A camera shutter integrates over a
+ * slice of *time*, not over one display refresh, so the knob buys several
+ * frames of travel instead; 4 puts a full-strength setting in the same range
+ * as a 180° shutter on 15fps footage, i.e. visibly smeared but not a streak.
  */
-const SHUTTER_SCALE = 1.0;
+const SHUTTER_SCALE = 4.0;
+
+/**
+ * A stable identity for an instance, across frames.
+ *
+ * Array/Instance/Merge nodes rebuild their output every evaluation —
+ * `structure/array` clones its source per item, so the 144 meshes on this
+ * frame are 144 *different objects* from the 144 on the last one (verified:
+ * zero shared uuids between two evaluations of the same graph). A previous
+ * matrix parked on the object therefore died with it, every mesh reported
+ * "previous == current", and object motion blurred nothing at all. Only the
+ * camera term survived, because that one is per-frame rather than per-object.
+ *
+ * The owning node id rides along in userData (object.ts stamps it, and
+ * Object3D.clone copies userData), and traversal order is deterministic for a
+ * given graph, so node id + ordinal names the same instance on both frames.
+ * When a count changes, keys shift by one and those instances read one bogus
+ * frame of velocity — bounded by MAX_VELOCITY_UV and gone the next frame.
+ */
+export function velocityKey(mesh: THREE.Object3D, ordinals: Map<string, number>): string {
+  const owner = typeof mesh.userData.nodeId === "string" ? mesh.userData.nodeId : "anon";
+  const ordinal = ordinals.get(owner) ?? 0;
+  ordinals.set(owner, ordinal + 1);
+  return `${owner}#${ordinal}`;
+}
 
 const VELOCITY_VERTEX_SHADER = /* glsl */ `
   uniform mat4 prevModelMatrix;
@@ -158,6 +190,13 @@ export function createMotionBlur(width: number, height: number): MotionBlur {
   const currentViewProjection = new THREE.Matrix4();
   let hasPreviousFrame = false;
 
+  /**
+   * Last frame's world matrix per instance, keyed by identity rather than held
+   * on the object — see velocityKey. Lives in the closure, so the two split
+   * viewport panes keep separate histories.
+   */
+  const previousMatrices = new Map<string, THREE.Matrix4>();
+
   // Per-object previous model matrix has to reach a material that every
   // object shares, so it can only be set per draw call. `onBeforeRender`
   // fires immediately before each object's draw, which is exactly that hook;
@@ -165,7 +204,8 @@ export function createMotionBlur(width: number, height: number): MotionBlur {
   // unchanged since the last object and skipping the re-upload.
   const velocityHook: THREE.Object3D["onBeforeRender"] = function (this: THREE.Object3D) {
     if (!isRenderingVelocity) return;
-    const previousMatrix = this.userData.__prevMatrixWorld as THREE.Matrix4 | undefined;
+    const key = this.userData.__velocityKey as string | undefined;
+    const previousMatrix = key !== undefined ? previousMatrices.get(key) : undefined;
     velocityMaterial.uniforms.prevModelMatrix.value.copy(previousMatrix ?? this.matrixWorld);
     velocityMaterial.uniformsNeedUpdate = true;
   };
@@ -182,12 +222,14 @@ export function createMotionBlur(width: number, height: number): MotionBlur {
     const meshes: THREE.Mesh[] = [];
     const hooked: THREE.Mesh[] = [];
     const hidden: THREE.Object3D[] = [];
+    const ordinals = new Map<string, number>();
     scene.traverse((object) => {
       if (object instanceof THREE.Mesh) {
         if (object.onBeforeRender !== velocityHook) {
           object.onBeforeRender = velocityHook;
           hooked.push(object);
         }
+        object.userData.__velocityKey = velocityKey(object, ordinals);
         meshes.push(object);
         return;
       }
@@ -230,16 +272,31 @@ export function createMotionBlur(width: number, height: number): MotionBlur {
     // and shared with the other split viewport pane, which has its own closure
     // (and its own local velocityHook) — leaving ours installed here would let
     // one pane's hook read matrices written by the other, corrupting the blur.
-    for (const mesh of hooked) mesh.onBeforeRender = undefined as any;
+    //
+    // `delete`, not `= undefined`: three calls `object.onBeforeRender(...)`
+    // unconditionally on every draw, and the no-op it relies on lives on
+    // Object3D's prototype. Assigning undefined shadows that prototype method
+    // with an own property, so the very next scene pass threw
+    // "object.onBeforeRender is not a function" and the viewport went black.
+    // Removing the own property lets the prototype no-op show through again.
+    for (const mesh of hooked) delete (mesh as { onBeforeRender?: unknown }).onBeforeRender;
 
     // Snapshot *after* drawing — these become "previous" for the next frame.
+    const live = new Set<string>();
     for (const mesh of meshes) {
-      let stored = mesh.userData.__prevMatrixWorld as THREE.Matrix4 | undefined;
-      if (!stored) {
-        stored = new THREE.Matrix4();
-        mesh.userData.__prevMatrixWorld = stored;
+      const key = mesh.userData.__velocityKey as string;
+      live.add(key);
+      const stored = previousMatrices.get(key);
+      if (stored) stored.copy(mesh.matrixWorld);
+      else previousMatrices.set(key, mesh.matrixWorld.clone());
+    }
+    // Drop instances that left the scene, so a graph edit that halves an
+    // Array's count doesn't leave the other half's matrices in memory for
+    // the rest of the session.
+    if (previousMatrices.size > live.size) {
+      for (const key of previousMatrices.keys()) {
+        if (!live.has(key)) previousMatrices.delete(key);
       }
-      stored.copy(mesh.matrixWorld);
     }
     previousViewProjection.copy(currentViewProjection);
     hasPreviousFrame = true;
@@ -255,6 +312,7 @@ export function createMotionBlur(width: number, height: number): MotionBlur {
       velocityTarget.setSize(Math.max(1, nextWidth), Math.max(1, nextHeight));
     },
     dispose: () => {
+      previousMatrices.clear();
       velocityTarget.dispose();
       velocityMaterial.dispose();
       pass.dispose();
