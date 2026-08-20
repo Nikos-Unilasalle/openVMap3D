@@ -1,10 +1,70 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { PARTICLE_EMITTER_FROM_POINTS_NODE, clampParticleCapacity } from "./particles";
+import { PARTICLE_EMITTER_FROM_POINTS_NODE, PARTICLE_EMITTER_FROM_SURFACE_NODE, clampParticleCapacity } from "./particles";
 import { EmitterConfig } from "../particleRuntime";
 import { EvalContext } from "../types";
 
 const CTX = (nodeId: string): EvalContext => ({ time: 0, step: 0, nodeId });
+
+describe("PARTICLE_EMITTER_FROM_SURFACE_NODE", () => {
+  it("has no seedPositions with nothing wired", () => {
+    const res = PARTICLE_EMITTER_FROM_SURFACE_NODE.evaluate({}, PARTICLE_EMITTER_FROM_SURFACE_NODE.defaultParams, CTX("surf-a"));
+    const emitter = res.emitter as EmitterConfig;
+    expect(emitter.seedPositions).toBeUndefined();
+  });
+
+  it("samples the requested number of surface points", () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2));
+    const res = PARTICLE_EMITTER_FROM_SURFACE_NODE.evaluate(
+      { geometry: mesh },
+      { ...PARTICLE_EMITTER_FROM_SURFACE_NODE.defaultParams, points: 30, seed: 1 },
+      CTX("surf-b"),
+    );
+    const emitter = res.emitter as EmitterConfig;
+    expect(emitter.seedPositions!.length).toBe(30 * 3);
+  });
+
+  it("samples points that actually sit on the box's surface (diameter = 0, natural size)", () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2)); // extent -1..1 on every axis
+    const res = PARTICLE_EMITTER_FROM_SURFACE_NODE.evaluate(
+      { geometry: mesh },
+      { ...PARTICLE_EMITTER_FROM_SURFACE_NODE.defaultParams, points: 50, seed: 2 },
+      CTX("surf-c"),
+    );
+    const seed = (res.emitter as EmitterConfig).seedPositions!;
+    for (let i = 0; i < seed.length; i += 3) {
+      const [x, y, z] = [seed[i], seed[i + 1], seed[i + 2]];
+      // On the surface of a 2x2x2 box centered at origin: every point has at
+      // least one coordinate at +/-1, and none exceed it.
+      expect(Math.max(Math.abs(x), Math.abs(y), Math.abs(z))).toBeCloseTo(1, 5);
+    }
+  });
+
+  it("diameter rescales the sampled cloud around its own center", () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2)); // natural bounding-sphere diameter = 2*sqrt(3)
+    const res = PARTICLE_EMITTER_FROM_SURFACE_NODE.evaluate(
+      { geometry: mesh },
+      { ...PARTICLE_EMITTER_FROM_SURFACE_NODE.defaultParams, points: 50, seed: 3, diameter: 4 * Math.sqrt(3) }, // 2x natural
+      CTX("surf-d"),
+    );
+    const seed = (res.emitter as EmitterConfig).seedPositions!;
+    let maxRadius = 0;
+    for (let i = 0; i < seed.length; i += 3) {
+      maxRadius = Math.max(maxRadius, Math.hypot(seed[i], seed[i + 1], seed[i + 2]));
+    }
+    // Natural half-diagonal is sqrt(3) (~1.73); doubling the diameter should
+    // roughly double the sampled radii too.
+    expect(maxRadius).toBeGreaterThan(Math.sqrt(3) * 1.5);
+  });
+
+  it("is deterministic for a fixed seed", () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2));
+    const params = { ...PARTICLE_EMITTER_FROM_SURFACE_NODE.defaultParams, points: 10, seed: 7 };
+    const a = PARTICLE_EMITTER_FROM_SURFACE_NODE.evaluate({ geometry: mesh }, params, CTX("surf-e1"));
+    const b = PARTICLE_EMITTER_FROM_SURFACE_NODE.evaluate({ geometry: mesh }, params, CTX("surf-e2"));
+    expect(Array.from((a.emitter as EmitterConfig).seedPositions!)).toEqual(Array.from((b.emitter as EmitterConfig).seedPositions!));
+  });
+});
 
 describe("clampParticleCapacity", () => {
   it("passes a normal count through unchanged", () => {

@@ -3,6 +3,8 @@ import { NodeDefinition } from "../types";
 import { EmitterConfig, ForceFieldDescriptor, buildEmitterConfig, getOrCreateSimulation } from "../particleRuntime";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { growingSockets } from "../dynamicInputs";
+import { sampleSurfacePoints } from "../../three/bvh";
+import { createPRNG } from "../../math/random";
 
 function asVector(v: unknown, fallback: THREE.Vector3): THREE.Vector3 {
   if (v instanceof THREE.Vector3) return v;
@@ -149,6 +151,84 @@ export const PARTICLE_EMITTER_FROM_POINTS_NODE: NodeDefinition = {
     }
 
     return { emitter: buildEmitterConfig(new THREE.Vector3(), velocity, spawnRate, state.seedPositions) };
+  },
+};
+
+/**
+ * Particle Emitter (From Surface) — the geometry-driven sibling of Particle
+ * Emitter (From Points): area-weighted-samples the input geometry's surface
+ * (sampleSurfacePoints, the same BVH-accelerated sampler Sample Surface and
+ * Random Vector already use) into a pool of seed positions, then hands them
+ * to Particle Simulate exactly like an imported point cloud would
+ * (EmitterConfig.seedPositions). Re-sampled every evaluate() rather than
+ * cached by input reference: the geometry socket typically carries the
+ * *same* THREE.Object3D across frames even while it moves or deforms (a
+ * Transform/Wiggle upstream mutates its pose or vertices in place, it
+ * doesn't hand back a new object each frame), so caching on reference
+ * equality would silently freeze the emission surface in its first pose.
+ * Cheap at this node's target pool size (a few hundred points).
+ */
+export const PARTICLE_EMITTER_FROM_SURFACE_NODE: NodeDefinition = {
+  type: "particles/emitter-from-surface",
+  label: "Particle Emitter (From Surface)",
+  category: "particles",
+  inputs: [
+    { id: "geometry", label: "Geometry", type: "geometry" },
+    { id: "velocity", label: "Velocity", type: "vector" },
+    { id: "spawnRate", label: "Spawn Rate", type: "value" },
+    { id: "points", label: "Surface Points", type: "value" },
+    { id: "diameter", label: "Diameter", type: "value" },
+    { id: "seed", label: "Seed", type: "value" },
+  ],
+  outputs: [{ id: "emitter", label: "Emitter", type: "any" }],
+  defaultParams: {
+    velocity: new THREE.Vector3(0, 0, 0),
+    spawnRate: 200,
+    points: 200,
+    // 0 = the geometry's own size, unscaled.
+    diameter: 0,
+    seed: 1,
+  },
+  paramFields: [
+    { id: "velocity", label: "Velocity (fallback)", kind: "vector" },
+    { id: "spawnRate", label: "Spawn Rate", kind: "number", step: 10 },
+    { id: "points", label: "Surface Points", kind: "number", step: 10 },
+    { id: "diameter", label: "Diameter (0 = geometry's own size)", kind: "number", step: 0.1 },
+    { id: "seed", label: "Seed", kind: "number", step: 1 },
+  ],
+  evaluate: (inputs, params) => {
+    const object = inputs.geometry instanceof THREE.Object3D ? inputs.geometry : null;
+    const velocity = asVector(inputs.velocity, asVector(params.velocity, new THREE.Vector3()));
+    const spawnRate = numberInput(inputs.spawnRate, params.spawnRate, 200);
+
+    if (!object) return { emitter: buildEmitterConfig(new THREE.Vector3(), velocity, spawnRate) };
+
+    const pointCount = Math.max(1, Math.min(20000, Math.round(numberInput(inputs.points, params.points, 200))));
+    const diameter = Math.max(0, numberInput(inputs.diameter, params.diameter, 0));
+    const seed = numberInput(inputs.seed, params.seed, 1);
+
+    const prng = createPRNG(seed);
+    let { positions } = sampleSurfacePoints(object, pointCount, prng);
+
+    // diameter > 0 rescales the sampled cloud around its own center — grow
+    // or shrink the emission spread without resizing the source mesh.
+    if (diameter > 0 && positions.length > 0) {
+      const sphere = new THREE.Sphere().setFromPoints(positions);
+      const naturalDiameter = sphere.radius * 2;
+      if (naturalDiameter > 1e-6) {
+        const scale = diameter / naturalDiameter;
+        positions = positions.map((p) => sphere.center.clone().addScaledVector(p.clone().sub(sphere.center), scale));
+      }
+    }
+
+    const seedPositions = new Float32Array(positions.length * 3);
+    positions.forEach((p, i) => {
+      seedPositions[i * 3] = p.x;
+      seedPositions[i * 3 + 1] = p.y;
+      seedPositions[i * 3 + 2] = p.z;
+    });
+
+    return { emitter: buildEmitterConfig(new THREE.Vector3(), velocity, spawnRate, seedPositions) };
   },
 };
 
