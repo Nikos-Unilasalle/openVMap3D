@@ -88,3 +88,10 @@ describe("transformCurve3", () => {
     expect(p.y).toBeCloseTo(21);
   });
 });
+
+describe("SVG_TO_CURVES_NODE Visible socket", () => {
+  test("declares Visible so evaluate.ts's generic visibility handling applies", () => {
+    expect(SVG_TO_CURVES_NODE.inputs.some((i) => i.id === "visible")).toBe(true);
+    expect(SVG_TO_CURVES_NODE.defaultParams.visible).toBe(1);
+  });
+});

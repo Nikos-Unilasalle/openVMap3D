@@ -83,3 +83,10 @@ describe("CURVES_TO_LINES_NODE", () => {
     expect(pos.x).toBeCloseTo(5);
   });
 });
+
+describe("CURVES_TO_LINES_NODE Visible socket", () => {
+  it("declares Visible so evaluate.ts's generic visibility handling applies", () => {
+    expect(CURVES_TO_LINES_NODE.inputs.some((i) => i.id === "visible")).toBe(true);
+    expect(CURVES_TO_LINES_NODE.defaultParams.visible).toBe(1);
+  });
+});

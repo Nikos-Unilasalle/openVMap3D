@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { EvalContext } from "../types";
+import { EvalContext, Graph, createRegistry } from "../types";
 import { getCurveNodePose } from "../curvePoseStore";
+import { evaluateGraph } from "../evaluate";
 import {
   createVariableThicknessTubeGeometry,
   CURVE_DEFORM_NODE,
@@ -603,5 +604,31 @@ describe("CURVE_DEFORM_NODE placement", () => {
     const second = CURVE_DEFORM_NODE.evaluate({ geometry: box, curve }, CURVE_DEFORM_NODE.defaultParams, ctx);
 
     expect(second.geometry).toBe(first.geometry);
+  });
+});
+
+describe("Curve nodes declare a Visible socket (evaluate.ts applies it generically)", () => {
+  it("Curve from Points and Curve Primitive both declare Visible", () => {
+    for (const def of [CURVE_FROM_POINTS_NODE, CURVE_PRIMITIVE_NODE]) {
+      expect(def.inputs.some((i) => i.id === "visible")).toBe(true);
+      expect(def.defaultParams.visible).toBe(1);
+    }
+  });
+
+  it("end-to-end: Visible=0 actually hides Curve from Points' preview geometry, via the real evaluator", () => {
+    const graph: Graph = {
+      nodes: [
+        {
+          id: "c1",
+          type: CURVE_FROM_POINTS_NODE.type,
+          params: { ...CURVE_FROM_POINTS_NODE.defaultParams, visible: 0, pointsList: [{ x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }] },
+          position: { x: 0, y: 0 },
+        },
+      ],
+      connections: [],
+    };
+    const results = evaluateGraph(graph, createRegistry([CURVE_FROM_POINTS_NODE]), CTX);
+    const preview = results.get("c1")?.geometry as THREE.Object3D;
+    expect(preview.visible).toBe(false);
   });
 });

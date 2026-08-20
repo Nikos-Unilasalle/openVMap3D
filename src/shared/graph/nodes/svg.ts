@@ -181,13 +181,17 @@ export const SVG_TO_CURVES_NODE: NodeDefinition = {
   type: "curve/svg",
   label: "SVG to Curves",
   category: "curve",
-  inputs: [{ id: "matrix", label: "Matrix", type: "matrix" }],
+  inputs: [
+    { id: "matrix", label: "Matrix", type: "matrix" },
+    { id: "visible", label: "Visible", type: "value" },
+  ],
   outputs: [
     { id: "curve", label: "Curve (first)", type: "curve" },
     { id: "curves", label: "Curves (list)", type: "list" },
     { id: "geometry", label: "Curve Preview", type: "geometry" },
   ],
   defaultParams: {
+    visible: 1,
     filePath: "",
     svgScale: 1,
     normalize: false,
@@ -196,6 +200,7 @@ export const SVG_TO_CURVES_NODE: NodeDefinition = {
     scale: new THREE.Vector3(1, 1, 1),
   },
   dynamicParamFields: () => [
+    { id: "visible", label: "Visible", kind: "boolean", group: "Transform" },
     {
       id: "filePath",
       label: "SVG File",

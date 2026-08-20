@@ -56,12 +56,14 @@ export const CURVES_TO_LINES_NODE: NodeDefinition = {
     { id: "curves", label: "Curves (List)", type: "list" },
     { id: "material", label: "Material", type: "material" },
     { id: "matrix", label: "Matrix", type: "matrix" },
+    { id: "visible", label: "Visible", type: "value" },
   ],
   outputs: [
     { id: "geometry", label: "Geometry", type: "geometry" },
     { id: "matrix", label: "Matrix", type: "matrix" },
   ],
   defaultParams: {
+    visible: 1,
     location: new THREE.Vector3(0, 0, 0),
     rotation: new THREE.Vector3(0, 0, 0),
     scale: new THREE.Vector3(1, 1, 1),
@@ -83,6 +85,7 @@ export const CURVES_TO_LINES_NODE: NodeDefinition = {
     opacity: 1.0,
   },
   dynamicParamFields: () => [
+    { id: "visible", label: "Visible", kind: "boolean", group: "Transform" },
     { id: "location", label: "Location", kind: "vector", group: "Transform" },
     { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true, group: "Transform" },
     { id: "scale", label: "Scale", kind: "vector", group: "Transform" },

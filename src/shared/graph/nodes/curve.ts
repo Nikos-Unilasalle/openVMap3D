@@ -228,6 +228,10 @@ const CURVE_PREVIEW_COLOR = 0x9ca3af;
 /**
  * Applies the node's native pose (location/rotation/scale + wired matrix) to an
  * object, skipping it while the gizmo is dragging (see object.ts's guard).
+ * Visible needs no handling here — the evaluator applies it to whatever a
+ * node returns as `geometry` on its own, for any node that declares the
+ * socket (see evaluate.ts's applyVisibility): a node only has to *declare*
+ * `visible` in its `inputs`, never read or apply it itself.
  */
 function applyNativePose(
   obj: THREE.Object3D,
@@ -242,8 +246,10 @@ function applyNativePose(
 }
 
 const CURVE_TRANSFORM_INPUT = { id: "matrix", label: "Matrix", type: "matrix" as const };
+const CURVE_VISIBLE_INPUT = { id: "visible", label: "Visible", type: "value" as const };
 
 const CURVE_TRANSFORM_DEFAULTS = {
+  visible: 1,
   location: new THREE.Vector3(0, 0, 0),
   rotation: new THREE.Vector3(0, 0, 0),
   scale: new THREE.Vector3(1, 1, 1),
@@ -251,6 +257,7 @@ const CURVE_TRANSFORM_DEFAULTS = {
 
 function curveTransformFields(): ParamFieldDef[] {
   return [
+    { id: "visible", label: "Visible", kind: "boolean", group: "Transform" },
     { id: "location", label: "Location", kind: "vector", group: "Transform" },
     { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true, group: "Transform" },
     { id: "scale", label: "Scale", kind: "vector", group: "Transform" },
@@ -550,6 +557,7 @@ export const CURVE_FROM_POINTS_NODE: NodeDefinition = {
     { id: "tension", label: "Tension", type: "value" },
     { id: "sag", label: "Sag", type: "value" },
     CURVE_TRANSFORM_INPUT,
+    CURVE_VISIBLE_INPUT,
   ],
   outputs: [
     { id: "curve", label: "Curve", type: "curve" },
@@ -618,6 +626,7 @@ export const CURVE_PRIMITIVE_NODE: NodeDefinition = {
     { id: "height", label: "Height", type: "value" },
     { id: "turns", label: "Turns", type: "value" },
     CURVE_TRANSFORM_INPUT,
+    CURVE_VISIBLE_INPUT,
   ],
   outputs: [
     { id: "curve", label: "Curve", type: "curve" },

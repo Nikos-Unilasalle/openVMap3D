@@ -79,8 +79,10 @@ function getState(nodeId: string): LineState {
 }
 
 const LINE_TRANSFORM_INPUT = { id: "matrix", label: "Matrix", type: "matrix" as const };
+const LINE_VISIBLE_INPUT = { id: "visible", label: "Visible", type: "value" as const };
 
 const LINE_TRANSFORM_DEFAULTS = {
+  visible: 1,
   location: new THREE.Vector3(0, 0, 0),
   rotation: new THREE.Vector3(0, 0, 0),
   scale: new THREE.Vector3(1, 1, 1),
@@ -88,6 +90,7 @@ const LINE_TRANSFORM_DEFAULTS = {
 
 function lineTransformFields(): ParamFieldDef[] {
   return [
+    { id: "visible", label: "Visible", kind: "boolean", group: "Transform" },
     { id: "location", label: "Location", kind: "vector", group: "Transform" },
     { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true, group: "Transform" },
     { id: "scale", label: "Scale", kind: "vector", group: "Transform" },
@@ -107,6 +110,7 @@ export const CURVE_TO_LINE_NODE: NodeDefinition = {
     { id: "curve", label: "Curve", type: "curve" },
     { id: "material", label: "Material", type: "material" },
     LINE_TRANSFORM_INPUT,
+    LINE_VISIBLE_INPUT,
   ],
   outputs: [
     { id: "geometry", label: "Geometry", type: "geometry" },
