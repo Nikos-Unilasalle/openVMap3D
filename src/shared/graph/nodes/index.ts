@@ -23,6 +23,7 @@ import { AUDIO_PEAK_DETECTOR_NODE, AUDIO_PLAYER_NODE, AUDIO_SPECTRUM_NODE, AUDIO
 import { RANDOM_LIST_NODE, RANDOM_MATRIX_NODE, RANDOM_VALUE_NODE, RANDOM_VECTOR_NODE } from "./random";
 import { KEYBOARD_NODE } from "./keyboard";
 import { ARRAY_NODE } from "./array";
+import { INSTANCE_POSITIONS_NODE } from "./instancePositions";
 import { LIST_GROUP_NODE } from "./listGroup";
 import { SPAWN_NODE } from "./spawn";
 import { REROUTE_NODE } from "./reroute";
@@ -151,6 +152,7 @@ export const STARTER_NODES = [
   TEXTURE_TRANSFORM_NODE,
   MERGE_NODE,
   ARRAY_NODE,
+  INSTANCE_POSITIONS_NODE,
   SET_INSTANCE_COLOR_NODE,
   SET_INSTANCE_TRANSFORM_NODE,
   GEOMETRY_TRANSFORM_NODE,

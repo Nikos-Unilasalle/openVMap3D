@@ -32,12 +32,14 @@ export const ARRAY_NODE: NodeDefinition = {
     { id: "spacingX", label: "Spacing X", type: "value" },
     { id: "spacingY", label: "Spacing Y", type: "value" },
     { id: "spacingZ", label: "Spacing Z", type: "value" },
+    { id: "curve", label: "Curve", type: "curve" },
   ],
   outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
   defaultParams: {
     visible: 1,
     count: 5,
     mode: "linear",
+    curveOrient: false,
     axis: "X",
     spacing: 2.0,
     radius: 3.0,
@@ -56,7 +58,7 @@ export const ARRAY_NODE: NodeDefinition = {
   },
   paramFields: [
     { id: "visible", label: "Visible", kind: "boolean" },
-    { id: "mode", label: "Mode", kind: "select", options: ["linear", "circular", "grid", "grid3d"] },
+    { id: "mode", label: "Mode", kind: "select", options: ["linear", "circular", "grid", "grid3d", "curve"] },
     { id: "count", label: "Count", kind: "number", step: 1 },
     { id: "axis", label: "Linear Axis", kind: "select", options: ["X", "Y", "Z"] },
     { id: "spacing", label: "Linear Spacing", kind: "number", step: 0.1 },
@@ -77,7 +79,7 @@ export const ARRAY_NODE: NodeDefinition = {
   dynamicParamFields: (instance) => {
     const mode = String(instance?.params?.mode || "linear");
     const fields: ParamFieldDef[] = [
-      { id: "mode", label: "Mode", kind: "select", options: ["linear", "circular", "grid", "grid3d"], group: "Pattern & Grid" },
+      { id: "mode", label: "Mode", kind: "select", options: ["linear", "circular", "grid", "grid3d", "curve"], group: "Pattern & Grid" },
     ];
 
     if (mode === "linear") {
@@ -112,6 +114,11 @@ export const ARRAY_NODE: NodeDefinition = {
         { id: "spacingY", label: "Spacing Y", kind: "number", step: 0.1, group: "Pattern & Grid" },
         { id: "spacingZ", label: "Spacing Z", kind: "number", step: 0.1, group: "Pattern & Grid" },
         { id: "centerGrid", label: "Center Grid", kind: "boolean", group: "Pattern & Grid" },
+      );
+    } else if (mode === "curve") {
+      fields.push(
+        { id: "count", label: "Count", kind: "number", step: 1, group: "Pattern & Grid" },
+        { id: "curveOrient", label: "Orient to Curve", kind: "boolean", group: "Pattern & Grid" },
       );
     }
     return fields;
@@ -199,6 +206,16 @@ export const ARRAY_NODE: NodeDefinition = {
     const rawCount = inputs.count !== undefined ? Number(inputs.count) : Number(params.count);
     const count = Math.max(1, Math.min(500, Math.floor(isNaN(rawCount) ? 5 : rawCount)));
 
+    const curveInput = inputs.curve instanceof THREE.Curve ? (inputs.curve as THREE.Curve<THREE.Vector3>) : null;
+    // Arc-length parameterized (getPointAt/getTangentAt), not getPoint(i/count)
+    // — evenly spaced by distance along the curve, not by the curve's own
+    // (possibly uneven) internal t parameterization. A closed curve's t=0 and
+    // t=1 are the same point, so it's divided into `count` steps around the
+    // loop with no duplicate at the seam; an open curve is divided into
+    // `count - 1` so the first and last instances land exactly on its ends.
+    const curveClosed = curveInput ? Boolean((curveInput as unknown as { closed?: boolean }).closed) : false;
+    const curveDivisions = curveClosed ? count : Math.max(1, count - 1);
+
     for (let i = 0; i < count; i++) {
       const clone = source.clone(true);
 
@@ -206,8 +223,22 @@ export const ARRAY_NODE: NodeDefinition = {
       const pos = new THREE.Vector3();
       const rot = new THREE.Euler();
       const scale = new THREE.Vector3(1, 1, 1);
+      // Only "curve" mode sets this (tangent alignment isn't expressible as
+      // the Euler `rot` every other mode builds) — reset every iteration so
+      // a degenerate tangent on one instance can't leak the previous
+      // instance's rotation onto it.
+      let quatOverride: THREE.Quaternion | null = null;
 
-      if (mode === "linear") {
+      if (mode === "curve" && curveInput) {
+        const u = curveDivisions > 0 ? i / curveDivisions : 0;
+        pos.copy(curveInput.getPointAt(Math.min(1, u)));
+        if (Boolean(params.curveOrient)) {
+          const tangent = curveInput.getTangentAt(Math.min(1, u));
+          if (tangent.lengthSq() > 1e-12) {
+            quatOverride = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), tangent.normalize());
+          }
+        }
+      } else if (mode === "linear") {
         const axis = String(params.axis || "X");
         const rawSpacing = inputs.spacing !== undefined ? Number(inputs.spacing) : Number(params.spacing);
         const spacing = isNaN(rawSpacing) ? 2.0 : rawSpacing;
@@ -249,7 +280,7 @@ export const ARRAY_NODE: NodeDefinition = {
         }
       }
 
-      instanceMatrix.compose(pos, new THREE.Quaternion().setFromEuler(rot), scale);
+      instanceMatrix.compose(pos, quatOverride ?? new THREE.Quaternion().setFromEuler(rot), scale);
 
       // Wrapper group ensures position/orientation applies cleanly over cloned objects
       const wrapper = new THREE.Group();

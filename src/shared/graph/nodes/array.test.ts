@@ -110,3 +110,63 @@ describe("ARRAY_NODE source ownership", () => {
     }
   });
 });
+
+describe("ARRAY_NODE curve mode", () => {
+  it("distributes instances evenly along an open curve, first and last landing exactly on its ends", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const curve = new THREE.LineCurve3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(10, 0, 0));
+    const res = ARRAY_NODE.evaluate({ geometry: box, curve }, { mode: "curve", count: 5 }, CTX);
+
+    const group = res.geometry as THREE.Group;
+    expect(group.children.length).toBe(5);
+    expect(getChildPosition(group.children[0]).x).toBeCloseTo(0);
+    expect(getChildPosition(group.children[1]).x).toBeCloseTo(2.5);
+    expect(getChildPosition(group.children[4]).x).toBeCloseTo(10);
+  });
+
+  it("wraps around a closed curve without duplicating an instance at the seam", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const points = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(10, 0, 0), new THREE.Vector3(10, 0, 10), new THREE.Vector3(0, 0, 10)];
+    const curve = new THREE.CatmullRomCurve3(points, true, "catmullrom", 0);
+    const res = ARRAY_NODE.evaluate({ geometry: box, curve }, { mode: "curve", count: 4 }, CTX);
+
+    const group = res.geometry as THREE.Group;
+    expect(group.children.length).toBe(4);
+    // Distinct positions — a naive `count` division of a closed curve would
+    // put the first and last instance on top of each other (t=0 and t=1
+    // being the same point on a closed curve).
+    const positions = group.children.map((c) => getChildPosition(c));
+    for (let i = 0; i < positions.length; i++) {
+      for (let j = i + 1; j < positions.length; j++) {
+        expect(positions[i].distanceTo(positions[j])).toBeGreaterThan(0.5);
+      }
+    }
+  });
+
+  it("leaves rotation untouched when Orient to Curve is off (the default)", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const curve = new THREE.LineCurve3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(10, 5, 0));
+    const res = ARRAY_NODE.evaluate({ geometry: box, curve }, { mode: "curve", count: 2, curveOrient: false }, CTX);
+
+    const group = res.geometry as THREE.Group;
+    const rot = new THREE.Quaternion();
+    const pos = new THREE.Vector3();
+    const scale = new THREE.Vector3();
+    group.children[1].matrix.decompose(pos, rot, scale);
+    expect(rot.angleTo(new THREE.Quaternion())).toBeCloseTo(0, 5);
+  });
+
+  it("aligns each instance's local +Z to the curve's tangent when Orient to Curve is on", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const curve = new THREE.LineCurve3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 10));
+    const res = ARRAY_NODE.evaluate({ geometry: box, curve }, { mode: "curve", count: 2, curveOrient: true }, CTX);
+
+    const group = res.geometry as THREE.Group;
+    const rot = new THREE.Quaternion();
+    const pos = new THREE.Vector3();
+    const scale = new THREE.Vector3();
+    group.children[0].matrix.decompose(pos, rot, scale);
+    // A curve running along +Z needs no rotation to align local +Z to it.
+    expect(rot.angleTo(new THREE.Quaternion())).toBeCloseTo(0, 4);
+  });
+});
