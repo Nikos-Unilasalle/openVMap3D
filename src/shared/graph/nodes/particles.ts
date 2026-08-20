@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
-import { EmitterConfig, buildEmitterConfig, getOrCreateSimulation } from "../particleRuntime";
+import { EmitterConfig, ForceFieldDescriptor, buildEmitterConfig, getOrCreateSimulation } from "../particleRuntime";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
+import { growingSockets } from "../dynamicInputs";
 
 function asVector(v: unknown, fallback: THREE.Vector3): THREE.Vector3 {
   if (v instanceof THREE.Vector3) return v;
@@ -44,21 +45,128 @@ export const PARTICLE_EMITTER_NODE: NodeDefinition = {
   },
 };
 
+function toNumberList(v: unknown): number[] {
+  if (!Array.isArray(v)) return typeof v === "number" ? [v] : [];
+  return v.map((x) => Number(x) || 0);
+}
+
+interface SeedState {
+  lastX?: unknown;
+  lastY?: unknown;
+  lastZ?: unknown;
+  seedPositions?: Float32Array;
+}
+
+const seedCache = createNodeCache<SeedState>();
+
+function getSeedState(nodeId: string): SeedState {
+  let state = seedCache.get(nodeId);
+  if (!state) {
+    state = {};
+    seedCache.set(nodeId, state);
+  }
+  return state;
+}
+
+/**
+ * Particle Emitter (From Points) — wire a Point Cloud's (or CSV Reader's)
+ * xValues/yValues/zValues straight in and every respawning particle lands on
+ * one of those points instead of the single jittered spot the plain Particle
+ * Emitter uses (see EmitterConfig.seedPositions and its respawn branch in
+ * POSITION_SHADER). The imported shape becomes the flow field's starting
+ * pattern; Particle Simulate takes it from there.
+ *
+ * Rebuilding the flat seed array is skipped when the three lists are
+ * reference-identical to last frame — Point Cloud's own evaluate() already
+ * hands back the same array when nothing upstream changed, so this is a
+ * no-op most frames rather than a per-frame reallocation.
+ */
+export const PARTICLE_EMITTER_FROM_POINTS_NODE: NodeDefinition = {
+  type: "particles/emitter-from-points",
+  label: "Particle Emitter (From Points)",
+  category: "particles",
+  inputs: [
+    { id: "xValues", label: "X Values (List)", type: "list" },
+    { id: "yValues", label: "Y Values (List)", type: "list" },
+    { id: "zValues", label: "Z Values (List)", type: "list" },
+    { id: "velocity", label: "Velocity", type: "vector" },
+    { id: "spawnRate", label: "Spawn Rate", type: "value" },
+  ],
+  outputs: [{ id: "emitter", label: "Emitter", type: "any" }],
+  defaultParams: { velocity: new THREE.Vector3(0, 0, 0), spawnRate: 200 },
+  paramFields: [
+    { id: "velocity", label: "Velocity (fallback)", kind: "vector" },
+    {
+      id: "spawnRate",
+      label: "Spawn Rate",
+      kind: "number",
+      step: 10,
+      // Population size is still the existing rate×lifetime formula (see
+      // activeParticleCount in particleRuntime.ts) — seeding only changes
+      // *where* a particle respawns, not how many are ever active. Set this
+      // so rate×lifetime lands near a multiple of the point count for a
+      // clean "every particle owns one point" look.
+    },
+  ],
+  evaluate: (inputs, params, ctx) => {
+    const state = getSeedState(ctx.nodeId);
+    const velocity = asVector(inputs.velocity, asVector(params.velocity, new THREE.Vector3()));
+    const spawnRate = numberInput(inputs.spawnRate, params.spawnRate, 200);
+
+    if (state.lastX !== inputs.xValues || state.lastY !== inputs.yValues || state.lastZ !== inputs.zValues) {
+      const xValues = toNumberList(inputs.xValues);
+      const yValues = toNumberList(inputs.yValues);
+      const zValues = toNumberList(inputs.zValues);
+      const count = Math.min(xValues.length, yValues.length, zValues.length);
+      let seedPositions: Float32Array | undefined;
+      if (count > 0) {
+        seedPositions = new Float32Array(count * 3);
+        for (let i = 0; i < count; i++) {
+          seedPositions[i * 3] = xValues[i];
+          seedPositions[i * 3 + 1] = yValues[i];
+          seedPositions[i * 3 + 2] = zValues[i];
+        }
+      }
+      state.lastX = inputs.xValues;
+      state.lastY = inputs.yValues;
+      state.lastZ = inputs.zValues;
+      state.seedPositions = seedPositions;
+    }
+
+    return { emitter: buildEmitterConfig(new THREE.Vector3(), velocity, spawnRate, state.seedPositions) };
+  },
+};
+
+/** Prefix for particles/simulate's growing "Force Field N" sockets — see FIELD_INPUTS and dynamicInputs below. */
+const FIELD_PREFIX = "field";
+
+const FIELD_INPUTS: NodeDefinition["inputs"] = [
+  { id: "emitter", label: "Emitter", type: "any" },
+  { id: "gravity", label: "Gravity", type: "value" },
+  { id: "wind", label: "Wind", type: "vector" },
+  { id: "lifetime", label: "Lifetime", type: "value" },
+  { id: "flowStrength", label: "Flow Field Strength", type: "value" },
+  { id: "flowScale", label: "Flow Field Scale", type: "value" },
+  { id: "flowSpeed", label: "Flow Field Speed", type: "value" },
+  { id: "boundsRadius", label: "Bounds Radius", type: "value" },
+  { id: "maxSpeed", label: "Max Speed", type: "value" },
+];
+
 /** BIBLE.md's Particle Simulate — the update shader: gravity, wind, lifetime. Owns the GPUComputationRenderer, see particleRuntime.ts. */
 export const PARTICLE_SIMULATE_NODE: NodeDefinition = {
   type: "particles/simulate",
   label: "Particle Simulate",
   category: "particles",
-  inputs: [
-    { id: "emitter", label: "Emitter", type: "any" },
-    { id: "gravity", label: "Gravity", type: "value" },
-    { id: "wind", label: "Wind", type: "vector" },
-    { id: "lifetime", label: "Lifetime", type: "value" },
-    { id: "flowStrength", label: "Flow Field Strength", type: "value" },
-    { id: "flowScale", label: "Flow Field Scale", type: "value" },
-    { id: "flowSpeed", label: "Flow Field Speed", type: "value" },
-    { id: "boundsRadius", label: "Bounds Radius", type: "value" },
-    { id: "maxSpeed", label: "Max Speed", type: "value" },
+  inputs: [...FIELD_INPUTS, { id: `${FIELD_PREFIX}0`, label: "Force Field 1", type: "any" }],
+  // Force fields (particles/force-field) grow the same way Merge's "In N"
+  // sockets do — always exactly one empty one to drag the next wire into.
+  dynamicInputs: (connections) => [
+    ...FIELD_INPUTS,
+    ...growingSockets(connections, FIELD_PREFIX, (i) => ({
+      id: `${FIELD_PREFIX}${i}`,
+      label: `Force Field ${i + 1}`,
+      type: "any" as const,
+    })),
   ],
   outputs: [
     { id: "positions", label: "Positions", type: "texture" },
@@ -108,6 +216,12 @@ export const PARTICLE_SIMULATE_NODE: NodeDefinition = {
     };
     const boundsRadius = numberInput(inputs.boundsRadius, params.boundsRadius, 0);
     const maxSpeed = numberInput(inputs.maxSpeed, params.maxSpeed, 0);
+    // Sorted by socket index rather than trusting object key order — plain
+    // objects don't guarantee it for non-integer-looking keys like "field10".
+    const forces = Object.entries(inputs)
+      .filter(([key, value]) => key.startsWith(FIELD_PREFIX) && value)
+      .sort(([a], [b]) => Number(a.slice(FIELD_PREFIX.length)) - Number(b.slice(FIELD_PREFIX.length)))
+      .map(([, value]) => value as ForceFieldDescriptor);
 
     const result = getOrCreateSimulation(
       ctx.nodeId,
@@ -121,6 +235,7 @@ export const PARTICLE_SIMULATE_NODE: NodeDefinition = {
       flowField,
       boundsRadius,
       maxSpeed,
+      forces,
     );
     if (!result) return { positions: null, count: 0 };
     return { positions: result.positionsTexture, count: result.capacity };

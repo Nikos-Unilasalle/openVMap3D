@@ -30,10 +30,24 @@ export interface EmitterConfig {
   position: THREE.Vector3;
   velocity: THREE.Vector3;
   spawnRate: number;
+  /**
+   * Flat (x,y,z) triples — a respawning particle is placed at
+   * seedPositions[idx % count] instead of `position` + jitter, so an
+   * imported point cloud's shape becomes the emitter's spawn pattern rather
+   * than a single jittered point. Undefined keeps the old single-point
+   * behavior exactly (particles/emitter-from-points is the only node that
+   * sets this).
+   */
+  seedPositions?: Float32Array;
 }
 
-export function buildEmitterConfig(position: THREE.Vector3, velocity: THREE.Vector3, spawnRate: number): EmitterConfig {
-  return { position, velocity, spawnRate };
+export function buildEmitterConfig(
+  position: THREE.Vector3,
+  velocity: THREE.Vector3,
+  spawnRate: number,
+  seedPositions?: Float32Array,
+): EmitterConfig {
+  return { position, velocity, spawnRate, seedPositions };
 }
 
 /** How many of `capacity` texels are actually alive-capable — population = rate × lifetime, capped. */
@@ -48,6 +62,9 @@ const POSITION_SHADER = /* glsl */ `
   uniform float activeCount;
   uniform vec3 emitterPosition;
   uniform float boundsRadius;
+  uniform sampler2D seedPositions;
+  uniform float seedCount;
+  uniform float seedSize;
 
   void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;
@@ -62,16 +79,28 @@ const POSITION_SHADER = /* glsl */ `
 
     float age = pos.a + delta;
     // A particle that has drifted past the bounds radius is treated as if it
-    // had just aged out — it respawns through the exact same jittered-emitter
-    // path below, so there is only one spawn rule to keep in sync rather than
-    // a second copy of it guarded by a distance check.
+    // had just aged out — it respawns through the exact same spawn path
+    // below, so there is only one spawn rule to keep in sync rather than a
+    // second copy of it guarded by a distance check.
     if (boundsRadius > 0.0 && length(pos.rgb) > boundsRadius) {
       age = lifetime + 1.0;
     }
     if (age > lifetime) {
-      float seed = fract(sin(dot(uv, vec2(12.9898, 78.233))) * 43758.5453);
-      vec3 jitter = (vec3(seed, fract(seed * 7.0), fract(seed * 13.0)) - 0.5) * 0.25;
-      gl_FragColor = vec4(emitterPosition + jitter, age - lifetime);
+      vec3 spawnPos;
+      if (seedCount > 0.0) {
+        // idx cycles through the seed set (mod), so a particle count larger
+        // than the point cloud just respawns several particles per point —
+        // the cloud's shape, not any one point, is what's being preserved.
+        // No jitter: the point cloud's own geometry is the spawn pattern.
+        float seedIdx = mod(idx, seedCount);
+        vec2 suv = (vec2(mod(seedIdx, seedSize), floor(seedIdx / seedSize)) + 0.5) / seedSize;
+        spawnPos = texture2D(seedPositions, suv).rgb;
+      } else {
+        float seed = fract(sin(dot(uv, vec2(12.9898, 78.233))) * 43758.5453);
+        vec3 jitter = (vec3(seed, fract(seed * 7.0), fract(seed * 13.0)) - 0.5) * 0.25;
+        spawnPos = emitterPosition + jitter;
+      }
+      gl_FragColor = vec4(spawnPos, age - lifetime);
     } else {
       gl_FragColor = vec4(pos.rgb + vel.rgb * delta, age);
     }
@@ -188,6 +217,68 @@ const SIMPLEX_GRADIENT_NOISE_GLSL = /* glsl */ `
   }
 `;
 
+/**
+ * Blender-style force fields, summed alongside gravity/wind/the global flow
+ * field. A fixed-size array + a float count rather than a variable-length
+ * one — WebGL has no dynamic arrays — unrolled to MAX_FORCE_FIELDS every
+ * frame and masked per-slot by \`isActive\` rather than a runtime \`break\`:
+ * see SHUTTER_SCALE's neighbor comment in motionBlur.ts for why a dynamic
+ * break against a uniform loop bound is the pattern to avoid (some driver's
+ * loop unrolling rejects it) — masking keeps the loop's iteration count
+ * always exactly MAX_FORCE_FIELDS, so there's nothing for it to reject.
+ */
+const MAX_FORCE_FIELDS = 8;
+
+const FORCE_FIELD_GLSL = /* glsl */ `
+  uniform vec3 fieldPosition[${MAX_FORCE_FIELDS}];
+  uniform vec3 fieldAxis[${MAX_FORCE_FIELDS}];
+  uniform float fieldStrength[${MAX_FORCE_FIELDS}];
+  uniform float fieldRadius[${MAX_FORCE_FIELDS}];
+  uniform float fieldScale[${MAX_FORCE_FIELDS}];
+  uniform float fieldSpeed[${MAX_FORCE_FIELDS}];
+  uniform int fieldType[${MAX_FORCE_FIELDS}];
+  uniform float fieldCount;
+
+  vec3 forceFieldContribution(vec3 pos, float time) {
+    vec3 total = vec3(0.0);
+    for (int i = 0; i < ${MAX_FORCE_FIELDS}; i++) {
+      float isActive = float(i) < fieldCount ? 1.0 : 0.0;
+
+      vec3 toField = fieldPosition[i] - pos;
+      float dist = length(toField);
+      float falloff = fieldRadius[i] > 0.0 ? clamp(1.0 - dist / fieldRadius[i], 0.0, 1.0) : 1.0;
+
+      vec3 contribution = vec3(0.0);
+      if (fieldType[i] == 0) {
+        // Attractor — pulls toward (positive strength) or pushes away
+        // (negative) fieldPosition.
+        contribution = dist > 0.0001 ? normalize(toField) * fieldStrength[i] : vec3(0.0);
+      } else if (fieldType[i] == 1) {
+        // Vortex — spins around the axis through fieldPosition. The radial
+        // vector is flattened onto the plane perpendicular to axis first, so
+        // an off-axis particle still orbits cleanly instead of spiraling in.
+        vec3 axis = length(fieldAxis[i]) > 0.0001 ? normalize(fieldAxis[i]) : vec3(0.0, 1.0, 0.0);
+        vec3 radial = -toField - axis * dot(-toField, axis);
+        vec3 tangent = cross(axis, radial);
+        float tlen = length(tangent);
+        contribution = tlen > 0.0001 ? (tangent / tlen) * fieldStrength[i] : vec3(0.0);
+      } else if (fieldType[i] == 2) {
+        // Wind — constant push along axis; falloff (via radius) makes it a
+        // zone instead of a global gust.
+        float alen = length(fieldAxis[i]);
+        contribution = alen > 0.0001 ? (fieldAxis[i] / alen) * fieldStrength[i] : vec3(0.0);
+      } else {
+        // Turbulence — a second, independently positioned/scaled curl-noise
+        // source, on top of Particle Simulate's own global Flow Field knob.
+        contribution = curlNoise(pos, fieldScale[i], fieldSpeed[i], time) * fieldStrength[i];
+      }
+
+      total += contribution * falloff * isActive;
+    }
+    return total;
+  }
+`;
+
 const VELOCITY_SHADER = /* glsl */ `
   uniform float delta;
   uniform float gravity;
@@ -202,6 +293,7 @@ const VELOCITY_SHADER = /* glsl */ `
   uniform float maxSpeed;
 
   ${SIMPLEX_GRADIENT_NOISE_GLSL}
+  ${FORCE_FIELD_GLSL}
 
   void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;
@@ -223,7 +315,8 @@ const VELOCITY_SHADER = /* glsl */ `
       vec3 flow = noiseStrength > 0.0
         ? curlNoise(pos.rgb, noiseScale, noiseSpeed, time) * noiseStrength
         : vec3(0.0);
-      vec3 v = vel.rgb + vec3(0.0, -gravity, 0.0) * delta + wind * delta + flow * delta;
+      vec3 fields = forceFieldContribution(pos.rgb, time);
+      vec3 v = vel.rgb + vec3(0.0, -gravity, 0.0) * delta + wind * delta + flow * delta + fields * delta;
       // Pure integration with no drag term — an accelerating force (the flow
       // field, but gravity/wind too given enough lifetime) would otherwise
       // grow v without bound. maxSpeed <= 0.0 keeps the old unclamped
@@ -260,10 +353,56 @@ interface Simulation {
    * fixed increment per step instead of jumping straight to wall-clock time.
    */
   simSeconds: number;
+  /** The Float32Array last uploaded as the seed texture — reference equality decides whether to rebuild it (see updateSeedTexture). */
+  seedArray?: Float32Array;
+  seedTexture?: THREE.DataTexture;
 }
 
-const simCache = createNodeCache<Simulation>((s) => s.gpuCompute.dispose());
+const simCache = createNodeCache<Simulation>((s) => {
+  s.gpuCompute.dispose();
+  s.seedTexture?.dispose();
+});
 let warnedMissingRenderer = false;
+
+/**
+ * A 1x1 dummy texture bound to the `seedPositions` sampler when no point
+ * cloud is wired in. WebGL requires every sampler uniform a shader
+ * references to be bound to *something* valid; seedCount stays 0 in that
+ * case so the shader branch that would sample it never runs, but the
+ * binding itself still has to exist.
+ */
+let placeholderSeedTexture: THREE.DataTexture | undefined;
+function getPlaceholderSeedTexture(): THREE.DataTexture {
+  if (!placeholderSeedTexture) {
+    placeholderSeedTexture = new THREE.DataTexture(new Float32Array(4), 1, 1, THREE.RGBAFormat, THREE.FloatType);
+    placeholderSeedTexture.needsUpdate = true;
+  }
+  return placeholderSeedTexture;
+}
+
+/** Rebuilds the seed-position DataTexture only when the source array actually changed (reference equality — cheap, and evaluate() only hands back a new array when its own inputs changed). */
+function updateSeedTexture(sim: Simulation, seedPositions: Float32Array | undefined): { texture: THREE.Texture; count: number; size: number } {
+  if (!seedPositions || seedPositions.length === 0) {
+    return { texture: getPlaceholderSeedTexture(), count: 0, size: 1 };
+  }
+  const count = Math.floor(seedPositions.length / 3);
+  if (sim.seedArray !== seedPositions) {
+    sim.seedTexture?.dispose();
+    const size = textureSizeFor(count);
+    const data = new Float32Array(size * size * 4);
+    for (let i = 0; i < count; i++) {
+      data[i * 4] = seedPositions[i * 3];
+      data[i * 4 + 1] = seedPositions[i * 3 + 1];
+      data[i * 4 + 2] = seedPositions[i * 3 + 2];
+    }
+    const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat, THREE.FloatType);
+    texture.needsUpdate = true;
+    sim.seedArray = seedPositions;
+    sim.seedTexture = texture;
+  }
+  const size = sim.seedTexture!.image.width;
+  return { texture: sim.seedTexture!, count, size };
+}
 
 function initialPositionTexture(gpuCompute: GPUComputationRenderer, size: number, lifetimeGuess: number): THREE.DataTexture {
   const texture = gpuCompute.createTexture();
@@ -294,6 +433,9 @@ function createSimulation(nodeId: string, renderer: THREE.WebGLRenderer, size: n
   }
   positionVar.material.uniforms.emitterPosition = { value: new THREE.Vector3() };
   positionVar.material.uniforms.boundsRadius = { value: 0 };
+  positionVar.material.uniforms.seedPositions = { value: getPlaceholderSeedTexture() };
+  positionVar.material.uniforms.seedCount = { value: 0 };
+  positionVar.material.uniforms.seedSize = { value: 1 };
   velocityVar.material.uniforms.emitterVelocity = { value: new THREE.Vector3() };
   velocityVar.material.uniforms.gravity = { value: 0 };
   velocityVar.material.uniforms.wind = { value: new THREE.Vector3() };
@@ -302,6 +444,14 @@ function createSimulation(nodeId: string, renderer: THREE.WebGLRenderer, size: n
   velocityVar.material.uniforms.noiseSpeed = { value: 0.1 };
   velocityVar.material.uniforms.time = { value: 0 };
   velocityVar.material.uniforms.maxSpeed = { value: 0 };
+  velocityVar.material.uniforms.fieldPosition = { value: Array.from({ length: MAX_FORCE_FIELDS }, () => new THREE.Vector3()) };
+  velocityVar.material.uniforms.fieldAxis = { value: Array.from({ length: MAX_FORCE_FIELDS }, () => new THREE.Vector3(0, 1, 0)) };
+  velocityVar.material.uniforms.fieldStrength = { value: new Array(MAX_FORCE_FIELDS).fill(0) };
+  velocityVar.material.uniforms.fieldRadius = { value: new Array(MAX_FORCE_FIELDS).fill(0) };
+  velocityVar.material.uniforms.fieldScale = { value: new Array(MAX_FORCE_FIELDS).fill(1) };
+  velocityVar.material.uniforms.fieldSpeed = { value: new Array(MAX_FORCE_FIELDS).fill(0.1) };
+  velocityVar.material.uniforms.fieldType = { value: new Array(MAX_FORCE_FIELDS).fill(0) };
+  velocityVar.material.uniforms.fieldCount = { value: 0 };
 
   const error = gpuCompute.init();
   if (error) console.error(`particles/simulate (${nodeId}): GPUComputationRenderer init failed — ${error}`);
@@ -333,6 +483,25 @@ export interface FlowFieldConfig {
   speed: number;
 }
 
+/** particles/force-field's numeric type tag — matches the fieldType branch in FORCE_FIELD_GLSL exactly. */
+export const FORCE_FIELD_TYPES = ["attractor", "vortex", "wind", "turbulence"] as const;
+export type ForceFieldType = (typeof FORCE_FIELD_TYPES)[number];
+
+/** One Blender-style force field. Multiple sum together — see forceFieldContribution() in VELOCITY_SHADER. */
+export interface ForceFieldDescriptor {
+  type: ForceFieldType;
+  position: THREE.Vector3;
+  /** Rotation axis (vortex) or push direction (wind); unused by attractor/turbulence. */
+  axis: THREE.Vector3;
+  strength: number;
+  /** 0 = infinite (applies everywhere), else a linear falloff to 0 at this distance from `position`. */
+  radius: number;
+  /** Turbulence only — noise scale. */
+  scale: number;
+  /** Turbulence only — noise drift speed. */
+  speed: number;
+}
+
 /**
  * Renderer-less contexts (tests, a headless evaluate call) get a one-time
  * warning and no texture rather than a thrown error — same "degrade
@@ -350,6 +519,7 @@ export function getOrCreateSimulation(
   flowField: FlowFieldConfig = { strength: 0, scale: 1, speed: 0.1 },
   boundsRadius = 0,
   maxSpeed = 0,
+  forces: ForceFieldDescriptor[] = [],
 ): SimulationResult | null {
   if (!renderer) {
     if (!warnedMissingRenderer) {
@@ -370,6 +540,7 @@ export function getOrCreateSimulation(
   if (!sim || sim.size !== size || sim.renderer !== renderer || rewound) {
     if (sim) {
       sim.gpuCompute.dispose();
+      sim.seedTexture?.dispose();
     }
     sim = createSimulation(nodeId, renderer, size, lifetime, currentStep);
   }
@@ -381,6 +552,10 @@ export function getOrCreateSimulation(
   }
   sim.positionVar.material.uniforms.emitterPosition.value.copy(emitter.position);
   sim.positionVar.material.uniforms.boundsRadius.value = Math.max(0, boundsRadius);
+  const seed = updateSeedTexture(sim, emitter.seedPositions);
+  sim.positionVar.material.uniforms.seedPositions.value = seed.texture;
+  sim.positionVar.material.uniforms.seedCount.value = seed.count;
+  sim.positionVar.material.uniforms.seedSize.value = seed.size;
   sim.velocityVar.material.uniforms.emitterVelocity.value.copy(emitter.velocity);
   sim.velocityVar.material.uniforms.gravity.value = gravity;
   sim.velocityVar.material.uniforms.wind.value.copy(wind);
@@ -388,6 +563,20 @@ export function getOrCreateSimulation(
   sim.velocityVar.material.uniforms.noiseScale.value = flowField.scale;
   sim.velocityVar.material.uniforms.noiseSpeed.value = flowField.speed;
   sim.velocityVar.material.uniforms.maxSpeed.value = Math.max(0, maxSpeed);
+
+  const fieldCount = Math.min(MAX_FORCE_FIELDS, forces.length);
+  const fieldUniforms = sim.velocityVar.material.uniforms;
+  for (let i = 0; i < fieldCount; i++) {
+    const f = forces[i];
+    fieldUniforms.fieldPosition.value[i].copy(f.position);
+    fieldUniforms.fieldAxis.value[i].copy(f.axis);
+    fieldUniforms.fieldStrength.value[i] = f.strength;
+    fieldUniforms.fieldRadius.value[i] = Math.max(0, f.radius);
+    fieldUniforms.fieldScale.value[i] = f.scale;
+    fieldUniforms.fieldSpeed.value[i] = f.speed;
+    fieldUniforms.fieldType.value[i] = Math.max(0, FORCE_FIELD_TYPES.indexOf(f.type));
+  }
+  fieldUniforms.fieldCount.value = fieldCount;
 
   const steps = stepsSince(sim.lastSteppedStep, currentStep, MAX_STEPS_PER_FRAME);
   for (let i = 0; i < steps; i++) {
@@ -413,7 +602,10 @@ export function getOrCreateSimulation(
  * itself is torn down.
  */
 export function resetAllParticleSimulations(): void {
-  for (const sim of simCache.values()) sim.gpuCompute.dispose();
+  for (const sim of simCache.values()) {
+    sim.gpuCompute.dispose();
+    sim.seedTexture?.dispose();
+  }
   simCache.clear();
 }
 

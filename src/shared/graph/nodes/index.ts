@@ -31,7 +31,9 @@ import { LIGHT_AMBIENT_NODE, LIGHT_DIRECTIONAL_NODE, LIGHT_POINT_NODE, LIGHT_SPO
 import { ENVIRONMENT_NODE } from "./environment";
 import { OBJECT_OBJ_NODE } from "./objLoader";
 import { TEXTURE_IMAGE_NODE, TEXTURE_PLANE_NODE, TEXTURE_PROCEDURAL_NODE, TEXTURE_TO_NORMAL_NODE, TEXTURE_TRANSFORM_NODE } from "./texture";
-import { PARTICLE_EMITTER_NODE, PARTICLE_RENDER_NODE, PARTICLE_SIMULATE_NODE } from "./particles";
+import { PARTICLE_EMITTER_FROM_POINTS_NODE, PARTICLE_EMITTER_NODE, PARTICLE_RENDER_NODE, PARTICLE_SIMULATE_NODE } from "./particles";
+import { FORCE_FIELD_NODE } from "./forceField";
+import { CAPTURE_TRAILS_NODE } from "./particleTrails";
 import {
   TEXT_CASE_NODE,
   TEXT_COMPARE_NODE,
@@ -188,6 +190,8 @@ export const STARTER_NODES = [
   GRID_NODE,
   ROOM_CORNER_NODE,
   PARTICLE_EMITTER_NODE,
+  PARTICLE_EMITTER_FROM_POINTS_NODE,
+  FORCE_FIELD_NODE,
   PARTICLE_SIMULATE_NODE,
   PARTICLE_RENDER_NODE,
   POSTPROCESS_BLOOM_NODE,
@@ -227,6 +231,7 @@ export const STARTER_NODES = [
   TRAIL_NODE,
   SQUASH_STRETCH_NODE,
   CONNECT_NEARBY_NODE,
+  CAPTURE_TRAILS_NODE,
 ];
 
 export const DEFAULT_REGISTRY = createRegistry(STARTER_NODES);
@@ -277,3 +282,5 @@ export * from "./motion";
 export * from "./trail";
 export * from "./squash";
 export * from "./connectivity";
+export * from "./forceField";
+export * from "./particleTrails";
