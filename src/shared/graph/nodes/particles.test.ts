@@ -1,10 +1,34 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { PARTICLE_EMITTER_FROM_POINTS_NODE } from "./particles";
+import { PARTICLE_EMITTER_FROM_POINTS_NODE, clampParticleCapacity } from "./particles";
 import { EmitterConfig } from "../particleRuntime";
 import { EvalContext } from "../types";
 
 const CTX = (nodeId: string): EvalContext => ({ time: 0, step: 0, nodeId });
+
+describe("clampParticleCapacity", () => {
+  it("passes a normal count through unchanged", () => {
+    expect(clampParticleCapacity(4096)).toBe(4096);
+  });
+
+  it("caps an absurdly high Max Particles instead of building a giant texture", () => {
+    // The bug this guards: an unclamped capacity sized a GPUComputationRenderer
+    // texture pair straight off the typed value, which crashed the tab well
+    // before reaching any error path.
+    expect(clampParticleCapacity(50_000_000)).toBe(65536);
+  });
+
+  it("floors at 1 for zero, negative, or garbage input", () => {
+    expect(clampParticleCapacity(0)).toBe(4096); // 0 is falsy -> the 4096 fallback, same as before this fix
+    expect(clampParticleCapacity(-500)).toBe(1);
+    expect(clampParticleCapacity(NaN)).toBe(4096);
+    expect(clampParticleCapacity("not a number")).toBe(4096);
+  });
+
+  it("rounds a fractional count", () => {
+    expect(clampParticleCapacity(1234.7)).toBe(1235);
+  });
+});
 
 describe("PARTICLE_EMITTER_FROM_POINTS_NODE", () => {
   it("builds seedPositions from the three value lists", () => {

@@ -20,6 +20,21 @@ function numberInput(input: unknown, param: unknown, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * Hard ceiling on Particle Simulate's texture capacity (256x256 texels).
+ * Unclamped, a typo or a dragged-too-far Max Particles field builds a
+ * GPUComputationRenderer texture pair sized to whatever was typed —
+ * multi-thousand-square textures either exceed the GPU's max texture
+ * dimension outright or just allocate hundreds of MB of VRAM per texture,
+ * both of which crashed the tab rather than erroring gracefully. Well above
+ * any count this app's demos or nodes actually use.
+ */
+const MAX_PARTICLE_CAPACITY = 65536;
+
+export function clampParticleCapacity(raw: unknown): number {
+  return Math.max(1, Math.min(MAX_PARTICLE_CAPACITY, Math.round(Number(raw) || 4096)));
+}
+
 /** BIBLE.md's Particle Emitter — spawn rate, initial position/velocity. Pure config bundle, no GPU state of its own. */
 export const PARTICLE_EMITTER_NODE: NodeDefinition = {
   type: "particles/emitter",
@@ -194,7 +209,7 @@ export const PARTICLE_SIMULATE_NODE: NodeDefinition = {
     { id: "gravity", label: "Gravity", kind: "number", step: 0.5 },
     { id: "wind", label: "Wind (fallback)", kind: "vector" },
     { id: "lifetime", label: "Lifetime (s)", kind: "number", step: 0.5 },
-    { id: "count", label: "Max Particles", kind: "number", step: 100 },
+    { id: "count", label: "Max Particles (capped at 65536)", kind: "number", step: 100 },
     { id: "flowStrength", label: "Flow Field Strength", kind: "number", step: 0.5, group: "Flow Field" },
     { id: "flowScale", label: "Flow Field Scale", kind: "number", step: 0.1, group: "Flow Field" },
     { id: "flowSpeed", label: "Flow Field Speed", kind: "number", step: 0.05, group: "Flow Field" },
@@ -208,7 +223,7 @@ export const PARTICLE_SIMULATE_NODE: NodeDefinition = {
     const gravity = numberInput(inputs.gravity, params.gravity, 5);
     const wind = asVector(inputs.wind, asVector(params.wind, new THREE.Vector3()));
     const lifetime = numberInput(inputs.lifetime, params.lifetime, 3);
-    const capacity = Number(params.count) || 4096;
+    const capacity = clampParticleCapacity(params.count);
     const flowField = {
       strength: numberInput(inputs.flowStrength, params.flowStrength, 0),
       scale: numberInput(inputs.flowScale, params.flowScale, 1),
