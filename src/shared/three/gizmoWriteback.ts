@@ -15,6 +15,8 @@ export interface TransformPatch {
   rotation?: THREE.Vector3;
   scale?: THREE.Vector3;
   pointsList?: unknown[];
+  /** Pivot Transform's own pivot point — written directly by its dedicated viewport marker, not through computeGizmoWriteback (see Viewport.tsx). */
+  pivot?: THREE.Vector3;
 }
 
 export interface GizmoWritebackInput {

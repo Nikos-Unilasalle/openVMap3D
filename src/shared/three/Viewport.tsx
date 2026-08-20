@@ -12,6 +12,7 @@ import { resolveCurveEditTarget } from "../graph/curveLookup";
 import { resolveSceneRoots } from "../graph/sceneRoots";
 import { insertCurvePointAfter, removeCurvePoint } from "../graph/curvePoints";
 import { GizmoTarget, resolveGizmoTarget } from "../graph/transformLookup";
+import { PIVOT_TRANSFORM_NODE } from "../graph/nodes/transform";
 import { createCurvePointHandles } from "./curveHandles";
 import { createSceneMembership, isSelfOrDescendantOf } from "./sceneMembership";
 import {
@@ -748,8 +749,21 @@ export function Viewport({
     let dragStartCentroidScale = new THREE.Vector3(1, 1, 1);
     let dragStartPointPositions = new Map<number, THREE.Vector3>();
 
+    // A Pivot Transform node's `pivot` isn't a pose you can drag through the
+    // usual translate/rotate/scale gizmo math (see gizmoWriteback.ts): with
+    // rotation/scale/location all neutral, the pivot cancels out of its own
+    // matrix entirely (translate(pivot) * identity * translate(-pivot) =
+    // identity) — dragging the object it feeds wouldn't move anything on
+    // screen no matter what pivot was written. It needs its own visible,
+    // independently-draggable point, so it reuses the exact same
+    // single-marker machinery curve control points use, just for one point
+    // instead of a polyline (see the sync() call for it below).
+    const pivotHandle = createCurvePointHandles();
+    let pivotHandleNodeId: string | null = null;
+
     if (!outputMode) {
       editorUiScene.add(curveHandles.group);
+      editorUiScene.add(pivotHandle.group);
     }
     // Refreshed every tick() — the 'objectChange' listener needs the
     // *current* base matrix for an "offset" target (see below), and this is
@@ -954,6 +968,16 @@ export function Viewport({
         // screen: the mesh only ever snapped to its new pose once dragging
         // ended and evaluateGraph's own matrix.copy() ran again next frame.
         object.updateMatrix();
+
+        // The pivot marker drag: same "already in the right space" story as
+        // a curve point (see below), just written to `pivot` on the Pivot
+        // Transform node instead of a pointsList entry. Checked before the
+        // generic isCurvePointHandle branch below — pivotHandle reuses the
+        // same handle factory, so its one marker carries that same flag.
+        if (object === pivotHandle.handleAt(0) && pivotHandleNodeId && onTransformChangeRef.current) {
+          onTransformChangeRef.current(pivotHandleNodeId, { pivot: object.position.clone() });
+          return;
+        }
 
         // A single curve control point drag: `object.position` is already
         // in the curve's own space (the handles' group carries the drawing
@@ -1754,8 +1778,34 @@ export function Viewport({
         selectedPointIndices.clear();
       }
 
+      // Pivot Transform's single draggable pivot marker — see the comment by
+      // pivotHandle's declaration for why it can't ride the normal gizmo.
+      const selectedNodeForPivot = graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current);
+      if (!outputMode && selectedNodeForPivot?.type === PIVOT_TRANSFORM_NODE.type) {
+        pivotHandleNodeId = selectedNodeForPivot.id;
+        const pivotPoint = asVector3(selectedNodeForPivot.params.pivot, new THREE.Vector3());
+        // The same coordinate space `pivot` itself is defined in: whatever
+        // feeds this node's own `matrix` input (its "base" — see
+        // PIVOT_TRANSFORM_NODE's evaluate). Identity when nothing is wired,
+        // matching that same fallback.
+        const baseConnection = graphRef.current.connections.find(
+          (c) => c.toNode === selectedNodeForPivot.id && c.toSocket === "matrix",
+        );
+        const baseObject = baseConnection ? results.get(baseConnection.fromNode)?.geometry : undefined;
+        const pivotSpaceMatrix = new THREE.Matrix4();
+        if (baseObject instanceof THREE.Object3D) {
+          baseObject.updateWorldMatrix(true, false, true);
+          pivotSpaceMatrix.copy(baseObject.matrixWorld);
+        }
+        pivotHandle.sync([pivotPoint], pivotSpaceMatrix, new Set([0]), null, false, camera, host.clientHeight);
+      } else if (pivotHandle.count() > 0) {
+        pivotHandle.clear();
+        pivotHandleNodeId = null;
+      }
+
       // Move/rotate/scale gizmo: attach to selected mesh, Empty, Light,
-      // or to the picked control point / multi-point centroid proxy
+      // to the picked control point / multi-point centroid proxy, or to the
+      // pivot marker when a Pivot Transform is selected
       let pickedCurveHandle: THREE.Object3D | null = null;
       if (transformControls) {
         if (selectedPointIndices.size === 1) {
@@ -1763,6 +1813,8 @@ export function Viewport({
           pickedCurveHandle = curveHandles.handleAt(singleIdx);
         } else if (selectedPointIndices.size > 1) {
           pickedCurveHandle = curveHandles.getCentroidHandle();
+        } else if (pivotHandleNodeId) {
+          pickedCurveHandle = pivotHandle.handleAt(0);
         }
       }
 
@@ -2123,6 +2175,7 @@ export function Viewport({
       }
       transformControls?.dispose();
       curveHandles.clear();
+      pivotHandle.clear();
       controls.dispose();
       // Per-viewport editor furniture (grid/axes, corner gizmo, zoom-scrub
       // bar) is not part of the shared per-node caches — it is built fresh for
