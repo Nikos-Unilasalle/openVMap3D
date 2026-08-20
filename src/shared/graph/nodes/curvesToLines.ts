@@ -105,14 +105,23 @@ export const CURVES_TO_LINES_NODE: NodeDefinition = {
     if (!state.lineGeometry || state.lastCurves !== inputs.curves) {
       state.lastCurves = inputs.curves;
 
-      const segmentCount = curves.length * Math.max(0, SAMPLES_PER_CURVE - 1);
+      // getPoints(N) returns N+1 points (N segments) — sizing the buffers off
+      // a fixed "samples per curve" constant instead of the actual sampled
+      // arrays under-allocated by one segment per curve. Harmless for the
+      // first curve or two (the overflow just corrupts the next curve's
+      // slots), but every curve after that drifted further out of its own
+      // range, and the tail of the list fell off the end of the buffer
+      // entirely (typed-array writes past the end are silently dropped, not
+      // an error) — "not all curves are there". Sampling first, then sizing
+      // from the real point counts, fixes both.
+      const perCurvePoints = curves.map((curve) => curve.getPoints(SAMPLES_PER_CURVE));
+      const segmentCount = perCurvePoints.reduce((sum, points) => sum + Math.max(0, points.length - 1), 0);
       const positions = new Float32Array(segmentCount * 6);
       const distStart = new Float32Array(segmentCount);
       const distEnd = new Float32Array(segmentCount);
 
       let seg = 0;
-      for (const curve of curves) {
-        const points = curve.getPoints(SAMPLES_PER_CURVE);
+      for (const points of perCurvePoints) {
         let dist = 0;
         for (let i = 0; i < points.length - 1; i++) {
           const a = points[i];

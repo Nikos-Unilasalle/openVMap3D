@@ -20,8 +20,27 @@ describe("CURVES_TO_LINES_NODE", () => {
     expect(res.geometry).toBeInstanceOf(LineSegments2);
     const line = res.geometry as LineSegments2;
     const startAttr = line.geometry.attributes.instanceStart as THREE.InterleavedBufferAttribute;
-    // 3 curves × 127 segments (128 samples each) = 381 segments.
-    expect(startAttr.count).toBe(381);
+    // 3 curves × 128 segments (129 points each, getPoints(128)) = 384 segments.
+    expect(startAttr.count).toBe(384);
+  });
+
+  it("keeps every curve's own endpoint intact, including the last one in the list (regression: getPoints(N) returns N+1 points, not N)", () => {
+    // Sizing the shared buffer as if getPoints(128) gave 127 segments (it
+    // gives 128) under-allocated by one segment per curve — later curves'
+    // writes landed one slot early each time, and the final curve(s) ran
+    // past the end of the typed array entirely (a silent no-op write, not an
+    // error), so they never showed up at all.
+    const curves = Array.from({ length: 5 }, (_, i) => straightLine(new THREE.Vector3(0, i, 0), new THREE.Vector3(1, i, 10 + i)));
+    const res = CURVES_TO_LINES_NODE.evaluate({ curves }, CURVES_TO_LINES_NODE.defaultParams, CTX("c2l-tail"));
+    const line = res.geometry as LineSegments2;
+    const endAttr = line.geometry.attributes.instanceEnd as THREE.InterleavedBufferAttribute;
+
+    expect(endAttr.count).toBe(5 * 128);
+    // The very last segment written is the last curve's own final point.
+    const lastIdx = endAttr.count - 1;
+    expect(endAttr.getX(lastIdx)).toBeCloseTo(1);
+    expect(endAttr.getY(lastIdx)).toBeCloseTo(4);
+    expect(endAttr.getZ(lastIdx)).toBeCloseTo(14);
   });
 
   it("ignores non-Curve entries and empty lists rather than throwing", () => {
