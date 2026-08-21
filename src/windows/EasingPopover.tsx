@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { EasingType } from "../shared/graph/types";
 import { BEZIER_PRESETS, computeSegmentEasing } from "../shared/graph/evaluate";
+import { DragNumberInput } from "./DragNumberInput";
 import "./timeline-bar.css";
 
 /**
@@ -272,13 +273,12 @@ export const EasingPopover: React.FC<EasingPopoverProps> = ({
         <div className="easing-popover-section">
           <label className="easing-strength-label">
             <span>{EASING_STRENGTH_CONFIG[easeIn]!.label}</span>
-            <input
-              type="number"
+            <DragNumberInput
               min={EASING_STRENGTH_CONFIG[easeIn]!.min}
               max={EASING_STRENGTH_CONFIG[easeIn]!.max}
               step={EASING_STRENGTH_CONFIG[easeIn]!.step}
               value={strength}
-              onChange={(e) => onStrengthChange(Number(e.target.value))}
+              onChange={onStrengthChange}
             />
           </label>
         </div>

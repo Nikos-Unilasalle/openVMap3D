@@ -13,6 +13,7 @@ import {
   SelectedKeyframeKey,
 } from "./timelineUtils";
 import { EasingPopover, EASING_OPTIONS, EASING_STRENGTH_CONFIG } from "./EasingPopover";
+import { DragNumberInput } from "./DragNumberInput";
 import { MotionGraph } from "./MotionGraph";
 import "./timeline-drawer.css";
 
@@ -726,14 +727,12 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
 
           {/* Timecode & Frame Input */}
           <div className="timeline-timecode-box">
-            <input
-              type="number"
-              className="timeline-frame-input"
+            <DragNumberInput
               value={currentFrame}
-              onChange={(e) => {
-                const val = parseInt(e.target.value, 10);
-                if (!Number.isNaN(val)) onFrameChange(Math.max(0, Math.min(totalFrames, val)));
-              }}
+              step={1}
+              min={0}
+              max={totalFrames}
+              onChange={(v) => onFrameChange(Math.round(v))}
             />
             <span>/ {totalFrames}</span>
             <span className="timeline-timecode-tc">({formatTimecode(currentFrame, fps)})</span>

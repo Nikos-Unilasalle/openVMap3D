@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { ColorRamp, ColorStop, DEFAULT_COLOR_RAMP, evalColorRamp } from "../shared/graph/colorRamp";
 import { ColorPickerInput } from "./ColorPickerInput";
+import { DragNumberInput } from "./DragNumberInput";
 import "./color-ramp-editor.css";
 
 interface ColorRampEditorProps {
@@ -220,14 +221,12 @@ export const ColorRampEditor: React.FC<ColorRampEditorProps> = ({ value, onChang
       {selectedStop && (
         <div className="color-ramp-stop-editor">
           <ColorPickerInput value={selectedStop.color} onChange={setSelectedColor} />
-          <input
-            type="number"
-            className="color-ramp-position-input"
+          <DragNumberInput
+            value={Math.round(selectedStop.position * 1000) / 1000}
+            step={0.01}
             min={0}
             max={1}
-            step={0.01}
-            value={Math.round(selectedStop.position * 1000) / 1000}
-            onChange={(e) => setSelectedPosition(Number(e.target.value))}
+            onChange={setSelectedPosition}
           />
         </div>
       )}
