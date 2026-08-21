@@ -21,6 +21,46 @@ function asColor(v: unknown, fallback: THREE.Color): THREE.Color {
   return fallback;
 }
 
+/**
+ * A small editor-only marker so a light is visible (and selectable) as
+ * something other than its own effect on the scene — cameras and Empties
+ * already get one (see camera.ts / object.ts), lights didn't. Every piece is
+ * tagged `isHelper` so it hides along with them: in the output window, the
+ * editor's own camera-preview pane, and now behind the viewport's Tab
+ * overlay toggle (see Viewport.tsx).
+ */
+function createLightIcon(kind: "directional" | "point" | "spot"): THREE.Object3D {
+  const group = new THREE.Group();
+  const color = 0xfbbf24;
+  const mat = new THREE.LineBasicMaterial({ color });
+
+  if (kind === "point") {
+    const geo = new THREE.IcosahedronGeometry(0.15, 0);
+    group.add(new THREE.LineSegments(new THREE.WireframeGeometry(geo), mat));
+  } else if (kind === "spot") {
+    const geo = new THREE.ConeGeometry(0.12, 0.3, 8, 1, true);
+    geo.rotateX(Math.PI / 2);
+    geo.translate(0, 0, -0.15);
+    group.add(new THREE.LineSegments(new THREE.WireframeGeometry(geo), mat));
+  } else {
+    const bulbGeo = new THREE.IcosahedronGeometry(0.1, 0);
+    group.add(new THREE.LineSegments(new THREE.WireframeGeometry(bulbGeo), mat));
+    const rayPoints: THREE.Vector3[] = [];
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const dir = new THREE.Vector3(Math.cos(a), Math.sin(a), 0);
+      rayPoints.push(dir.clone().multiplyScalar(0.14), dir.clone().multiplyScalar(0.22));
+    }
+    const raysGeo = new THREE.BufferGeometry().setFromPoints(rayPoints);
+    group.add(new THREE.LineSegments(raysGeo, mat));
+  }
+
+  group.traverse((child) => {
+    child.userData.isHelper = true;
+  });
+  return group;
+}
+
 /** Directional Light node — simulates distant sun lighting with directional shadow mapping. */
 export const LIGHT_DIRECTIONAL_NODE: NodeDefinition = {
   type: "light/directional",
@@ -68,6 +108,7 @@ export const LIGHT_DIRECTIONAL_NODE: NodeDefinition = {
       light.shadow.camera.bottom = -d;
       light.shadow.bias = -0.0005;
       light.userData.nodeId = ctx.nodeId;
+      light.add(createLightIcon("directional"));
 
       lightCache.set(ctx.nodeId, light);
     }
@@ -142,6 +183,7 @@ export const LIGHT_POINT_NODE: NodeDefinition = {
       light.shadow.mapSize.height = 1024;
       light.shadow.bias = -0.001;
       light.userData.nodeId = ctx.nodeId;
+      light.add(createLightIcon("point"));
       lightCache.set(ctx.nodeId, light);
     }
 
@@ -214,6 +256,7 @@ export const LIGHT_SPOT_NODE: NodeDefinition = {
       light.shadow.camera.far = 50;
       light.shadow.bias = -0.0005;
       light.userData.nodeId = ctx.nodeId;
+      light.add(createLightIcon("spot"));
 
       lightCache.set(ctx.nodeId, light);
     }

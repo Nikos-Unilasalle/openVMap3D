@@ -29,3 +29,8 @@ export function isGraphZone(): boolean {
 export function isTimelineZone(): boolean {
   return currentZone === "timeline";
 }
+
+/** True when the cursor is over the 3D viewport pane. */
+export function isViewportZone(): boolean {
+  return currentZone === "viewport";
+}

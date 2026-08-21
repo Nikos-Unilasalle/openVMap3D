@@ -83,7 +83,7 @@ export const VALUE_TO_TEXT_NODE: NodeDefinition = {
   defaultParams: { value: 0, decimals: 2, prefix: "", suffix: "" },
   paramFields: [
     { id: "value", label: "Value (fallback)", kind: "number" },
-    { id: "decimals", label: "Decimals", kind: "number" },
+    { id: "decimals", label: "Decimals", kind: "number", step: 1 },
     { id: "prefix", label: "Prefix", kind: "text" },
     { id: "suffix", label: "Suffix", kind: "text" },
   ],

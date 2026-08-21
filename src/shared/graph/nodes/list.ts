@@ -24,7 +24,7 @@ export const GET_LIST_ITEM_NODE: NodeDefinition = {
     ];
   },
   defaultParams: { index: 0 },
-  paramFields: [{ id: "index", label: "Index", kind: "number" }],
+  paramFields: [{ id: "index", label: "Index", kind: "number", step: 1 }],
   evaluate: (inputs, params) => {
     const list = Array.isArray(inputs.list) ? inputs.list : [];
     const index = Math.floor(inputs.index !== undefined ? Number(inputs.index) || 0 : Number(params.index) || 0);
@@ -67,7 +67,7 @@ export const GENERATE_LIST_NODE: NodeDefinition = {
   outputs: [{ id: "list", label: "List", type: "list" }],
   defaultParams: { count: 10, start: 0, step: 1 },
   paramFields: [
-    { id: "count", label: "Count", kind: "number" },
+    { id: "count", label: "Count", kind: "number", step: 1 },
     { id: "start", label: "Start Value", kind: "number" },
     { id: "step", label: "Step Size", kind: "number", step: 0.1 },
   ],
@@ -279,7 +279,7 @@ export const COLOR_PALETTE_LIST_NODE: NodeDefinition = {
     ramp: DEFAULT_COLOR_RAMP,
   },
   paramFields: [
-    { id: "count", label: "Count", kind: "number" },
+    { id: "count", label: "Count", kind: "number", step: 1 },
     { id: "ramp", label: "Ramp", kind: "color_ramp" },
   ],
   evaluate: (inputs, params) => {
@@ -309,8 +309,8 @@ export const SLICE_LIST_NODE: NodeDefinition = {
   outputs: [{ id: "list", label: "List", type: "list" }],
   defaultParams: { start: 0, count: 10 },
   paramFields: [
-    { id: "start", label: "Start Index", kind: "number" },
-    { id: "count", label: "Count", kind: "number" },
+    { id: "start", label: "Start Index", kind: "number", step: 1 },
+    { id: "count", label: "Count", kind: "number", step: 1 },
   ],
   evaluate: (inputs, params) => {
     const rawList = Array.isArray(inputs.list) ? inputs.list : [];
