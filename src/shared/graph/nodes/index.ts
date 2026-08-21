@@ -32,7 +32,7 @@ import { LIGHT_AMBIENT_NODE, LIGHT_DIRECTIONAL_NODE, LIGHT_POINT_NODE, LIGHT_SPO
 import { ENVIRONMENT_NODE } from "./environment";
 import { OBJECT_OBJ_NODE } from "./objLoader";
 import { OBJECT_FROZEN_NODE } from "./frozenGeometry";
-import { TEXTURE_IMAGE_NODE, TEXTURE_PLANE_NODE, TEXTURE_PROCEDURAL_NODE, TEXTURE_TO_NORMAL_NODE, TEXTURE_TRANSFORM_NODE } from "./texture";
+import { TEXTURE_IMAGE_NODE, TEXTURE_MIX_NODE, TEXTURE_PLANE_NODE, TEXTURE_PROCEDURAL_NODE, TEXTURE_TO_NORMAL_NODE, TEXTURE_TRANSFORM_NODE } from "./texture";
 import { PARTICLE_EMITTER_FROM_POINTS_NODE, PARTICLE_EMITTER_FROM_SURFACE_NODE, PARTICLE_EMITTER_NODE, PARTICLE_RENDER_NODE, PARTICLE_SIMULATE_NODE } from "./particles";
 import { GEOMETRY_TO_POINTS_NODE } from "./geometryToPoints";
 import { PARTICLES_TO_POINTS_NODE } from "./particlesToPoints";
@@ -74,6 +74,7 @@ import { CURVE_TO_POINTS_NODE } from "./curveToPoints";
 import { LATTICE_DEFORM_NODE } from "./lattice";
 import { BOOLEAN_NODE } from "./boolean";
 import { SUBDIVIDE_NODE } from "./subdivide";
+import { EXTRUDE_MESH_NODE, DELETE_GEOMETRY_NODE } from "./meshEdit";
 import { SHADE_NODE } from "./shade";
 import { WIGGLE_NODE, WIGGLE_NUMBER_NODE, WIGGLE_VECTOR_NODE } from "./wiggle";
 import { MATERIAL_NODE } from "./material";
@@ -152,6 +153,7 @@ export const STARTER_NODES = [
   TEXTURE_PROCEDURAL_NODE,
   TEXTURE_TO_NORMAL_NODE,
   TEXTURE_TRANSFORM_NODE,
+  TEXTURE_MIX_NODE,
   MERGE_NODE,
   ARRAY_NODE,
   INSTANCE_POSITIONS_NODE,
@@ -232,6 +234,8 @@ export const STARTER_NODES = [
   LATTICE_DEFORM_NODE,
   BOOLEAN_NODE,
   SUBDIVIDE_NODE,
+  EXTRUDE_MESH_NODE,
+  DELETE_GEOMETRY_NODE,
   SHADE_NODE,
   WIGGLE_NODE,
   WIGGLE_NUMBER_NODE,
@@ -299,6 +303,7 @@ export * from "./curve";
 export * from "./curveFromPointLists";
 export * from "./lattice";
 export * from "./subdivide";
+export * from "./meshEdit";
 export * from "./shade";
 export * from "./wiggle";
 export * from "./material";
