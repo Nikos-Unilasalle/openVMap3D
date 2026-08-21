@@ -89,6 +89,39 @@ export function composeNativeMatrix(wiredMatrix: unknown, location: unknown, rot
 }
 
 /**
+ * Same contract as composeNativeMatrix, but rotation/scale pivot around an
+ * arbitrary point instead of always the node's local origin — for geometry
+ * whose own origin isn't where the user wants to rotate/scale from. An
+ * imported .OBJ is the chief case: the format has no pivot concept at all,
+ * so wherever the exporting app happened to leave (0,0,0) is where a plain
+ * Transform would pivot from, and that's rarely the base/handle/center the
+ * artist actually modeled around. Same translate-to-origin /
+ * rotate-and-scale / translate-back-plus-offset formula as
+ * PIVOT_TRANSFORM_NODE below, just producing a native base matrix instead of
+ * modifying an already-composed one.
+ */
+export function composeNativeMatrixWithPivot(
+  wiredMatrix: unknown,
+  location: unknown,
+  rotation: unknown,
+  scale: unknown,
+  pivot: unknown,
+): THREE.Matrix4 {
+  const delta = wiredMatrix instanceof THREE.Matrix4 ? wiredMatrix : new THREE.Matrix4();
+  const loc = asVector3(location, ZERO);
+  const rot = asVector3(rotation, ZERO);
+  const scl = asVector3(scale, ONE);
+  const piv = asVector3(pivot, ZERO);
+
+  const mPivotInv = new THREE.Matrix4().makeTranslation(-piv.x, -piv.y, -piv.z);
+  const mRotScale = composeTransform(ZERO, rot, scl);
+  const mPivotLoc = new THREE.Matrix4().makeTranslation(piv.x + loc.x, piv.y + loc.y, piv.z + loc.z);
+
+  const base = new THREE.Matrix4().multiply(mPivotLoc).multiply(mRotScale).multiply(mPivotInv);
+  return new THREE.Matrix4().multiplyMatrices(base, delta);
+}
+
+/**
  * The flagship node — almost everything else in a scene ends up feeding
  * this one. location/scale/rotate in, a single composed Matrix out, matching
  * Blender's LSR-to-matrix convention. Rotation travels as a Vector of Euler

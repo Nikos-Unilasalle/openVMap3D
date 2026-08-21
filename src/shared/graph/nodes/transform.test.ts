@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { LOOK_AT_NODE, PIVOT_TRANSFORM_NODE, composeNativeMatrix, composeTransform } from "./transform";
+import { LOOK_AT_NODE, PIVOT_TRANSFORM_NODE, composeNativeMatrix, composeNativeMatrixWithPivot, composeTransform } from "./transform";
 import { markUnusedAxes } from "./vector";
 import { EvalContext } from "../types";
 
@@ -168,6 +168,52 @@ describe("PIVOT_TRANSFORM_NODE", () => {
     for (const el of elements) {
       expect(Number.isFinite(el)).toBe(true);
     }
+  });
+});
+
+describe("composeNativeMatrixWithPivot", () => {
+  it("rotates around the given pivot instead of the local origin", () => {
+    const pivot = new THREE.Vector3(0, 2, 0);
+    const rotation = new THREE.Vector3(0, 0, Math.PI / 2); // 90° on Z
+
+    const m = composeNativeMatrixWithPivot(undefined, new THREE.Vector3(0, 0, 0), rotation, new THREE.Vector3(1, 1, 1), pivot);
+
+    // A vertex at (3, 2, 0) — offset (3, 0, 0) from pivot (0, 2, 0) — rotates
+    // to offset (0, 3, 0) from the pivot, landing at (0, 5, 0).
+    const testVec = new THREE.Vector3(3, 2, 0).applyMatrix4(m);
+    expect(testVec.x).toBeCloseTo(0, 5);
+    expect(testVec.y).toBeCloseTo(5, 5);
+    expect(testVec.z).toBeCloseTo(0, 5);
+  });
+
+  it("with no pivot (zero), matches plain composeNativeMatrix", () => {
+    const location = new THREE.Vector3(1, 2, 3);
+    const rotation = new THREE.Vector3(0, Math.PI / 4, 0);
+    const scale = new THREE.Vector3(2, 1, 2);
+
+    const plain = composeNativeMatrix(undefined, location, rotation, scale);
+    const withZeroPivot = composeNativeMatrixWithPivot(undefined, location, rotation, scale, new THREE.Vector3(0, 0, 0));
+
+    expect(withZeroPivot.toArray().map((n) => Math.round(n * 1e6) / 1e6)).toEqual(
+      plain.toArray().map((n) => Math.round(n * 1e6) / 1e6),
+    );
+  });
+
+  it("location moves the pivoted object without re-introducing origin-pivoted rotation", () => {
+    const pivot = new THREE.Vector3(1, 0, 0);
+    const location = new THREE.Vector3(5, 0, 0);
+    const m = composeNativeMatrixWithPivot(undefined, location, new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, 1, 1), pivot);
+    // No rotation/scale: pivot should have zero net effect, this is a pure translation.
+    const testVec = new THREE.Vector3(0, 0, 0).applyMatrix4(m);
+    expect(testVec.x).toBeCloseTo(5, 5);
+    expect(testVec.y).toBeCloseTo(0, 5);
+    expect(testVec.z).toBeCloseTo(0, 5);
+  });
+
+  it("handles empty inputs safely without throwing or returning NaN", () => {
+    const m = composeNativeMatrixWithPivot(undefined, undefined, undefined, undefined, undefined);
+    expect(m).toBeInstanceOf(THREE.Matrix4);
+    for (const el of m.elements) expect(Number.isFinite(el)).toBe(true);
   });
 });
 

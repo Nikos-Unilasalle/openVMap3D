@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { NodeDefinition } from "../types";
 import { createNodeCache } from "../nodeCaches";
-import { composeNativeMatrix } from "./transform";
+import { composeNativeMatrixWithPivot } from "./transform";
 import { COMMON_PRIMITIVE_OUTPUTS, extractMaterialParams, primitiveOutputs } from "./object";
 
 interface ObjState {
@@ -55,9 +55,15 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
     { id: "material", label: "Material", type: "material" },
     { id: "uvScale", label: "UV Scale", type: "vector" },
     { id: "uvOffset", label: "UV Offset", type: "vector" },
+    // OBJ has no pivot concept of its own — vertices sit wherever the
+    // exporting app left them relative to (0,0,0), which a plain
+    // Transform always rotates/scales around. This lets rotation/scale
+    // pivot around whatever point actually matches the model instead.
+    { id: "pivot", label: "Pivot", type: "vector" },
   ],
   outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: {
+    pivot: new THREE.Vector3(0, 0, 0),
     location: new THREE.Vector3(0, 0, 0),
     rotation: new THREE.Vector3(0, 0, 0),
     scale: new THREE.Vector3(1, 1, 1),
@@ -200,6 +206,7 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
     { id: "location", label: "Location", kind: "vector" },
     { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true },
     { id: "scale", label: "Scale", kind: "vector" },
+    { id: "pivot", label: "Pivot", kind: "vector" },
     { id: "color", label: "Color (fallback)", kind: "color" },
     { id: "shadeless", label: "Shadeless (Unlit)", kind: "boolean" },
     { id: "uvScaleX", label: "UV Scale X (Tile)", kind: "number", step: 0.1 },
@@ -218,7 +225,9 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
     // Apply matrix transformation
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       group.matrixAutoUpdate = false;
-      group.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      group.matrix.copy(
+        composeNativeMatrixWithPivot(inputs.matrix, params.location, params.rotation, params.scale, inputs.pivot),
+      );
     }
 
     const matParams = extractMaterialParams(inputs, params);
