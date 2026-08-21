@@ -529,6 +529,18 @@ class SaggedLineCurve3 extends THREE.Curve<THREE.Vector3> {
     target.y -= this.sag * 4 * t * (1 - t);
     return target;
   }
+
+  // THREE.Curve's own toJSON() only ever serializes {metadata, arcLengthDivisions}
+  // — v1/v2/sag are unknown to it, since it has no idea a subclass exists.
+  // Curve to Mesh's rebuild guard is keyed on JSON.stringify(curve.toJSON())
+  // (see CURVE_TO_MESH_NODE's `signature`), so without this override every
+  // frame's sag value produced byte-identical JSON: the tube mesh never
+  // rebuilt while animating Sag, even though the curve itself (and its own
+  // preview line, which resamples fresh every frame instead of diffing a
+  // signature) visibly moved.
+  toJSON(): THREE.CurveJSON & { v1: number[]; v2: number[]; sag: number } {
+    return { ...super.toJSON(), v1: this.v1.toArray(), v2: this.v2.toArray(), sag: this.sag };
+  }
 }
 
 /** Builds a curve (linear / bezier / catmull-rom) through `pts` — shared by the

@@ -632,3 +632,24 @@ describe("Curve nodes declare a Visible socket (evaluate.ts applies it generical
     expect(preview.visible).toBe(false);
   });
 });
+
+describe("Curve from Points -> Curve to Mesh: animating Sag actually rebuilds the tube", () => {
+  it("regression: SaggedLineCurve3 had no toJSON() override, so curve.toJSON() looked identical at every sag value — Curve to Mesh's rebuild guard (keyed on JSON.stringify(curve.toJSON())) never fired, and the meshed tube stayed frozen while the raw curve preview (which resamples fresh every frame) visibly moved", () => {
+    const points = [new THREE.Vector3(0, 5, 0), new THREE.Vector3(10, 5, 0), new THREE.Vector3(20, 5, 0)];
+
+    const flat = CURVE_FROM_POINTS_NODE.evaluate({ points }, { ...CURVE_FROM_POINTS_NODE.defaultParams, sag: 0 }, CTX);
+    const flatMesh = CURVE_TO_MESH_NODE.evaluate({ curve: flat.curve }, CURVE_TO_MESH_NODE.defaultParams, CTX)
+      .geometry as THREE.Group;
+    const flatBox = new THREE.Box3().setFromObject(flatMesh);
+
+    const sagged = CURVE_FROM_POINTS_NODE.evaluate({ points }, { ...CURVE_FROM_POINTS_NODE.defaultParams, sag: 3 }, CTX);
+    const saggedMesh = CURVE_TO_MESH_NODE.evaluate({ curve: sagged.curve }, CURVE_TO_MESH_NODE.defaultParams, CTX)
+      .geometry as THREE.Group;
+    const saggedBox = new THREE.Box3().setFromObject(saggedMesh);
+
+    // A sagging tube dips well below a flat one — same node instance/state
+    // reused across both calls (CTX has a fixed nodeId), so this only passes
+    // if the rebuild guard actually saw the curves as different.
+    expect(saggedBox.min.y).toBeLessThan(flatBox.min.y - 1);
+  });
+});
