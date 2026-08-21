@@ -553,6 +553,13 @@ export const LATTICE_DEFORM_NODE: NodeDefinition = {
   category: "transform",
   inputs: [
     { id: "geometry", label: "Geometry", type: "geometry", owns: true },
+    // Not just a param field — evaluateGraph's generic visibility mechanism
+    // (see evaluate.ts's applyVisibility) only ever looks at
+    // inputs[VISIBILITY_SOCKET], which only exists if the socket is declared
+    // here. Without it the Visible checkbox writes to params.visible same as
+    // ever, but nothing reads that value back out again — the lattice stayed
+    // visible no matter what the checkbox said.
+    { id: "visible", label: "Visible", type: "value" },
     { id: "matrix", label: "Matrix", type: "matrix" },
     { id: "strength", label: "Influence", type: "value" },
     { id: "points", label: "Points List", type: "list" },
@@ -706,6 +713,11 @@ export const LATTICE_DEFORM_NODE: NodeDefinition = {
       });
       state.cageLines = new THREE.LineSegments(new THREE.BufferGeometry(), cageMat);
       state.cageLines.renderOrder = 999;
+      // Editor-only rigging aid, same category as a camera's frustum icon or
+      // an Empty's crosshair — hidden in the output window, the editor's own
+      // camera-preview pane, and (via Viewport.tsx's Tab toggle) behind
+      // showUiOverlay, all through the same userData.isHelper flag they use.
+      state.cageLines.userData.isHelper = true;
       state.group.add(state.cageLines);
     }
 
