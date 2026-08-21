@@ -1,0 +1,136 @@
+import { useState } from "react";
+import { EvalResult } from "../shared/graph/evaluate";
+import { paramPanelValues } from "../shared/graph/paramPanelValues";
+import { Graph, KeyframeStore, NodeRegistry, ParamFieldDef } from "../shared/graph/types";
+import {
+  booleanField,
+  getKeyframeStatus,
+  selectField,
+  toDisplayUnit,
+  toStoredUnit,
+  vectorField,
+} from "./ParamPanel";
+import { ColorPickerInput } from "./ColorPickerInput";
+import { DragNumberInput } from "./DragNumberInput";
+import "./viewport-param-hud.css";
+
+interface ViewportParamHUDProps {
+  graph: Graph;
+  registry: NodeRegistry;
+  evaluatedResults: EvalResult | null;
+  keyframes?: KeyframeStore;
+  currentFrame: number;
+  keyframesEnabled: boolean;
+  onChange: (paramId: string, value: unknown, targetNodeId?: string) => void;
+  onUnpin: (nodeId: string, paramId: string) => void;
+}
+
+/**
+ * Houdini-style pinned viewport HUD: a hand-picked set of (nodeId, paramId)
+ * pairs, always visible regardless of what's currently selected in the
+ * graph. Pins are toggled from ParamPanel's per-row pin button.
+ *
+ * Deliberately not a reuse of ParamPanel's own group-switch rendering — that
+ * machinery is entangled with keyframe-hover state, group headers, and axis
+ * "use" checkboxes that don't belong in a terse, always-on HUD row. Only the
+ * pure per-kind renderers are shared.
+ */
+export function ViewportParamHUD({
+  graph,
+  registry,
+  evaluatedResults,
+  keyframes,
+  currentFrame,
+  keyframesEnabled,
+  onChange,
+  onUnpin,
+}: ViewportParamHUDProps) {
+  const [collapsed, setCollapsed] = useState(false);
+  const refs = graph.exposedParams ?? [];
+  if (refs.length === 0) return null;
+
+  const byNode = new Map<string, typeof refs>();
+  for (const ref of refs) {
+    if (!byNode.has(ref.nodeId)) byNode.set(ref.nodeId, []);
+    byNode.get(ref.nodeId)!.push(ref);
+  }
+
+  const frame = keyframesEnabled ? currentFrame : undefined;
+
+  return (
+    <div className="viewport-param-hud">
+      <div className="viewport-param-hud-titlebar">
+        <span>Pinned Params</span>
+        <button type="button" className="viewport-param-hud-collapse" onClick={() => setCollapsed((v) => !v)}>
+          {collapsed ? "▸" : "▾"}
+        </button>
+      </div>
+      {!collapsed && (
+        <div className="viewport-param-hud-body">
+          {Array.from(byNode.entries()).map(([nodeId, nodeRefs]) => {
+            const instance = graph.nodes.find((n) => n.id === nodeId);
+            if (!instance) return null;
+            const def = registry.get(instance.type);
+            if (!def) return null;
+            const fields = def.dynamicParamFields ? def.dynamicParamFields(instance) : (def.paramFields ?? []);
+            const values = paramPanelValues(graph, instance, def, evaluatedResults, frame);
+            const showNodeHeader = nodeRefs.length > 1;
+
+            return (
+              <div className="viewport-param-hud-node" key={nodeId}>
+                {showNodeHeader && <div className="viewport-param-hud-node-name">{def.label}</div>}
+                {nodeRefs.map((ref) => {
+                  const field = fields.find((f) => f.id === ref.paramId) as ParamFieldDef | undefined;
+                  if (!field) return null;
+                  const status = keyframesEnabled ? getKeyframeStatus(keyframes, nodeId, field.id, currentFrame) : "none";
+
+                  return (
+                    <div className="viewport-param-hud-row" key={field.id}>
+                      <label>{ref.label ?? field.label}</label>
+                      <div className="viewport-param-hud-control">
+                        {field.kind === "number" && (
+                          <DragNumberInput
+                            value={toDisplayUnit(Number(values[field.id]) || 0, field.degrees, field.percent)}
+                            step={field.step}
+                            status={status}
+                            onChange={(v) => onChange(field.id, toStoredUnit(v, field.degrees, field.percent), nodeId)}
+                          />
+                        )}
+                        {field.kind === "vector" &&
+                          vectorField(
+                            field,
+                            values[field.id],
+                            (v) => onChange(field.id, v, nodeId),
+                            nodeId,
+                            keyframes,
+                            currentFrame,
+                            keyframesEnabled,
+                            () => {},
+                          )}
+                        {field.kind === "boolean" &&
+                          booleanField(values[field.id], (v) => onChange(field.id, v, nodeId))}
+                        {field.kind === "select" &&
+                          selectField(field, values[field.id], (v) => onChange(field.id, v, nodeId))}
+                        {field.kind === "color" && (
+                          <ColorPickerInput value={values[field.id]} onChange={(v) => onChange(field.id, v, nodeId)} />
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        className="viewport-param-hud-unpin"
+                        title="Unpin"
+                        onClick={() => onUnpin(nodeId, ref.paramId)}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}

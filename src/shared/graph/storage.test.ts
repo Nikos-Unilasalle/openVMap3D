@@ -43,7 +43,7 @@ describe("storage utilities", () => {
   });
 
   describe("serializeGraph & deserializeGraph", () => {
-    it("round-trips a valid graph including keyframes and markers", () => {
+    it("round-trips a valid graph including keyframes, markers and exposedParams", () => {
       const graph: Graph = {
         nodes: [
           { id: "1", type: "time", position: { x: 0, y: 0 }, params: {} },
@@ -58,12 +58,24 @@ describe("storage utilities", () => {
           },
         },
         markers: [12, 45, 90],
+        exposedParams: [{ nodeId: "1", paramId: "seconds", label: "Time (s)" }],
       };
 
       const json = serializeGraph(graph);
       const restored = deserializeGraph(json);
 
       expect(restored).toEqual(graph);
+    });
+
+    it("defaults exposedParams to [] for a file saved before this feature existed", () => {
+      const saved = JSON.stringify({
+        nodes: [{ id: "1", type: "time", position: { x: 0, y: 0 }, params: {} }],
+        connections: [],
+      });
+
+      const restored = deserializeGraph(saved);
+
+      expect(restored.exposedParams).toEqual([]);
     });
 
     it("drops a wire into a socket the node no longer has", () => {

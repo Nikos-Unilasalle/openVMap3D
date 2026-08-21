@@ -274,15 +274,24 @@ export interface Keyframe {
 /** Keyframes store keyed by nodeId -> paramKey -> array of Keyframe sorted by frame ascending. */
 export type KeyframeStore = Record<string, Record<string, Keyframe[]>>;
 
+/** A param pinned to the viewport HUD, independent of graph selection. */
+export interface ExposedParamRef {
+  nodeId: string;
+  paramId: string;
+  /** Overrides field.label for the HUD row; falls back to the field's own label when absent. */
+  label?: string;
+}
+
 export interface Graph {
   nodes: NodeInstance[];
   connections: Connection[];
   keyframes?: KeyframeStore;
   markers?: number[];
+  exposedParams?: ExposedParamRef[];
 }
 
 export function emptyGraph(): Graph {
-  return { nodes: [], connections: [], keyframes: {}, markers: [] };
+  return { nodes: [], connections: [], keyframes: {}, markers: [], exposedParams: [] };
 }
 
 /**

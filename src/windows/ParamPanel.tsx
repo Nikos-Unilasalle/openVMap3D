@@ -31,6 +31,9 @@ interface ParamPanelProps {
    * and be overwritten on the next evaluation.
    */
   connectedSockets?: Set<string>;
+  /** paramIds of *this* node currently pinned to the viewport HUD — for the pin button's active state. */
+  exposedKeys?: Set<string>;
+  onToggleExposed?: (nodeId: string, paramId: string) => void;
 }
 
 export type KeyframeStatus = "none" | "exact" | "interpolated";
@@ -48,11 +51,14 @@ export function getKeyframeStatus(
   return "interpolated";
 }
 
-function booleanField(value: unknown, onChange: (v: unknown) => void) {
+/** Field kinds simple enough to render as a compact HUD row — see ViewportParamHUD. */
+export const EXPOSABLE_KINDS = new Set(["number", "vector", "boolean", "select", "color"]);
+
+export function booleanField(value: unknown, onChange: (v: unknown) => void) {
   return <input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked ? 1 : 0)} />;
 }
 
-function selectField(field: ParamFieldDef & { kind: "select" }, value: unknown, onChange: (v: unknown) => void) {
+export function selectField(field: ParamFieldDef & { kind: "select" }, value: unknown, onChange: (v: unknown) => void) {
   return (
     <select value={String(value)} onChange={(e) => onChange(e.target.value)}>
       {field.options.map((opt) => (
@@ -181,13 +187,13 @@ function fileField(nodeId: string, field: ParamFieldDef & { kind: "file" }, valu
 
 const RAD_TO_DEG = 180 / Math.PI;
 
-function toDisplayUnit(value: number, degrees?: boolean, percent?: boolean): number {
+export function toDisplayUnit(value: number, degrees?: boolean, percent?: boolean): number {
   if (degrees) return value * RAD_TO_DEG;
   if (percent) return value * 100;
   return value;
 }
 
-function toStoredUnit(value: number, degrees?: boolean, percent?: boolean): number {
+export function toStoredUnit(value: number, degrees?: boolean, percent?: boolean): number {
   if (degrees) return value / RAD_TO_DEG;
   if (percent) return value / 100;
   return value;
@@ -219,7 +225,7 @@ export function parseVector3(value: unknown): THREE.Vector3 {
   return new THREE.Vector3(0, 0, 0);
 }
 
-function vectorField(
+export function vectorField(
   field: ParamFieldDef & { kind: "vector" },
   value: unknown,
   onChange: (v: unknown) => void,
@@ -304,6 +310,8 @@ export function ParamPanel({
   onToggleKeyframe,
   onAction,
   connectedSockets,
+  exposedKeys,
+  onToggleExposed,
 }: ParamPanelProps) {
   const categoryColor = category ? CATEGORY_COLOR[category] : UNKNOWN_CATEGORY_COLOR;
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ Transform: true });
@@ -402,6 +410,19 @@ export function ParamPanel({
                           />
                         )}
                       </label>
+                      {EXPOSABLE_KINDS.has(field.kind) && onToggleExposed && (
+                        <button
+                          type="button"
+                          className={"param-pin-btn" + (exposedKeys?.has(field.id) ? " param-pin-btn-active" : "")}
+                          title={exposedKeys?.has(field.id) ? "Unpin from viewport HUD" : "Pin to viewport HUD"}
+                          onClick={() => onToggleExposed(nodeId, field.id)}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <line x1="12" y1="17" x2="12" y2="22" />
+                            <path d="M5 17h14l-1.4-1.4A2 2 0 0 1 17 14.2V9a5 5 0 0 0-10 0v5.2a2 2 0 0 1-.6 1.4L5 17z" />
+                          </svg>
+                        </button>
+                      )}
                       {field.kind === "number" && (
                         <DragNumberInput
                           value={toDisplayUnit(Number(params[field.id]) || 0, field.degrees, field.percent)}

@@ -839,6 +839,20 @@ function MainEditor() {
     }, `${nodeIdToUpdate}:${paramId}`);
   };
 
+  const onToggleExposed = useCallback(
+    (nodeId: string, paramId: string) => {
+      setGraphWithHistory((prevGraph) => {
+        const existing = prevGraph.exposedParams ?? [];
+        const already = existing.some((e) => e.nodeId === nodeId && e.paramId === paramId);
+        const next = already
+          ? existing.filter((e) => !(e.nodeId === nodeId && e.paramId === paramId))
+          : [...existing, { nodeId, paramId }];
+        return { ...prevGraph, exposedParams: next };
+      }, `exposeToggle:${nodeId}:${paramId}`);
+    },
+    [setGraphWithHistory],
+  );
+
   // Tab toggles the selected object's own Visible param — only while the
   // mouse is over the node graph canvas (isGraphZone), since the 3D
   // viewport already binds plain Tab to its own UI-overlay toggle (see
@@ -1552,6 +1566,11 @@ function MainEditor() {
           suspended={isExporting}
           viewMode={viewMode}
           onCycleViewMode={cycleViewMode}
+          keyframes={graph.keyframes}
+          keyframesEnabled={keyframesEnabled}
+          evaluatedResults={evaluatedResults}
+          onParamChange={onParamChange}
+          onUnpinParam={onToggleExposed}
         />
         {needsTransformHint && (
           <div className="viewport-hint">Wire a Transform node into this object's Matrix to move it</div>
@@ -1590,6 +1609,10 @@ function MainEditor() {
           onToggleKeyframe={onToggleKeyframe}
           onAction={onParamAction}
           connectedSockets={connectedSocketIds(graph, selectedInstance.id)}
+          exposedKeys={
+            new Set((graph.exposedParams ?? []).filter((e) => e.nodeId === selectedInstance.id).map((e) => e.paramId))
+          }
+          onToggleExposed={onToggleExposed}
         />
       )}
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>

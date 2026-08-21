@@ -45,9 +45,11 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { createMotionBlur } from "./motionBlur";
 import { PostProcessConfig } from "../graph/nodes/postprocessing";
-import { Graph, NodeRegistry } from "../graph/types";
+import { Graph, KeyframeStore, NodeRegistry } from "../graph/types";
+import { isViewportZone, setInputZone } from "../graph/inputZoneStore";
 import { isTauri } from "../ipc";
 import type { PreviewCameraPose } from "../ipc";
+import { ViewportParamHUD } from "../../windows/ViewportParamHUD";
 import "./viewport.css";
 
 // HUD elements are CSS/DOM overlays, which video export (which captures the
@@ -327,6 +329,12 @@ interface ViewportProps {
    * frame has been drawn.
    */
   exportHandleRef?: MutableRefObject<ViewportExportHandle | null>;
+  /** Editor-only: the pinned viewport param HUD — see ViewportParamHUD. Not shown in outputMode. */
+  keyframes?: KeyframeStore;
+  keyframesEnabled?: boolean;
+  evaluatedResults?: EvalResult | null;
+  onParamChange?: (paramId: string, value: unknown, targetNodeId?: string) => void;
+  onUnpinParam?: (nodeId: string, paramId: string) => void;
 }
 
 export interface ViewportExportHandle {
@@ -356,6 +364,11 @@ export function Viewport({
   isPlaying = true,
   exportHandleRef,
   onHubChange,
+  keyframes,
+  keyframesEnabled = true,
+  evaluatedResults = null,
+  onParamChange,
+  onUnpinParam,
 }: ViewportProps) {
   const [showUiOverlay, setShowUiOverlay] = useState(true);
   const showUiOverlayRef = useRef(showUiOverlay);
@@ -504,6 +517,10 @@ export function Viewport({
   /** Which side each axis button last snapped to, so clicking it again flips to the opposite view (Left <-> Right, and so on). */
   const axisSideRef = useRef<Record<"x" | "y" | "z", 1 | -1>>({ x: -1, y: 1, z: 1 });
   const resetSimulationRef = useRef<() => void>(() => {});
+  /** Snaps the orbit target + distance to frame a given node's object — see the selectedNodeId auto-focus effect below. */
+  const focusOnNodeRef = useRef<(nodeId: string) => void>(() => {});
+  /** Refreshed every tick() with that frame's evaluation results, so the focus effect (which runs on React's own schedule, not the render loop) can look up whatever a given node's own evaluate() produced — see focusOnNodeRef. */
+  const latestResultsRef = useRef<EvalResult | null>(null);
   const selectedNodeIdRef = useRef(selectedNodeId);
   selectedNodeIdRef.current = selectedNodeId;
   const onSelectNodeRef = useRef(onSelectNode);
@@ -554,7 +571,11 @@ export function Viewport({
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTauri() ? 2 : 1.5));
     renderer.autoClear = false;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // PCFSoftShadowMap is deprecated as of three r180 and three itself
+    // silently falls back to PCFShadowMap (with a console warning every
+    // renderer construction) — asking for it directly gets the exact same
+    // shadows with no warning.
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     host.appendChild(renderer.domElement);
 
     // Composite canvas for video export: the WebGL frame + the 2D HUD overlay,
@@ -656,6 +677,57 @@ export function Viewport({
       setIsViewLocked(false);
       isAxisViewRef.current = false;
       setIsAxisView(false);
+    };
+
+    /**
+     * Frames a node's object: pans the orbit target to its bounding-sphere
+     * center and dollies to a distance that fits it comfortably, keeping the
+     * current viewing *direction* (same reasoning as setAxisViewRef above —
+     * reframe what's already being looked at, don't reset the angle).
+     * Damping (already enabled on `controls`) smooths the jump over the next
+     * few frames on its own; no manual animation needed.
+     */
+    focusOnNodeRef.current = (nodeId: string) => {
+      // Not every node with a selectable transform is a scene *root* (most
+      // aren't — a Box feeding a Render is one link in a chain, not an entry
+      // in sceneRoots' output map), so this reads the node's own evaluate()
+      // record instead and takes whichever output happens to be an
+      // Object3D — the one thing every geometry/light/camera/Empty node's
+      // result has in common, regardless of which key it's under.
+      const nodeResult = latestResultsRef.current?.get(nodeId);
+      const object = nodeResult && (Object.values(nodeResult).find((v) => v instanceof THREE.Object3D) as THREE.Object3D | undefined);
+      if (!object) return;
+
+      const box = new THREE.Box3().setFromObject(object);
+      const center = box.isEmpty() ? object.getWorldPosition(new THREE.Vector3()) : box.getCenter(new THREE.Vector3());
+      const radius = box.isEmpty() ? 0 : box.getSize(new THREE.Vector3()).length() / 2;
+      const comfortableRadius = Math.max(radius, 0.75);
+
+      const direction = activeCamera.position.clone().sub(controls.target).normalize();
+      if (direction.lengthSq() === 0) direction.set(0.6, 0.6, 1).normalize();
+
+      const fovRad = THREE.MathUtils.degToRad(perspectiveCamera.fov);
+      const distance = (comfortableRadius / Math.sin(fovRad / 2)) * 1.4;
+
+      perspectiveCamera.position.copy(center).addScaledVector(direction, distance);
+      perspectiveCamera.lookAt(center);
+      orthographicCamera.position.copy(center).addScaledVector(direction, distance);
+      orthographicCamera.lookAt(center);
+
+      if (activeCamera === orthographicCamera) {
+        const { clientWidth, clientHeight } = host;
+        const aspect = clientWidth && clientHeight ? clientWidth / clientHeight : 1;
+        const halfHeight = Math.tan(fovRad / 2) * distance;
+        const halfWidth = halfHeight * aspect;
+        orthographicCamera.left = -halfWidth;
+        orthographicCamera.right = halfWidth;
+        orthographicCamera.top = halfHeight;
+        orthographicCamera.bottom = -halfHeight;
+        orthographicCamera.updateProjectionMatrix();
+      }
+
+      controls.target.copy(center);
+      controls.update();
     };
 
     // While the view is locked, orbit is disabled so the user can work
@@ -1337,10 +1409,22 @@ export function Viewport({
     }
 
     function tick() {
-      // Frozen while another viewport is capturing an export (see the
-      // `suspended` prop). Keep the rAF alive so the pane picks straight back
-      // up when the export finishes, but touch nothing in between.
+      // Frozen while this pane is hidden (SplitViewport keeps every pane
+      // mounted now rather than unmounting on a view-mode switch — see its
+      // own comment — so this can stay true for as long as the operator is
+      // just looking at the graph or the other pane) or another viewport is
+      // capturing an export. Keep the rAF alive so the pane picks straight
+      // back up once visible again, but touch nothing else in between —
+      // except re-anchoring the clock epoch every suspended frame, the same
+      // reason the paused branch below does it: epochMs is what `time`/`step`
+      // are computed *from* on the next real tick, and if it's left pointing
+      // at whenever playback last started, resuming after a long suspension
+      // computes step from every second that passed while hidden, backlog
+      // included — the exact clock-jump bug already fixed for pause,
+      // reachable a second way now that suspension can last minutes instead
+      // of one export's worth of frames.
       if (suspendedRef.current) {
+        clock = { epochMs: Date.now() - clock.time * 1000, step: clock.step, time: clock.time };
         frameId = requestAnimationFrame(tick);
         return;
       }
@@ -1360,7 +1444,21 @@ export function Viewport({
       } else if (isPlayingRef.current) {
         clock = tickClock(clock, Date.now());
       } else {
-        clock = { ...clock, step: 0 };
+        // Freeze at the step matching the already-frozen `time` — NOT 0.
+        // Forcing step to 0 (the previous behavior here) reads as "the
+        // clock just jumped backward in time" to anything that compares
+        // steps monotonically, GPUComputationRenderer particle sims chief
+        // among them: particleRuntime.ts's `rewound` check
+        // (currentStep < sim.lastSteppedStep) fires on literally every
+        // pause once playback has advanced past step 0, tearing down and
+        // rebuilding the whole simulation from its staggered-fresh-start
+        // state — which is what actually produced the reported burst on
+        // resume, not (only) the catch-up cap. Re-anchoring epochMs here
+        // too keeps wall-clock time from accruing underneath the pause, so
+        // tickClock's next call on resume continues smoothly from this same
+        // step instead of computing one from everything elapsed since
+        // playback originally started.
+        clock = { epochMs: Date.now() - clock.time * 1000, step: Math.round(clock.time / STEP_SECONDS), time: clock.time };
       }
 
       // Suppress the graph-driven matrix overwrite for exactly the mesh the
@@ -1413,6 +1511,7 @@ export function Viewport({
         return;
       }
       latestResults = results;
+      latestResultsRef.current = results;
       onEvaluatedResultsRef.current?.(results);
 
       // Evaluate and sync ALL 3D Lights & Light Helpers in the scene (standalone or array instances)
@@ -1577,13 +1676,21 @@ export function Viewport({
         setHubElements(collectedHub);
       }
 
-      if (cameraResult && typeof cameraResult.projectionType === "string") {
+      const shouldDriveCamera = outputMode || isCameraViewRef.current;
+      // Only sync the ortho/perspective toggle to the active Camera node's
+      // own projectionType while something is actually looking through that
+      // camera (output window, or the editor's camera-preview pane) — same
+      // gate as calibrationMatrix below. Ungated, this ran on every frame
+      // regardless of view mode: a graph with an active perspective Camera
+      // node fought the free-orbit editor's own ortho toggle and axis-view
+      // snap (Numpad/X/Y/Z), reverting them to perspective the instant they
+      // were set, even though nothing was rendering through that camera.
+      if (shouldDriveCamera && cameraResult && typeof cameraResult.projectionType === "string") {
         const wantsOrtho = cameraResult.projectionType === "orthographic";
         if (wantsOrtho !== isOrthographicRef.current) {
           setIsOrthographic(wantsOrtho);
         }
       }
-      const shouldDriveCamera = outputMode || isCameraViewRef.current;
       const calibrationMatrix =
         shouldDriveCamera && cameraResult?.matrix instanceof THREE.Matrix4 ? cameraResult.matrix as THREE.Matrix4 : null;
 
@@ -1941,7 +2048,7 @@ export function Viewport({
       // frustums / Light target helpers). Hidden in the output window *and* in
       // the editor's camera view, so a camera isn't rendered into the film and
       // the "look through camera" preview matches exactly what gets recorded.
-      const hideSceneHelpers = outputMode || isCameraViewRef.current;
+      const hideSceneHelpers = outputMode || isCameraViewRef.current || !showUiOverlayRef.current;
       scene.traverse((obj) => {
         if (obj.userData?.isHelper || obj instanceof THREE.AxesHelper || obj instanceof THREE.CameraHelper) {
           obj.visible = !hideSceneHelpers;
@@ -2224,8 +2331,31 @@ export function Viewport({
     };
   }, [epochMs, outputMode]);
 
+  // "F" frames the selected object — only while the mouse is actually over
+  // this pane (its own "F" binding lives in GraphEditor.tsx for the canvas).
+  useEffect(() => {
+    if (outputMode) return;
+    const handleFrameKey = (e: KeyboardEvent) => {
+      if (!isViewportZone() || e.key.toLowerCase() !== "f" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const activeEl = document.activeElement;
+      const isInput =
+        activeEl &&
+        (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA" || (activeEl as HTMLElement).isContentEditable);
+      if (isInput || !selectedNodeIdRef.current) return;
+      e.preventDefault();
+      focusOnNodeRef.current(selectedNodeIdRef.current);
+    };
+    window.addEventListener("keydown", handleFrameKey);
+    return () => window.removeEventListener("keydown", handleFrameKey);
+  }, [outputMode]);
+
   return (
-    <div className="viewport-container" ref={hostRef}>
+    <div
+      className="viewport-container"
+      ref={hostRef}
+      onMouseEnter={outputMode ? undefined : () => setInputZone("viewport")}
+      onMouseLeave={outputMode ? undefined : () => setInputZone(null)}
+    >
       {/* Rectangular Marquee Selection Overlay (Cmd+Drag) */}
       {!outputMode && marqueeBox && (
         <div
@@ -2478,6 +2608,25 @@ export function Viewport({
             </div>
           )}
         </div>
+      )}
+
+      {/* Pinned params HUD — the editor's own free-orbit pane only, never the
+          output/camera-preview pane, so it lives here rather than as an
+          App.tsx-level overlay: this is the one place naturally scoped to
+          just that pane's bounds (absolute within .viewport-container) and
+          naturally unmounted whenever this pane isn't on screen at all
+          (full-canvas Graph view). */}
+      {!outputMode && onParamChange && onUnpinParam && (graph.exposedParams?.length ?? 0) > 0 && (
+        <ViewportParamHUD
+          graph={graph}
+          registry={registry}
+          evaluatedResults={evaluatedResults}
+          keyframes={keyframes}
+          currentFrame={currentFrame}
+          keyframesEnabled={keyframesEnabled}
+          onChange={onParamChange}
+          onUnpin={onUnpinParam}
+        />
       )}
 
       {/* 2D HUD overlay — shown over the camera view whenever a render node

@@ -414,11 +414,17 @@ const VELOCITY_SHADER = /* glsl */ `
 interface Simulation {
   gpuCompute: GPUComputationRenderer;
   /**
-   * The renderer the GPUComputationRenderer was built against. Its render
-   * targets live in *that* WebGL context, so a second viewport (the output
-   * window, or the offscreen export viewport) reading them would sample an
-   * empty texture. Rebuilding when the renderer changes hands the sim to
-   * whoever is evaluating now instead of silently rendering nothing.
+   * The renderer this particular Simulation's GPUComputationRenderer was
+   * built against — its render targets live in *that* WebGL context. Kept on
+   * the record mostly for the assertion in getOrCreateSimulation now (the
+   * cache is keyed by renderer, see simCache below, so this should always
+   * already match whatever's passed in); historically, before that keying
+   * existed, only one Simulation per node existed at all, so a second
+   * viewport evaluating the same graph (split mode's two simultaneously
+   * live panes, chief culprit) fought over ownership of it every frame —
+   * neither ever got far enough into stepsSince's catch-up window to
+   * actually advance, so the particles it drove sat frozen at their
+   * initial spawn state the whole time both panes were live.
    */
   renderer: THREE.WebGLRenderer;
   positionVar: Variable;
@@ -437,9 +443,19 @@ interface Simulation {
   seedTexture?: THREE.DataTexture;
 }
 
-const simCache = createNodeCache<Simulation>((s) => {
-  s.gpuCompute.dispose();
-  s.seedTexture?.dispose();
+// One Simulation *per renderer* per node, not one shared across whichever
+// renderer last asked — SplitViewport now keeps every pane's Viewport (and
+// its own WebGLRenderer) mounted and independently ticking for as long as
+// that pane is visible, so two panes showing the same particle node (split
+// mode's whole reason to exist) are both live at once. A single shared slot
+// meant each pane's tick() saw the *other* pane's renderer parked there and
+// rebuilt on top of it — every frame, from both sides — so neither ever
+// advanced past step 0.
+const simCache = createNodeCache<Map<THREE.WebGLRenderer, Simulation>>((perRenderer) => {
+  for (const s of perRenderer.values()) {
+    s.gpuCompute.dispose();
+    s.seedTexture?.dispose();
+  }
 });
 let warnedMissingRenderer = false;
 
@@ -549,7 +565,8 @@ function createSimulation(nodeId: string, renderer: THREE.WebGLRenderer, size: n
     lastSteppedStep: currentStep,
     simSeconds: currentStep * STEP_SECONDS,
   };
-  simCache.set(nodeId, sim);
+  // Caching is the caller's job now (see getOrCreateSimulation) — it owns
+  // the per-renderer slot this belongs in, not just the node id.
   return sim;
 }
 
@@ -615,19 +632,25 @@ export function getOrCreateSimulation(
   }
 
   const size = textureSizeFor(capacity);
-  let sim = simCache.get(nodeId);
+  let perRenderer = simCache.get(nodeId);
+  if (!perRenderer) {
+    perRenderer = new Map();
+    simCache.set(nodeId, perRenderer);
+  }
+  let sim = perRenderer.get(renderer);
   // A clock that jumped *backwards* — the timeline scrubbed back, or a video
   // export restarting at frame 0 after the preview already ran — can't be
   // caught up by stepping forward, and leaving the sim where it was made the
   // first exported frames show a simulation that is minutes old. Rebuilding
   // restarts it from the same deterministic initial state every time.
   const rewound = sim !== undefined && currentStep < sim.lastSteppedStep;
-  if (!sim || sim.size !== size || sim.renderer !== renderer || rewound) {
+  if (!sim || sim.size !== size || rewound) {
     if (sim) {
       sim.gpuCompute.dispose();
       sim.seedTexture?.dispose();
     }
     sim = createSimulation(nodeId, renderer, size, lifetime, currentStep);
+    perRenderer.set(renderer, sim);
   }
 
   const active = activeParticleCount(emitter.spawnRate, lifetime, size * size);
@@ -692,9 +715,11 @@ export function getOrCreateSimulation(
  * itself is torn down.
  */
 export function resetAllParticleSimulations(): void {
-  for (const sim of simCache.values()) {
-    sim.gpuCompute.dispose();
-    sim.seedTexture?.dispose();
+  for (const perRenderer of simCache.values()) {
+    for (const sim of perRenderer.values()) {
+      sim.gpuCompute.dispose();
+      sim.seedTexture?.dispose();
+    }
   }
   simCache.clear();
 }
@@ -723,10 +748,16 @@ interface ReadbackState {
   buffer: Float32Array;
 }
 
-const readbackCache = createNodeCache<ReadbackState>((s) => {
-  s.target.dispose();
-  s.quad.dispose();
-  s.material.dispose();
+// Per-renderer, same reasoning as simCache above — a WebGLRenderTarget reused
+// across two concurrently-live renderers (split mode's two panes) is at best
+// wasted cross-context state churn and at worst reads back whichever
+// renderer wrote to it last, not the one asking.
+const readbackCache = createNodeCache<Map<THREE.WebGLRenderer, ReadbackState>>((perRenderer) => {
+  for (const s of perRenderer.values()) {
+    s.target.dispose();
+    s.quad.dispose();
+    s.material.dispose();
+  }
 });
 
 /**
@@ -753,7 +784,12 @@ export function readPositionsSync(
   size: number,
   nodeId: string,
 ): Float32Array {
-  let state = readbackCache.get(nodeId);
+  let perRenderer = readbackCache.get(nodeId);
+  if (!perRenderer) {
+    perRenderer = new Map();
+    readbackCache.set(nodeId, perRenderer);
+  }
+  let state = perRenderer.get(renderer);
   if (!state || state.size !== size) {
     if (state) {
       state.target.dispose();
@@ -774,7 +810,7 @@ export function readPositionsSync(
     });
     const quad = new FullScreenQuad(material);
     state = { target, quad, material, size, buffer: new Float32Array(size * size * 4) };
-    readbackCache.set(nodeId, state);
+    perRenderer.set(renderer, state);
   }
 
   state.material.uniforms.tex.value = texture;

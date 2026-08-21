@@ -63,6 +63,9 @@ function cleanGraph(graph: Graph): Graph {
     })),
     keyframes: graph.keyframes ? JSON.parse(JSON.stringify(graph.keyframes)) : {},
     markers: Array.isArray(graph.markers) ? [...graph.markers] : [],
+    exposedParams: Array.isArray(graph.exposedParams)
+      ? graph.exposedParams.map((e) => ({ nodeId: e.nodeId, paramId: e.paramId, ...(e.label ? { label: e.label } : {}) }))
+      : [],
   };
 }
 
@@ -127,7 +130,10 @@ export function deserializeGraph(jsonString: string, registry: NodeRegistry = DE
   return adoptGraph(data, registry);
 }
 
-function adoptGraph(data: { nodes: unknown[]; connections: unknown[]; keyframes?: unknown; markers?: unknown }, registry: NodeRegistry): Graph {
+function adoptGraph(
+  data: { nodes: unknown[]; connections: unknown[]; keyframes?: unknown; markers?: unknown; exposedParams?: unknown },
+  registry: NodeRegistry,
+): Graph {
   // Sockets are a public surface — every saved file references them by id —
   // so a file outlives any socket that gets retired (the Camera's unused
   // geometry input, for one). The evaluator ignores a connection to a socket
@@ -141,6 +147,7 @@ function adoptGraph(data: { nodes: unknown[]; connections: unknown[]; keyframes?
       connections: data.connections as Graph["connections"],
       keyframes: data.keyframes && typeof data.keyframes === "object" ? (data.keyframes as Graph["keyframes"]) : {},
       markers: Array.isArray(data.markers) ? (data.markers as number[]) : [],
+      exposedParams: Array.isArray(data.exposedParams) ? (data.exposedParams as Graph["exposedParams"]) : [],
     },
     registry,
   );

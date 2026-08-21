@@ -25,7 +25,7 @@ import { findCompatibleSocket, segmentIntersectsRect } from "../shared/graph/ins
 import { isGraphZone, setInputZone } from "../shared/graph/inputZoneStore";
 import { randomId } from "../shared/randomId";
 import { SOCKET_COLOR } from "../shared/graph/sockets";
-import { Connection, Graph, KeyframeStore, NodeInstance, NodeRegistry } from "../shared/graph/types";
+import { Connection, ExposedParamRef, Graph, KeyframeStore, NodeInstance, NodeRegistry } from "../shared/graph/types";
 import { GraphNode, GraphNodeData } from "./GraphNode";
 import { NodePalette } from "./NodePalette";
 import { QuickAddToolbar } from "./QuickAddToolbar";
@@ -158,6 +158,7 @@ function toGraph(
   flowEdges: Edge[],
   existingKeyframes?: KeyframeStore,
   existingMarkers?: number[],
+  existingExposedParams?: ExposedParamRef[],
 ): Graph {
   const flowNodeIds = new Set(flowNodes.map((f) => f.id));
   const nodes = baseNodes
@@ -185,7 +186,9 @@ function toGraph(
     }
   }
 
-  return { nodes, connections, keyframes, markers: existingMarkers ?? [] };
+  const exposedParams = (existingExposedParams ?? []).filter((e) => flowNodeIds.has(e.nodeId));
+
+  return { nodes, connections, keyframes, markers: existingMarkers ?? [], exposedParams };
 }
 
 interface GraphEditorProps {
@@ -306,7 +309,7 @@ function GraphEditorContent({
 
   const commit = useCallback(
     (nextNodes: Node<GraphNodeData>[], nextEdges: Edge[]) => {
-      onGraphChange?.(toGraph(graph.nodes, nextNodes, nextEdges, graph.keyframes, graph.markers));
+      onGraphChange?.(toGraph(graph.nodes, nextNodes, nextEdges, graph.keyframes, graph.markers, graph.exposedParams));
     },
     [graph.nodes, graph.keyframes, graph.markers, onGraphChange],
   );
@@ -365,7 +368,7 @@ function GraphEditorContent({
       const refreshedNodes = refreshDynamicSockets(nextNodes, nextEdges, updatedGraphNodes, registry);
       setNodes(refreshedNodes);
       setEdges(nextEdges);
-      onGraphChange?.(toGraph(updatedGraphNodes, refreshedNodes, nextEdges, graph.keyframes, graph.markers));
+      onGraphChange?.(toGraph(updatedGraphNodes, refreshedNodes, nextEdges, graph.keyframes, graph.markers, graph.exposedParams));
     },
     [edges, graph.nodes, graph.keyframes, graph.markers, nodes, onGraphChange, registry, setEdges, setNodes],
   );
@@ -531,7 +534,7 @@ function GraphEditorContent({
 
         setNodes(nextNodes);
         setEdges(nextEdges);
-        onGraphChange?.(toGraph([...graph.nodes, instance], nextNodes, nextEdges, graph.keyframes, graph.markers));
+        onGraphChange?.(toGraph([...graph.nodes, instance], nextNodes, nextEdges, graph.keyframes, graph.markers, graph.exposedParams));
       }
     },
     [edges, graph, nodes, onGraphChange, registry, screenToFlowPosition, setEdges, setNodes],
@@ -607,7 +610,7 @@ function GraphEditorContent({
         const newPos = draggedMap.get(n.id);
         return newPos ? { ...n, position: { x: newPos.x, y: newPos.y } } : n;
       });
-      onGraphChange?.(toGraph(updatedNodes, nodes, edges, graph.keyframes, graph.markers));
+      onGraphChange?.(toGraph(updatedNodes, nodes, edges, graph.keyframes, graph.markers, graph.exposedParams));
     },
     [commit, edges, graph.keyframes, graph.markers, graph.nodes, nodes, onGraphChange, registry, setEdges, setNodes],
   );
@@ -788,7 +791,7 @@ function GraphEditorContent({
 
       setNodes(finalNodes);
       setEdges(nextEdges);
-      onGraphChange?.(toGraph([...graph.nodes, ...newInstances], finalNodes, nextEdges, graph.keyframes, graph.markers));
+      onGraphChange?.(toGraph([...graph.nodes, ...newInstances], finalNodes, nextEdges, graph.keyframes, graph.markers, graph.exposedParams));
     },
     [graph, nodes, edges, pendingWireConnection, onGraphChange, registry, setNodes, setEdges],
   );
@@ -1023,7 +1026,7 @@ function GraphEditorContent({
     setNodes,
   ]);
 
-  const { fitView } = useReactFlow();
+  const { fitView, setCenter } = useReactFlow();
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -1031,6 +1034,30 @@ function GraphEditorContent({
     }, 60);
     return () => clearTimeout(timer);
   }, [fitView]);
+
+  // "F" frames the selected node — only while the mouse is actually over
+  // this canvas, so pressing F with the cursor over the 3D viewport (its own
+  // "F" binding, see Viewport.tsx) doesn't also yank the graph view.
+  useEffect(() => {
+    const handleFrameKey = (e: KeyboardEvent) => {
+      if (!isGraphZone() || e.key.toLowerCase() !== "f" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const activeEl = document.activeElement;
+      const isInput =
+        activeEl &&
+        (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA" || (activeEl as HTMLElement).isContentEditable);
+      if (isInput || !selectedNodeId) return;
+
+      const node = graph.nodes.find((n) => n.id === selectedNodeId);
+      if (!node) return;
+      e.preventDefault();
+      setCenter(node.position.x + DEFAULT_NODE_WIDTH / 2, node.position.y + DEFAULT_NODE_HEIGHT / 2, {
+        zoom: 1.2,
+        duration: 400,
+      });
+    };
+    window.addEventListener("keydown", handleFrameKey);
+    return () => window.removeEventListener("keydown", handleFrameKey);
+  }, [selectedNodeId, graph.nodes, setCenter]);
 
   const paletteNodes = useMemo(() => [...registry.values()], [registry]);
 
@@ -1068,6 +1095,8 @@ function GraphEditorContent({
           deleteKeyCode={null}
           panOnDrag={[1, 2]}
           panOnScroll={false}
+          minZoom={0.05}
+          maxZoom={2}
           fitView
           fitViewOptions={{ padding: 0.25 }}
           colorMode="dark"

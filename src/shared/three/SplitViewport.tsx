@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { TransformPatch, Viewport } from "./Viewport";
-import { Graph, NodeRegistry } from "../graph/types";
+import { EvalResult } from "../graph/evaluate";
+import { Graph, KeyframeStore, NodeRegistry } from "../graph/types";
 import type { PreviewCameraPose } from "../ipc";
 
 /**
@@ -32,6 +33,12 @@ interface SplitViewportProps {
   suspended?: boolean;
   viewMode: SplitViewMode;
   onCycleViewMode: () => void;
+  /** Editor pane's pinned param HUD — see ViewportParamHUD. Not passed to the output/camera-preview pane. */
+  keyframes?: KeyframeStore;
+  keyframesEnabled?: boolean;
+  evaluatedResults?: EvalResult | null;
+  onParamChange?: (paramId: string, value: unknown, targetNodeId?: string) => void;
+  onUnpinParam?: (nodeId: string, paramId: string) => void;
 }
 
 export function SplitViewport({
@@ -52,6 +59,11 @@ export function SplitViewport({
   suspended = false,
   viewMode,
   onCycleViewMode: cycleMode,
+  keyframes,
+  keyframesEnabled,
+  evaluatedResults,
+  onParamChange,
+  onUnpinParam,
 }: SplitViewportProps) {
   const [splitPercent, setSplitPercent] = useState(50);
   const isDraggingRef = useRef(false);
@@ -97,40 +109,40 @@ export function SplitViewport({
     window.addEventListener("mouseup", onMouseUp);
   }, []);
 
-  if (viewMode === "graph") {
-    // App.tsx collapses this component's own wrapping div to 0 height for
-    // this mode — nothing to render here, and no Viewport mounted means no
-    // WebGL context (and its GPU memory) sitting idle behind the graph.
-    return null;
-  }
+  // Both panes are *always* mounted — never conditionally rendered per
+  // viewMode — and hidden/suspended instead of unmounted. Each Viewport owns
+  // a real WebGLRenderer plus, indirectly, every GPU-compute particle
+  // simulation running through it (see particleRuntime.ts): a simulation is
+  // keyed to the specific renderer it was built against, and rebuilds from
+  // scratch the instant that renderer changes. Mounting/unmounting Viewport
+  // on every Shift+Tab used to do exactly that on every mode switch —
+  // "graph" chief among them, since it used to render nothing at all — so a
+  // particle system silently reset and re-trickled-in (over its own
+  // Lifetime) *every time the operator looked away from the 3D pane*. Kept
+  // mounted, the same renderer (and the same running simulations) survives
+  // every mode switch; only visibility and `suspended` (which freezes the
+  // render loop without tearing anything down — see Viewport's own
+  // `suspended` handling) change.
+  //
+  // Primary pane covers "viewport" (free orbit, outputMode false) and
+  // "camera" (output preview, outputMode true) by itself, toggling props on
+  // the *same* mounted instance — exactly what already happened before this
+  // refactor for that transition specifically, which is why it never
+  // exhibited the particle-reset bug. It doubles as split mode's left/editor
+  // pane. Secondary pane exists only for split mode's right/output pane;
+  // kept mounted-but-hidden after its first use for the same reason.
+  const isGraph = viewMode === "graph";
+  const isSplit = viewMode === "split";
+  const isCamera = viewMode === "camera";
 
-  if (viewMode === "viewport" || viewMode === "camera") {
-    const outputMode = viewMode === "camera";
-    return (
-      <div id="split-viewport-container" style={{ width: "100%", height: "100%", position: "relative" }}>
-        <Viewport
-          suspended={suspended}
-          graph={graph}
-          registry={registry}
-          renderNodeId={renderNodeId}
-          epochMs={epochMs}
-          outputMode={outputMode}
-          selectedNodeId={selectedNodeId}
-          onSelectNode={onSelectNode}
-          onTransformChange={onTransformChange}
-          onTransformStart={onTransformStart}
-          onCameraChange={onCameraChange}
-          previewCameraPose={previewCameraPose}
-          isSplitView={false}
-          onToggleSplitView={cycleMode}
-          currentFrame={currentFrame}
-          onEvaluatedResults={onEvaluatedResults}
-          isPlaying={isPlaying}
-          onHubChange={onHubChange}
-        />
-      </div>
-    );
-  }
+  const primaryVisible = !isGraph;
+  const secondaryVisible = isSplit;
+  // The secondary pane only exists for split mode's right/output side, so an
+  // operator who never opens split mode should never pay for a second
+  // WebGLRenderer + GL context — mount it lazily on first use, same "keep
+  // mounted forever after" reasoning as the rest of this file once it does.
+  const everSplitRef = useRef(isSplit);
+  if (isSplit) everSplitRef.current = true;
 
   return (
     <div
@@ -144,30 +156,43 @@ export function SplitViewport({
         backgroundColor: "#090d16",
       }}
     >
-      {/* Left Pane: Editor Free View */}
-      <div style={{ width: `${splitPercent}%`, height: "100%", position: "relative", minWidth: 0 }}>
+      <div
+        style={{
+          width: isSplit ? `${splitPercent}%` : "100%",
+          height: "100%",
+          position: "relative",
+          minWidth: 0,
+          display: primaryVisible ? "block" : "none",
+        }}
+      >
         <Viewport
-          suspended={suspended}
+          suspended={suspended || !primaryVisible}
           graph={graph}
           registry={registry}
           renderNodeId={renderNodeId}
           epochMs={epochMs}
+          outputMode={isCamera}
           selectedNodeId={selectedNodeId}
           onSelectNode={onSelectNode}
           onTransformChange={onTransformChange}
           onTransformStart={onTransformStart}
           onCameraChange={onCameraChange}
           previewCameraPose={previewCameraPose}
-          isSplitView={true}
+          isSplitView={isSplit}
           onToggleSplitView={cycleMode}
           currentFrame={currentFrame}
           onEvaluatedResults={onEvaluatedResults}
           isPlaying={isPlaying}
           onHubChange={onHubChange}
+          keyframes={keyframes}
+          keyframesEnabled={keyframesEnabled}
+          evaluatedResults={evaluatedResults}
+          onParamChange={onParamChange}
+          onUnpinParam={onUnpinParam}
         />
       </div>
 
-      {/* Draggable Splitter */}
+      {/* Draggable Splitter — only meaningful (and visible) in split mode */}
       <div
         onMouseDown={handleMouseDown}
         style={{
@@ -177,26 +202,41 @@ export function SplitViewport({
           backgroundColor: "#000000",
           zIndex: 20,
           flexShrink: 0,
+          display: isSplit ? "block" : "none",
         }}
       />
 
-      {/* Right Pane: Active Camera View / Output Preview */}
-      <div style={{ width: `${100 - splitPercent}%`, height: "100%", position: "relative", minWidth: 0 }}>
-        <Viewport
-          suspended={suspended}
-          graph={graph}
-          registry={registry}
-          renderNodeId={renderNodeId}
-          epochMs={epochMs}
-          outputMode={true}
-          selectedNodeId={selectedNodeId}
-          onSelectNode={onSelectNode}
-          previewCameraPose={previewCameraPose}
-          currentFrame={currentFrame}
-          onEvaluatedResults={onEvaluatedResults}
-          isPlaying={isPlaying}
-          onHubChange={onHubChange}
-        />
+      <div
+        style={{
+          width: isSplit ? `${100 - splitPercent}%` : "100%",
+          height: "100%",
+          position: "relative",
+          minWidth: 0,
+          display: secondaryVisible ? "block" : "none",
+        }}
+      >
+        {everSplitRef.current && (
+          <Viewport
+            suspended={suspended || !secondaryVisible}
+            graph={graph}
+            registry={registry}
+            renderNodeId={renderNodeId}
+            epochMs={epochMs}
+            outputMode={true}
+            selectedNodeId={selectedNodeId}
+            onSelectNode={onSelectNode}
+            previewCameraPose={previewCameraPose}
+            currentFrame={currentFrame}
+            onEvaluatedResults={onEvaluatedResults}
+            isPlaying={isPlaying}
+            onHubChange={onHubChange}
+            keyframes={keyframes}
+            keyframesEnabled={keyframesEnabled}
+            evaluatedResults={evaluatedResults}
+            onParamChange={onParamChange}
+            onUnpinParam={onUnpinParam}
+          />
+        )}
       </div>
     </div>
   );
