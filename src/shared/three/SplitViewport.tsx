@@ -3,6 +3,16 @@ import { TransformPatch, Viewport } from "./Viewport";
 import { Graph, NodeRegistry } from "../graph/types";
 import type { PreviewCameraPose } from "../ipc";
 
+/**
+ * Shift+Tab cycles: viewport (free orbit) -> split (editor + camera preview)
+ * -> full camera view -> full-canvas graph (no 3D pane at all) -> viewport.
+ * Controlled from App.tsx, not owned here — "graph" unmounts every Viewport
+ * this component would render, so the App.tsx div wrapping SplitViewport is
+ * what actually has to react to it (collapsing to 0 height), and the
+ * keyboard shortcut has to live somewhere that stays mounted regardless.
+ */
+export type SplitViewMode = "viewport" | "split" | "camera" | "graph";
+
 interface SplitViewportProps {
   graph: Graph;
   registry: NodeRegistry;
@@ -20,6 +30,8 @@ interface SplitViewportProps {
   onHubChange?: (nodeId: string, patch: Partial<{ x: number; y: number; rotation: number; scale: number }>) => void;
   /** Freezes both panes while a video export runs — see Viewport's `suspended`. */
   suspended?: boolean;
+  viewMode: SplitViewMode;
+  onCycleViewMode: () => void;
 }
 
 export function SplitViewport({
@@ -38,14 +50,9 @@ export function SplitViewport({
   isPlaying,
   onHubChange,
   suspended = false,
+  viewMode,
+  onCycleViewMode: cycleMode,
 }: SplitViewportProps) {
-  // Shift+Tab cycles the layout: viewport (free orbit) -> split (editor +
-  // camera preview) -> full camera view -> viewport -> ...
-  type ViewMode = "viewport" | "split" | "camera";
-  const [viewMode, setViewMode] = useState<ViewMode>("viewport");
-  const cycleMode = useCallback(() => {
-    setViewMode((m) => (m === "viewport" ? "split" : m === "split" ? "camera" : "viewport"));
-  }, []);
   const [splitPercent, setSplitPercent] = useState(50);
   const isDraggingRef = useRef(false);
   // Held so an unmount while the splitter is pressed can remove the global
@@ -89,6 +96,13 @@ export function SplitViewport({
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
   }, []);
+
+  if (viewMode === "graph") {
+    // App.tsx collapses this component's own wrapping div to 0 height for
+    // this mode — nothing to render here, and no Viewport mounted means no
+    // WebGL context (and its GPU memory) sitting idle behind the graph.
+    return null;
+  }
 
   if (viewMode === "viewport" || viewMode === "camera") {
     const outputMode = viewMode === "camera";

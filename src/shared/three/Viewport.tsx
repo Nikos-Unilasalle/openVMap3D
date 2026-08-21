@@ -426,8 +426,6 @@ export function Viewport({
 
   const [marqueeBox, setMarqueeBox] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
 
-  const onToggleSplitViewRef = useRef(onToggleSplitView);
-  onToggleSplitViewRef.current = onToggleSplitView;
   const snapSelectedCameraToEditorRef = useRef<() => void>(() => {});
   const cameraGuideRef = useRef<HTMLDivElement>(null);
 
@@ -480,13 +478,13 @@ export function Viewport({
           (activeEl as HTMLElement).isContentEditable);
       if (isInput) return;
 
-      if (e.key === "Tab" || e.code === "Tab") {
+      // Plain Tab only — Shift+Tab (cycling Viewport/Split/Camera/Graph) is
+      // handled globally in App.tsx now, not here, since one of those four
+      // states (full-canvas Graph) unmounts every Viewport instance and a
+      // listener that lives inside one can't fire once none are mounted.
+      if ((e.key === "Tab" || e.code === "Tab") && !e.shiftKey) {
         e.preventDefault();
-        if (e.shiftKey) {
-          onToggleSplitViewRef.current?.();
-        } else {
-          setShowUiOverlay((prev) => !prev);
-        }
+        setShowUiOverlay((prev) => !prev);
       }
     }
 
@@ -2426,7 +2424,7 @@ export function Viewport({
                 color: isSplitView ? "#38bdf8" : "#cbd5e1",
               }}
               onClick={onToggleSplitView}
-              title="Cycle View: Viewport / Split / Camera (Shift+Tab)"
+              title="Cycle View: Viewport / Split / Camera / Full Canvas (Shift+Tab)"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3" y="3" width="18" height="18" rx="2" />

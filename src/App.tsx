@@ -37,7 +37,7 @@ import {
 import { broadcastGraph, maximizeMainWindow, PreviewCameraPose, startBroadcasting } from "./shared/ipc";
 import { exportVideo, mimeToExtension, saveVideoBlob } from "./shared/export/videoExport";
 import { TransformPatch, Viewport, ViewportExportHandle } from "./shared/three/Viewport";
-import { SplitViewport } from "./shared/three/SplitViewport";
+import { SplitViewport, SplitViewMode } from "./shared/three/SplitViewport";
 import "./shared/three/viewport.css";
 import { GIZMO_SELECTABLE_TYPES, resolveGizmoTarget } from "./shared/graph/transformLookup";
 import { CalibrationOverlay } from "./windows/CalibrationOverlay";
@@ -201,6 +201,12 @@ function MainEditor() {
   const [isTimelineDrawerOpen, setIsTimelineDrawerOpen] = useState(false);
   const [timelineDrawerHeight, setTimelineDrawerHeight] = useState(280);
   const [splitPercent, setSplitPercent] = useState(50);
+  // Shift+Tab cycle — see SplitViewport.tsx's SplitViewMode doc comment for
+  // why this lives here rather than inside SplitViewport itself.
+  const [viewMode, setViewMode] = useState<SplitViewMode>("viewport");
+  const cycleViewMode = useCallback(() => {
+    setViewMode((m) => (m === "viewport" ? "split" : m === "split" ? "camera" : m === "camera" ? "graph" : "viewport"));
+  }, []);
   const [currentFilename, setCurrentFilename] = useState(recovered?.filename ?? "project_v1.tsuji");
   const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
   const [editorKey, setEditorKey] = useState(0);
@@ -427,11 +433,17 @@ function MainEditor() {
       } else if (!isInput && (e.key === "t" || e.key === "T") && !isCmdOrCtrl && !isGraphZone()) {
         e.preventDefault();
         setIsTimelineDrawerOpen((prev) => !prev);
+      } else if (!isInput && (e.key === "Tab" || e.code === "Tab") && e.shiftKey) {
+        // Global on purpose: one of the four states (full-canvas Graph)
+        // unmounts every Viewport instance, so a listener living inside one
+        // (the old approach) couldn't fire once none were left mounted.
+        e.preventDefault();
+        cycleViewMode();
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [keyframesEnabled]);
+  }, [keyframesEnabled, cycleViewMode]);
 
   const onToggleKeyframe = useCallback(
     (nodeId: string, paramKey: string, frame: number, currentValue: any) => {
@@ -1522,7 +1534,7 @@ function MainEditor() {
           />
         </div>
       )}
-      <div style={{ height: `${splitPercent}%`, minHeight: 0, position: "relative" }}>
+      <div style={{ height: viewMode === "graph" ? "0%" : `${splitPercent}%`, minHeight: 0, position: "relative" }}>
         <SplitViewport
           graph={graph}
           registry={DEFAULT_REGISTRY}
@@ -1538,6 +1550,8 @@ function MainEditor() {
           isPlaying={isPlaying}
           onHubChange={handleHubChange}
           suspended={isExporting}
+          viewMode={viewMode}
+          onCycleViewMode={cycleViewMode}
         />
         {needsTransformHint && (
           <div className="viewport-hint">Wire a Transform node into this object's Matrix to move it</div>
