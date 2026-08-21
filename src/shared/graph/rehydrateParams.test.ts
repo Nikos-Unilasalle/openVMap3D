@@ -107,6 +107,29 @@ describe("rehydrateGraphParams", () => {
     expect(ramp.interpolation).toBe("linear");
   });
 
+  it("rehydrates a Color Ramp stop's color from a bare hex number — what THREE.Color.toJSON() (JSON.stringify's own hook) actually produces, not {r,g,b}", () => {
+    // This is the shape a *real* .tsuji save/load round-trip produces (see
+    // storage.ts's cleanGraph: JSON.parse(JSON.stringify(params))) — the
+    // {r,g,b} case above only covers the IPC broadcast path, which strips
+    // the prototype but not the shape. Missing this case meant every ramp
+    // color came back black after an actual save/load, not just IPC.
+    const graph: Graph = {
+      nodes: [
+        node("ramp2", COLOR_PALETTE_LIST_NODE.type, {
+          ramp: { stops: [{ position: 0, color: 0xff0000 }, { position: 1, color: 0x0000ff }], interpolation: "linear" },
+        }),
+      ],
+      connections: [],
+    };
+
+    const result = rehydrateGraphParams(graph, DEFAULT_REGISTRY);
+    const ramp = result.nodes[0].params.ramp as { stops: { position: number; color: unknown }[] };
+
+    expect(ramp.stops[0].color).toBeInstanceOf(THREE.Color);
+    expect((ramp.stops[0].color as THREE.Color).r).toBe(1);
+    expect((ramp.stops[1].color as THREE.Color).b).toBe(1);
+  });
+
   it("leaves an already-real Color Ramp untouched (no unnecessary object churn)", () => {
     const original = { stops: [{ position: 0, color: new THREE.Color(1, 0, 0) }], interpolation: "linear" as const };
     const graph: Graph = { nodes: [node("ramp1", COLOR_PALETTE_LIST_NODE.type, { ramp: original })], connections: [] };

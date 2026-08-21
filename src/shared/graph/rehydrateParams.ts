@@ -20,6 +20,21 @@ import { Graph, NodeRegistry } from "./types";
  * received value's shape, which would be ambiguous (a Vector3 and a
  * Quaternion look identical minus the `w`).
  */
+/**
+ * A THREE.Color's own `toJSON()` (which `JSON.stringify` calls automatically)
+ * returns its hex value as a plain *number* — `16711680`, not `{r,g,b}` — so
+ * a value that went through an actual JSON round-trip (this app's .tsuji
+ * save/load; IPC only strips the prototype, not the shape) is a number, not
+ * an object. Mirrors the top-level Color branch below, which already
+ * handled the number/string case — only the nested Color Ramp branch missed
+ * it, because it's a shape only Color Ramp's stops have.
+ */
+function parseColorValue(v: unknown): THREE.Color {
+  if (typeof v === "number" || typeof v === "string") return new THREE.Color(v);
+  const c = v as { r?: unknown; g?: unknown; b?: unknown } | undefined;
+  return new THREE.Color(Number(c?.r) || 0, Number(c?.g) || 0, Number(c?.b) || 0);
+}
+
 /** Structural check for a colorRamp.ts ColorStop — position/color don't survive JSON with their real types, so this can't check `instanceof` on color yet. */
 function isColorStopShape(v: unknown): v is { position: unknown; color: unknown } {
   return typeof v === "object" && v !== null && "position" in v && "color" in v;
@@ -72,12 +87,8 @@ export function rehydrateGraphParams(graph: Graph, registry: NodeRegistry): Grap
             changed = true;
           }
         } else if (defaultValue instanceof THREE.Color && !(value instanceof THREE.Color)) {
-          if (typeof value === "number" || typeof value === "string") {
-            params[key] = new THREE.Color(value);
-            changed = true;
-          } else if (typeof value === "object") {
-            const c = value as { r?: unknown; g?: unknown; b?: unknown };
-            params[key] = new THREE.Color(Number(c.r) || 0, Number(c.g) || 0, Number(c.b) || 0);
+          if (typeof value === "number" || typeof value === "string" || typeof value === "object") {
+            params[key] = parseColorValue(value);
             changed = true;
           }
         } else if (isColorRampShape(defaultValue) && typeof value === "object") {
@@ -91,8 +102,7 @@ export function rehydrateGraphParams(graph: Graph, registry: NodeRegistry): Grap
             const newStops = v.stops.map((stop) => {
               if (!isColorStopShape(stop) || stop.color instanceof THREE.Color) return stop;
               stopsChanged = true;
-              const c = stop.color as { r?: unknown; g?: unknown; b?: unknown };
-              return { ...stop, color: new THREE.Color(Number(c.r) || 0, Number(c.g) || 0, Number(c.b) || 0) };
+              return { ...stop, color: parseColorValue(stop.color) };
             });
             if (stopsChanged) {
               params[key] = { ...v, stops: newStops };
