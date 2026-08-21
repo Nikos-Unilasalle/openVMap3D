@@ -673,6 +673,63 @@ export const TEXTURE_PROCEDURAL_NODE: NodeDefinition = {
   },
 };
 
+interface MixTextureState {
+  texture?: THREE.CanvasTexture;
+  canvas?: HTMLCanvasElement;
+  aCanvas?: HTMLCanvasElement;
+  bCanvas?: HTMLCanvasElement;
+  signature?: string;
+}
+
+const mixTextureCache = createNodeCache<MixTextureState>((s) => s.texture?.dispose());
+
+function getMixState(nodeId: string): MixTextureState {
+  let state = mixTextureCache.get(nodeId);
+  if (!state) {
+    state = {};
+    mixTextureCache.set(nodeId, state);
+  }
+  return state;
+}
+
+/** Per-channel blend, 0..1 in, 0..1 out — same formulas as Blender's Mix Color node. */
+function blendChannel(mode: string, a: number, b: number): number {
+  switch (mode) {
+    case "add":
+      return a + b;
+    case "multiply":
+      return a * b;
+    case "screen":
+      return 1 - (1 - a) * (1 - b);
+    case "overlay":
+      return a < 0.5 ? 2 * a * b : 1 - 2 * (1 - a) * (1 - b);
+    case "subtract":
+      return a - b;
+    case "difference":
+      return Math.abs(a - b);
+    case "darken":
+      return Math.min(a, b);
+    case "lighten":
+      return Math.max(a, b);
+    default: // mix
+      return b;
+  }
+}
+
+/** Draws `source` (any drawable texture image, or flat white if absent) into `canvas` at `resolution`. */
+function drawSourceToCanvas(canvas: HTMLCanvasElement, source: THREE.Texture | null, resolution: number): void {
+  canvas.width = resolution;
+  canvas.height = resolution;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  if (source && isDrawable(source.image)) {
+    ctx.drawImage(source.image as CanvasImageSource, 0, 0, resolution, resolution);
+  } else {
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, resolution, resolution);
+  }
+}
+
 interface ToNormalState {
   texture?: THREE.CanvasTexture;
   canvas?: HTMLCanvasElement;
@@ -776,5 +833,118 @@ export const TEXTURE_TO_NORMAL_NODE: NodeDefinition = {
     }
 
     return { normal: state.texture };
+  },
+};
+
+/**
+ * Mix Texture node — blends two textures per-pixel by a factor (scalar or a
+ * third texture's luminance as a mask), same blend modes as Blender's Mix
+ * Color node. A missing A or B input reads as flat white, so wiring only one
+ * side still previews something instead of a blank/black result.
+ */
+export const TEXTURE_MIX_NODE: NodeDefinition = {
+  type: "texture/mix",
+  label: "Mix Texture",
+  category: "texture",
+  inputs: [
+    { id: "textureA", label: "Texture A", type: "texture" },
+    { id: "textureB", label: "Texture B", type: "texture" },
+    { id: "factor", label: "Factor", type: "value" },
+    { id: "factorTexture", label: "Factor (Texture)", type: "texture" },
+  ],
+  outputs: [{ id: "texture", label: "Texture", type: "texture" }],
+  defaultParams: {
+    blendMode: "mix",
+    factor: 0.5,
+    resolution: 256,
+  },
+  dynamicParamFields: () => [
+    {
+      id: "blendMode",
+      label: "Blend Mode",
+      kind: "select",
+      options: ["mix", "add", "multiply", "screen", "overlay", "subtract", "difference", "darken", "lighten"],
+    },
+    { id: "factor", label: "Factor (fallback)", kind: "number", step: 0.05 },
+    { id: "resolution", label: "Resolution (px)", kind: "number", step: 64 },
+  ],
+  evaluate: (inputs, params, ctx) => {
+    const state = getMixState(ctx.nodeId);
+    if (typeof document === "undefined") return { texture: null };
+
+    const sourceA = inputs.textureA instanceof THREE.Texture ? inputs.textureA : null;
+    const sourceB = inputs.textureB instanceof THREE.Texture ? inputs.textureB : null;
+    const factorTexture = inputs.factorTexture instanceof THREE.Texture ? inputs.factorTexture : null;
+    const blendMode = String(params.blendMode || "mix");
+    const factor = Math.max(0, Math.min(1, inputs.factor !== undefined ? Number(inputs.factor) : Number(params.factor) ?? 0.5));
+    const resolution = Math.max(16, Math.min(1024, Math.round(Number(params.resolution) || 256)));
+
+    const sig = [
+      blendMode,
+      factor,
+      resolution,
+      sourceA?.uuid ?? "",
+      sourceA?.version ?? 0,
+      sourceB?.uuid ?? "",
+      sourceB?.version ?? 0,
+      factorTexture?.uuid ?? "",
+      factorTexture?.version ?? 0,
+    ].join("|");
+
+    if (sig !== state.signature) {
+      state.signature = sig;
+      if (!state.aCanvas) state.aCanvas = document.createElement("canvas");
+      if (!state.bCanvas) state.bCanvas = document.createElement("canvas");
+      if (!state.canvas) state.canvas = document.createElement("canvas");
+
+      drawSourceToCanvas(state.aCanvas, sourceA, resolution);
+      drawSourceToCanvas(state.bCanvas, sourceB, resolution);
+
+      const aCtx = state.aCanvas.getContext("2d");
+      const bCtx = state.bCanvas.getContext("2d");
+      if (!aCtx || !bCtx) return { texture: state.texture ?? null };
+      const aData = aCtx.getImageData(0, 0, resolution, resolution).data;
+      const bData = bCtx.getImageData(0, 0, resolution, resolution).data;
+
+      let maskData: Uint8ClampedArray | null = null;
+      if (factorTexture) {
+        const maskCanvas = document.createElement("canvas");
+        drawSourceToCanvas(maskCanvas, factorTexture, resolution);
+        maskData = maskCanvas.getContext("2d")?.getImageData(0, 0, resolution, resolution).data ?? null;
+      }
+
+      const out = state.canvas;
+      out.width = resolution;
+      out.height = resolution;
+      const outCtx = out.getContext("2d");
+      if (!outCtx) return { texture: state.texture ?? null };
+      const outImg = outCtx.createImageData(resolution, resolution);
+      const outData = outImg.data;
+
+      for (let i = 0; i < outData.length; i += 4) {
+        const t = maskData ? (0.299 * maskData[i] + 0.587 * maskData[i + 1] + 0.114 * maskData[i + 2]) / 255 : factor;
+        for (let c = 0; c < 3; c++) {
+          const a = aData[i + c] / 255;
+          const b = bData[i + c] / 255;
+          const blended = blendChannel(blendMode, a, b);
+          const mixed = a + (blended - a) * t;
+          outData[i + c] = Math.round(Math.max(0, Math.min(1, mixed)) * 255);
+        }
+        outData[i + 3] = 255;
+      }
+      outCtx.putImageData(outImg, 0, 0);
+
+      if (!state.texture) {
+        state.texture = new THREE.CanvasTexture(out);
+        state.texture.wrapS = THREE.RepeatWrapping;
+        state.texture.wrapT = THREE.RepeatWrapping;
+        state.texture.colorSpace = THREE.SRGBColorSpace;
+      } else {
+        state.texture.image = out;
+        state.texture.needsUpdate = true;
+      }
+    }
+
+    return { texture: state.texture ?? null };
   },
 };
