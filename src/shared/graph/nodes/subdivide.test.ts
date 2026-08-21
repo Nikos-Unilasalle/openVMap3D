@@ -18,8 +18,12 @@ describe("SUBDIVIDE_NODE", () => {
 
     const mesh = res.geometry as THREE.Mesh;
     expect(mesh).toBeInstanceOf(THREE.Mesh);
-    expect(mesh.geometry.index!.count / 3).toBeGreaterThan(originalTris);
+    // Non-indexed now that UVs are carried through per-corner (see
+    // toBufferGeometryWithUV) — BoxGeometry ships UVs, so this is the path
+    // taken; triangle count is position count / 3 rather than index / 3.
+    expect(mesh.geometry.attributes.position.count / 3).toBeGreaterThan(originalTris);
     expect(mesh.geometry.attributes.normal).toBeDefined();
+    expect(mesh.geometry.attributes.uv).toBeDefined();
   });
 
   it("simple mode never moves a vertex, just densifies", () => {
@@ -41,7 +45,7 @@ describe("SUBDIVIDE_NODE", () => {
     const res = SUBDIVIDE_NODE.evaluate({ geometry: box }, { mode: "simple", levels: 0 }, CTX);
     const mesh = res.geometry as THREE.Mesh;
 
-    expect(mesh.geometry.index!.count / 3).toBe(originalTris);
+    expect(mesh.geometry.attributes.position.count / 3).toBe(originalTris);
   });
 
   it("returns the input untouched when nothing is wired in", () => {
@@ -82,6 +86,58 @@ describe("SUBDIVIDE_NODE", () => {
   });
 });
 
+describe("SUBDIVIDE_NODE preserves UVs", () => {
+  it("carries the Box's UV seams through instead of dropping them", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const srcUV = box.geometry.attributes.uv;
+
+    // 0 levels: no vertex-point smoothing to move corners off their exact
+    // source coordinates, so the box-corner lookup below finds them.
+    const res = SUBDIVIDE_NODE.evaluate({ geometry: box }, { mode: "catmull-clark", levels: 0 }, CTX);
+    const mesh = res.geometry as THREE.Mesh;
+    const uvAttr = mesh.geometry.attributes.uv;
+
+    expect(uvAttr).toBeDefined();
+    // UV range should stay within the source's own range (0..1 for a stock
+    // BoxGeometry) — a broken UV pass (e.g. accidentally zipping position-
+    // welded indices against UV-welded ones) tends to produce garbage/NaN
+    // values or wildly out-of-range coordinates, not just "wrong" ones.
+    for (let i = 0; i < uvAttr.count; i++) {
+      expect(uvAttr.getX(i)).toBeGreaterThanOrEqual(-1e-6);
+      expect(uvAttr.getX(i)).toBeLessThanOrEqual(1 + 1e-6);
+      expect(uvAttr.getY(i)).toBeGreaterThanOrEqual(-1e-6);
+      expect(uvAttr.getY(i)).toBeLessThanOrEqual(1 + 1e-6);
+    }
+
+    // The seam itself: two corners at the exact same 3D position but on
+    // different faces (different UV islands) must keep *different* UVs —
+    // that's the whole point of welding UVs separately from position.
+    const posAttr = mesh.geometry.attributes.position;
+    const cornersAtVertex: number[] = [];
+    for (let i = 0; i < posAttr.count; i++) {
+      if (posAttr.getX(i) > 0 && posAttr.getY(i) > 0 && posAttr.getZ(i) > 0) cornersAtVertex.push(i);
+    }
+    expect(cornersAtVertex.length).toBeGreaterThanOrEqual(2);
+    const uv0 = [uvAttr.getX(cornersAtVertex[0]), uvAttr.getY(cornersAtVertex[0])];
+    const uv1 = [uvAttr.getX(cornersAtVertex[1]), uvAttr.getY(cornersAtVertex[1])];
+    expect(uv0[0] !== uv1[0] || uv0[1] !== uv1[1]).toBe(true);
+
+    expect(srcUV).toBeDefined(); // sanity: BoxGeometry does ship UVs to begin with
+  });
+
+  it("falls back to no UVs (old behavior) when the source geometry has none", () => {
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute("position", new THREE.BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), 3));
+    const mesh = new THREE.Mesh(geom);
+
+    const res = SUBDIVIDE_NODE.evaluate({ geometry: mesh }, { mode: "simple", levels: 1 }, CTX);
+    const outMesh = res.geometry as THREE.Mesh;
+
+    expect(outMesh.geometry.attributes.uv).toBeUndefined();
+    expect(outMesh.geometry.index).not.toBeNull();
+  });
+});
+
 describe("SUBDIVIDE_NODE on unwelded primitives (Box, Disc, ...)", () => {
   /**
    * BoxGeometry gives each corner 3 separate position entries (one per
@@ -108,17 +164,39 @@ describe("SUBDIVIDE_NODE on unwelded primitives (Box, Disc, ...)", () => {
     expect(b.min.y).toBeGreaterThanOrEqual(-1 - 1e-6);
   });
 
-  it("weld makes adjacent Box faces share edges — an interior vertex has a full ring, not two isolated corners", () => {
+  it("weld makes adjacent Box faces share edges — normals come out smoothed/shared, not each face's own flat normal", () => {
+    // The output is intentionally non-indexed now (see toBufferGeometryWithUV
+    // — UVs need each triangle corner free to differ, so the final geometry
+    // can't share one index across corners with different UVs the way the
+    // *internal* position weld does). So this can no longer assert on output
+    // vertex *count* the way it used to; instead it asserts on the thing the
+    // weld actually exists to produce: two corners that used to be
+    // "different vertices, same position" (BoxGeometry gives every corner
+    // its own per-face normal) come out with the *same* smoothed normal,
+    // proving computeVertexNormals() ran on the welded/shared topology
+    // rather than each disconnected face island.
     const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
-    const before = box.geometry.attributes.position.count; // 24: unwelded, 4 per face × 6 faces
 
     const res = SUBDIVIDE_NODE.evaluate({ geometry: box }, { mode: "simple", levels: 0 }, CTX);
     const mesh = res.geometry as THREE.Mesh;
+    const posAttr = mesh.geometry.attributes.position;
+    const normalAttr = mesh.geometry.attributes.normal;
 
-    // Welded, a cube has 8 corners + 12 edge midpoints... but at 0 levels
-    // there's no subdivision yet, so this should simply be the welded
-    // vertex count: 8 corners, each now a single shared vertex.
-    expect(mesh.geometry.attributes.position.count).toBeLessThan(before);
-    expect(mesh.geometry.attributes.position.count).toBe(8);
+    // Find two output corners that land on the same box corner (0.5,0.5,0.5)
+    // — three faces meet there, each contributing its own unwelded corner.
+    const cornersAtVertex: number[] = [];
+    for (let i = 0; i < posAttr.count; i++) {
+      if (posAttr.getX(i) > 0 && posAttr.getY(i) > 0 && posAttr.getZ(i) > 0) cornersAtVertex.push(i);
+    }
+    expect(cornersAtVertex.length).toBeGreaterThanOrEqual(2);
+
+    const n0 = new THREE.Vector3().fromBufferAttribute(normalAttr, cornersAtVertex[0]);
+    const n1 = new THREE.Vector3().fromBufferAttribute(normalAttr, cornersAtVertex[1]);
+    expect(n0.x).toBeCloseTo(n1.x);
+    expect(n0.y).toBeCloseTo(n1.y);
+    expect(n0.z).toBeCloseTo(n1.z);
+    // A single face's own flat normal is axis-aligned (e.g. (1,0,0)) — the
+    // welded/averaged one at a corner where 3 faces meet is not.
+    expect(Math.abs(n0.x)).toBeLessThan(0.99);
   });
 });

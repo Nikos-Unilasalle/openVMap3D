@@ -45,9 +45,10 @@ function getState(nodeId: string): SubdivideState {
  *
  * `mergeVertices` itself hashes on *every* attribute present, so it
  * wouldn't merge those same-position-different-normal corners either — this
- * builds a position-only geometry first (this node drops normals/UVs after
- * subdividing regardless, see toBufferGeometry) so the weld runs on
- * coordinates alone.
+ * builds a position-only geometry first so the weld runs on coordinates
+ * alone. UVs get their own, separately-welded pass — see `toIndexedUVMesh` —
+ * since a Box's face corners need to stay split in UV-space exactly where
+ * they just got welded together here.
  */
 function toIndexedMesh(geometry: THREE.BufferGeometry): IndexedMesh | null {
   const posAttr = geometry.attributes.position;
@@ -72,12 +73,95 @@ function toBufferGeometry(mesh: IndexedMesh): THREE.BufferGeometry {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(mesh.positions, 3));
   geometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
-  // UVs and other attributes aren't carried through — subdividing them
-  // correctly needs the same face/edge/vertex-point treatment as position,
-  // and for Catmull-Clark that's real additional complexity for a modifier
-  // whose job is silhouette smoothing, not texture-mapped output. Dropped
-  // rather than left stale/mismatched-length.
   geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+/**
+ * Same weld-by-value trick as `toIndexedMesh`, but welding UV coordinates
+ * instead of positions — padded to (u, v, 0) so `mergeVertices` (which only
+ * knows how to hash a "position" attribute) can weld it unmodified. Two
+ * triangle corners become one UV-vertex iff they carry the *same* UV value,
+ * completely independent of whether they share a position-vertex — which is
+ * exactly what a Box's face-corner UV seams need: three corners at the same
+ * XYZ but three different UVs stay three separate UV-vertices here, even
+ * though `toIndexedMesh` welds them into one position-vertex.
+ *
+ * Reuses `geometry`'s own (unwelded) index buffer, not the position-welded
+ * one — see the correspondence note in `toBufferGeometryWithUV` for why that
+ * matters.
+ */
+function toIndexedUVMesh(geometry: THREE.BufferGeometry): IndexedMesh | null {
+  const uvAttr = geometry.attributes.uv as THREE.BufferAttribute | undefined;
+  if (!uvAttr) return null;
+
+  const padded = new Float32Array(uvAttr.count * 3);
+  for (let i = 0; i < uvAttr.count; i++) {
+    padded[i * 3] = uvAttr.getX(i);
+    padded[i * 3 + 1] = uvAttr.getY(i);
+    padded[i * 3 + 2] = 0;
+  }
+  const uvGeometry = new THREE.BufferGeometry();
+  uvGeometry.setAttribute("position", new THREE.BufferAttribute(padded, 3));
+  if (geometry.index) uvGeometry.setIndex(geometry.index.clone());
+  return toIndexedMesh(uvGeometry);
+}
+
+/**
+ * Zips a subdivided position mesh and an independently-subdivided UV mesh
+ * back into one renderable geometry, carrying real UVs through Catmull-Clark
+ * and Simple subdivision without the old "drop them" workaround.
+ *
+ * The zip works because `subdivide()` (both modes) is purely structural: the
+ * output face count and each output triangle's corner order are a function
+ * of the *input index topology* alone, never of the coordinate values being
+ * subdivided. `pos` and `uv` were built from the same source triangle list
+ * (`toIndexedUVMesh` reuses the source geometry's own unwelded index buffer,
+ * same as `toIndexedMesh`), so every subdivision level preserves that
+ * correspondence — output corner `i` means "the same mesh corner" in both,
+ * even though position-welding and UV-welding produced different vertex
+ * counts (a Box has 8 position-vertices but 24 UV-vertices, one per face
+ * corner). That lets this loop pull position+normal from one welded space
+ * and UV from a completely different one, per corner, with no shared index.
+ *
+ * Normals are computed on the *indexed* position mesh before flattening —
+ * flattening first would leave `computeVertexNormals()` nothing to average
+ * across (every corner already its own vertex), producing flat per-triangle
+ * normals instead of the smooth ones a Catmull-Clark surface should have.
+ */
+function toBufferGeometryWithUV(pos: IndexedMesh, uv: IndexedMesh): THREE.BufferGeometry | null {
+  if (pos.indices.length !== uv.indices.length) return null; // structural guarantee broken — bail to the no-UV path rather than zip garbage
+
+  const indexedGeom = new THREE.BufferGeometry();
+  indexedGeom.setAttribute("position", new THREE.BufferAttribute(pos.positions, 3));
+  indexedGeom.setIndex(new THREE.BufferAttribute(pos.indices, 1));
+  indexedGeom.computeVertexNormals();
+  const normalAttr = indexedGeom.attributes.normal as THREE.BufferAttribute;
+
+  const cornerCount = pos.indices.length;
+  const finalPositions = new Float32Array(cornerCount * 3);
+  const finalNormals = new Float32Array(cornerCount * 3);
+  const finalUVs = new Float32Array(cornerCount * 2);
+
+  for (let i = 0; i < cornerCount; i++) {
+    const pi = pos.indices[i];
+    const ui = uv.indices[i];
+    finalPositions[i * 3] = pos.positions[pi * 3];
+    finalPositions[i * 3 + 1] = pos.positions[pi * 3 + 1];
+    finalPositions[i * 3 + 2] = pos.positions[pi * 3 + 2];
+    finalNormals[i * 3] = normalAttr.getX(pi);
+    finalNormals[i * 3 + 1] = normalAttr.getY(pi);
+    finalNormals[i * 3 + 2] = normalAttr.getZ(pi);
+    finalUVs[i * 2] = uv.positions[ui * 3];
+    finalUVs[i * 2 + 1] = uv.positions[ui * 3 + 1];
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(finalPositions, 3));
+  geometry.setAttribute("normal", new THREE.BufferAttribute(finalNormals, 3));
+  geometry.setAttribute("uv", new THREE.BufferAttribute(finalUVs, 2));
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
   return geometry;
@@ -126,7 +210,7 @@ export const SUBDIVIDE_NODE: NodeDefinition = {
 
     const state = getState(ctx.nodeId);
 
-    const signature = `${mode}:${levels}:${srcGeom.attributes.position.count}:${srcGeom.index?.count ?? -1}`;
+    const signature = `${mode}:${levels}:${srcGeom.attributes.position.count}:${srcGeom.index?.count ?? -1}:${srcGeom.attributes.uv?.count ?? -1}`;
     if (state.mesh && state.lastSignature === signature) {
       // Topology unchanged since last run — skip re-subdividing, but the
       // source's pose still needs copying every call: an upstream animation
@@ -141,8 +225,11 @@ export const SUBDIVIDE_NODE: NodeDefinition = {
     const indexedMesh = toIndexedMesh(srcGeom);
     if (!indexedMesh) return primitiveOutputs(inputObj);
 
-    const result = runSubdivide(indexedMesh, mode, levels);
-    const geometry = toBufferGeometry(result);
+    const posResult = runSubdivide(indexedMesh, mode, levels);
+
+    const uvIndexedMesh = toIndexedUVMesh(srcGeom);
+    const uvResult = uvIndexedMesh ? runSubdivide(uvIndexedMesh, mode, levels) : null;
+    const geometry = (uvResult && toBufferGeometryWithUV(posResult, uvResult)) || toBufferGeometry(posResult);
 
     if (!state.mesh) {
       state.mesh = new THREE.Mesh(geometry, srcMesh.material);
