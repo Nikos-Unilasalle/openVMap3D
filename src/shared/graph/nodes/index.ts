@@ -70,6 +70,7 @@ import { CURVE_TO_LINE_NODE } from "./line";
 import { CURVES_TO_LINES_NODE } from "./curvesToLines";
 import { CURVES_FROM_POINT_LISTS_NODE } from "./curveFromPointLists";
 import { CURVE_SUBDIVIDE_NODE } from "./curveSubdivide";
+import { CURVE_TO_POINTS_NODE } from "./curveToPoints";
 import { LATTICE_DEFORM_NODE } from "./lattice";
 import { BOOLEAN_NODE } from "./boolean";
 import { SUBDIVIDE_NODE } from "./subdivide";
@@ -227,6 +228,7 @@ export const STARTER_NODES = [
   CURVES_TO_LINES_NODE,
   CURVES_FROM_POINT_LISTS_NODE,
   CURVE_SUBDIVIDE_NODE,
+  CURVE_TO_POINTS_NODE,
   LATTICE_DEFORM_NODE,
   BOOLEAN_NODE,
   SUBDIVIDE_NODE,
