@@ -1567,27 +1567,31 @@ function MainEditor() {
               onChange={onParamChange}
             />
           )}
-        {selectedInstance && selectedDef && (
-          <ParamPanel
-            nodeId={selectedInstance.id}
-            label={selectedDef.label}
-            category={selectedDef.category}
-            fields={
-              selectedDef.dynamicParamFields
-                ? selectedDef.dynamicParamFields(selectedInstance)
-                : (selectedDef.paramFields ?? [])
-            }
-            params={selectedParamValues}
-            keyframes={graph.keyframes}
-            currentFrame={keyframesEnabled ? currentFrame : -1}
-            keyframesEnabled={keyframesEnabled}
-            onChange={onParamChange}
-            onToggleKeyframe={onToggleKeyframe}
-            onAction={onParamAction}
-            connectedSockets={connectedSocketIds(graph, selectedInstance.id)}
-          />
-        )}
       </div>
+      {/* True screen overlay, not scoped to the 3D-viewport pane above: a
+          fixed-position sibling of every other pane (see param-panel.css),
+          so it stays reachable in every Shift+Tab view state, full-canvas
+          Graph included, where that pane collapses to 0 height. */}
+      {selectedInstance && selectedDef && (
+        <ParamPanel
+          nodeId={selectedInstance.id}
+          label={selectedDef.label}
+          category={selectedDef.category}
+          fields={
+            selectedDef.dynamicParamFields
+              ? selectedDef.dynamicParamFields(selectedInstance)
+              : (selectedDef.paramFields ?? [])
+          }
+          params={selectedParamValues}
+          keyframes={graph.keyframes}
+          currentFrame={keyframesEnabled ? currentFrame : -1}
+          keyframesEnabled={keyframesEnabled}
+          onChange={onParamChange}
+          onToggleKeyframe={onToggleKeyframe}
+          onAction={onParamAction}
+          connectedSockets={connectedSocketIds(graph, selectedInstance.id)}
+        />
+      )}
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
         {!isTimelineDrawerOpen && (
           <TimelineBar
