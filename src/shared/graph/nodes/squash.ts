@@ -14,6 +14,16 @@ interface SquashState {
    * call.
    */
   lastSpeed?: number;
+  /**
+   * The damped-spring's own position and velocity, chasing `lastSpeed` as its
+   * target — separate from `lastSpeed` itself so Smoothing can lag behind a
+   * speed change instead of snapping to it. Signed and unclamped-past-target:
+   * an underdamped spring (Bounciness > 0) legitimately overshoots past 0 when
+   * the target drops suddenly, and *that* overshoot — the spring's position
+   * running momentarily negative — is what reads as a squash on impact.
+   */
+  springValue?: number;
+  springVelocity?: number;
 }
 
 const squashStateCache = createNodeCache<SquashState>();
@@ -49,6 +59,19 @@ function clamp01(n: number): number {
  * volume-preserving) proportionally to its speed, with a single Intensity knob.
  * Wire `time` from the clock so the node can measure per-frame velocity; the
  * deformation settles back to identity the moment the object stops.
+ *
+ * Smoothing/Bounciness run the stretch amount through a damped spring instead
+ * of applying the speed-derived target instantly. Both default to 0, which
+ * collapses the spring to a direct pass-through — byte-identical to this
+ * node's behaviour before they existed. Dialling in Bounciness makes that
+ * spring underdamped, so it doesn't just lag the target, it *overshoots* past
+ * it — and since the target is "stretch amount," overshooting past a target
+ * that just dropped to 0 (a sudden deceleration) means the spring swings
+ * negative for a moment. A negative stretch amount is a squash: compressed
+ * along the direction of travel, bulged perpendicular, same volume-preserving
+ * math as the stretch case. That single mechanism is deliberately what
+ * produces the "hard stop squashes the object" look, rather than a second,
+ * separate acceleration-triggered code path.
  */
 export const SQUASH_STRETCH_NODE: NodeDefinition = {
   type: "modifier/squash-stretch",
@@ -59,17 +82,33 @@ export const SQUASH_STRETCH_NODE: NodeDefinition = {
     { id: "time", label: "Time", type: "value" },
     { id: "intensity", label: "Intensity", type: "value" },
     { id: "maxSpeed", label: "Max Speed", type: "value" },
+    { id: "smoothing", label: "Smoothing", type: "value" },
+    { id: "bounciness", label: "Bounciness", type: "value" },
   ],
   outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
   defaultParams: {
     time: 0,
     intensity: 0.6,
     maxSpeed: 3,
+    smoothing: 0,
+    bounciness: 0,
   },
   dynamicParamFields: () => [
-    { id: "time", label: "Time", kind: "number", step: 0.05 },
-    { id: "intensity", label: "Intensity (0–1)", kind: "number", step: 0.05 },
-    { id: "maxSpeed", label: "Max Speed (units/s)", kind: "number", step: 0.5 },
+    // Explicit group on every field: without one, ParamPanel's fallback
+    // grouping heuristic (getGroupName) catches "intensity" by substring
+    // match and silently files it under "Light Settings" — this node has
+    // nothing to do with lights.
+    { id: "time", label: "Time", kind: "number", step: 0.05, group: "Squash & Stretch" },
+    { id: "intensity", label: "Intensity (0–1)", kind: "number", step: 0.05, group: "Squash & Stretch" },
+    { id: "maxSpeed", label: "Max Speed (units/s)", kind: "number", step: 0.5, group: "Squash & Stretch" },
+    { id: "smoothing", label: "Smoothing (0 = instant)", kind: "number", step: 0.05, group: "Squash & Stretch" },
+    {
+      id: "bounciness",
+      label: "Bounciness (overshoot → squash on stop)",
+      kind: "number",
+      step: 0.05,
+      group: "Squash & Stretch",
+    },
   ],
   evaluate: (inputs, params, ctx) => {
     const group = getSquashGroup(ctx.nodeId);
@@ -99,14 +138,17 @@ export const SQUASH_STRETCH_NODE: NodeDefinition = {
     let normalized = state.lastSpeed ?? 0;
 
     const rewound = state.lastTime !== undefined && time < state.lastTime - 0.5;
+    let dt = 0;
     if (rewound || state.lastTime === undefined || !state.prevPos) {
       // First frame, or a real scrub backwards: reseed rather than measure a
       // velocity across the jump.
       normalized = 0;
       state.prevPos = pos.clone();
       state.lastTime = time;
+      state.springValue = 0;
+      state.springVelocity = 0;
     } else if (time > state.lastTime) {
-      const dt = time - state.lastTime;
+      dt = time - state.lastTime;
       const vel = new THREE.Vector3().subVectors(pos, state.prevPos).divideScalar(dt);
       const speed = vel.length();
       if (speed > 1e-6) dir.copy(vel).normalize();
@@ -118,8 +160,39 @@ export const SQUASH_STRETCH_NODE: NodeDefinition = {
     state.lastDir = dir.clone();
     state.lastSpeed = normalized;
 
-    // stretchFactor 1..1+0.5*intensity along motion; volume-preserving inverse sideways.
-    const factor = 1 + intensity * 0.5 * normalized;
+    const smoothing = clamp01(numberInput(inputs.smoothing, params.smoothing, 0));
+    const bounciness = clamp01(numberInput(inputs.bounciness, params.bounciness, 0));
+
+    // Smoothing 0 is a direct pass-through — identical to this node before
+    // the spring existed. Above 0, `normalized` becomes the spring's target
+    // instead of the stretch amount itself, and the spring — not the target —
+    // drives the deformation. See the node-level doc comment for why letting
+    // it go underdamped (Bounciness) is the whole squash-on-impact mechanism.
+    let stretchAmount = normalized;
+    if (smoothing > 0) {
+      const omega = THREE.MathUtils.lerp(30, 2, smoothing); // response speed, rad/s-ish
+      const zeta = THREE.MathUtils.lerp(1, 0.2, bounciness); // 1 = critically damped, lower = underdamped
+      let value = state.springValue ?? normalized;
+      let velocity = state.springVelocity ?? 0;
+      if (dt > 0) {
+        const accel = omega * omega * (normalized - value) - 2 * zeta * omega * velocity;
+        velocity += accel * dt;
+        value += velocity * dt;
+      }
+      state.springValue = value;
+      state.springVelocity = velocity;
+      stretchAmount = value;
+    } else {
+      state.springValue = normalized;
+      state.springVelocity = 0;
+    }
+
+    // stretchFactor along motion; volume-preserving inverse sideways.
+    // `stretchAmount` can go negative — an underdamped spring overshooting
+    // past a target that just dropped to 0 — and a negative amount here is
+    // exactly a squash: compressed along the direction of travel, bulged
+    // perpendicular, same math as the positive/stretch case below.
+    const factor = Math.max(0.15, 1 + intensity * 0.5 * stretchAmount);
 
     if (Math.abs(factor - 1) < 1e-4) {
       group.matrix.identity();
