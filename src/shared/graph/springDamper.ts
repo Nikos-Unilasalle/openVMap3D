@@ -38,14 +38,36 @@ export interface SpringState {
 const MAX_SUBSTEP_DT = STEP_SECONDS * 2; // ~33ms — well under the ~67ms bound even at the snappiest omega (30)
 const MAX_TOTAL_DT = STEP_SECONDS * 16; // ~267ms — a longer stall falls behind real time rather than substepping without bound
 
+/**
+ * The per-frame constants every spring in one evaluation shares. Split out
+ * so a bulk caller (Spring Vector's Individual Points mode, which may be
+ * integrating hundreds of thousands of independent springs against the same
+ * dt/smoothing/bounciness) can hoist this work out of its inner loop and
+ * inline the integration over typed arrays — without re-deriving, or drifting
+ * from, the stability policy documented above. `stepDampedSpring` below is
+ * the same math for the one-value-at-a-time callers.
+ */
+export interface SpringCoefficients {
+  omega: number;
+  zeta: number;
+  substeps: number;
+  stepDt: number;
+}
+
+export function springCoefficients(dt: number, smoothing: number, bounciness: number): SpringCoefficients {
+  const clampedDt = Math.min(Math.max(0, dt), MAX_TOTAL_DT);
+  const substeps = Math.max(1, Math.ceil(clampedDt / MAX_SUBSTEP_DT));
+  return {
+    omega: 30 + (2 - 30) * smoothing, // response speed, rad/s-ish: smoothing=0 -> snappy, 1 -> sluggish
+    zeta: 1 + (0.2 - 1) * bounciness, // damping ratio: bounciness=0 -> critically damped, 1 -> underdamped/bouncy
+    substeps,
+    stepDt: clampedDt / substeps,
+  };
+}
+
 export function stepDampedSpring(state: SpringState, target: number, dt: number, smoothing: number, bounciness: number): SpringState {
   if (dt <= 0) return state;
-  const omega = 30 + (2 - 30) * smoothing; // response speed, rad/s-ish: smoothing=0 -> snappy, 1 -> sluggish
-  const zeta = 1 + (0.2 - 1) * bounciness; // damping ratio: bounciness=0 -> critically damped, 1 -> underdamped/bouncy
-
-  const clampedDt = Math.min(dt, MAX_TOTAL_DT);
-  const substeps = Math.max(1, Math.ceil(clampedDt / MAX_SUBSTEP_DT));
-  const stepDt = clampedDt / substeps;
+  const { omega, zeta, substeps, stepDt } = springCoefficients(dt, smoothing, bounciness);
 
   let { value, velocity } = state;
   for (let i = 0; i < substeps; i++) {

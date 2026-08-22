@@ -106,6 +106,8 @@ export function resolvePointsInput(
 
 interface PointsMeshState {
   mesh?: THREE.Mesh;
+  /** The source geometry the cached clone was built from — a different one means rebuild, not update. */
+  srcGeom?: THREE.BufferGeometry;
 }
 
 const pointsMeshCache = createNodeCache<PointsMeshState>((s) => {
@@ -122,6 +124,14 @@ const pointsMeshCache = createNodeCache<PointsMeshState>((s) => {
  * produced for this same source — a length mismatch (a different mesh,
  * accidentally) returns the original object unchanged, with a console
  * warning, rather than corrupting anything.
+ *
+ * The clone happens ONCE per source geometry, not per frame. Re-cloning
+ * every frame meant copying every attribute — index, uv, normal, none of
+ * which this function changes — then disposing last frame's copy, which on
+ * a heavy mesh both churned megabytes through the GC and forced three to
+ * re-upload the *entire* vertex buffer set to the GPU each frame. Updating
+ * the position attribute of the existing clone in place re-uploads only
+ * what actually changed (position, and the normals recomputed from it).
  */
 export function writePointsToMesh(nodeId: string, inputObj: THREE.Object3D, points: unknown[], label: string): THREE.Object3D {
   const srcMesh = findFirstMesh(inputObj);
@@ -144,29 +154,32 @@ export function writePointsToMesh(nodeId: string, inputObj: THREE.Object3D, poin
     pointsMeshCache.set(nodeId, state);
   }
 
-  const positions = new Float32Array(points.length * 3);
-  for (let i = 0; i < points.length; i++) {
-    const p = points[i] as { x?: number; y?: number; z?: number };
-    positions[i * 3] = Number(p?.x) || 0;
-    positions[i * 3 + 1] = Number(p?.y) || 0;
-    positions[i * 3 + 2] = Number(p?.z) || 0;
-  }
-
-  const geometry = srcGeom.clone();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geometry.attributes.position.needsUpdate = true;
-  geometry.computeVertexNormals();
-  geometry.computeBoundingSphere();
-
-  if (!state.mesh) {
+  // Rebuild only when there's nothing cached, the upstream geometry itself
+  // was replaced, or its vertex count moved (a different mesh entirely).
+  const cachedPos = state.mesh?.geometry.attributes.position as THREE.BufferAttribute | undefined;
+  if (!state.mesh || state.srcGeom !== srcGeom || cachedPos?.count !== points.length) {
+    if (state.mesh) disposeObject3D(state.mesh);
+    const geometry = srcGeom.clone();
     state.mesh = new THREE.Mesh(geometry, srcMesh.material);
     state.mesh.castShadow = true;
     state.mesh.receiveShadow = true;
-  } else {
-    state.mesh.geometry.dispose();
-    state.mesh.geometry = geometry;
-    state.mesh.material = srcMesh.material;
+    state.srcGeom = srcGeom;
   }
+
+  const geometry = state.mesh.geometry;
+  const target = geometry.attributes.position as THREE.BufferAttribute;
+  const array = target.array as Float32Array;
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i] as { x?: number; y?: number; z?: number };
+    array[i * 3] = Number(p?.x) || 0;
+    array[i * 3 + 1] = Number(p?.y) || 0;
+    array[i * 3 + 2] = Number(p?.z) || 0;
+  }
+  target.needsUpdate = true;
+  // Reuses the existing normal attribute's buffer rather than allocating one.
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+  state.mesh.material = srcMesh.material;
 
   // matrixWorld, not matrix, and forced from the root — same reasoning as
   // extractPointsFromMesh above: srcMesh's own LOCAL matrix is identity when

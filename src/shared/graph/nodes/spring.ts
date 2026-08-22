@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
 import { createNodeCache } from "../nodeCaches";
-import { stepDampedSpring, SpringState } from "../springDamper";
+import { springCoefficients, stepDampedSpring, SpringState } from "../springDamper";
 import { clockInput, numberInput } from "./object";
 import { asVector3 } from "./transform";
 import { writePointsToMesh } from "./pointsGeometry";
@@ -89,10 +89,34 @@ export const SPRING_NODE: NodeDefinition = {
   },
 };
 
+/**
+ * Per-point spring state, held as flat typed arrays (3 lanes per point,
+ * x/y/z interleaved) rather than the obvious `{value, velocity}[][]`.
+ *
+ * This mode routinely runs one independent spring per *vertex* of a real
+ * mesh — an 80k-face OBJ is ~240k points, so the object-per-axis shape cost
+ * ~720k live JS objects sitting in this cache, plus another ~720k garbage
+ * objects every frame from the integrator returning fresh `{value,
+ * velocity}` records. Two Float64Arrays hold exactly the same numbers with
+ * zero per-point object overhead and no per-frame garbage at all, which is
+ * the difference between "heavy mesh is slow" and "heavy mesh triggers a GC
+ * death spiral" (see springDamper.ts for the divergence half of that story).
+ *
+ * `out` is likewise allocated once and mutated in place each frame: every
+ * consumer of a points list reads it during the same evaluation that
+ * produced it (Points to Mesh / this node's own write-back, the viewport's
+ * handle sync), so there's nothing to preserve across frames — the same
+ * reuse convention `writePointsToMesh` already uses for its cached Mesh.
+ */
 interface SpringPointsState {
   lastTime?: number;
-  /** One [x,y,z] spring per point, indexed to match the incoming list. */
-  axes: [SpringState, SpringState, SpringState][];
+  count: number;
+  /** Current spring position, 3 per point (x,y,z interleaved). */
+  values: Float64Array;
+  /** Matching velocity lane for each entry of `values`. */
+  velocities: Float64Array;
+  /** Reused output vectors, one per point. */
+  out: THREE.Vector3[];
 }
 
 const springPointsCache = createNodeCache<SpringPointsState>();
@@ -100,11 +124,34 @@ const springPointsCache = createNodeCache<SpringPointsState>();
 function getSpringPointsState(nodeId: string): SpringPointsState {
   let state = springPointsCache.get(nodeId);
   if (!state) {
-    state = { axes: [] };
+    state = { count: 0, values: new Float64Array(0), velocities: new Float64Array(0), out: [] };
     springPointsCache.set(nodeId, state);
   }
   return state;
 }
+
+/** Reads x/y/z off a Vector3 or any plain `{x,y,z}` without allocating one (the non-allocating half of asVector3). */
+function readPoint(raw: unknown, into: { x: number; y: number; z: number }): void {
+  if (raw && typeof raw === "object") {
+    const o = raw as { x?: unknown; y?: unknown; z?: unknown };
+    const x = Number(o.x);
+    const y = Number(o.y);
+    const z = Number(o.z);
+    if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
+      into.x = x;
+      into.y = y;
+      into.z = z;
+      return;
+    }
+  }
+  into.x = 0;
+  into.y = 0;
+  into.z = 0;
+}
+
+const scratchPoint = { x: 0, y: 0, z: 0 };
+/** Reused so the world->local matrix inversion doesn't allocate a Matrix4 per frame. */
+const scratchInverse = new THREE.Matrix4();
 
 /**
  * Springs each point in a list independently — the "Individual Points" mode
@@ -123,43 +170,125 @@ function getSpringPointsState(nodeId: string): SpringPointsState {
  * an index space that may no longer mean the same thing — a visible but rare
  * and honest discontinuity, versus silently misapplying stale velocity to
  * the wrong vertex.
+ *
+ * When `matrixWorld`/`inverse` are given, the whole local -> world -> spring
+ * -> local round trip happens inside this one pass, reading straight from
+ * the raw input objects and writing straight into the reused output vectors.
+ * Done as separate `.map()` stages (the readable version) it cost four full
+ * intermediate arrays of freshly-cloned Vector3s per frame; fused, it costs
+ * none. Same math, same result, an order of magnitude less memory traffic on
+ * exactly the meshes big enough to care.
  */
 function springPoints(
   nodeId: string,
-  targets: THREE.Vector3[],
-  mask: number[] | null,
+  rawTargets: unknown[],
+  rawMask: unknown[] | null,
   time: number,
   smoothing: number,
   bounciness: number,
+  matrixWorld: THREE.Matrix4 | null,
+  inverse: THREE.Matrix4 | null,
 ): THREE.Vector3[] {
   const state = getSpringPointsState(nodeId);
+  const count = rawTargets.length;
 
   const rewound = state.lastTime !== undefined && time < state.lastTime - 0.5;
   const dt = state.lastTime === undefined || rewound ? 0 : Math.max(0, time - state.lastTime);
-  const countChanged = state.axes.length !== targets.length;
+  const countChanged = state.count !== count;
   const globalReseed = rewound || state.lastTime === undefined || countChanged;
   state.lastTime = time;
 
   if (countChanged) {
-    state.axes = targets.map((p) => [
-      { value: p.x, velocity: 0 },
-      { value: p.y, velocity: 0 },
-      { value: p.z, velocity: 0 },
-    ]);
+    state.count = count;
+    state.values = new Float64Array(count * 3);
+    state.velocities = new Float64Array(count * 3);
+    const out = state.out;
+    out.length = count;
+    for (let i = 0; i < count; i++) if (!out[i]) out[i] = new THREE.Vector3();
   }
 
-  const out: THREE.Vector3[] = new Array(targets.length);
-  for (let i = 0; i < targets.length; i++) {
-    const influence = mask !== null ? clamp01(mask[i] ?? 1) : 1;
-    const axis = state.axes[i];
-    axis[0] = advance(axis[0], targets[i].x, dt, globalReseed, smoothing, bounciness);
-    axis[1] = advance(axis[1], targets[i].y, dt, globalReseed, smoothing, bounciness);
-    axis[2] = advance(axis[2], targets[i].z, dt, globalReseed, smoothing, bounciness);
-    out[i] = new THREE.Vector3(
-      targets[i].x + (axis[0].value - targets[i].x) * influence,
-      targets[i].y + (axis[1].value - targets[i].y) * influence,
-      targets[i].z + (axis[2].value - targets[i].z) * influence,
-    );
+  const { values, velocities, out } = state;
+
+  // Hoisted out of the inner loop: every point in this call shares one dt,
+  // smoothing and bounciness, so the coefficients (and the substep schedule
+  // that keeps Euler stable) are computed once for all of them.
+  const { omega, zeta, substeps, stepDt } = springCoefficients(dt, smoothing, bounciness);
+  const omegaSq = omega * omega;
+  const damping = 2 * zeta * omega;
+  const integrate = !globalReseed && dt > 0;
+
+  // Matrix elements hoisted into locals — applying a Matrix4 to loose x/y/z
+  // numbers inline avoids materializing a Vector3 per point just to call
+  // .applyMatrix4() on it.
+  const m = matrixWorld?.elements;
+  const inv = inverse?.elements;
+
+  for (let i = 0; i < count; i++) {
+    readPoint(rawTargets[i], scratchPoint);
+    let tx = scratchPoint.x;
+    let ty = scratchPoint.y;
+    let tz = scratchPoint.z;
+
+    if (m) {
+      const w = 1 / (m[3] * tx + m[7] * ty + m[11] * tz + m[15]);
+      const wx = (m[0] * tx + m[4] * ty + m[8] * tz + m[12]) * w;
+      const wy = (m[1] * tx + m[5] * ty + m[9] * tz + m[13]) * w;
+      const wz = (m[2] * tx + m[6] * ty + m[10] * tz + m[14]) * w;
+      tx = wx;
+      ty = wy;
+      tz = wz;
+    }
+
+    const b = i * 3;
+    let vx = values[b];
+    let vy = values[b + 1];
+    let vz = values[b + 2];
+
+    if (integrate) {
+      let dx = velocities[b];
+      let dy = velocities[b + 1];
+      let dz = velocities[b + 2];
+      for (let s = 0; s < substeps; s++) {
+        dx += (omegaSq * (tx - vx) - damping * dx) * stepDt;
+        dy += (omegaSq * (ty - vy) - damping * dy) * stepDt;
+        dz += (omegaSq * (tz - vz) - damping * dz) * stepDt;
+        vx += dx * stepDt;
+        vy += dy * stepDt;
+        vz += dz * stepDt;
+      }
+      velocities[b] = dx;
+      velocities[b + 1] = dy;
+      velocities[b + 2] = dz;
+    } else if (globalReseed) {
+      // First frame, a real scrub backwards, or a changed point count: snap
+      // to the target rather than integrating across a discontinuity.
+      vx = tx;
+      vy = ty;
+      vz = tz;
+      velocities[b] = 0;
+      velocities[b + 1] = 0;
+      velocities[b + 2] = 0;
+    }
+    values[b] = vx;
+    values[b + 1] = vy;
+    values[b + 2] = vz;
+
+    const influence = rawMask !== null ? clamp01(Number(rawMask[i] ?? 1)) : 1;
+    let ox = tx + (vx - tx) * influence;
+    let oy = ty + (vy - ty) * influence;
+    let oz = tz + (vz - tz) * influence;
+
+    if (inv) {
+      const w = 1 / (inv[3] * ox + inv[7] * oy + inv[11] * oz + inv[15]);
+      const lx = (inv[0] * ox + inv[4] * oy + inv[8] * oz + inv[12]) * w;
+      const ly = (inv[1] * ox + inv[5] * oy + inv[9] * oz + inv[13]) * w;
+      const lz = (inv[2] * ox + inv[6] * oy + inv[10] * oz + inv[14]) * w;
+      ox = lx;
+      oy = ly;
+      oz = lz;
+    }
+
+    out[i].set(ox, oy, oz);
   }
   return out;
 }
@@ -229,8 +358,8 @@ export const SPRING_VECTOR_NODE: NodeDefinition = {
     const bounciness = clamp01(numberInput(inputs.bounciness, params.bounciness, 0.3));
 
     if (Array.isArray(inputs.points)) {
-      const localTargets = (inputs.points as unknown[]).map((p) => asVector3(p, new THREE.Vector3(0, 0, 0)));
-      const mask = Array.isArray(inputs.mask) ? (inputs.mask as unknown[]).map((m) => Number(m)) : null;
+      const rawTargets = inputs.points as unknown[];
+      const rawMask = Array.isArray(inputs.mask) ? (inputs.mask as unknown[]) : null;
 
       // With Geometry wired, spring in WORLD space, not the mesh's own local
       // space: Points is always local (Mesh to Points / Points Selection's
@@ -249,19 +378,18 @@ export const SPRING_VECTOR_NODE: NodeDefinition = {
       if (mesh) {
         const geomObj = inputs.geometry as THREE.Object3D;
         geomObj.updateMatrixWorld(true);
-        const matrixWorld = mesh.matrixWorld.clone();
-        const inverse = matrixWorld.clone().invert();
+        const matrixWorld = mesh.matrixWorld;
+        const inverse = scratchInverse.copy(matrixWorld).invert();
 
-        const worldTargets = localTargets.map((p) => p.clone().applyMatrix4(matrixWorld));
-        const sprungWorld = springPoints(ctx.nodeId, worldTargets, mask, time, smoothing, bounciness);
-        const points = sprungWorld.map((p) => p.clone().applyMatrix4(inverse));
-
+        // One fused pass does local -> world -> spring -> local; see
+        // springPoints' doc comment for why it isn't three chained .map()s.
+        const points = springPoints(ctx.nodeId, rawTargets, rawMask, time, smoothing, bounciness, matrixWorld, inverse);
         const geometry = writePointsToMesh(ctx.nodeId, geomObj, points, "Spring Vector");
-        return { vector: points[0] ?? new THREE.Vector3(0, 0, 0), points, geometry };
+        return { vector: points[0]?.clone() ?? new THREE.Vector3(0, 0, 0), points, geometry };
       }
 
-      const points = springPoints(ctx.nodeId, localTargets, mask, time, smoothing, bounciness);
-      return { vector: points[0] ?? new THREE.Vector3(0, 0, 0), points };
+      const points = springPoints(ctx.nodeId, rawTargets, rawMask, time, smoothing, bounciness, null, null);
+      return { vector: points[0]?.clone() ?? new THREE.Vector3(0, 0, 0), points };
     }
 
     const target = asVector3(inputs.target ?? params.target, new THREE.Vector3(0, 0, 0));
