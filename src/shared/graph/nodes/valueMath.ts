@@ -73,16 +73,33 @@ export const CLAMP_NODE: NodeDefinition = {
   },
 };
 
-/** A bare constant — the simplest possible source for a Value socket. */
+/**
+ * A bare constant — the simplest possible source for a Value socket.
+ * "Integer" isn't a separate socket type (the graph only has one numeric
+ * type, "value") — it's a display/rounding mode on this node: step >= 1
+ * makes DragNumberInput auto-format/scrub as a whole number (see its
+ * isIntegerField), and evaluate() rounds so a wired Count/Index downstream
+ * actually gets a whole number rather than a float that happens to display
+ * rounded.
+ */
 export const VALUE_CONSTANT_NODE: NodeDefinition = {
   type: "value/constant",
   label: "Value",
   category: "math",
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: "value" }],
-  defaultParams: { value: 0 },
-  paramFields: [{ id: "value", label: "Value", kind: "number" }],
-  evaluate: (_inputs, params) => ({ out: Number(params.value) || 0 }),
+  defaultParams: { type: "float", value: 0 },
+  dynamicParamFields: (instance) => {
+    const isInteger = instance.params.type === "integer";
+    return [
+      { id: "type", label: "Type", kind: "select", options: ["float", "integer"] },
+      { id: "value", label: "Value", kind: "number", step: isInteger ? 1 : 0.1 },
+    ];
+  },
+  evaluate: (_inputs, params) => {
+    const raw = Number(params.value) || 0;
+    return { out: params.type === "integer" ? Math.round(raw) : raw };
+  },
 };
 
 /**
