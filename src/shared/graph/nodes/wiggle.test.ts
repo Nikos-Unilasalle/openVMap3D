@@ -131,3 +131,55 @@ describe("Specialized Wiggle Nodes", () => {
     expect(Number.isFinite(v.z)).toBe(true);
   });
 });
+
+describe("WIGGLE_VECTOR_NODE — Individual Points mode", () => {
+  test("wiring Points wiggles each point independently around its own position", () => {
+    const points = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(10, 0, 0), new THREE.Vector3(-10, 0, 0)];
+    const res = WIGGLE_VECTOR_NODE.evaluate(
+      { evolution: 1.3, amplitude: new THREE.Vector3(1, 1, 1), points },
+      WIGGLE_VECTOR_NODE.defaultParams,
+      mockCtx,
+    );
+    const out = res.points as THREE.Vector3[];
+    expect(out).toHaveLength(3);
+    // Each stays near its OWN base point, not collapsed to a shared origin.
+    expect(out[1].x).toBeGreaterThan(5);
+    expect(out[2].x).toBeLessThan(-5);
+    // Different points, same evolution -> different noise samples (not all
+    // three wiggling in lockstep).
+    const offset0 = out[0].clone().sub(points[0]);
+    const offset1 = out[1].clone().sub(points[1]);
+    expect(offset0.distanceTo(offset1)).toBeGreaterThan(1e-6);
+  });
+
+  test("a masked-out point (mask 0) is held exactly at its base position — no wiggle at all", () => {
+    const points = [new THREE.Vector3(1, 2, 3), new THREE.Vector3(4, 5, 6)];
+    const res = WIGGLE_VECTOR_NODE.evaluate(
+      { evolution: 2.7, amplitude: new THREE.Vector3(5, 5, 5), points, mask: [1, 0] },
+      WIGGLE_VECTOR_NODE.defaultParams,
+      mockCtx,
+    );
+    const out = res.points as THREE.Vector3[];
+    expect(out[1].x).toBe(4);
+    expect(out[1].y).toBe(5);
+    expect(out[1].z).toBe(6);
+  });
+
+  test("rest of the object stays rigid across time while a masked-in point keeps moving", () => {
+    const points = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(9, 9, 9)];
+    const positionsOfHeld: THREE.Vector3[] = [];
+    let sawMovement = false;
+    for (let t = 0; t < 5; t++) {
+      const res = WIGGLE_VECTOR_NODE.evaluate(
+        { evolution: t * 0.7, amplitude: new THREE.Vector3(3, 3, 3), points, mask: [1, 0] },
+        WIGGLE_VECTOR_NODE.defaultParams,
+        mockCtx,
+      );
+      const out = res.points as THREE.Vector3[];
+      positionsOfHeld.push(out[1].clone());
+      if (!out[0].equals(points[0])) sawMovement = true;
+    }
+    expect(sawMovement).toBe(true);
+    for (const p of positionsOfHeld) expect(p.equals(points[1])).toBe(true);
+  });
+});

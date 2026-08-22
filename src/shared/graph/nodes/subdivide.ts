@@ -217,8 +217,18 @@ export const SUBDIVIDE_NODE: NodeDefinition = {
       // moves srcMesh.matrix every frame without ever touching its geometry,
       // so signature alone would stay stable and this early return used to
       // leave state.mesh frozen at whatever pose it last recomputed at.
-      state.mesh.matrixAutoUpdate = srcMesh.matrixAutoUpdate;
-      state.mesh.matrix.copy(srcMesh.matrix);
+      // srcMesh.matrix is only its LOCAL pose — correct for a mesh that
+      // directly carries its own transform (Box, Sphere, ...), but wrong for
+      // one nested under a posed wrapper group (OBJ Model bakes its Location/
+      // Rotation/Scale/Pivot onto the group, not the mesh inside it), where
+      // .matrix alone is identity and this would silently reset the pose.
+      // matrixWorld is correct either way. Also force matrixAutoUpdate off
+      // rather than copying the source's flag: an OBJ-parsed mesh defaults to
+      // true, which would have three's own render loop recompute (and wipe)
+      // this matrix from its untouched position/quaternion/scale next frame.
+      inputObj.updateMatrixWorld(true);
+      state.mesh.matrixAutoUpdate = false;
+      state.mesh.matrix.copy(srcMesh.matrixWorld);
       return primitiveOutputs(state.mesh);
     }
 
@@ -242,9 +252,12 @@ export const SUBDIVIDE_NODE: NodeDefinition = {
     }
     // Same pose as whatever was plugged in — this node reshapes the
     // surface, it doesn't move it, so it has no location/rotation/scale of
-    // its own the way Lattice Deform's cage does.
-    state.mesh.matrixAutoUpdate = srcMesh.matrixAutoUpdate;
-    state.mesh.matrix.copy(srcMesh.matrix);
+    // its own the way Lattice Deform's cage does. See the cached-return
+    // branch above for why matrixWorld (not matrix) and a forced-false
+    // matrixAutoUpdate.
+    inputObj.updateMatrixWorld(true);
+    state.mesh.matrixAutoUpdate = false;
+    state.mesh.matrix.copy(srcMesh.matrixWorld);
     state.lastSignature = signature;
 
     return primitiveOutputs(state.mesh);

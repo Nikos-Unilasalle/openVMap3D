@@ -101,14 +101,19 @@ export const BOOLEAN_NODE: NodeDefinition = {
     }
     clearMeshWarning(ctx.nodeId);
 
-    // Recompute the source's world matrix with `force` — see lattice.ts's note:
-    // a source feeding a modifier is no longer drawn itself, so its matrixWorld
-    // is never refreshed, and updateWorldMatrix is a silent no-op on a
-    // graph-driven mesh (matrixAutoUpdate off, matrix set via matrix.copy())
-    // unless forced. Reading the stale value froze the boolean at the source's
-    // old pose, which is exactly why the result didn't animate.
-    srcA.updateWorldMatrix(true, false, true);
-    srcB.updateWorldMatrix(true, false, true);
+    // Recompute the sources' world matrices, forced, from their OWN root
+    // (inputA/inputB), not from the found mesh: a mesh feeding a modifier is
+    // no longer drawn itself, so nothing keeps its matrixWorld fresh, and
+    // `mesh.updateWorldMatrix(true, false, true)` only forwards `force` to
+    // the mesh itself — three's own updateWorldMatrix does NOT propagate
+    // force to the parent it climbs to (see Object3D.updateWorldMatrix), so
+    // a mesh nested under a posed wrapper group whose own matrixWorldNeedsUpdate
+    // was never set (OBJ Model bakes its pose onto exactly such a group)
+    // still computed a stale/identity world matrix despite this call.
+    // updateMatrixWorld(true) from the root correctly cascades force
+    // downward through every descendant instead.
+    inputA.updateMatrixWorld(true);
+    inputB.updateMatrixWorld(true);
 
     const operation = String(inputs.operation ?? params.operation ?? "subtract");
     const useGroups = Boolean(params.useGroups);

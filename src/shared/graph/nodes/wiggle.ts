@@ -204,8 +204,21 @@ export const WIGGLE_VECTOR_NODE: NodeDefinition = {
     { id: "persistance", label: "Persistance", type: "value" },
     { id: "lacunarity", label: "Lacunarity", type: "value" },
     { id: "baseVector", label: "Base Vector", type: "vector" },
+    // Wiring Points switches this node into "Individual Points" mode: each
+    // point wiggles around its OWN position with independent noise (a
+    // different seed offset per index, so they don't all wobble in lockstep)
+    // instead of the single shared baseVector. Mask (1=wiggle, 0=hold still)
+    // is what lets only *some* points move — same convention, and same
+    // motivation, as Spring Vector's Individual Points mode: animate part of
+    // a mesh (via Mesh to Points / Points Selection / Points to Mesh) while
+    // the rest stays rigid.
+    { id: "points", label: "Points (Individual)", type: "list" },
+    { id: "mask", label: "Mask (1=wiggle, 0=hold)", type: "list" },
   ],
-  outputs: [{ id: "vector", label: "Vector", type: "vector" }],
+  outputs: [
+    { id: "vector", label: "Vector", type: "vector" },
+    { id: "points", label: "Points", type: "list" },
+  ],
   defaultParams: {
     speed: 1.0,
     amplitude: new THREE.Vector3(1, 1, 1),
@@ -236,12 +249,27 @@ export const WIGGLE_VECTOR_NODE: NodeDefinition = {
     const lacunarity = Math.max(1, Math.min(8, inputs.lacunarity !== undefined ? asNumber(inputs.lacunarity, 2.0) : asNumber(params.lacunarity, 2.0)));
     const baseVec = asVector3(inputs.baseVector ?? params.baseVector, new THREE.Vector3(0, 0, 0));
 
+    if (Array.isArray(inputs.points)) {
+      const basePoints = (inputs.points as unknown[]).map((p) => asVector3(p, new THREE.Vector3(0, 0, 0)));
+      const mask = Array.isArray(inputs.mask) ? (inputs.mask as unknown[]).map((m) => Number(m)) : null;
+      const points = basePoints.map((p, i) => {
+        if (mask !== null && (mask[i] ?? 1) < 0.5) return p.clone();
+        // A large, irrational-feeling per-index offset decorrelates each
+        // point's noise from its neighbours' — without it every point reads
+        // the same fbm3D sample and the whole selection wiggles as one rigid
+        // (if offset) blob instead of rippling independently.
+        const pn = fbm3D(t, seed + i * 173.17, octaves, persistance, lacunarity);
+        return new THREE.Vector3(p.x + pn.x * amp.x, p.y + pn.y * amp.y, p.z + pn.z * amp.z);
+      });
+      return { vector: points[0] ?? baseVec.clone(), points };
+    }
+
     const n = fbm3D(t, seed, octaves, persistance, lacunarity);
     const out = new THREE.Vector3(
       baseVec.x + n.x * amp.x,
       baseVec.y + n.y * amp.y,
       baseVec.z + n.z * amp.z
     );
-    return { vector: out };
+    return { vector: out, points: [out] };
   },
 };

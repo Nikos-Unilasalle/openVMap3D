@@ -295,8 +295,26 @@ export const SHADE_NODE: NodeDefinition = {
     const signature = `${mode}:${angleRad.toFixed(4)}:${srcGeom.uuid}`;
     const srcChanged = state.srcPosArray !== posAttr.array || state.srcPosCount !== posAttr.count;
     if (state.mesh && state.signature === signature && !srcChanged) {
-      state.mesh.matrixAutoUpdate = srcMesh.matrixAutoUpdate;
-      state.mesh.matrix.copy(srcMesh.matrix);
+      // srcMesh.matrix is only its LOCAL pose — correct for a mesh that
+      // directly carries its own transform (Box, Sphere, ...), but wrong for
+      // one nested under a posed wrapper group (OBJ Model bakes its Location/
+      // Rotation/Scale/Pivot onto the group, not the mesh inside it), where
+      // .matrix alone is identity and this would silently reset the pose.
+      // matrixWorld is correct either way — computed by forcing it from
+      // inputObj (the root), not srcMesh itself: three's own
+      // `mesh.updateWorldMatrix(true, false, true)` only forwards `force` to
+      // the mesh, not to the parents it climbs to recompute, so a wrapper
+      // group whose matrixWorldNeedsUpdate flag was never set (true here,
+      // since OBJ Model writes `.matrix` directly rather than through
+      // position/rotation/scale) silently stayed at its stale/identity
+      // matrixWorld regardless. updateMatrixWorld(true) from the root
+      // correctly cascades force down through every descendant instead.
+      // Also force matrixAutoUpdate off rather than copying the source's
+      // flag: an OBJ-parsed mesh defaults it true, which would have three's
+      // own render loop recompute (and wipe) this matrix next frame.
+      inputObj.updateMatrixWorld(true);
+      state.mesh.matrixAutoUpdate = false;
+      state.mesh.matrix.copy(srcMesh.matrixWorld);
       state.mesh.material = srcMesh.material;
       return primitiveOutputs(state.mesh);
     }
@@ -317,8 +335,11 @@ export const SHADE_NODE: NodeDefinition = {
     }
     state.mesh.castShadow = srcMesh.castShadow;
     state.mesh.receiveShadow = srcMesh.receiveShadow;
-    state.mesh.matrixAutoUpdate = srcMesh.matrixAutoUpdate;
-    state.mesh.matrix.copy(srcMesh.matrix);
+    // See the cached-return branch above for why matrixWorld (not matrix)
+    // and a forced-false matrixAutoUpdate.
+    inputObj.updateMatrixWorld(true);
+    state.mesh.matrixAutoUpdate = false;
+    state.mesh.matrix.copy(srcMesh.matrixWorld);
     state.signature = signature;
     state.srcPosArray = posAttr.array;
     state.srcPosCount = posAttr.count;

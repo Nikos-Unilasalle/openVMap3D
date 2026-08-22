@@ -2,6 +2,8 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { EvalContext, NodeInstance } from "../types";
 import { OBJECT_OBJ_NODE } from "./objLoader";
+import { evaluateGraph } from "../evaluate";
+import { DEFAULT_REGISTRY } from "./index";
 
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "obj-test-1" };
 const DUMMY_NODE: NodeInstance = { id: "obj-test-1", type: "object/obj", params: OBJECT_OBJ_NODE.defaultParams, position: { x: 0, y: 0 } };
@@ -66,6 +68,21 @@ describe("OBJECT_OBJ_NODE", () => {
 
     expect(mat.map).toBe(diffTex);
     expect(mat.normalMap).toBe(normTex);
+  });
+
+  it("Visible param actually hides the object, end-to-end (evaluateGraph's generic visibility gate)", () => {
+    // Previously OBJ Model declared no "visible" socket at all, so
+    // evaluateGraph's generic applyVisibility (which reads exactly that
+    // socket) always saw `undefined` and left the object visible no matter
+    // what — there was no way to hide an imported OBJ from the graph.
+    const graph = {
+      nodes: [{ id: "obj-1", type: "object/obj", position: { x: 0, y: 0 }, params: { ...OBJECT_OBJ_NODE.defaultParams, visible: 0 } }],
+      connections: [],
+    };
+    const results = evaluateGraph(graph, DEFAULT_REGISTRY, { time: 0, step: 0, nodeId: "root" });
+    const obj = results.get("obj-1")?.geometry as THREE.Object3D;
+    expect(obj).toBeInstanceOf(THREE.Object3D);
+    expect(obj.visible).toBe(false);
   });
 
   it("does not re-apply materials (or re-upload textures) when nothing changed", () => {

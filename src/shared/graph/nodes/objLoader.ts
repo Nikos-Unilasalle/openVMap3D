@@ -47,6 +47,7 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
   label: "OBJ Model",
   category: "object",
   inputs: [
+    { id: "visible", label: "Visible", type: "value" },
     { id: "diffuse", label: "Diffuse Map", type: "texture" },
     { id: "normal", label: "Normal Map", type: "texture" },
     { id: "matrix", label: "Matrix", type: "matrix" },
@@ -61,6 +62,7 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
   ],
   outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: {
+    visible: 1,
     pivot: new THREE.Vector3(0, 0, 0),
     location: new THREE.Vector3(0, 0, 0),
     rotation: new THREE.Vector3(0, 0, 0),
@@ -205,10 +207,11 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
         }
       },
     },
+    { id: "visible", label: "Visible", kind: "boolean", group: "Transform" },
     { id: "location", label: "Location", kind: "vector" },
     { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true },
     { id: "scale", label: "Scale", kind: "vector" },
-    { id: "pivot", label: "Pivot", kind: "vector" },
+    { id: "pivot", label: "Pivot", kind: "vector", group: "Transform" },
     { id: "color", label: "Color (fallback)", kind: "color" },
     { id: "emissive", label: "Emissive (Glow)", kind: "color" },
     { id: "emissiveIntensity", label: "Emissive Intensity", kind: "number", step: 0.1 },

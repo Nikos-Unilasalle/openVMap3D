@@ -573,6 +573,13 @@ export const LATTICE_DEFORM_NODE: NodeDefinition = {
   outputs: [
     ...COMMON_PRIMITIVE_OUTPUTS,
     { id: "cage", label: "Cage Wireframe", type: "geometry" },
+    // Same shape/convention as Mesh to Points: one Vector3 per raw
+    // vertex-buffer entry of the *deformed* mesh, in its own local space,
+    // index-aligned with `geometry` — lets the deformed result feed
+    // straight into Points Selection -> Spring's Individual Points mode ->
+    // Points to Mesh, without an extra Mesh to Points node in between (and
+    // without that extra node re-doing work this one already did).
+    { id: "points", label: "Points (Local)", type: "list" },
   ],
   defaultParams: {
     visible: 1,
@@ -767,14 +774,15 @@ export const LATTICE_DEFORM_NODE: NodeDefinition = {
     // sitting there is whatever the source last had when something else
     // happened to draw it. Reading it froze the deformation at that pose,
     // which is why connecting a lattice stopped an animated object dead.
-    // updateWorldMatrix walks the parents and guards updateMatrix() behind
-    // matrixAutoUpdate, so it is safe on a graph-driven mesh (whose
-    // position/quaternion/scale are stale by design).
-    // The third argument is `force`, and it is not optional here: three
-    // skips the recompute unless `matrixWorldNeedsUpdate` is set, and
-    // `matrix.copy()` never sets it (see Object3D.updateWorldMatrix). Without
-    // it this call is a silent no-op on exactly the meshes that need it.
-    srcMesh.updateWorldMatrix(true, false, true);
+    // Forced from inputObj (the root), not srcMesh: three's own
+    // `mesh.updateWorldMatrix(true, false, true)` only forwards its `force`
+    // argument to the mesh itself, not to the parents it climbs to
+    // recompute — a wrapper group whose matrixWorldNeedsUpdate flag was
+    // never set (true for OBJ Model, which writes `.matrix` directly rather
+    // than through position/rotation/scale) would silently keep a stale or
+    // identity matrixWorld regardless. updateMatrixWorld(true) called on the
+    // root instead correctly cascades force down through every descendant.
+    inputObj.updateMatrixWorld(true);
     const sourceMatrix = srcMesh.matrixWorld.clone();
 
     // Composite transform from source geometry to lattice local space:
@@ -834,9 +842,16 @@ export const LATTICE_DEFORM_NODE: NodeDefinition = {
     state.deformedMesh.geometry.dispose();
     state.deformedMesh.geometry = geom;
 
+    const deformedPosAttr = geom.attributes.position as THREE.BufferAttribute;
+    const points: THREE.Vector3[] = new Array(deformedPosAttr.count);
+    for (let i = 0; i < deformedPosAttr.count; i++) {
+      points[i] = new THREE.Vector3().fromBufferAttribute(deformedPosAttr, i);
+    }
+
     return {
       ...primitiveOutputs(state.group),
       cage: state.cageLines,
+      points,
     };
   },
 };

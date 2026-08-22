@@ -141,6 +141,46 @@ describe("SHADE_NODE — plumbing", () => {
     expect(pos.z).toBeCloseTo(5);
   });
 
+  it("reads pose through a posed wrapper group, not just the mesh's own (identity) local matrix — the OBJ Model case", () => {
+    // OBJ Model bakes its Location/Rotation/Scale/Pivot onto a wrapper Group
+    // around the parsed mesh, leaving the mesh's own .matrix at identity —
+    // reading srcMesh.matrix directly (instead of matrixWorld) silently
+    // dropped the object back to the origin, which is exactly what made a
+    // repositioned/rescaled OBJ "disappear" once Shade sat between it and
+    // Render.
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1)); // matrix stays identity
+    const wrapper = new THREE.Group();
+    wrapper.matrixAutoUpdate = false;
+    wrapper.matrix.compose(
+      new THREE.Vector3(10, -2, 7),
+      new THREE.Quaternion(),
+      new THREE.Vector3(0.05, 0.05, 0.05), // a drastically rescaled import, e.g.
+    );
+    wrapper.add(mesh);
+
+    const res = SHADE_NODE.evaluate({ geometry: wrapper }, { mode: "flat" }, CTX("shade-obj-wrapper"));
+    const outMesh = res.geometry as THREE.Mesh;
+    const pos = new THREE.Vector3().setFromMatrixPosition(outMesh.matrix);
+    const scale = new THREE.Vector3().setFromMatrixScale(outMesh.matrix);
+    expect(pos.x).toBeCloseTo(10);
+    expect(pos.y).toBeCloseTo(-2);
+    expect(pos.z).toBeCloseTo(7);
+    expect(scale.x).toBeCloseTo(0.05);
+  });
+
+  it("forces matrixAutoUpdate off even when the source mesh defaults it true (a raw OBJLoader mesh does)", () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    expect(mesh.matrixAutoUpdate).toBe(true); // three's own default — OBJLoader never touches it
+    const wrapper = new THREE.Group();
+    wrapper.matrixAutoUpdate = false;
+    wrapper.matrix.setPosition(1, 2, 3);
+    wrapper.add(mesh);
+
+    const res = SHADE_NODE.evaluate({ geometry: wrapper }, { mode: "flat" }, CTX("shade-autoupdate"));
+    const outMesh = res.geometry as THREE.Mesh;
+    expect(outMesh.matrixAutoUpdate).toBe(false);
+  });
+
   it("keeps tracking the source's pose across calls when the cache hits (animation upstream stays live)", () => {
     const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
     box.matrixAutoUpdate = false;

@@ -156,6 +156,28 @@ describe("LATTICE DEFORM NODE", () => {
     expect(deformedMesh.geometry).toBeInstanceOf(THREE.BufferGeometry);
     expect(deformedMesh.geometry.attributes.normal).toBeDefined();
   });
+
+  it("outputs a Points list matching the deformed mesh's own vertex buffer, index-for-index — for Points Selection / Spring", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1, 4, 4, 4), new THREE.MeshStandardMaterial());
+    const res = LATTICE_DEFORM_NODE.evaluate(
+      { geometry: box, twist: 45, bulge: 0.3 },
+      LATTICE_DEFORM_NODE.defaultParams,
+      CTX,
+    );
+
+    const group = res.geometry as THREE.Group;
+    const deformedMesh = group.children.find((c) => c instanceof THREE.Mesh) as THREE.Mesh;
+    const posAttr = deformedMesh.geometry.attributes.position as THREE.BufferAttribute;
+    const points = res.points as THREE.Vector3[];
+
+    expect(points).toHaveLength(posAttr.count);
+    // Same values as the deformed geometry's own buffer, not the undeformed input.
+    for (let i = 0; i < posAttr.count; i += Math.max(1, Math.floor(posAttr.count / 5))) {
+      expect(points[i].x).toBeCloseTo(posAttr.getX(i));
+      expect(points[i].y).toBeCloseTo(posAttr.getY(i));
+      expect(points[i].z).toBeCloseTo(posAttr.getZ(i));
+    }
+  });
 });
 
 describe("LATTICE_DEFORM_NODE source transform tracking", () => {
