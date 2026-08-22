@@ -1,20 +1,26 @@
 import { NodeDefinition } from "../types";
 import { resolvePointsInput } from "./pointsGeometry";
 
-export type PointsInfluenceMode = "brush" | "discrete";
+export type PointsInfluenceMode = "brush" | "discrete" | "gradient";
 
-/** The 5 discrete-mode levels, in the order their viewport buttons render. */
+/** The 5 preset levels, in the order their viewport buttons render — shared by Brush (caps each dab's strength) and Discrete (the flat value a click/marquee assigns). */
 export const POINTS_INFLUENCE_DISCRETE_LEVELS = [0.2, 0.4, 0.6, 0.8, 1.0];
 
 /**
  * Points Influence — like Points Selection, but graded: every point gets its
  * own 0-1 influence instead of a binary in/out, painted in the viewport
- * (see Viewport.tsx's pointsInfluenceHandles) two ways:
- * - Brush: drag a stroke across the point cloud, influence falls off with
- *   distance from the stroke (a soft-edged selection, dégradé).
- * - Discrete: 5 colored viewport buttons (20/40/60/80/100%) arm a level,
- *   then click/marquee assigns it to the touched points, like Points
- *   Selection's click/marquee but writing a level instead of a boolean.
+ * (see Viewport.tsx's pointsInfluenceHandles), all three gestures gated
+ * behind Cmd/Ctrl+drag like every other viewport pick tool in this codebase
+ * (curve marquee, Points Selection marquee) — a plain drag always stays
+ * camera orbit, never hijacked by the active node's editing mode:
+ * - Brush: Cmd+drag a stroke, influence falls off with distance from the
+ *   cursor, capped at whichever of the 5 preset levels is armed.
+ * - Discrete: the same 5 levels, but a flat assign — Cmd-click or
+ *   Cmd-marquee writes the armed level exactly, no falloff.
+ * - Gradient: Cmd-drag a single straight line once; every point's influence
+ *   becomes its own projection onto that line (1 at the start, 0 at the
+ *   end, linear in between) — a full-object dégradé in one stroke, e.g.
+ *   top-to-bottom, independent of the 5 preset levels.
  *
  * `influences` stores only the non-zero entries (index -> 0-1), same sparse
  * convention as Points Selection's `selectedIndices` — a point nobody ever
@@ -54,7 +60,7 @@ export const POINTS_INFLUENCE_NODE: NodeDefinition = {
     activeLevel: POINTS_INFLUENCE_DISCRETE_LEVELS[2],
   },
   paramFields: [
-    { id: "mode", label: "Mode", kind: "select", options: ["brush", "discrete"], group: "Points Influence" },
+    { id: "mode", label: "Mode", kind: "select", options: ["brush", "discrete", "gradient"], group: "Points Influence" },
     { id: "brushRadius", label: "Brush Radius (px)", kind: "number", step: 5, group: "Points Influence" },
   ],
   evaluate: (inputs, params, ctx) => {

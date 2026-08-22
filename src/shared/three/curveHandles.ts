@@ -57,6 +57,8 @@ export interface CurvePointHandles {
     widthPx: number,
     heightPx: number
   ): { index: number; distance: number }[];
+  /** Every visible handle's own screen-space position — the Gradient tool's projection basis. */
+  projectAll(camera: THREE.Camera, widthPx: number, heightPx: number): { index: number; x: number; y: number }[];
   count(): number;
 }
 
@@ -302,6 +304,23 @@ export function createCurvePointHandles(): CurvePointHandles {
       });
 
       return matches;
+    },
+
+    projectAll(camera, widthPx, heightPx) {
+      const worldPosition = new THREE.Vector3();
+      const result: { index: number; x: number; y: number }[] = [];
+
+      handles.forEach((handle, idx) => {
+        handle.getWorldPosition(worldPosition).project(camera);
+        if (worldPosition.z > 1) return; // behind camera
+        result.push({
+          index: idx,
+          x: ((worldPosition.x + 1) * widthPx) / 2,
+          y: ((-worldPosition.y + 1) * heightPx) / 2,
+        });
+      });
+
+      return result;
     },
 
     count() {

@@ -457,6 +457,7 @@ export function Viewport({
   const hubDragMovedRef = useRef(false);
 
   const [marqueeBox, setMarqueeBox] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const [gradientLine, setGradientLine] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
 
   const snapSelectedCameraToEditorRef = useRef<() => void>(() => {});
   const cameraGuideRef = useRef<HTMLDivElement>(null);
@@ -853,12 +854,15 @@ export function Viewport({
 
     // Points Influence editing — same generic point-cloud handles again, this
     // time colored as a heatmap of a graded 0-1 influence instead of a
-    // binary selected/unselected. Two independent gestures write into the
-    // same `influences` param map:
-    // - Brush mode: a plain drag (no modifier) paints continuously, falloff
-    //   from the drag position — see isBrushPainting below.
-    // - Discrete mode: click/marquee (identical to Points Selection's own
-    //   click/marquee) assigns whichever of the 5 HUD levels is armed.
+    // binary selected/unselected. Three gestures write into the same
+    // `influences` param map, every one of them gated behind Cmd/Ctrl (a
+    // plain drag always stays camera orbit, same convention as curve/Points
+    // Selection marquee):
+    // - Brush: Cmd+drag paints continuously, falloff from the cursor, capped
+    //   at whichever of the 5 HUD levels is armed — see isBrushPainting.
+    // - Discrete: Cmd-click/marquee assigns the armed level flat, no falloff.
+    // - Gradient: one Cmd-drag sets a straight-line projection over every
+    //   point at once (1 at the start, 0 at the end) — see isGradientDragging.
     // Mutually exclusive with curve/Points Selection editing by the same
     // "only one node selected at a time" construction.
     const pointsInfluenceHandles = createCurvePointHandles();
@@ -866,6 +870,8 @@ export function Viewport({
     let pointsInfluenceMode: PointsInfluenceMode = "brush";
     let pointsInfluenceMap = new Map<number, number>();
     let isBrushPainting = false;
+    let isGradientDragging = false;
+    let gradientStartPos: { x: number; y: number } | null = null;
 
     // A Pivot Transform node's `pivot` isn't a pose you can drag through the
     // usual translate/rotate/scale gizmo math (see gizmoWriteback.ts): with
@@ -1213,12 +1219,17 @@ export function Viewport({
       }
     }
 
-    /** Falloff of a brush stroke centered at `centerPx`: 1 at the center, 0 at the edge of brushRadius. */
-    function paintInfluenceAt(centerPx: { x: number; y: number }, radiusPx: number, erase: boolean) {
+    function getActiveInfluenceLevel(): number {
+      const raw = graphRef.current.nodes.find((n) => n.id === pointsInfluenceNodeId)?.params.activeLevel;
+      return typeof raw === "number" ? raw : POINTS_INFLUENCE_DISCRETE_LEVELS[2];
+    }
+
+    /** Falloff of a brush stroke centered at `centerPx`: `cap` (the armed preset level) at the center, 0 at the edge of brushRadius. */
+    function paintInfluenceAt(centerPx: { x: number; y: number }, radiusPx: number, cap: number, erase: boolean) {
       const hits = pointsInfluenceHandles.pickCircle(centerPx, radiusPx, camera, renderer.domElement.clientWidth, renderer.domElement.clientHeight);
       if (hits.length === 0) return;
       for (const { index, distance } of hits) {
-        const falloff = 1 - distance / radiusPx;
+        const falloff = (1 - distance / radiusPx) * cap;
         if (erase) {
           const next = Math.max(0, (pointsInfluenceMap.get(index) ?? 0) - falloff);
           if (next <= 0) pointsInfluenceMap.delete(index);
@@ -1230,23 +1241,54 @@ export function Viewport({
       }
     }
 
+    /**
+     * Gradient tool: a single straight Cmd-drag sets every point's influence
+     * to its own projection onto that line — 1 at the start, 0 at the end,
+     * linear in between — a full-object dégradé (e.g. top-to-bottom) in one
+     * stroke. Unlike Brush this REPLACES every point's value, including ones
+     * the drag never came near (they resolve to 0 and drop out of the sparse
+     * map), since a gradient is meant to redefine the whole field at once.
+     */
+    function applyGradientInfluence(start: { x: number; y: number }, end: { x: number; y: number }) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const projected = pointsInfluenceHandles.projectAll(camera, rect.width, rect.height);
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const lenSq = dx * dx + dy * dy || 1;
+      for (const { index, x, y } of projected) {
+        const t = ((x - start.x) * dx + (y - start.y) * dy) / lenSq;
+        const value = 1 - Math.max(0, Math.min(1, t));
+        if (value <= 0) pointsInfluenceMap.delete(index);
+        else pointsInfluenceMap.set(index, value);
+      }
+    }
+
     function onCanvasPointerDown(e: PointerEvent) {
       pointerDownAt = { x: e.clientX, y: e.clientY };
 
       const isMarqueeModifier = e.metaKey || e.ctrlKey;
       const infActive = pointsInfluenceHandles.count() > 0 && !outputMode;
 
-      // Brush mode paints on a plain drag (no modifier needed — there's
-      // nothing else to drag in this mode) rather than sharing the
-      // Cmd/Ctrl-marquee gesture Discrete mode and curve/Points Selection
-      // editing use.
-      if (infActive && pointsInfluenceMode === "brush" && !isMarqueeModifier) {
+      // Every Points Influence gesture is gated behind Cmd/Ctrl, same as
+      // curve marquee and Points Selection marquee — a plain drag always
+      // stays camera orbit, never hijacked by whichever tool is armed.
+      if (isMarqueeModifier && infActive && pointsInfluenceMode === "brush") {
         isBrushPainting = true;
         controls.enabled = false;
         const rect = renderer.domElement.getBoundingClientRect();
         const radius = Number(graphRef.current.nodes.find((n) => n.id === pointsInfluenceNodeId)?.params.brushRadius) || 40;
-        paintInfluenceAt({ x: e.clientX - rect.left, y: e.clientY - rect.top }, radius, e.shiftKey);
+        paintInfluenceAt({ x: e.clientX - rect.left, y: e.clientY - rect.top }, radius, getActiveInfluenceLevel(), e.shiftKey);
         commitPointsInfluence();
+        e.stopImmediatePropagation();
+        return;
+      }
+
+      if (isMarqueeModifier && infActive && pointsInfluenceMode === "gradient") {
+        isGradientDragging = true;
+        controls.enabled = false;
+        const rect = renderer.domElement.getBoundingClientRect();
+        gradientStartPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        setGradientLine({ x1: gradientStartPos.x, y1: gradientStartPos.y, x2: gradientStartPos.x, y2: gradientStartPos.y });
         e.stopImmediatePropagation();
         return;
       }
@@ -1263,8 +1305,13 @@ export function Viewport({
       if (isBrushPainting && host) {
         const rect = renderer.domElement.getBoundingClientRect();
         const radius = Number(graphRef.current.nodes.find((n) => n.id === pointsInfluenceNodeId)?.params.brushRadius) || 40;
-        paintInfluenceAt({ x: e.clientX - rect.left, y: e.clientY - rect.top }, radius, e.shiftKey);
+        paintInfluenceAt({ x: e.clientX - rect.left, y: e.clientY - rect.top }, radius, getActiveInfluenceLevel(), e.shiftKey);
         commitPointsInfluence();
+        return;
+      }
+      if (isGradientDragging && gradientStartPos && host) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        setGradientLine({ x1: gradientStartPos.x, y1: gradientStartPos.y, x2: e.clientX - rect.left, y2: e.clientY - rect.top });
         return;
       }
       if (isMarqueeDragging && marqueeStartPos && host) {
@@ -1282,15 +1329,26 @@ export function Viewport({
       }
     }
 
-    function getActiveInfluenceLevel(): number {
-      const raw = graphRef.current.nodes.find((n) => n.id === pointsInfluenceNodeId)?.params.activeLevel;
-      return typeof raw === "number" ? raw : POINTS_INFLUENCE_DISCRETE_LEVELS[2];
-    }
-
     function onCanvasPointerUp(e: PointerEvent) {
       if (isBrushPainting) {
         isBrushPainting = false;
         controls.enabled = true;
+        return;
+      }
+      if (isGradientDragging) {
+        isGradientDragging = false;
+        controls.enabled = true;
+        setGradientLine(null);
+        if (gradientStartPos) {
+          const rect = renderer.domElement.getBoundingClientRect();
+          const end = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+          if (Math.hypot(end.x - gradientStartPos.x, end.y - gradientStartPos.y) > CLICK_MOVE_THRESHOLD_PX) {
+            applyGradientInfluence(gradientStartPos, end);
+            commitPointsInfluence();
+          }
+        }
+        gradientStartPos = null;
+        pointerDownAt = null;
         return;
       }
       if (isMarqueeDragging) {
@@ -2611,14 +2669,17 @@ export function Viewport({
           }}
         />
       )}
-      {/* Points Influence — Discrete mode's 5 level buttons. Brush mode needs
-          no HUD of its own: the paint gesture is a plain drag, and Brush
-          Radius already lives in ParamPanel like any other param. */}
+      {/* Points Influence — the 5 preset level buttons, shared by Brush
+          (caps each dab's strength) and Discrete (the flat value a
+          click/marquee assigns). Gradient mode has no use for a fixed
+          level — its whole point is a continuous 0-1 sweep — so no HUD
+          there; Brush Radius still lives in ParamPanel like any other
+          param. */}
       {!outputMode &&
         selectedNodeId &&
         (() => {
           const infNode = graph.nodes.find((n) => n.id === selectedNodeId && n.type === POINTS_INFLUENCE_NODE.type);
-          if (!infNode || infNode.params.mode !== "discrete") return null;
+          if (!infNode || (infNode.params.mode !== "discrete" && infNode.params.mode !== "brush")) return null;
           const activeLevel = typeof infNode.params.activeLevel === "number" ? infNode.params.activeLevel : POINTS_INFLUENCE_DISCRETE_LEVELS[2];
           return (
             <div className="viewport-influence-hud">
@@ -2629,7 +2690,11 @@ export function Viewport({
                   type="button"
                   className={`viewport-influence-hud-level ${activeLevel === level ? "viewport-influence-hud-level-active" : ""}`}
                   style={{ backgroundColor: `#${DISCRETE_LEVEL_COLORS[i].toString(16).padStart(6, "0")}` }}
-                  title={`${Math.round(level * 100)}% — click/marquee a point to assign, Shift to erase`}
+                  title={
+                    infNode.params.mode === "brush"
+                      ? `${Math.round(level * 100)}% — caps how strong Cmd+drag paints, Shift to erase`
+                      : `${Math.round(level * 100)}% — Cmd-click/marquee a point to assign, Shift to erase`
+                  }
                   onClick={() => onTransformChange?.(infNode.id, { activeLevel: level })}
                 >
                   {Math.round(level * 100)}
@@ -2638,6 +2703,28 @@ export function Viewport({
             </div>
           );
         })()}
+      {/* Gradient mode's live drag preview — a straight line from the
+          Cmd-drag's start to the current cursor, matching the marquee
+          overlay's z-index/pointer-events convention. */}
+      {!outputMode && gradientLine && (
+        <svg
+          style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 40 }}
+          width="100%"
+          height="100%"
+        >
+          <line
+            x1={gradientLine.x1}
+            y1={gradientLine.y1}
+            x2={gradientLine.x2}
+            y2={gradientLine.y2}
+            stroke="#38bdf8"
+            strokeWidth={2}
+            strokeDasharray="6 4"
+          />
+          <circle cx={gradientLine.x1} cy={gradientLine.y1} r={4} fill="#2563eb" />
+          <circle cx={gradientLine.x2} cy={gradientLine.y2} r={4} fill="#ef4444" />
+        </svg>
+      )}
       {/* Passe-partout guide: target-output-aspect crop, shown while a Camera
           node is selected so "Aligner Caméra" reproduces what's actually
           framed — see the comment in tick() next to cameraGuideRef. */}
