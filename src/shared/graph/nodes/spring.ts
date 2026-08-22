@@ -5,6 +5,7 @@ import { stepDampedSpring, SpringState } from "../springDamper";
 import { clockInput, numberInput } from "./object";
 import { asVector3 } from "./transform";
 import { writePointsToMesh } from "./pointsGeometry";
+import { findFirstMesh } from "../meshRequired";
 
 function clamp01(n: number): number {
   return Math.max(0, Math.min(1, n));
@@ -184,6 +185,16 @@ export const SPRING_VECTOR_NODE: NodeDefinition = {
     // same round-trip Points to Mesh does, just folded in so the operator
     // never sees a points list at all. Points/Mask/Vector outputs still
     // update normally, for anyone who wants the raw values instead.
+    //
+    // Also switches the spring from local space to WORLD space: Points is
+    // always in the mesh's own local space, which is constant for a static
+    // mesh no matter how its Location/Rotation/Scale/wired Matrix animates —
+    // springing there has nothing to react to. With Geometry wired, the
+    // object's *current* world transform is folded in before springing and
+    // divided back out afterward, so the selection genuinely lags/overshoots
+    // behind the object's own motion (secondary motion / follow-through —
+    // an antenna or a cloth corner trailing behind the body it's attached
+    // to) while every unselected vertex still rides along perfectly rigid.
     { id: "geometry", label: "Geometry (optional passthrough)", type: "geometry" },
     { id: "time", label: "Time", type: "value" },
     { id: "smoothing", label: "Smoothing", type: "value" },
@@ -211,16 +222,39 @@ export const SPRING_VECTOR_NODE: NodeDefinition = {
     const bounciness = clamp01(numberInput(inputs.bounciness, params.bounciness, 0.3));
 
     if (Array.isArray(inputs.points)) {
-      const targets = (inputs.points as unknown[]).map((p) => asVector3(p, new THREE.Vector3(0, 0, 0)));
+      const localTargets = (inputs.points as unknown[]).map((p) => asVector3(p, new THREE.Vector3(0, 0, 0)));
       const mask = Array.isArray(inputs.mask) ? (inputs.mask as unknown[]).map((m) => Number(m)) : null;
-      const points = springPoints(ctx.nodeId, targets, mask, time, smoothing, bounciness);
-      const vector = points[0] ?? new THREE.Vector3(0, 0, 0);
 
-      if (inputs.geometry instanceof THREE.Object3D) {
-        const geometry = writePointsToMesh(ctx.nodeId, inputs.geometry, points, "Spring Vector");
-        return { vector, points, geometry };
+      // With Geometry wired, spring in WORLD space, not the mesh's own local
+      // space: Points is always local (Mesh to Points / Points Selection's
+      // convention), so a static local vertex position gives the spring
+      // nothing to react to even while the *object* is animated (moved,
+      // rotated, wiggled...) upstream — the whole point of wiring Geometry
+      // in the first place is "let selected points lag/jiggle behind the
+      // object's own motion while the rest stays rigid," and that motion
+      // only shows up in the WORLD position, not the constant local one.
+      // Springing in world space and converting back afterward is also what
+      // keeps a masked-out (held) point exactly rigid with the object even
+      // though it round-trips through world space too: local -> world ->
+      // (held exactly at that same world target) -> local is the identity
+      // transform for an unmoved point, by construction.
+      const mesh = inputs.geometry instanceof THREE.Object3D ? findFirstMesh(inputs.geometry) : null;
+      if (mesh) {
+        const geomObj = inputs.geometry as THREE.Object3D;
+        geomObj.updateMatrixWorld(true);
+        const matrixWorld = mesh.matrixWorld.clone();
+        const inverse = matrixWorld.clone().invert();
+
+        const worldTargets = localTargets.map((p) => p.clone().applyMatrix4(matrixWorld));
+        const sprungWorld = springPoints(ctx.nodeId, worldTargets, mask, time, smoothing, bounciness);
+        const points = sprungWorld.map((p) => p.clone().applyMatrix4(inverse));
+
+        const geometry = writePointsToMesh(ctx.nodeId, geomObj, points, "Spring Vector");
+        return { vector: points[0] ?? new THREE.Vector3(0, 0, 0), points, geometry };
       }
-      return { vector, points };
+
+      const points = springPoints(ctx.nodeId, localTargets, mask, time, smoothing, bounciness);
+      return { vector: points[0] ?? new THREE.Vector3(0, 0, 0), points };
     }
 
     const target = asVector3(inputs.target ?? params.target, new THREE.Vector3(0, 0, 0));

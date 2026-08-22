@@ -251,4 +251,82 @@ describe("SPRING_VECTOR_NODE — the two-node shortcut: Geometry -> Points Selec
     expect(worldPos.y).toBeCloseTo(0);
     expect(worldPos.z).toBeCloseTo(-3);
   });
+
+  it("springs in WORLD space: a moving object drags the selection along with lag/overshoot, unselected vertices stay perfectly rigid with it", () => {
+    // This is the exact real-world shape the shortcut exists for: the
+    // object's vertex DATA never changes (a plain static box) — all the
+    // motion comes from an upstream animation of the object's own
+    // pose/matrix (a Wiggle feeding its Matrix input, say). Springing in the
+    // mesh's local space (as an earlier version of this node did) has
+    // nothing to react to there — a constant local point is a constant
+    // target no matter how the object itself moves — which is exactly why
+    // that version produced no visible effect at all.
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    mesh.matrixAutoUpdate = false;
+
+    const selNodeId = "psel-worldspace";
+    const springNodeId = "spring-worldspace";
+    const selectedIndex = 0;
+    const params = { selectedIndices: [selectedIndex] };
+
+    function moveTo(x: number) {
+      mesh.matrix.setPosition(x, 0, 0);
+    }
+
+    moveTo(0);
+    let sel = POINTS_SELECTION_NODE.evaluate({ geometry: mesh }, params, { time: 0, step: 0, nodeId: selNodeId });
+    SPRING_VECTOR_NODE.evaluate(
+      { points: sel.points, mask: sel.mask, geometry: sel.geometry },
+      { ...SPRING_VECTOR_NODE.defaultParams, smoothing: 0.3, bounciness: 0.5 },
+      { time: 0, step: 0, nodeId: springNodeId },
+    );
+
+    // Snap the whole object's pose far away in one frame (a hard cut in its
+    // driving animation) and hold it there.
+    moveTo(20);
+
+    let finalMesh: THREE.Mesh | null = null;
+    let maxSelectedLocalX = -Infinity;
+    for (let i = 1; i <= 90; i++) {
+      const t = i / 30;
+      sel = POINTS_SELECTION_NODE.evaluate({ geometry: mesh }, params, { time: t, step: i, nodeId: selNodeId });
+      const res = SPRING_VECTOR_NODE.evaluate(
+        { points: sel.points, mask: sel.mask, geometry: sel.geometry, time: t },
+        { ...SPRING_VECTOR_NODE.defaultParams, smoothing: 0.3, bounciness: 0.5 },
+        { time: t, step: i, nodeId: springNodeId },
+      );
+      finalMesh = res.geometry as THREE.Mesh;
+      const localX = finalMesh.geometry.attributes.position.getX(selectedIndex);
+      if (localX > maxSelectedLocalX) maxSelectedLocalX = localX;
+    }
+
+    expect(finalMesh).not.toBeNull();
+    const outPos = finalMesh!.geometry.attributes.position;
+
+    // The selected vertex's LOCAL position moved from its original ~-0.5 —
+    // proof the spring actually reacted to the object's motion, which the
+    // old local-space design structurally could not do.
+    expect(Math.abs(outPos.getX(selectedIndex) - -0.5)).toBeGreaterThan(0.05);
+
+    // Bounciness > 0 means it overshot at some point along the way (its
+    // local X went more negative than -0.5, since the whole object jumped
+    // +20 and the point briefly lagged, then overshot past its new resting
+    // spot on the way back in).
+    expect(maxSelectedLocalX).toBeGreaterThan(-0.5 + 1e-4);
+
+    // Every unselected vertex is untouched — exactly its original local
+    // position, unaffected by the object having moved at all.
+    const vertexCount = mesh.geometry.attributes.position.count;
+    for (let i = 0; i < vertexCount; i++) {
+      if (i === selectedIndex) continue;
+      expect(outPos.getX(i)).toBeCloseTo(mesh.geometry.attributes.position.getX(i), 4);
+      expect(outPos.getY(i)).toBeCloseTo(mesh.geometry.attributes.position.getY(i), 4);
+      expect(outPos.getZ(i)).toBeCloseTo(mesh.geometry.attributes.position.getZ(i), 4);
+    }
+
+    // And the object's actual pose (matrix) is still exactly where it was
+    // moved to — unselected geometry rides along with it rigidly.
+    const worldPos = new THREE.Vector3().setFromMatrixPosition(finalMesh!.matrix);
+    expect(worldPos.x).toBeCloseTo(20);
+  });
 });
