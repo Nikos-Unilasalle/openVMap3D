@@ -87,6 +87,7 @@ import { MATRIX_MATH_NODE } from "./matrixMath";
 import { ORBIT_NODE, STAGGER_NODE, TIME_REMAP_NODE } from "./motion";
 import { TRAIL_NODE } from "./trail";
 import { SQUASH_STRETCH_NODE } from "./squash";
+import { VELOCITY_NODE } from "./velocity";
 import { SPRING_NODE, SPRING_VECTOR_NODE } from "./spring";
 import { MESH_TO_POINTS_NODE, POINTS_TO_MESH_NODE } from "./pointsGeometry";
 import { POINTS_SELECTION_NODE } from "./pointsSelection";
@@ -260,6 +261,7 @@ export const STARTER_NODES = [
   MATRIX_MATH_NODE,
   TRAIL_NODE,
   SQUASH_STRETCH_NODE,
+  VELOCITY_NODE,
   SPRING_NODE,
   SPRING_VECTOR_NODE,
   MESH_TO_POINTS_NODE,
@@ -323,6 +325,7 @@ export * from "./raycast";
 export * from "./motion";
 export * from "./trail";
 export * from "./squash";
+export * from "./velocity";
 export * from "./spring";
 export * from "./pointsGeometry";
 export * from "./pointsSelection";
