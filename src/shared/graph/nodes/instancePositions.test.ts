@@ -49,6 +49,53 @@ describe("INSTANCE_POSITIONS_NODE", () => {
     expect(res.count).toBe(0);
     expect(res.positions).toEqual([]);
   });
+
+  it("anchor 'top' reads the actual scaled bounding-box top, not a fixed offset", () => {
+    // Two poles of the same base geometry, one scaled 2x taller than the
+    // other — a constant Height Offset can only be correct for one of them.
+    const shortPole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 2));
+    shortPole.geometry.translate(0, 1, 0); // base at y=0, top at y=2
+    const tallPole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 2));
+    tallPole.geometry.translate(0, 1, 0);
+    tallPole.scale.set(1, 2.5, 1); // base still at y=0, top now at y=5
+
+    const group = new THREE.Group();
+    group.add(shortPole, tallPole);
+
+    const res = INSTANCE_POSITIONS_NODE.evaluate(
+      { geometry: group },
+      { ...INSTANCE_POSITIONS_NODE.defaultParams, anchor: "top" },
+      CTX,
+    );
+    const positions = res.positions as THREE.Vector3[];
+    expect(positions[0].y).toBeCloseTo(2);
+    expect(positions[1].y).toBeCloseTo(5);
+  });
+
+  it("anchor 'bottom' reads the base of the bounding box", () => {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 2));
+    pole.geometry.translate(0, 1, 0);
+    pole.position.set(0, 3, 0); // planted with its base 3 units up
+
+    const res = INSTANCE_POSITIONS_NODE.evaluate(
+      { geometry: pole },
+      { ...INSTANCE_POSITIONS_NODE.defaultParams, anchor: "bottom" },
+      CTX,
+    );
+    expect((res.positions as THREE.Vector3[])[0].y).toBeCloseTo(3);
+  });
+
+  it("anchor 'top' still respects Height Offset on top of the measured bound", () => {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 2));
+    pole.geometry.translate(0, 1, 0);
+
+    const res = INSTANCE_POSITIONS_NODE.evaluate(
+      { geometry: pole },
+      { ...INSTANCE_POSITIONS_NODE.defaultParams, anchor: "top", heightOffset: 0.5 },
+      CTX,
+    );
+    expect((res.positions as THREE.Vector3[])[0].y).toBeCloseTo(2.5);
+  });
 });
 
 describe("INSTANCE_POSITIONS_NODE -> Curve from Points integration (poles -> sagging wire)", () => {

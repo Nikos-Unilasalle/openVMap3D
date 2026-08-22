@@ -39,6 +39,7 @@ interface SplitViewportProps {
   evaluatedResults?: EvalResult | null;
   onParamChange?: (paramId: string, value: unknown, targetNodeId?: string) => void;
   onUnpinParam?: (nodeId: string, paramId: string) => void;
+  onRenameExposedParam?: (nodeId: string, paramId: string, label: string) => void;
 }
 
 export function SplitViewport({
@@ -64,6 +65,7 @@ export function SplitViewport({
   evaluatedResults,
   onParamChange,
   onUnpinParam,
+  onRenameExposedParam,
 }: SplitViewportProps) {
   const [splitPercent, setSplitPercent] = useState(50);
   const isDraggingRef = useRef(false);
@@ -189,6 +191,7 @@ export function SplitViewport({
           evaluatedResults={evaluatedResults}
           onParamChange={onParamChange}
           onUnpinParam={onUnpinParam}
+          onRenameExposedParam={onRenameExposedParam}
         />
       </div>
 

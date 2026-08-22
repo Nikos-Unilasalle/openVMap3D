@@ -23,6 +23,7 @@ interface ViewportParamHUDProps {
   keyframesEnabled: boolean;
   onChange: (paramId: string, value: unknown, targetNodeId?: string) => void;
   onUnpin: (nodeId: string, paramId: string) => void;
+  onRename?: (nodeId: string, paramId: string, label: string) => void;
 }
 
 /**
@@ -44,8 +45,13 @@ export function ViewportParamHUD({
   keyframesEnabled,
   onChange,
   onUnpin,
+  onRename,
 }: ViewportParamHUDProps) {
   const [collapsed, setCollapsed] = useState(false);
+  // Which row's label is mid-edit — at most one at a time, keyed by
+  // "nodeId:paramId" since paramId alone collides across pinned nodes.
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState("");
   const refs = graph.exposedParams ?? [];
   if (refs.length === 0) return null;
 
@@ -84,9 +90,39 @@ export function ViewportParamHUD({
                   if (!field) return null;
                   const status = keyframesEnabled ? getKeyframeStatus(keyframes, nodeId, field.id, currentFrame) : "none";
 
+                  const key = `${nodeId}:${ref.paramId}`;
+                  const isEditing = editingKey === key;
+                  const commitRename = () => {
+                    setEditingKey(null);
+                    if (onRename) onRename(nodeId, ref.paramId, editingValue);
+                  };
+
                   return (
                     <div className="viewport-param-hud-row" key={field.id}>
-                      <label>{ref.label ?? field.label}</label>
+                      {isEditing ? (
+                        <input
+                          className="viewport-param-hud-label-edit"
+                          autoFocus
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          onBlur={commitRename}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") commitRename();
+                            if (e.key === "Escape") setEditingKey(null);
+                          }}
+                        />
+                      ) : (
+                        <label
+                          title={onRename ? "Click to rename" : undefined}
+                          onClick={() => {
+                            if (!onRename) return;
+                            setEditingValue(ref.label ?? field.label);
+                            setEditingKey(key);
+                          }}
+                        >
+                          {ref.label ?? field.label}
+                        </label>
+                      )}
                       <div className="viewport-param-hud-control">
                         {field.kind === "number" && (
                           <DragNumberInput

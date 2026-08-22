@@ -96,6 +96,7 @@ describe("cloneGraph", () => {
         },
       },
       markers: [0, 30, 60],
+      exposedParams: [{ nodeId: "a", paramId: "rotation", label: "Spin" }],
     };
 
     const cloned = cloneGraph(graph);
@@ -104,12 +105,30 @@ describe("cloneGraph", () => {
     expect(cloned.keyframes?.a?.["rotation.x"][0].value).toBe(0);
     expect(cloned.keyframes?.a?.["rotation.x"][0].easeIn).toBe("smooth");
     expect(cloned.markers).toEqual([0, 30, 60]);
+    expect(cloned.exposedParams).toEqual([{ nodeId: "a", paramId: "rotation", label: "Spin" }]);
 
     // Mutation of cloned should not affect original
     cloned.keyframes!.a["rotation.x"][0].frame = 99;
     cloned.markers!.push(120);
+    cloned.exposedParams![0].label = "Changed";
 
     expect(graph.keyframes!.a["rotation.x"][0].frame).toBe(0);
     expect(graph.markers).toEqual([0, 30, 60]);
+    expect(graph.exposedParams![0].label).toBe("Spin");
+  });
+
+  test("undo/redo (via repeated cloneGraph round-trips) never drops exposedParams — this is the pinned-viewport-HUD-disappears-on-undo bug", () => {
+    const graph: Graph = {
+      nodes: [{ id: "a", type: "transform", position: { x: 0, y: 0 }, params: {} }],
+      connections: [],
+      exposedParams: [{ nodeId: "a", paramId: "location" }],
+    };
+
+    // Undo/redo snapshots the graph through cloneGraph on every history push
+    // and pop — simulate a few steps of that.
+    let current = graph;
+    for (let i = 0; i < 3; i++) current = cloneGraph(current);
+
+    expect(current.exposedParams).toEqual([{ nodeId: "a", paramId: "location" }]);
   });
 });

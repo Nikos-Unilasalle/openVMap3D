@@ -335,6 +335,7 @@ interface ViewportProps {
   evaluatedResults?: EvalResult | null;
   onParamChange?: (paramId: string, value: unknown, targetNodeId?: string) => void;
   onUnpinParam?: (nodeId: string, paramId: string) => void;
+  onRenameExposedParam?: (nodeId: string, paramId: string, label: string) => void;
 }
 
 export interface ViewportExportHandle {
@@ -369,6 +370,7 @@ export function Viewport({
   evaluatedResults = null,
   onParamChange,
   onUnpinParam,
+  onRenameExposedParam,
 }: ViewportProps) {
   const [showUiOverlay, setShowUiOverlay] = useState(true);
   const showUiOverlayRef = useRef(showUiOverlay);
@@ -2626,6 +2628,7 @@ export function Viewport({
           keyframesEnabled={keyframesEnabled}
           onChange={onParamChange}
           onUnpin={onUnpinParam}
+          onRename={onRenameExposedParam}
         />
       )}
 

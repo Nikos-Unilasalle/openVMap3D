@@ -853,6 +853,23 @@ function MainEditor() {
     [setGraphWithHistory],
   );
 
+  // A blank label clears the override rather than storing "" — the HUD row
+  // then falls back to the field's own label, same as a pin that was never
+  // renamed at all, instead of rendering an empty row header forever.
+  const onRenameExposed = useCallback(
+    (nodeId: string, paramId: string, label: string) => {
+      const trimmed = label.trim();
+      setGraphWithHistory((prevGraph) => {
+        const existing = prevGraph.exposedParams ?? [];
+        const next = existing.map((e) =>
+          e.nodeId === nodeId && e.paramId === paramId ? { ...e, label: trimmed || undefined } : e,
+        );
+        return { ...prevGraph, exposedParams: next };
+      }, `exposeRename:${nodeId}:${paramId}`);
+    },
+    [setGraphWithHistory],
+  );
+
   // Tab toggles the selected object's own Visible param — only while the
   // mouse is over the node graph canvas (isGraphZone), since the 3D
   // viewport already binds plain Tab to its own UI-overlay toggle (see
@@ -1571,6 +1588,7 @@ function MainEditor() {
           evaluatedResults={evaluatedResults}
           onParamChange={onParamChange}
           onUnpinParam={onToggleExposed}
+          onRenameExposedParam={onRenameExposed}
         />
         {needsTransformHint && (
           <div className="viewport-hint">Wire a Transform node into this object's Matrix to move it</div>

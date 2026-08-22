@@ -76,6 +76,7 @@ import { BOOLEAN_NODE } from "./boolean";
 import { SUBDIVIDE_NODE } from "./subdivide";
 import { EXTRUDE_MESH_NODE, DELETE_GEOMETRY_NODE } from "./meshEdit";
 import { SHADE_NODE } from "./shade";
+import { VISUAL_SLICE_NODE } from "./visualSlice";
 import { WIGGLE_NODE, WIGGLE_NUMBER_NODE, WIGGLE_VECTOR_NODE } from "./wiggle";
 import { MATERIAL_NODE } from "./material";
 import { HUB_TEXT_NODE, HUB_IMAGE_NODE } from "./hub";
@@ -237,6 +238,7 @@ export const STARTER_NODES = [
   EXTRUDE_MESH_NODE,
   DELETE_GEOMETRY_NODE,
   SHADE_NODE,
+  VISUAL_SLICE_NODE,
   WIGGLE_NODE,
   WIGGLE_NUMBER_NODE,
   WIGGLE_VECTOR_NODE,

@@ -72,6 +72,27 @@
   font-size: 12px;
   flex: 0 0 auto;
   max-width: 90px;
+  cursor: text;
+}
+
+.viewport-param-hud-row label:hover {
+  color: #e6e6e6;
+}
+
+.viewport-param-hud-label-edit {
+  flex: 0 0 auto;
+  width: 90px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid #38bdf8;
+  border-radius: 3px;
+  color: #e6e6e6;
+  font-size: 12px;
+  font-family: inherit;
+  padding: 1px 4px;
+}
+
+.viewport-param-hud-label-edit:focus {
+  outline: none;
 }
 
 .viewport-param-hud-control {
