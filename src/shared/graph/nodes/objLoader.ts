@@ -3,7 +3,7 @@ import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { NodeDefinition } from "../types";
 import { createNodeCache } from "../nodeCaches";
 import { composeNativeMatrixWithPivot } from "./transform";
-import { COMMON_PRIMITIVE_OUTPUTS, extractMaterialParams, primitiveOutputs } from "./object";
+import { COMMON_PRIMITIVE_OUTPUTS, TextureParams, applyMaterialParams, extractMaterialParams, primitiveOutputs } from "./object";
 
 interface ObjState {
   group: THREE.Group;
@@ -13,8 +13,6 @@ interface ObjState {
   normalMap?: THREE.Texture;
   lastTexturePath?: string;
   lastNormalPath?: string;
-  /** Last material/texture signature applied — skip the per-frame re-apply when unchanged. */
-  lastMaterialSig?: string;
 }
 
 const objStateCache = createNodeCache<ObjState>();
@@ -71,6 +69,8 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
     texturePath: "",
     normalMapPath: "",
     color: new THREE.Color(0xffffff),
+    emissive: new THREE.Color(0x000000),
+    emissiveIntensity: 1.0,
     shadeless: 0,
     uvScaleX: 1,
     uvScaleY: 1,
@@ -80,6 +80,8 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
     metalness: 0.1,
     wireframe: 0,
     opacity: 1.0,
+    transmission: 0,
+    thickness: 0.5,
   },
   dynamicParamFields: () => [
     {
@@ -208,6 +210,8 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
     { id: "scale", label: "Scale", kind: "vector" },
     { id: "pivot", label: "Pivot", kind: "vector" },
     { id: "color", label: "Color (fallback)", kind: "color" },
+    { id: "emissive", label: "Emissive (Glow)", kind: "color" },
+    { id: "emissiveIntensity", label: "Emissive Intensity", kind: "number", step: 0.1 },
     { id: "shadeless", label: "Shadeless (Unlit)", kind: "boolean" },
     { id: "uvScaleX", label: "UV Scale X (Tile)", kind: "number", step: 0.1 },
     { id: "uvScaleY", label: "UV Scale Y (Tile)", kind: "number", step: 0.1 },
@@ -217,6 +221,8 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
     { id: "metalness", label: "Metalness", kind: "number", step: 0.05 },
     { id: "wireframe", label: "Wireframe", kind: "boolean" },
     { id: "opacity", label: "Opacity", kind: "number", step: 0.05 },
+    { id: "transmission", label: "Transmission (Glass)", kind: "number", step: 0.05 },
+    { id: "thickness", label: "Glass Thickness", kind: "number", step: 0.05 },
   ],
   evaluate: (inputs, params, ctx) => {
     const state = getOrCreateObjState(ctx.nodeId);
@@ -231,11 +237,6 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
     }
 
     const matParams = extractMaterialParams(inputs, params);
-    const color = matParams.color;
-    const shadeless = matParams.shadeless;
-    const wireframe = matParams.wireframe;
-    const opacity = matParams.opacity;
-    const isTransparent = opacity < 0.999;
 
     let scaleX = Number(params.uvScaleX) || 1;
     let scaleY = Number(params.uvScaleY) || 1;
@@ -251,138 +252,28 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
       offsetY = inputs.uvOffset.y;
     }
 
-    const roughness = Math.max(0, Math.min(1, matParams.roughness));
-    const metalness = Math.max(0, Math.min(1, matParams.metalness));
-
     const inputDiffuse = inputs.diffuse instanceof THREE.Texture && inputs.diffuse.image ? inputs.diffuse : null;
     const inputNormal = inputs.normal instanceof THREE.Texture && inputs.normal.image ? inputs.normal : null;
 
     const activeDiffuse = (inputDiffuse || state.textureMap) ?? null;
     const activeNormal = (inputNormal || state.normalMap) ?? null;
+    const texParams: TextureParams = { activeDiffuse, activeNormal, scaleX, scaleY, offsetX, offsetY };
 
-    // Re-apply (and set needsUpdate on) materials only when something they
-    // depend on actually changed — doing it every frame recompiles the shader
-    // and re-uploads the 2MB texture 60×/s.
-    const sig = [
-      color.getHex(),
-      shadeless,
-      wireframe,
-      opacity,
-      roughness,
-      metalness,
-      activeDiffuse?.uuid ?? "",
-      activeNormal?.uuid ?? "",
-      scaleX,
-      scaleY,
-      offsetX,
-      offsetY,
-    ].join("|");
-    if (state.lastMaterialSig !== sig) {
-      state.lastMaterialSig = sig;
-      updateObjMaterials(group, {
-        color,
-        shadeless,
-        wireframe,
-        opacity,
-        isTransparent,
-        roughness,
-        metalness,
-        activeDiffuse,
-        activeNormal,
-        scaleX,
-        scaleY,
-        offsetX,
-        offsetY,
-      });
-    }
+    // Same shared material pipeline every other object node uses (Box,
+    // Sphere, Curve to Mesh...) — this is what gets an OBJ the params that
+    // pipeline supports (emissive glow, glass transmission) for free, and
+    // keeps its material behaviour from silently drifting out of sync with
+    // theirs. applyMaterialParams caches per-mesh (its own signature, not
+    // a single one for the whole group) and only recompiles/re-uploads when
+    // something actually changed, so it's cheap to call on every mesh every
+    // frame — including a mesh that just got swapped in by loading a new OBJ,
+    // which a single whole-group signature would otherwise miss.
+    group.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        applyMaterialParams(child, matParams, THREE.FrontSide, texParams);
+      }
+    });
 
     return primitiveOutputs(group);
   },
 };
-
-interface ObjMaterialParams {
-  color: THREE.Color;
-  shadeless: boolean;
-  wireframe: boolean;
-  opacity: number;
-  isTransparent: boolean;
-  roughness: number;
-  metalness: number;
-  activeDiffuse: THREE.Texture | null;
-  activeNormal: THREE.Texture | null;
-  scaleX: number;
-  scaleY: number;
-  offsetX: number;
-  offsetY: number;
-}
-
-/**
- * A material only needs recompiling when its *defines* change — which map
- * slots are filled, and whether it draws transparent. Colour, roughness,
- * repeat/offset and opacity are plain uniforms. Setting `needsUpdate`
- * unconditionally every frame forced three to recompute the full program
- * parameter set on every mesh of every loaded OBJ, every frame.
- */
-function syncMaterialDefines(
-  mat: THREE.Material & { map?: THREE.Texture | null; normalMap?: THREE.Texture | null },
-  map: THREE.Texture | null,
-  normalMap: THREE.Texture | null,
-  isTransparent: boolean,
-): void {
-  const structural =
-    (mat.map ?? null) !== map ||
-    (mat.normalMap ?? null) !== normalMap ||
-    mat.transparent !== isTransparent;
-  mat.map = map;
-  if ("normalMap" in mat) mat.normalMap = normalMap;
-  mat.transparent = isTransparent;
-  if (structural) mat.needsUpdate = true;
-}
-
-function updateObjMaterials(group: THREE.Group, p: ObjMaterialParams): void {
-  group.traverse((child) => {
-    if (child instanceof THREE.Mesh) {
-      if (p.shadeless) {
-        if (!(child.material instanceof THREE.MeshBasicMaterial)) {
-          if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
-          else if (child.material) child.material.dispose();
-          child.material = new THREE.MeshBasicMaterial({ color: p.color });
-        }
-        const mat = child.material as THREE.MeshBasicMaterial;
-        mat.color.copy(p.color);
-        mat.wireframe = p.wireframe;
-        mat.opacity = p.opacity;
-
-        if (p.activeDiffuse) {
-          p.activeDiffuse.colorSpace = THREE.SRGBColorSpace;
-          p.activeDiffuse.repeat.set(p.scaleX, p.scaleY);
-          p.activeDiffuse.offset.set(p.offsetX, p.offsetY);
-        }
-        syncMaterialDefines(mat, p.activeDiffuse ?? null, null, p.isTransparent);
-      } else {
-        if (!(child.material instanceof THREE.MeshStandardMaterial)) {
-          if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
-          else if (child.material) child.material.dispose();
-          child.material = new THREE.MeshStandardMaterial({ color: p.color });
-        }
-        const mat = child.material as THREE.MeshStandardMaterial;
-        mat.color.copy(p.color);
-        mat.roughness = p.roughness;
-        mat.metalness = p.metalness;
-        mat.wireframe = p.wireframe;
-        mat.opacity = p.opacity;
-
-        if (p.activeDiffuse) {
-          p.activeDiffuse.colorSpace = THREE.SRGBColorSpace;
-          p.activeDiffuse.repeat.set(p.scaleX, p.scaleY);
-          p.activeDiffuse.offset.set(p.offsetX, p.offsetY);
-        }
-        if (p.activeNormal) {
-          p.activeNormal.repeat.set(p.scaleX, p.scaleY);
-          p.activeNormal.offset.set(p.offsetX, p.offsetY);
-        }
-        syncMaterialDefines(mat, p.activeDiffuse ?? null, p.activeNormal ?? null, p.isTransparent);
-      }
-    }
-  });
-}

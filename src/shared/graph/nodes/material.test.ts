@@ -144,7 +144,18 @@ describe("material input priority", () => {
     applyMaterialParams(mesh, p, THREE.FrontSide);
     expect(mat.version).toBe(appliedVersion);
 
+    // needsUpdate forces a full shader recompile — only the *defines* (which
+    // map slots are filled, whether it draws transparent) need that. A plain
+    // uniform change like roughness reaches the GPU without one, so it must
+    // NOT bump version, even though the value itself is still applied.
     applyMaterialParams(mesh, { ...p, roughness: 0.9 }, THREE.FrontSide);
+    expect(mat.roughness).toBe(0.9);
+    expect(mat.version).toBe(appliedVersion);
+
+    // A defines-affecting change (opacity crossing into transparent) does
+    // bump it — a different shader program is genuinely needed.
+    applyMaterialParams(mesh, { ...p, roughness: 0.9, opacity: 0.5 }, THREE.FrontSide);
+    expect(mat.transparent).toBe(true);
     expect(mat.version).toBe(appliedVersion + 1);
   });
 });

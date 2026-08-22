@@ -296,6 +296,8 @@ export function applyMaterialParams(
       mesh.material = new THREE.MeshBasicMaterial({ side: defaultSide });
     }
     const mat = mesh.material as THREE.MeshBasicMaterial;
+    const prevMap = mat.map ?? null;
+    const prevTransparent = mat.transparent;
     mat.color.copy(matParams.color);
     mat.wireframe = matParams.wireframe;
     mat.transparent = isTransparent;
@@ -314,7 +316,14 @@ export function applyMaterialParams(
       mat.map = null;
     }
 
-    mat.needsUpdate = true;
+    // needsUpdate forces a full shader recompile — only the *defines* (which
+    // map slots are filled, whether it draws transparent) actually need
+    // that. Plain uniform changes (color, opacity, wireframe...) already
+    // reach the GPU without one; setting it unconditionally here would
+    // recompile on every color drag.
+    if (mat.map !== prevMap || mat.transparent !== prevTransparent) {
+      mat.needsUpdate = true;
+    }
   } else {
     const wantPhysical = matParams.transmission > 0;
     if (wantPhysical) {
@@ -342,6 +351,9 @@ export function applyMaterialParams(
       mesh.material = new THREE.MeshStandardMaterial({ side: defaultSide });
     }
     const mat = mesh.material as THREE.MeshStandardMaterial;
+    const prevMap = mat.map ?? null;
+    const prevNormalMap = mat.normalMap ?? null;
+    const prevTransparent = mat.transparent;
     mat.color.copy(matParams.color);
     mat.emissive.copy(matParams.emissive);
     mat.emissiveIntensity = matParams.emissiveIntensity;
@@ -381,7 +393,10 @@ export function applyMaterialParams(
       mat.normalMap = null;
     }
 
-    mat.needsUpdate = true;
+    // See the shadeless branch above: only the *defines* need a recompile.
+    if (mat.map !== prevMap || mat.normalMap !== prevNormalMap || mat.transparent !== prevTransparent) {
+      mat.needsUpdate = true;
+    }
   }
 }
 
