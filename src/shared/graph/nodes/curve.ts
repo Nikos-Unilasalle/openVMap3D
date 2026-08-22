@@ -371,6 +371,52 @@ export function buildBezierPath(pts: THREE.Vector3[], closed = false): THREE.Cur
 }
 
 /** Generates custom tube geometry with variable radius R(t) = baseRadius * evalProfile(t) and start/end trimming */
+/**
+ * Fans a flat disc across one end ring of the tube, duplicating its vertices
+ * so the cap gets its own flat normal instead of inheriting the tube side's
+ * curved-around-the-tube one — sharing indices would light the cap like a
+ * continuation of the tube wall instead of a flat plug. Winding is decided
+ * per end (not assumed) by checking the first triangle against the desired
+ * outward normal and flipping if that particular ring's vertex order came
+ * out backwards, so it's correct regardless of which end (start or end,
+ * opposite tangent directions) called it.
+ */
+function addTubeCap(
+  positions: number[],
+  normalAttrs: number[],
+  uvs: number[],
+  indices: number[],
+  ringStartVertex: number,
+  radialSegments: number,
+  center: THREE.Vector3,
+  capNormal: THREE.Vector3,
+): void {
+  const duplicatedRingStart = positions.length / 3;
+  for (let j = 0; j <= radialSegments; j++) {
+    const src = ringStartVertex + j;
+    positions.push(positions[src * 3], positions[src * 3 + 1], positions[src * 3 + 2]);
+    normalAttrs.push(capNormal.x, capNormal.y, capNormal.z);
+    const theta = (j / radialSegments) * Math.PI * 2;
+    uvs.push(0.5 + 0.5 * Math.cos(theta), 0.5 + 0.5 * Math.sin(theta));
+  }
+  const centerIndex = positions.length / 3;
+  positions.push(center.x, center.y, center.z);
+  normalAttrs.push(capNormal.x, capNormal.y, capNormal.z);
+  uvs.push(0.5, 0.5);
+
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  for (let j = 0; j < radialSegments; j++) {
+    const p0 = duplicatedRingStart + j;
+    const p1 = duplicatedRingStart + j + 1;
+    a.set(positions[p0 * 3], positions[p0 * 3 + 1], positions[p0 * 3 + 2]).sub(center);
+    b.set(positions[p1 * 3], positions[p1 * 3 + 1], positions[p1 * 3 + 2]).sub(center);
+    const outward = a.clone().cross(b).dot(capNormal) >= 0;
+    if (outward) indices.push(centerIndex, p0, p1);
+    else indices.push(centerIndex, p1, p0);
+  }
+}
+
 export function createVariableThicknessTubeGeometry(
   curve: THREE.Curve<THREE.Vector3>,
   tubularSegments = 64,
@@ -379,7 +425,8 @@ export function createVariableThicknessTubeGeometry(
   profile: ProfilePoint[] = DEFAULT_PROFILE_POINTS,
   _closed = false,
   startProgress = 0.0,
-  endProgress = 1.0
+  endProgress = 1.0,
+  caps = false,
 ): THREE.BufferGeometry {
   const s = Math.max(0, Math.min(1, startProgress));
   const e = Math.max(0, Math.min(1, endProgress));
@@ -491,6 +538,22 @@ export function createVariableThicknessTubeGeometry(
       indices.push(a, b, d);
       indices.push(b, c, d);
     }
+  }
+
+  if (caps) {
+    const startRingVertex = 0;
+    const endRingVertex = (radialSegments + 1) * tubularSegments;
+    addTubeCap(positions, normalAttrs, uvs, indices, startRingVertex, radialSegments, samplePoints[0], tangents[0].clone().negate());
+    addTubeCap(
+      positions,
+      normalAttrs,
+      uvs,
+      indices,
+      endRingVertex,
+      radialSegments,
+      samplePoints[tubularSegments],
+      tangents[tubularSegments].clone(),
+    );
   }
 
   const geometry = new THREE.BufferGeometry();
@@ -807,6 +870,7 @@ export const CURVE_TO_MESH_NODE: NodeDefinition = {
     tubularSegments: 64,
     radialSegments: 12,
     closed: false,
+    caps: false,
     color: new THREE.Color(0x38bdf8),
     emissive: new THREE.Color(0x000000),
     emissiveIntensity: 1.0,
@@ -850,6 +914,10 @@ export const CURVE_TO_MESH_NODE: NodeDefinition = {
     { id: "tubularSegments", label: "Length Segments", kind: "number", step: 4, group: "Geometry" },
     { id: "radialSegments", label: "Radial Sides", kind: "number", step: 1, group: "Geometry" },
     { id: "doubleSided", label: "Double Sided", kind: "boolean", group: "Geometry" },
+    // Plugs both open ends flat — meaningless on a curve that already loops
+    // seamlessly back on itself, but harmless there too (the discs just sit
+    // exactly on the seam), so no need to hide it behind Closed/Surface state.
+    { id: "caps", label: "Caps (fill open ends)", kind: "boolean", group: "Geometry" },
     ...(getState(instance.id).curveWired ? [] : [{ id: "closed", label: "Closed", kind: "boolean" } as const]),
 
     { id: "surface", label: "Surface (closed curve)", kind: "boolean", group: "Surface" },
@@ -909,6 +977,7 @@ export const CURVE_TO_MESH_NODE: NodeDefinition = {
     const tubularSegments = Math.max(8, Math.round(asNumber(params.tubularSegments, 64)));
     const radialSegments = Math.max(3, Math.round(asNumber(params.radialSegments, 12)));
     const profile = (Array.isArray(params.profile) ? params.profile : DEFAULT_PROFILE_POINTS) as ProfilePoint[];
+    const caps = Boolean(params.caps);
 
     const closed = isCurveClosed(curve);
     const surface = Boolean(params.surface);
@@ -954,6 +1023,7 @@ export const CURVE_TO_MESH_NODE: NodeDefinition = {
       closed,
       startProgress,
       endProgress,
+      caps,
     ]);
     if (signature !== state.geometrySignature) {
       state.geometrySignature = signature;
@@ -966,7 +1036,8 @@ export const CURVE_TO_MESH_NODE: NodeDefinition = {
         profile,
         closed,
         startProgress,
-        endProgress
+        endProgress,
+        caps
       );
     }
     group.add(mesh);
@@ -1289,6 +1360,7 @@ export const CURVES_TO_MESH_NODE: NodeDefinition = {
     endProgress: 1.0,
     tubularSegments: 64,
     radialSegments: 12,
+    caps: false,
     color: new THREE.Color(0x38bdf8),
     emissive: new THREE.Color(0x000000),
     emissiveIntensity: 1.0,
@@ -1316,6 +1388,7 @@ export const CURVES_TO_MESH_NODE: NodeDefinition = {
     { id: "tubularSegments", label: "Length Segments", kind: "number", step: 4, group: "Geometry" },
     { id: "radialSegments", label: "Radial Sides", kind: "number", step: 1, group: "Geometry" },
     { id: "doubleSided", label: "Double Sided", kind: "boolean", group: "Geometry" },
+    { id: "caps", label: "Caps (fill open ends)", kind: "boolean", group: "Geometry" },
     { id: "profile", label: "Thickness Profile", kind: "curve_profile", group: "Profile" },
     { id: "color", label: "Color (fallback)", kind: "color", group: "Material" },
     { id: "emissive", label: "Emissive (Glow)", kind: "color", group: "Material" },
@@ -1355,6 +1428,7 @@ export const CURVES_TO_MESH_NODE: NodeDefinition = {
     const tubularSegments = Math.max(8, Math.round(asNumber(params.tubularSegments, 64)));
     const radialSegments = Math.max(3, Math.round(asNumber(params.radialSegments, 12)));
     const profile = (Array.isArray(params.profile) ? params.profile : DEFAULT_PROFILE_POINTS) as ProfilePoint[];
+    const caps = Boolean(params.caps);
 
     const signature = JSON.stringify([
       curves.map((c) => c.toJSON()),
@@ -1364,6 +1438,7 @@ export const CURVES_TO_MESH_NODE: NodeDefinition = {
       profile,
       startProgress,
       endProgress,
+      caps,
     ]);
     if (signature !== state.geometrySignature) {
       state.geometrySignature = signature;
@@ -1372,7 +1447,7 @@ export const CURVES_TO_MESH_NODE: NodeDefinition = {
         mesh.geometry = new THREE.BufferGeometry();
       } else {
         const geoms = curves.map((c) =>
-          createVariableThicknessTubeGeometry(c, tubularSegments, radialSegments, thickness, profile, false, startProgress, endProgress)
+          createVariableThicknessTubeGeometry(c, tubularSegments, radialSegments, thickness, profile, false, startProgress, endProgress, caps)
         );
         mesh.geometry = mergeGeometries(geoms, false) ?? new THREE.BufferGeometry();
       }

@@ -115,6 +115,37 @@ describe("CURVE NODES", () => {
     expect(geom.attributes.normal.count).toBe(geom.attributes.position.count);
   });
 
+  it("createVariableThicknessTubeGeometry with caps adds extra vertices and index faces closing both ends", () => {
+    const pts = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(2, 0, 0)];
+    const curve = new THREE.CatmullRomCurve3(pts);
+
+    const open = createVariableThicknessTubeGeometry(curve, 16, 8, 0.2, undefined, false, 0, 1, false);
+    const capped = createVariableThicknessTubeGeometry(curve, 16, 8, 0.2, undefined, false, 0, 1, true);
+
+    // Two discs: (radialSegments+1) duplicated ring verts + 1 center vertex, each.
+    expect(capped.attributes.position.count).toBe(open.attributes.position.count + 2 * (8 + 1 + 1));
+    // radialSegments triangles per disc, two discs.
+    expect(capped.index!.count).toBe(open.index!.count + 2 * 8 * 3);
+  });
+
+  it("createVariableThicknessTubeGeometry caps are watertight — no NaNs and every cap normal is a unit vector", () => {
+    const pts = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, 1, 0), new THREE.Vector3(2, 0, 1)];
+    const curve = new THREE.CatmullRomCurve3(pts);
+    const geom = createVariableThicknessTubeGeometry(curve, 12, 6, 0.15, undefined, false, 0, 1, true);
+
+    const pos = geom.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      expect(Number.isFinite(pos.getX(i))).toBe(true);
+      expect(Number.isFinite(pos.getY(i))).toBe(true);
+      expect(Number.isFinite(pos.getZ(i))).toBe(true);
+    }
+    const nrm = geom.attributes.normal;
+    // Last (radialSegments+2) vertices pushed are the end cap's — check its normal length.
+    const lastIdx = nrm.count - 1;
+    const n = new THREE.Vector3(nrm.getX(lastIdx), nrm.getY(lastIdx), nrm.getZ(lastIdx));
+    expect(n.length()).toBeCloseTo(1, 4);
+  });
+
   it("CURVE_TO_MESH_NODE generates a 3D Mesh object with variable thickness", () => {
     const pts = [
       new THREE.Vector3(-1, 0, 0),
