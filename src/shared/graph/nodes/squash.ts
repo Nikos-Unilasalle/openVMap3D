@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
 import { createNodeCache } from "../nodeCaches";
+import { stepDampedSpring } from "../springDamper";
 import { clockInput, numberInput } from "./object";
 
 interface SquashState {
@@ -170,18 +171,16 @@ export const SQUASH_STRETCH_NODE: NodeDefinition = {
     // it go underdamped (Bounciness) is the whole squash-on-impact mechanism.
     let stretchAmount = normalized;
     if (smoothing > 0) {
-      const omega = THREE.MathUtils.lerp(30, 2, smoothing); // response speed, rad/s-ish
-      const zeta = THREE.MathUtils.lerp(1, 0.2, bounciness); // 1 = critically damped, lower = underdamped
-      let value = state.springValue ?? normalized;
-      let velocity = state.springVelocity ?? 0;
-      if (dt > 0) {
-        const accel = omega * omega * (normalized - value) - 2 * zeta * omega * velocity;
-        velocity += accel * dt;
-        value += velocity * dt;
-      }
-      state.springValue = value;
-      state.springVelocity = velocity;
-      stretchAmount = value;
+      const spring = stepDampedSpring(
+        { value: state.springValue ?? normalized, velocity: state.springVelocity ?? 0 },
+        normalized,
+        dt,
+        smoothing,
+        bounciness,
+      );
+      state.springValue = spring.value;
+      state.springVelocity = spring.velocity;
+      stretchAmount = spring.value;
     } else {
       state.springValue = normalized;
       state.springVelocity = 0;
