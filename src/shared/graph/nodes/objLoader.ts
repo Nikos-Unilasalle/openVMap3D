@@ -224,8 +224,8 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
     { id: "metalness", label: "Metalness", kind: "number", step: 0.05 },
     { id: "wireframe", label: "Wireframe", kind: "boolean" },
     { id: "opacity", label: "Opacity", kind: "number", step: 0.05 },
-    { id: "transmission", label: "Transmission (Glass)", kind: "number", step: 0.05 },
-    { id: "thickness", label: "Glass Thickness", kind: "number", step: 0.05 },
+    { id: "transmission", label: "Transmission (Glass)", kind: "number", step: 0.05, group: "Material" },
+    { id: "thickness", label: "Glass Thickness", kind: "number", step: 0.05, group: "Material" },
   ],
   evaluate: (inputs, params, ctx) => {
     const state = getOrCreateObjState(ctx.nodeId);

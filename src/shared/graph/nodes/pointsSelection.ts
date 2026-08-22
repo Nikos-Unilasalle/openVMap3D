@@ -1,13 +1,26 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
+import { extractPointsFromMesh } from "./pointsGeometry";
 
 /**
- * Points Selection — a pick-list of indices into an incoming Points list,
- * made by clicking/marquee-dragging the points in the 3D viewport when this
- * node is selected in the graph (see Viewport.tsx's points-edit gate,
- * parallel to the existing curve-handle one). `selectedIndices` lives as a
- * plain param — same storage convention as `pointsList` elsewhere — so a
- * selection survives save/load and undo/redo like any other param.
+ * Points Selection — a pick-list of indices into an incoming point set, made
+ * by clicking/marquee-dragging the points in the 3D viewport when this node
+ * is selected in the graph (see Viewport.tsx's points-edit gate, parallel to
+ * the existing curve-handle one). `selectedIndices` lives as a plain param —
+ * same storage convention as `pointsList` elsewhere — so a selection
+ * survives save/load and undo/redo like any other param.
+ *
+ * Two ways to feed it points, so the whole "spring part of a mesh" workflow
+ * can be either the explicit long form or a two-node shortcut:
+ * - Points + Matrix (a Mesh to Points or Lattice Deform output plugged in).
+ * - Geometry directly — this node does its own Mesh to Points extraction
+ *   internally (same extractPointsFromMesh core) and additionally passes the
+ *   original object through on `geometry`, which is what lets
+ *   `OBJ -> Points Selection -> Spring Vector` skip both the separate Mesh
+ *   to Points *and* Points to Mesh nodes: Spring Vector's own Geometry input
+ *   (see spring.ts) reads that passthrough and writes its result straight
+ *   back into a mesh, with no points-list plumbing visible to the operator.
+ * Geometry wins if both are wired — it's not a sensible thing to wire both.
  *
  * Outputs `mask`, not the index list itself, because that's what Spring
  * Vector's Individual Points mode actually consumes: a same-length
@@ -19,6 +32,7 @@ export const POINTS_SELECTION_NODE: NodeDefinition = {
   label: "Points Selection",
   category: "list",
   inputs: [
+    { id: "geometry", label: "Geometry (shortcut)", type: "geometry" },
     { id: "points", label: "Points", type: "list" },
     { id: "matrix", label: "Matrix (viewport placement)", type: "matrix" },
   ],
@@ -26,6 +40,7 @@ export const POINTS_SELECTION_NODE: NodeDefinition = {
     { id: "points", label: "Points (passthrough)", type: "list" },
     { id: "mask", label: "Mask (1=selected)", type: "list" },
     { id: "matrix", label: "Matrix (passthrough)", type: "matrix" },
+    { id: "geometry", label: "Geometry (passthrough)", type: "geometry" },
     { id: "count", label: "Selected Count", type: "value" },
   ],
   // Not user-typed — set by clicking/marquee-dragging points in the
@@ -34,14 +49,25 @@ export const POINTS_SELECTION_NODE: NodeDefinition = {
   // out-of-range indices for no real benefit.
   defaultParams: { selectedIndices: [] as number[] },
   paramFields: [],
-  evaluate: (inputs, params) => {
-    const points = Array.isArray(inputs.points) ? (inputs.points as unknown[]) : [];
+  evaluate: (inputs, params, ctx) => {
+    let points: unknown[];
+    let matrix: THREE.Matrix4;
+    let geometry: THREE.Object3D | null = null;
+
+    if (inputs.geometry instanceof THREE.Object3D) {
+      const extracted = extractPointsFromMesh(inputs.geometry, ctx.nodeId, "Points Selection");
+      points = extracted?.points ?? [];
+      matrix = extracted?.matrix ?? new THREE.Matrix4();
+      geometry = extracted?.geometry ?? inputs.geometry;
+    } else {
+      points = Array.isArray(inputs.points) ? (inputs.points as unknown[]) : [];
+      matrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
+    }
+
     const selected = Array.isArray(params.selectedIndices) ? (params.selectedIndices as number[]) : [];
     const selectedSet = new Set(selected);
-
     const mask = points.map((_, i) => (selectedSet.has(i) ? 1 : 0));
-    const matrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
 
-    return { points, mask, matrix, count: selected.length };
+    return { points, mask, matrix, geometry, count: selected.length };
   },
 };

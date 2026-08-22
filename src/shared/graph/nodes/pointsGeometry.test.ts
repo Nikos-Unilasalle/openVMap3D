@@ -29,6 +29,35 @@ describe("MESH_TO_POINTS_NODE", () => {
     expect(res.points).toEqual([]);
     expect(res.count).toBe(0);
   });
+
+  it("reads through a posed wrapper group (the OBJ Model case), not just the mesh's own identity local matrix", () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1)); // matrix stays identity
+    const wrapper = new THREE.Group();
+    wrapper.matrixAutoUpdate = false;
+    wrapper.matrix.setPosition(10, -2, 7);
+    wrapper.add(mesh);
+
+    const res = MESH_TO_POINTS_NODE.evaluate({ geometry: wrapper }, {}, CTX);
+    const pos = new THREE.Vector3().setFromMatrixPosition(res.matrix as THREE.Matrix4);
+    expect(pos.x).toBeCloseTo(10);
+    expect(pos.y).toBeCloseTo(-2);
+    expect(pos.z).toBeCloseTo(7);
+    // and points themselves stay in local space (not shifted by the pose)
+    const points = res.points as THREE.Vector3[];
+    expect(Math.max(...points.map((p) => Math.abs(p.x)))).toBeLessThanOrEqual(0.5001);
+  });
+
+  it("an optional Matrix input composes as an outer transform on top of the mesh's own world matrix", () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    mesh.matrixAutoUpdate = false;
+    mesh.matrix.setPosition(1, 0, 0);
+
+    const extra = new THREE.Matrix4().makeTranslation(0, 5, 0);
+    const res = MESH_TO_POINTS_NODE.evaluate({ geometry: mesh, matrix: extra }, {}, CTX);
+    const pos = new THREE.Vector3().setFromMatrixPosition(res.matrix as THREE.Matrix4);
+    expect(pos.x).toBeCloseTo(1);
+    expect(pos.y).toBeCloseTo(5);
+  });
 });
 
 describe("POINTS_TO_MESH_NODE", () => {
@@ -70,5 +99,26 @@ describe("POINTS_TO_MESH_NODE", () => {
   it("returns null rather than throwing when nothing is wired", () => {
     const res = POINTS_TO_MESH_NODE.evaluate({}, {}, { ...CTX, nodeId: "p2g-test-5" });
     expect(res.geometry).toBeNull();
+  });
+
+  it("preserves the source's pose through a posed wrapper group (the OBJ Model case)", () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1)); // matrix stays identity
+    const wrapper = new THREE.Group();
+    wrapper.matrixAutoUpdate = false;
+    wrapper.matrix.setPosition(3, -1, 4);
+    wrapper.add(mesh);
+
+    const points = new Array(mesh.geometry.attributes.position.count).fill(0).map((_, i) => {
+      const p = new THREE.Vector3();
+      p.fromBufferAttribute(mesh.geometry.attributes.position, i);
+      return p;
+    });
+
+    const res = POINTS_TO_MESH_NODE.evaluate({ geometry: wrapper, points }, {}, { ...CTX, nodeId: "p2g-test-pose" });
+    const outMesh = res.geometry as THREE.Mesh;
+    const pos = new THREE.Vector3().setFromMatrixPosition(outMesh.matrix);
+    expect(pos.x).toBeCloseTo(3);
+    expect(pos.y).toBeCloseTo(-1);
+    expect(pos.z).toBeCloseTo(4);
   });
 });

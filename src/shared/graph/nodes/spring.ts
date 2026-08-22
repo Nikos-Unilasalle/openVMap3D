@@ -4,6 +4,7 @@ import { createNodeCache } from "../nodeCaches";
 import { stepDampedSpring, SpringState } from "../springDamper";
 import { clockInput, numberInput } from "./object";
 import { asVector3 } from "./transform";
+import { writePointsToMesh } from "./pointsGeometry";
 
 function clamp01(n: number): number {
   return Math.max(0, Math.min(1, n));
@@ -176,6 +177,14 @@ export const SPRING_VECTOR_NODE: NodeDefinition = {
     // only *some* of those points move — see springPoints' doc comment.
     { id: "points", label: "Points (Individual)", type: "list" },
     { id: "mask", label: "Mask (1=spring, 0=hold)", type: "list" },
+    // The shortcut that makes "OBJ -> Points Selection -> Spring Vector"
+    // work with no other nodes: wire Points Selection's own Geometry
+    // passthrough in here alongside Points/Mask, and this node writes the
+    // sprung result straight back into a mesh on its own Geometry output —
+    // same round-trip Points to Mesh does, just folded in so the operator
+    // never sees a points list at all. Points/Mask/Vector outputs still
+    // update normally, for anyone who wants the raw values instead.
+    { id: "geometry", label: "Geometry (optional passthrough)", type: "geometry" },
     { id: "time", label: "Time", type: "value" },
     { id: "smoothing", label: "Smoothing", type: "value" },
     { id: "bounciness", label: "Bounciness", type: "value" },
@@ -183,6 +192,7 @@ export const SPRING_VECTOR_NODE: NodeDefinition = {
   outputs: [
     { id: "vector", label: "Vector", type: "vector" },
     { id: "points", label: "Points", type: "list" },
+    { id: "geometry", label: "Geometry (when Geometry is wired)", type: "geometry" },
   ],
   defaultParams: {
     time: 0,
@@ -204,7 +214,13 @@ export const SPRING_VECTOR_NODE: NodeDefinition = {
       const targets = (inputs.points as unknown[]).map((p) => asVector3(p, new THREE.Vector3(0, 0, 0)));
       const mask = Array.isArray(inputs.mask) ? (inputs.mask as unknown[]).map((m) => Number(m)) : null;
       const points = springPoints(ctx.nodeId, targets, mask, time, smoothing, bounciness);
-      return { vector: points[0] ?? new THREE.Vector3(0, 0, 0), points };
+      const vector = points[0] ?? new THREE.Vector3(0, 0, 0);
+
+      if (inputs.geometry instanceof THREE.Object3D) {
+        const geometry = writePointsToMesh(ctx.nodeId, inputs.geometry, points, "Spring Vector");
+        return { vector, points, geometry };
+      }
+      return { vector, points };
     }
 
     const target = asVector3(inputs.target ?? params.target, new THREE.Vector3(0, 0, 0));

@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { EvalContext } from "../types";
 import { SPRING_NODE, SPRING_VECTOR_NODE } from "./spring";
+import { POINTS_SELECTION_NODE } from "./pointsSelection";
 
 function ctx(nodeId: string): EvalContext {
   return { time: 0, step: 0, nodeId };
@@ -178,5 +179,76 @@ describe("SPRING_VECTOR_NODE — Individual Points mode", () => {
     const points = res.points as THREE.Vector3[];
     expect(points).toHaveLength(3);
     expect(points[2].x).toBeCloseTo(3, 4);
+  });
+});
+
+describe("SPRING_VECTOR_NODE — the two-node shortcut: Geometry -> Points Selection -> Spring Vector -> Geometry", () => {
+  it("no Mesh to Points / Points to Mesh needed: springs the selection, holds the rest rigid, preserves the object's pose", () => {
+    // A mesh nested under a posed wrapper group — the OBJ Model shape this
+    // whole feature exists to support.
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const wrapper = new THREE.Group();
+    wrapper.matrixAutoUpdate = false;
+    wrapper.matrix.setPosition(5, 0, -3);
+    wrapper.add(mesh);
+
+    const selNodeId = "psel-shortcut";
+    const springNodeId = "spring-shortcut";
+    const vertexCount = mesh.geometry.attributes.position.count;
+    const selectedIndex = 0; // "the selection" — just one vertex, kept simple
+    const params = { selectedIndices: [selectedIndex] };
+
+    // Frame 0: seed.
+    let sel = POINTS_SELECTION_NODE.evaluate({ geometry: wrapper }, params, { time: 0, step: 0, nodeId: selNodeId });
+    let mask = sel.mask as number[];
+    let points = sel.points as THREE.Vector3[];
+    SPRING_VECTOR_NODE.evaluate(
+      { points, mask, geometry: sel.geometry },
+      { ...SPRING_VECTOR_NODE.defaultParams, smoothing: 0.3, bounciness: 0.2 },
+      { time: 0, step: 0, nodeId: springNodeId },
+    );
+
+    // Move ONLY the selected vertex far away (simulating some upstream
+    // animation of the source geometry) and step forward several frames.
+    const originalX = mesh.geometry.attributes.position.getX(selectedIndex);
+    const posAttr = mesh.geometry.attributes.position as THREE.BufferAttribute;
+    posAttr.setX(selectedIndex, originalX + 20);
+    posAttr.needsUpdate = true;
+
+    let finalGeometry: THREE.Mesh | null = null;
+    for (let i = 1; i <= 60; i++) {
+      const t = i / 30;
+      sel = POINTS_SELECTION_NODE.evaluate({ geometry: wrapper }, params, { time: t, step: i, nodeId: selNodeId });
+      mask = sel.mask as number[];
+      points = sel.points as THREE.Vector3[];
+      const springRes = SPRING_VECTOR_NODE.evaluate(
+        { points, mask, geometry: sel.geometry, time: t },
+        { ...SPRING_VECTOR_NODE.defaultParams, smoothing: 0.3, bounciness: 0.2 },
+        { time: t, step: i, nodeId: springNodeId },
+      );
+      finalGeometry = springRes.geometry as THREE.Mesh;
+    }
+
+    expect(finalGeometry).not.toBeNull();
+    const outPos = finalGeometry!.geometry.attributes.position;
+
+    // The selected vertex followed its moving target (settled near +20).
+    expect(outPos.getX(selectedIndex)).toBeGreaterThan(10);
+
+    // Every OTHER vertex stayed exactly where it started — untouched by
+    // the spring, even though the selected one moved and bounced.
+    for (let i = 0; i < vertexCount; i++) {
+      if (i === selectedIndex) continue;
+      expect(outPos.getX(i)).toBeCloseTo(posAttr.getX(i), 5);
+      expect(outPos.getY(i)).toBeCloseTo(posAttr.getY(i), 5);
+      expect(outPos.getZ(i)).toBeCloseTo(posAttr.getZ(i), 5);
+    }
+
+    // The object's real-world pose (from the posed wrapper group, not the
+    // mesh's own identity local matrix) survived the whole round-trip.
+    const worldPos = new THREE.Vector3().setFromMatrixPosition(finalGeometry!.matrix);
+    expect(worldPos.x).toBeCloseTo(5);
+    expect(worldPos.y).toBeCloseTo(0);
+    expect(worldPos.z).toBeCloseTo(-3);
   });
 });

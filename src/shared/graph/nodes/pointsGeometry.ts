@@ -4,26 +4,164 @@ import { clearMeshWarning, findFirstMesh, warnMeshRequired } from "../meshRequir
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { primitiveOutputs } from "./object";
 
+export interface ExtractedPoints {
+  points: THREE.Vector3[];
+  /** The original object, unchanged — pass straight through to Points to Mesh (or writePointsToMesh) so the round-trip has the right vertex count/topology/material to rebuild from. */
+  geometry: THREE.Object3D;
+  matrix: THREE.Matrix4;
+  count: number;
+}
+
 /**
- * Mesh to Points — one Vector3 per raw vertex-buffer entry, in the
- * mesh's own LOCAL space (not world), matching the convention Curve
- * handles/Lattice already use: points travel local, `matrix` travels
- * alongside for whoever needs to place them in the world (the viewport's
- * Points Selection handles, in particular).
+ * Shared extraction core behind Mesh to Points — one Vector3 per raw
+ * vertex-buffer entry, in the mesh's own LOCAL space (not world), matching
+ * the convention Curve handles/Lattice already use: points travel local,
+ * `matrix` travels alongside for whoever needs to place them in the world
+ * (the viewport's Points Selection handles, in particular).
  *
  * Deliberately one point per buffer entry rather than per unique position:
  * a Box has three coincident-but-distinct vertices per corner (different
- * normals/UVs), and Points to Geometry writes this list straight back by
+ * normals/UVs), and writePointsToMesh writes this list straight back by
  * index — welding first would desync that round-trip. The cost is that a
  * seam's corners can be selected independently and spring apart; documented
- * on the node rather than solved, since welding-then-unwelding correctly is
- * a bigger feature on its own.
+ * here rather than solved, since welding-then-unwelding correctly is a
+ * bigger feature on its own.
+ *
+ * `extraMatrix`, when given, is composed as an *outer* (world-level)
+ * transform on top of the mesh's own world matrix — e.g. Points Selection
+ * wiring a Transform node's output straight in to reposition where points
+ * get extracted/placed without needing a separate node upstream of Mesh to
+ * Points.
+ *
+ * Returns null (after warning once) when nothing mesh-shaped is wired in —
+ * callers decide their own empty-result shape since Mesh to Points, Points
+ * Selection and Spring Vector each want a different one.
  */
+export function extractPointsFromMesh(
+  inputObj: THREE.Object3D,
+  nodeId: string,
+  label: string,
+  extraMatrix?: THREE.Matrix4,
+): ExtractedPoints | null {
+  const mesh = findFirstMesh(inputObj);
+  const posAttr = mesh?.geometry?.attributes.position;
+  if (!mesh || !posAttr) {
+    warnMeshRequired(nodeId, label, inputObj);
+    return null;
+  }
+  clearMeshWarning(nodeId);
+
+  // Forced from inputObj (the root), not mesh: three's own
+  // `mesh.updateWorldMatrix(true, false, true)` only forwards `force` to the
+  // mesh itself, not to the parents it climbs to recompute — a wrapper group
+  // whose matrixWorldNeedsUpdate flag was never set (true for OBJ Model,
+  // which writes `.matrix` directly rather than through position/rotation/
+  // scale) would silently keep a stale or identity matrixWorld regardless.
+  // updateMatrixWorld(true) from the root correctly cascades force down
+  // through every descendant instead. See shade.ts/lattice.ts for the same
+  // fix and the full explanation.
+  inputObj.updateMatrixWorld(true);
+
+  const points: THREE.Vector3[] = new Array(posAttr.count);
+  for (let i = 0; i < posAttr.count; i++) {
+    points[i] = new THREE.Vector3().fromBufferAttribute(posAttr, i);
+  }
+
+  const matrix = extraMatrix ? new THREE.Matrix4().multiplyMatrices(extraMatrix, mesh.matrixWorld) : mesh.matrixWorld.clone();
+
+  return { points, geometry: inputObj, matrix, count: points.length };
+}
+
+interface PointsMeshState {
+  mesh?: THREE.Mesh;
+}
+
+const pointsMeshCache = createNodeCache<PointsMeshState>((s) => {
+  if (s.mesh) disposeObject3D(s.mesh);
+});
+
+/**
+ * Shared write-back core behind Points to Mesh — writes a (possibly edited/
+ * animated) points list into a clone of `inputObj`'s own mesh's position
+ * buffer, by index, and returns the rebuilt mesh (cached per `nodeId`, one
+ * real THREE.Mesh reused frame to frame rather than rebuilt from scratch).
+ *
+ * `points` is meant to be index-aligned with whatever extractPointsFromMesh
+ * produced for this same source — a length mismatch (a different mesh,
+ * accidentally) returns the original object unchanged, with a console
+ * warning, rather than corrupting anything.
+ */
+export function writePointsToMesh(nodeId: string, inputObj: THREE.Object3D, points: unknown[], label: string): THREE.Object3D {
+  const srcMesh = findFirstMesh(inputObj);
+  const srcGeom = srcMesh?.geometry;
+  if (!srcMesh || !srcGeom || !srcGeom.attributes.position) {
+    warnMeshRequired(nodeId, label, inputObj);
+    return inputObj;
+  }
+
+  const posAttr = srcGeom.attributes.position;
+  if (points.length !== posAttr.count) {
+    warnMeshRequired(nodeId, label, inputObj);
+    return inputObj;
+  }
+  clearMeshWarning(nodeId);
+
+  let state = pointsMeshCache.get(nodeId);
+  if (!state) {
+    state = {};
+    pointsMeshCache.set(nodeId, state);
+  }
+
+  const positions = new Float32Array(points.length * 3);
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i] as { x?: number; y?: number; z?: number };
+    positions[i * 3] = Number(p?.x) || 0;
+    positions[i * 3 + 1] = Number(p?.y) || 0;
+    positions[i * 3 + 2] = Number(p?.z) || 0;
+  }
+
+  const geometry = srcGeom.clone();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.attributes.position.needsUpdate = true;
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+
+  if (!state.mesh) {
+    state.mesh = new THREE.Mesh(geometry, srcMesh.material);
+    state.mesh.castShadow = true;
+    state.mesh.receiveShadow = true;
+  } else {
+    state.mesh.geometry.dispose();
+    state.mesh.geometry = geometry;
+    state.mesh.material = srcMesh.material;
+  }
+
+  // matrixWorld, not matrix, and forced from the root — same reasoning as
+  // extractPointsFromMesh above: srcMesh's own LOCAL matrix is identity when
+  // it's nested under a posed wrapper group (OBJ Model), which would
+  // silently drop the object's real pose.
+  inputObj.updateMatrixWorld(true);
+  state.mesh.matrixAutoUpdate = false;
+  state.mesh.matrix.copy(srcMesh.matrixWorld);
+
+  return state.mesh;
+}
+
 export const MESH_TO_POINTS_NODE: NodeDefinition = {
   type: "converter/mesh-to-points",
   label: "Mesh to Points",
   category: "converter",
-  inputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
+  inputs: [
+    { id: "geometry", label: "Geometry", type: "geometry" },
+    // An outer transform composed on top of the mesh's own world matrix —
+    // wire in a Transform node (or anything else that outputs a Matrix) to
+    // reposition where points get extracted/placed without an extra node
+    // upstream of this one. Native edits already baked into the source
+    // object's own pose (gizmo drags, an Array, a Set Instance Transform...)
+    // are already captured via matrixWorld regardless of whether this is
+    // wired — this is for composing something *additional*.
+    { id: "matrix", label: "Matrix", type: "matrix" },
+  ],
   outputs: [
     { id: "points", label: "Points (Local)", type: "list" },
     { id: "geometry", label: "Geometry (passthrough)", type: "geometry" },
@@ -36,51 +174,20 @@ export const MESH_TO_POINTS_NODE: NodeDefinition = {
     const inputObj = inputs.geometry instanceof THREE.Object3D ? inputs.geometry : null;
     if (!inputObj) return { points: [], geometry: null, matrix: new THREE.Matrix4(), count: 0 };
 
-    const mesh = findFirstMesh(inputObj);
-    const posAttr = mesh?.geometry?.attributes.position;
-    if (!mesh || !posAttr) {
-      warnMeshRequired(ctx.nodeId, "Mesh to Points", inputObj);
-      return { points: [], geometry: inputObj, matrix: new THREE.Matrix4(), count: 0 };
-    }
-    clearMeshWarning(ctx.nodeId);
-
-    // Same "force" reasoning as Lattice Deform: a node feeding this one is no
-    // longer drawn itself, so its matrixWorld is never refreshed otherwise.
-    mesh.updateWorldMatrix(true, false, true);
-
-    const points: THREE.Vector3[] = new Array(posAttr.count);
-    for (let i = 0; i < posAttr.count; i++) {
-      points[i] = new THREE.Vector3().fromBufferAttribute(posAttr, i);
-    }
-
-    return { points, geometry: inputObj, matrix: mesh.matrixWorld.clone(), count: points.length };
+    const extraMatrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : undefined;
+    const result = extractPointsFromMesh(inputObj, ctx.nodeId, "Mesh to Points", extraMatrix);
+    if (!result) return { points: [], geometry: inputObj, matrix: new THREE.Matrix4(), count: 0 };
+    return { ...result };
   },
 };
 
-interface PointsToGeometryState {
-  mesh?: THREE.Mesh;
-}
-
-const p2gCache = createNodeCache<PointsToGeometryState>((s) => {
-  if (s.mesh) disposeObject3D(s.mesh);
-});
-
-function getState(nodeId: string): PointsToGeometryState {
-  let state = p2gCache.get(nodeId);
-  if (!state) {
-    state = {};
-    p2gCache.set(nodeId, state);
-  }
-  return state;
-}
-
 /**
- * Points to Mesh — closes the loop Geometry to Points opens: writes a
- * (possibly edited/animated) points list back into a clone of the original
- * mesh's position buffer, by index. `geometry` here is meant to be Geometry
- * to Points' own `geometry` passthrough output, not some other mesh — the
- * index alignment (and vertex count) has to match exactly, which passing
- * the *same* node's two outputs through this pipe guarantees; wiring in an
+ * Points to Mesh — closes the loop Mesh to Points opens: writes a (possibly
+ * edited/animated) points list back into a clone of the original mesh's
+ * position buffer, by index. `geometry` here is meant to be Mesh to Points'
+ * own `geometry` passthrough output, not some other mesh — the index
+ * alignment (and vertex count) has to match exactly, which passing the
+ * *same* node's two outputs through this pipe guarantees; wiring in an
  * unrelated mesh with a different vertex count just passes the original
  * through unchanged (with a console warning) rather than corrupting it.
  */
@@ -99,48 +206,8 @@ export const POINTS_TO_MESH_NODE: NodeDefinition = {
     const inputObj = inputs.geometry instanceof THREE.Object3D ? inputs.geometry : null;
     if (!inputObj) return { geometry: null };
 
-    const srcMesh = findFirstMesh(inputObj);
-    const srcGeom = srcMesh?.geometry;
-    if (!srcMesh || !srcGeom || !srcGeom.attributes.position) {
-      warnMeshRequired(ctx.nodeId, "Points to Mesh", inputObj);
-      return { geometry: inputObj };
-    }
-
     const points = Array.isArray(inputs.points) ? (inputs.points as unknown[]) : [];
-    const posAttr = srcGeom.attributes.position;
-    if (points.length !== posAttr.count) {
-      warnMeshRequired(ctx.nodeId, "Points to Mesh", inputObj);
-      return { geometry: inputObj };
-    }
-    clearMeshWarning(ctx.nodeId);
-
-    const state = getState(ctx.nodeId);
-    const positions = new Float32Array(points.length * 3);
-    for (let i = 0; i < points.length; i++) {
-      const p = points[i] as { x?: number; y?: number; z?: number };
-      positions[i * 3] = Number(p?.x) || 0;
-      positions[i * 3 + 1] = Number(p?.y) || 0;
-      positions[i * 3 + 2] = Number(p?.z) || 0;
-    }
-
-    const geometry = srcGeom.clone();
-    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-    geometry.attributes.position.needsUpdate = true;
-    geometry.computeVertexNormals();
-    geometry.computeBoundingSphere();
-
-    if (!state.mesh) {
-      state.mesh = new THREE.Mesh(geometry, srcMesh.material);
-      state.mesh.castShadow = true;
-      state.mesh.receiveShadow = true;
-    } else {
-      state.mesh.geometry.dispose();
-      state.mesh.geometry = geometry;
-      state.mesh.material = srcMesh.material;
-    }
-    state.mesh.matrixAutoUpdate = false;
-    state.mesh.matrix.copy(srcMesh.matrix);
-
-    return primitiveOutputs(state.mesh);
+    const result = writePointsToMesh(ctx.nodeId, inputObj, points, "Points to Mesh");
+    return primitiveOutputs(result);
   },
 };
