@@ -88,6 +88,8 @@ import { ORBIT_NODE, STAGGER_NODE, TIME_REMAP_NODE } from "./motion";
 import { TRAIL_NODE } from "./trail";
 import { SQUASH_STRETCH_NODE } from "./squash";
 import { SPRING_NODE, SPRING_VECTOR_NODE } from "./spring";
+import { MESH_TO_POINTS_NODE, POINTS_TO_MESH_NODE } from "./pointsGeometry";
+import { POINTS_SELECTION_NODE } from "./pointsSelection";
 
 /** The starter catalogue — grows node by node; BIBLE.md has the full target list. */
 export const STARTER_NODES = [
@@ -260,6 +262,9 @@ export const STARTER_NODES = [
   SQUASH_STRETCH_NODE,
   SPRING_NODE,
   SPRING_VECTOR_NODE,
+  MESH_TO_POINTS_NODE,
+  POINTS_TO_MESH_NODE,
+  POINTS_SELECTION_NODE,
   CONNECT_NEARBY_NODE,
   CAPTURE_TRAILS_NODE,
 ];
@@ -319,6 +324,8 @@ export * from "./motion";
 export * from "./trail";
 export * from "./squash";
 export * from "./spring";
+export * from "./pointsGeometry";
+export * from "./pointsSelection";
 export * from "./connectivity";
 export * from "./forceField";
 export * from "./particleTrails";

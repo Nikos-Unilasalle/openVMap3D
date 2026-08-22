@@ -20,6 +20,7 @@ import {
   latticeBasePointForTarget,
   latticeEvaluatedPoints,
 } from "../graph/nodes/lattice";
+import { POINTS_SELECTION_NODE } from "../graph/nodes/pointsSelection";
 import { createPostProcessChain } from "./postProcessChain";
 import { computeGizmoWriteback, TransformGizmoMode, TransformPatch } from "./gizmoWriteback";
 
@@ -821,6 +822,19 @@ export function Viewport({
     let dragStartCentroidScale = new THREE.Vector3(1, 1, 1);
     let dragStartPointPositions = new Map<number, THREE.Vector3>();
 
+    // Points Selection editing — click/marquee-select a subset of a live
+    // Points list (e.g. from Mesh to Points) in the viewport, no dragging:
+    // this only ever writes `selectedIndices` back onto the selected Points
+    // Selection node, immediately on click/marquee-release (curve points
+    // write back on gizmo-release instead, since those actually move).
+    // Parallel to, and mutually exclusive with, curve editing above — the
+    // two share the marquee overlay and the click/drag-distance heuristic
+    // but never both have handles active at once (only one node can be
+    // selected in the graph at a time).
+    const pointsSelectionHandles = createCurvePointHandles();
+    let pointsSelectionNodeId: string | null = null;
+    let selectedPointsSelectionIndices = new Set<number>();
+
     // A Pivot Transform node's `pivot` isn't a pose you can drag through the
     // usual translate/rotate/scale gizmo math (see gizmoWriteback.ts): with
     // rotation/scale/location all neutral, the pivot cancels out of its own
@@ -835,6 +849,7 @@ export function Viewport({
 
     if (!outputMode) {
       editorUiScene.add(curveHandles.group);
+      editorUiScene.add(pointsSelectionHandles.group);
       editorUiScene.add(pivotHandle.group);
     }
     // Refreshed every tick() — the 'objectChange' listener needs the
@@ -1150,11 +1165,20 @@ export function Viewport({
     let pointerDownAt: { x: number; y: number } | null = null;
     let suppressNextClick = false;
 
+    // Points Selection has no drag/gizmo step to defer to — a click or a
+    // marquee release IS the commit, immediately, unlike curve points which
+    // write back only when a drag ends.
+    function commitPointsSelection() {
+      if (pointsSelectionNodeId && onTransformChangeRef.current) {
+        onTransformChangeRef.current(pointsSelectionNodeId, { selectedIndices: Array.from(selectedPointsSelectionIndices) });
+      }
+    }
+
     function onCanvasPointerDown(e: PointerEvent) {
       pointerDownAt = { x: e.clientX, y: e.clientY };
 
       const isMarqueeModifier = e.metaKey || e.ctrlKey;
-      if (isMarqueeModifier && curveHandles.count() > 0 && !outputMode) {
+      if (isMarqueeModifier && (curveHandles.count() > 0 || pointsSelectionHandles.count() > 0) && !outputMode) {
         isMarqueeDragging = true;
         marqueeStartPos = { x: e.clientX, y: e.clientY };
         controls.enabled = false;
@@ -1192,11 +1216,21 @@ export function Viewport({
           const maxY = Math.max(marqueeStartPos.y, e.clientY) - rect.top;
 
           if (Math.hypot(e.clientX - marqueeStartPos.x, e.clientY - marqueeStartPos.y) > CLICK_MOVE_THRESHOLD_PX) {
-            const picked = curveHandles.pickRect({ minX, minY, maxX, maxY }, camera, rect.width, rect.height);
-            if (e.shiftKey) {
-              picked.forEach((idx) => selectedPointIndices.add(idx));
+            if (pointsSelectionHandles.count() > 0) {
+              const picked = pointsSelectionHandles.pickRect({ minX, minY, maxX, maxY }, camera, rect.width, rect.height);
+              if (e.shiftKey) {
+                picked.forEach((idx) => selectedPointsSelectionIndices.add(idx));
+              } else {
+                selectedPointsSelectionIndices = new Set(picked);
+              }
+              commitPointsSelection();
             } else {
-              selectedPointIndices = new Set(picked);
+              const picked = curveHandles.pickRect({ minX, minY, maxX, maxY }, camera, rect.width, rect.height);
+              if (e.shiftKey) {
+                picked.forEach((idx) => selectedPointIndices.add(idx));
+              } else {
+                selectedPointIndices = new Set(picked);
+              }
             }
             pointerDownAt = null;
             return;
@@ -1239,6 +1273,30 @@ export function Viewport({
             selectedPointIndices = new Set([pickedIdx]);
           }
           return;
+        }
+      }
+      if (pointsSelectionHandles.count() > 0) {
+        const pickedIdx = pointsSelectionHandles.pick(ndc, camera, rect.width, rect.height);
+        if (pickedIdx !== null) {
+          if (e.shiftKey) {
+            if (selectedPointsSelectionIndices.has(pickedIdx)) {
+              selectedPointsSelectionIndices.delete(pickedIdx);
+            } else {
+              selectedPointsSelectionIndices.add(pickedIdx);
+            }
+          } else {
+            selectedPointsSelectionIndices = new Set([pickedIdx]);
+          }
+          commitPointsSelection();
+          return;
+        }
+        // Missed every handle: clear the selection and fall through to the
+        // generic scene raycast below, same as curve editing does — a click
+        // on empty space (or another object) shouldn't trap the operator in
+        // Points Selection mode.
+        if (selectedPointsSelectionIndices.size > 0) {
+          selectedPointsSelectionIndices.clear();
+          commitPointsSelection();
         }
       }
       // Clicking anywhere else drops the point and hands the gizmo back to
@@ -1885,6 +1943,39 @@ export function Viewport({
         selectedPointIndices.clear();
       }
 
+      // Points Selection handles — same rendering/hit-testing machinery as
+      // curve handles (createCurvePointHandles is generic point-cloud dots,
+      // nothing curve-specific about it), but the points themselves come
+      // from this node's own *live evaluated* output (Points is an input,
+      // not a stored param — it's whatever Mesh to Points/upstream produced
+      // this frame), and there's no polyline (showLine=false) or drag/gizmo
+      // support: this feature only selects, it never moves a point.
+      const pointsSelNode = !outputMode
+        ? graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current && n.type === POINTS_SELECTION_NODE.type)
+        : undefined;
+      if (pointsSelNode) {
+        if (pointsSelectionNodeId !== pointsSelNode.id) {
+          pointsSelectionNodeId = pointsSelNode.id;
+          selectedPointsSelectionIndices = new Set(
+            Array.isArray(pointsSelNode.params.selectedIndices) ? (pointsSelNode.params.selectedIndices as number[]) : [],
+          );
+        }
+        const nodeResult = results.get(pointsSelNode.id);
+        const rawPoints = Array.isArray(nodeResult?.points) ? (nodeResult.points as unknown[]) : [];
+        const selPoints = rawPoints.map((p) => asVector3(p, new THREE.Vector3()));
+        const selMatrix = nodeResult?.matrix instanceof THREE.Matrix4 ? (nodeResult.matrix as THREE.Matrix4) : new THREE.Matrix4();
+
+        if (selPoints.length > 0) {
+          pointsSelectionHandles.sync(selPoints, selMatrix, selectedPointsSelectionIndices, null, false, camera, host.clientHeight);
+        } else if (pointsSelectionHandles.count() > 0) {
+          pointsSelectionHandles.clear();
+        }
+      } else if (pointsSelectionHandles.count() > 0) {
+        pointsSelectionHandles.clear();
+        pointsSelectionNodeId = null;
+        selectedPointsSelectionIndices.clear();
+      }
+
       // Pivot Transform's single draggable pivot marker — see the comment by
       // pivotHandle's declaration for why it can't ride the normal gizmo.
       const selectedNodeForPivot = graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current);
@@ -2282,6 +2373,7 @@ export function Viewport({
       }
       transformControls?.dispose();
       curveHandles.clear();
+      pointsSelectionHandles.clear();
       pivotHandle.clear();
       controls.dispose();
       // Per-viewport editor furniture (grid/axes, corner gizmo, zoom-scrub

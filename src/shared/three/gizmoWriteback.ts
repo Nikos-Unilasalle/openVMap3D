@@ -17,6 +17,8 @@ export interface TransformPatch {
   pointsList?: unknown[];
   /** Pivot Transform's own pivot point — written directly by its dedicated viewport marker, not through computeGizmoWriteback (see Viewport.tsx). */
   pivot?: THREE.Vector3;
+  /** Points Selection's picked indices — written directly by its viewport click/marquee handling, not through computeGizmoWriteback. */
+  selectedIndices?: number[];
 }
 
 export interface GizmoWritebackInput {

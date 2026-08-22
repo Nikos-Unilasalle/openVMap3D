@@ -99,3 +99,84 @@ describe("SPRING_VECTOR_NODE", () => {
     expect(v.z).toBeCloseTo(-3, 6);
   });
 });
+
+describe("SPRING_VECTOR_NODE — Individual Points mode", () => {
+  it("wiring Points springs each point independently toward its own target", () => {
+    const nodeId = "svp1";
+    const params = { ...SPRING_VECTOR_NODE.defaultParams, smoothing: 0.3, bounciness: 0.2 };
+    const start = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0)];
+    SPRING_VECTOR_NODE.evaluate({ points: start, time: 0 }, params, ctx(nodeId));
+
+    let t = 0;
+    let last: THREE.Vector3[] = [];
+    for (let i = 0; i < 300; i++) {
+      t += 1 / 60;
+      const res = SPRING_VECTOR_NODE.evaluate(
+        { points: [new THREE.Vector3(5, 0, 0), new THREE.Vector3(-3, 0, 0)], time: t },
+        params,
+        ctx(nodeId),
+      );
+      last = res.points as THREE.Vector3[];
+    }
+    expect(last[0].x).toBeCloseTo(5, 1);
+    expect(last[1].x).toBeCloseTo(-3, 1);
+  });
+
+  it("a masked-out point (mask 0) is held exactly at its target — no spring, no lag, no overshoot", () => {
+    const nodeId = "svp2";
+    const params = { ...SPRING_VECTOR_NODE.defaultParams, smoothing: 0.5, bounciness: 0.9 };
+    const pts0 = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0)];
+    SPRING_VECTOR_NODE.evaluate({ points: pts0, mask: [1, 0], time: 0 }, params, ctx(nodeId));
+
+    // point 0 is masked in (springs, will overshoot), point 1 is masked out
+    // (must equal its target on every single frame, including transients).
+    let t = 0;
+    for (let i = 0; i < 10; i++) {
+      t += 1 / 60;
+      const res = SPRING_VECTOR_NODE.evaluate(
+        { points: [new THREE.Vector3(5, 0, 0), new THREE.Vector3(5, 0, 0)], mask: [1, 0], time: t },
+        params,
+        ctx(nodeId),
+      );
+      const points = res.points as THREE.Vector3[];
+      expect(points[1].x).toBeCloseTo(5, 6);
+    }
+  });
+
+  it("rest of the object stays rigid: unmasked points never move even while masked-in ones bounce", () => {
+    const nodeId = "svp3";
+    const params = { ...SPRING_VECTOR_NODE.defaultParams, smoothing: 0.4, bounciness: 0.9 };
+    const rigid = new THREE.Vector3(1, 2, 3);
+    const pts0 = [new THREE.Vector3(0, 0, 0), rigid.clone()];
+    SPRING_VECTOR_NODE.evaluate({ points: pts0, mask: [1, 0], time: 0 }, params, ctx(nodeId));
+
+    let t = 0;
+    let sawOvershoot = false;
+    for (let i = 0; i < 60; i++) {
+      t += 1 / 60;
+      const res = SPRING_VECTOR_NODE.evaluate(
+        { points: [new THREE.Vector3(10, 0, 0), rigid], mask: [1, 0], time: t },
+        params,
+        ctx(nodeId),
+      );
+      const points = res.points as THREE.Vector3[];
+      expect(points[1]).toEqual(rigid);
+      if (points[0].x > 10) sawOvershoot = true;
+    }
+    expect(sawOvershoot).toBe(true);
+  });
+
+  it("a point-count change reseeds every spring at its new target instead of throwing", () => {
+    const nodeId = "svp4";
+    const params = SPRING_VECTOR_NODE.defaultParams;
+    SPRING_VECTOR_NODE.evaluate({ points: [new THREE.Vector3(0, 0, 0)], time: 0 }, params, ctx(nodeId));
+    const res = SPRING_VECTOR_NODE.evaluate(
+      { points: [new THREE.Vector3(1, 1, 1), new THREE.Vector3(2, 2, 2), new THREE.Vector3(3, 3, 3)], time: 1 / 60 },
+      params,
+      ctx(nodeId),
+    );
+    const points = res.points as THREE.Vector3[];
+    expect(points).toHaveLength(3);
+    expect(points[2].x).toBeCloseTo(3, 4);
+  });
+});
