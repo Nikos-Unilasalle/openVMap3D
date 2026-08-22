@@ -116,6 +116,52 @@ describe("EXTRUDE_MESH_NODE", () => {
     const res = EXTRUDE_MESH_NODE.evaluate({}, EXTRUDE_MESH_NODE.defaultParams, CTX);
     expect(res.geometry).toBeNull();
   });
+
+  it("Points + Influence overrides the formula selection: only the painted half extrudes, scaled by its own influence", () => {
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
+    const posAttr = plane.geometry.attributes.position;
+    const points: THREE.Vector3[] = [];
+    const influence: number[] = [];
+    for (let i = 0; i < posAttr.count; i++) {
+      const p = new THREE.Vector3().fromBufferAttribute(posAttr, i);
+      points.push(p);
+      influence.push(p.y >= 0 ? 1 : 0); // top half fully painted, bottom untouched
+    }
+
+    const res = EXTRUDE_MESH_NODE.evaluate(
+      { geometry: plane, distance: 0.25, points, influence },
+      // A formula that would select nothing on its own (impossible dot
+      // product) — proving Points/Influence, not this, drove the result.
+      { ...EXTRUDE_MESH_NODE.defaultParams, selectMode: "normal", axis: "y", threshold: 10 },
+      CTX,
+    );
+    const mesh = res.geometry as THREE.Mesh;
+    mesh.geometry.computeBoundingBox();
+    const box3 = mesh.geometry.boundingBox!;
+    expect(box3.max.z).toBeCloseTo(0.25, 4);
+    expect(box3.min.z).toBeCloseTo(0, 4);
+  });
+
+  it("a fractional influence extrudes a vertex proportionally, not by the full flat distance", () => {
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
+    const posAttr = plane.geometry.attributes.position;
+    const points: THREE.Vector3[] = [];
+    const influence: number[] = [];
+    for (let i = 0; i < posAttr.count; i++) {
+      const p = new THREE.Vector3().fromBufferAttribute(posAttr, i);
+      points.push(p);
+      influence.push(p.y >= 0 ? 0.5 : 0);
+    }
+
+    const res = EXTRUDE_MESH_NODE.evaluate(
+      { geometry: plane, distance: 1, points, influence },
+      EXTRUDE_MESH_NODE.defaultParams,
+      CTX,
+    );
+    const mesh = res.geometry as THREE.Mesh;
+    mesh.geometry.computeBoundingBox();
+    expect(mesh.geometry.boundingBox!.max.z).toBeCloseTo(0.5, 4);
+  });
 });
 
 describe("DELETE_GEOMETRY_NODE", () => {

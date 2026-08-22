@@ -1,6 +1,5 @@
-import * as THREE from "three";
 import { NodeDefinition } from "../types";
-import { extractPointsFromMesh } from "./pointsGeometry";
+import { resolvePointsInput } from "./pointsGeometry";
 
 /**
  * Points Selection — a pick-list of indices into an incoming point set, made
@@ -50,19 +49,7 @@ export const POINTS_SELECTION_NODE: NodeDefinition = {
   defaultParams: { selectedIndices: [] as number[] },
   paramFields: [],
   evaluate: (inputs, params, ctx) => {
-    let points: unknown[];
-    let matrix: THREE.Matrix4;
-    let geometry: THREE.Object3D | null = null;
-
-    if (inputs.geometry instanceof THREE.Object3D) {
-      const extracted = extractPointsFromMesh(inputs.geometry, ctx.nodeId, "Points Selection");
-      points = extracted?.points ?? [];
-      matrix = extracted?.matrix ?? new THREE.Matrix4();
-      geometry = extracted?.geometry ?? inputs.geometry;
-    } else {
-      points = Array.isArray(inputs.points) ? (inputs.points as unknown[]) : [];
-      matrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
-    }
+    const { points, matrix, geometry } = resolvePointsInput(inputs, ctx.nodeId, "Points Selection");
 
     const selected = Array.isArray(params.selectedIndices) ? (params.selectedIndices as number[]) : [];
     const selectedSet = new Set(selected);

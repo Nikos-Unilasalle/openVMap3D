@@ -31,7 +31,9 @@ export interface CurvePointHandles {
     frozenIndices: Set<number> | number[] | number | null,
     showLine?: boolean,
     camera?: THREE.PerspectiveCamera | THREE.OrthographicCamera,
-    viewportHeightPx?: number
+    viewportHeightPx?: number,
+    /** Per-point color override (hex), e.g. an influence heatmap — takes priority over the selected/unselected binary color when provided for a given index. */
+    colorOverride?: (idx: number) => number | null | undefined
   ): void;
   /** Remove and dispose every handle. */
   clear(): void;
@@ -47,6 +49,14 @@ export interface CurvePointHandles {
     widthPx: number,
     heightPx: number
   ): number[];
+  /** All handle indices within `radiusPx` screen-space pixels of `centerPx`, each with its distance — the brush-paint hit test. */
+  pickCircle(
+    centerPx: { x: number; y: number },
+    radiusPx: number,
+    camera: THREE.Camera,
+    widthPx: number,
+    heightPx: number
+  ): { index: number; distance: number }[];
   count(): number;
 }
 
@@ -122,7 +132,7 @@ export function createCurvePointHandles(): CurvePointHandles {
   return {
     group,
 
-    sync(points, spaceMatrix, selectedIndices, frozenIndices, showLine = true, camera, viewportHeightPx = 0) {
+    sync(points, spaceMatrix, selectedIndices, frozenIndices, showLine = true, camera, viewportHeightPx = 0, colorOverride) {
       if (points.length !== handles.length) build(points.length);
 
       const selectedSet = toSet(selectedIndices);
@@ -173,8 +183,13 @@ export function createCurvePointHandles(): CurvePointHandles {
         } else {
           handle.scale.copy(counterScale);
         }
+        const overrideColor = colorOverride?.(idx);
         (handle.material as THREE.MeshBasicMaterial).color.setHex(
-          selectedSet.has(idx) ? HANDLE_SELECTED_COLOR : HANDLE_COLOR,
+          overrideColor !== null && overrideColor !== undefined
+            ? overrideColor
+            : selectedSet.has(idx)
+              ? HANDLE_SELECTED_COLOR
+              : HANDLE_COLOR,
         );
       });
 
@@ -268,6 +283,22 @@ export function createCurvePointHandles(): CurvePointHandles {
         if (px >= minX && px <= maxX && py >= minY && py <= maxY) {
           matches.push(idx);
         }
+      });
+
+      return matches;
+    },
+
+    pickCircle(centerPx, radiusPx, camera, widthPx, heightPx) {
+      const worldPosition = new THREE.Vector3();
+      const matches: { index: number; distance: number }[] = [];
+
+      handles.forEach((handle, idx) => {
+        handle.getWorldPosition(worldPosition).project(camera);
+        if (worldPosition.z > 1) return; // behind camera
+        const px = ((worldPosition.x + 1) * widthPx) / 2;
+        const py = ((-worldPosition.y + 1) * heightPx) / 2;
+        const distance = Math.hypot(px - centerPx.x, py - centerPx.y);
+        if (distance <= radiusPx) matches.push({ index: idx, distance });
       });
 
       return matches;

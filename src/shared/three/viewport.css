@@ -138,6 +138,57 @@
   white-space: nowrap;
 }
 
+/* Points Influence — Discrete mode's 5 level buttons, docked bottom-center
+   so they don't collide with the top-left viewport-hud or the top-right
+   param panel. */
+.viewport-influence-hud {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(59, 67, 79, 0.88);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 10;
+  pointer-events: auto;
+}
+
+.viewport-influence-hud-label {
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--chrome-text);
+  padding-right: 4px;
+}
+
+.viewport-influence-hud-level {
+  width: 30px;
+  height: 24px;
+  border-radius: 5px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  transition: transform 0.1s ease, border-color 0.15s ease;
+}
+
+.viewport-influence-hud-level:hover {
+  transform: translateY(-1px);
+}
+
+.viewport-influence-hud-level-active {
+  border-color: #ffffff;
+}
+
 /* 2D HUD overlay — rendered over the camera view from hub/* nodes. Kept below
    the floating panels (param panel z-index 5, node palette, top bar…) so a HUD
    element never paints on top of them, but above the 3D canvas. */

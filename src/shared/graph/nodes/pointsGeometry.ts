@@ -72,6 +72,38 @@ export function extractPointsFromMesh(
   return { points, geometry: inputObj, matrix, count: points.length };
 }
 
+export interface ResolvedPointsInput {
+  points: unknown[];
+  matrix: THREE.Matrix4;
+  geometry: THREE.Object3D | null;
+}
+
+/**
+ * Shared "geometry-shortcut or explicit points+matrix" input resolution used
+ * by both Points Selection and Points Influence — Geometry wins if both are
+ * wired (not a sensible thing to wire both), otherwise falls back to the
+ * explicit Points/Matrix pair (a Mesh to Points or Lattice Deform output).
+ */
+export function resolvePointsInput(
+  inputs: Record<string, unknown>,
+  nodeId: string,
+  label: string,
+): ResolvedPointsInput {
+  if (inputs.geometry instanceof THREE.Object3D) {
+    const extracted = extractPointsFromMesh(inputs.geometry, nodeId, label);
+    return {
+      points: extracted?.points ?? [],
+      matrix: extracted?.matrix ?? new THREE.Matrix4(),
+      geometry: extracted?.geometry ?? inputs.geometry,
+    };
+  }
+  return {
+    points: Array.isArray(inputs.points) ? (inputs.points as unknown[]) : [],
+    matrix: inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4(),
+    geometry: null,
+  };
+}
+
 interface PointsMeshState {
   mesh?: THREE.Mesh;
 }

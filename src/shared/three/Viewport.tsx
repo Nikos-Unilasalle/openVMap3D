@@ -21,6 +21,7 @@ import {
   latticeEvaluatedPoints,
 } from "../graph/nodes/lattice";
 import { POINTS_SELECTION_NODE } from "../graph/nodes/pointsSelection";
+import { POINTS_INFLUENCE_NODE, POINTS_INFLUENCE_DISCRETE_LEVELS, PointsInfluenceMode } from "../graph/nodes/pointsInfluence";
 import { createPostProcessChain } from "./postProcessChain";
 import { computeGizmoWriteback, TransformGizmoMode, TransformPatch } from "./gizmoWriteback";
 
@@ -56,6 +57,21 @@ import "./viewport.css";
 // HUD elements are CSS/DOM overlays, which video export (which captures the
 // WebGL canvas) would otherwise omit. These helpers redraw each element onto a
 // 2D canvas so the export includes the HUD.
+/**
+ * Cold-blue (0) to hot-red (1) heatmap for Points Influence handles — the
+ * "dégradé de couleur" the painted gradient needs to actually read as a
+ * gradient rather than a binary on/off dot.
+ */
+function influenceColor(v: number): number {
+  const t = Math.max(0, Math.min(1, v));
+  const cold = new THREE.Color(0x2563eb);
+  const hot = new THREE.Color(0xef4444);
+  return cold.clone().lerp(hot, t).getHex();
+}
+
+/** The 5 discrete-mode level colors, in the same order as POINTS_INFLUENCE_DISCRETE_LEVELS. */
+const DISCRETE_LEVEL_COLORS = POINTS_INFLUENCE_DISCRETE_LEVELS.map((v) => influenceColor(v));
+
 /** Hands each mounted viewport its own evaluator session id. */
 let nextSessionOrdinal = 0;
 
@@ -835,6 +851,22 @@ export function Viewport({
     let pointsSelectionNodeId: string | null = null;
     let selectedPointsSelectionIndices = new Set<number>();
 
+    // Points Influence editing — same generic point-cloud handles again, this
+    // time colored as a heatmap of a graded 0-1 influence instead of a
+    // binary selected/unselected. Two independent gestures write into the
+    // same `influences` param map:
+    // - Brush mode: a plain drag (no modifier) paints continuously, falloff
+    //   from the drag position — see isBrushPainting below.
+    // - Discrete mode: click/marquee (identical to Points Selection's own
+    //   click/marquee) assigns whichever of the 5 HUD levels is armed.
+    // Mutually exclusive with curve/Points Selection editing by the same
+    // "only one node selected at a time" construction.
+    const pointsInfluenceHandles = createCurvePointHandles();
+    let pointsInfluenceNodeId: string | null = null;
+    let pointsInfluenceMode: PointsInfluenceMode = "brush";
+    let pointsInfluenceMap = new Map<number, number>();
+    let isBrushPainting = false;
+
     // A Pivot Transform node's `pivot` isn't a pose you can drag through the
     // usual translate/rotate/scale gizmo math (see gizmoWriteback.ts): with
     // rotation/scale/location all neutral, the pivot cancels out of its own
@@ -850,6 +882,7 @@ export function Viewport({
     if (!outputMode) {
       editorUiScene.add(curveHandles.group);
       editorUiScene.add(pointsSelectionHandles.group);
+      editorUiScene.add(pointsInfluenceHandles.group);
       editorUiScene.add(pivotHandle.group);
     }
     // Refreshed every tick() — the 'objectChange' listener needs the
@@ -1174,11 +1207,51 @@ export function Viewport({
       }
     }
 
+    function commitPointsInfluence() {
+      if (pointsInfluenceNodeId && onTransformChangeRef.current) {
+        onTransformChangeRef.current(pointsInfluenceNodeId, { influences: Object.fromEntries(pointsInfluenceMap) });
+      }
+    }
+
+    /** Falloff of a brush stroke centered at `centerPx`: 1 at the center, 0 at the edge of brushRadius. */
+    function paintInfluenceAt(centerPx: { x: number; y: number }, radiusPx: number, erase: boolean) {
+      const hits = pointsInfluenceHandles.pickCircle(centerPx, radiusPx, camera, renderer.domElement.clientWidth, renderer.domElement.clientHeight);
+      if (hits.length === 0) return;
+      for (const { index, distance } of hits) {
+        const falloff = 1 - distance / radiusPx;
+        if (erase) {
+          const next = Math.max(0, (pointsInfluenceMap.get(index) ?? 0) - falloff);
+          if (next <= 0) pointsInfluenceMap.delete(index);
+          else pointsInfluenceMap.set(index, next);
+        } else {
+          const next = Math.max(pointsInfluenceMap.get(index) ?? 0, falloff);
+          pointsInfluenceMap.set(index, next);
+        }
+      }
+    }
+
     function onCanvasPointerDown(e: PointerEvent) {
       pointerDownAt = { x: e.clientX, y: e.clientY };
 
       const isMarqueeModifier = e.metaKey || e.ctrlKey;
-      if (isMarqueeModifier && (curveHandles.count() > 0 || pointsSelectionHandles.count() > 0) && !outputMode) {
+      const infActive = pointsInfluenceHandles.count() > 0 && !outputMode;
+
+      // Brush mode paints on a plain drag (no modifier needed — there's
+      // nothing else to drag in this mode) rather than sharing the
+      // Cmd/Ctrl-marquee gesture Discrete mode and curve/Points Selection
+      // editing use.
+      if (infActive && pointsInfluenceMode === "brush" && !isMarqueeModifier) {
+        isBrushPainting = true;
+        controls.enabled = false;
+        const rect = renderer.domElement.getBoundingClientRect();
+        const radius = Number(graphRef.current.nodes.find((n) => n.id === pointsInfluenceNodeId)?.params.brushRadius) || 40;
+        paintInfluenceAt({ x: e.clientX - rect.left, y: e.clientY - rect.top }, radius, e.shiftKey);
+        commitPointsInfluence();
+        e.stopImmediatePropagation();
+        return;
+      }
+
+      if (isMarqueeModifier && (curveHandles.count() > 0 || pointsSelectionHandles.count() > 0 || (infActive && pointsInfluenceMode === "discrete")) && !outputMode) {
         isMarqueeDragging = true;
         marqueeStartPos = { x: e.clientX, y: e.clientY };
         controls.enabled = false;
@@ -1187,6 +1260,13 @@ export function Viewport({
     }
 
     function onCanvasPointerMove(e: PointerEvent) {
+      if (isBrushPainting && host) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        const radius = Number(graphRef.current.nodes.find((n) => n.id === pointsInfluenceNodeId)?.params.brushRadius) || 40;
+        paintInfluenceAt({ x: e.clientX - rect.left, y: e.clientY - rect.top }, radius, e.shiftKey);
+        commitPointsInfluence();
+        return;
+      }
       if (isMarqueeDragging && marqueeStartPos && host) {
         const rect = host.getBoundingClientRect();
         const x1 = Math.min(marqueeStartPos.x, e.clientX) - rect.left;
@@ -1202,7 +1282,17 @@ export function Viewport({
       }
     }
 
+    function getActiveInfluenceLevel(): number {
+      const raw = graphRef.current.nodes.find((n) => n.id === pointsInfluenceNodeId)?.params.activeLevel;
+      return typeof raw === "number" ? raw : POINTS_INFLUENCE_DISCRETE_LEVELS[2];
+    }
+
     function onCanvasPointerUp(e: PointerEvent) {
+      if (isBrushPainting) {
+        isBrushPainting = false;
+        controls.enabled = true;
+        return;
+      }
       if (isMarqueeDragging) {
         isMarqueeDragging = false;
         setMarqueeBox(null);
@@ -1216,7 +1306,15 @@ export function Viewport({
           const maxY = Math.max(marqueeStartPos.y, e.clientY) - rect.top;
 
           if (Math.hypot(e.clientX - marqueeStartPos.x, e.clientY - marqueeStartPos.y) > CLICK_MOVE_THRESHOLD_PX) {
-            if (pointsSelectionHandles.count() > 0) {
+            if (pointsInfluenceHandles.count() > 0 && pointsInfluenceMode === "discrete") {
+              const picked = pointsInfluenceHandles.pickRect({ minX, minY, maxX, maxY }, camera, rect.width, rect.height);
+              const level = e.shiftKey ? 0 : getActiveInfluenceLevel();
+              picked.forEach((idx) => {
+                if (level <= 0) pointsInfluenceMap.delete(idx);
+                else pointsInfluenceMap.set(idx, level);
+              });
+              commitPointsInfluence();
+            } else if (pointsSelectionHandles.count() > 0) {
               const picked = pointsSelectionHandles.pickRect({ minX, minY, maxX, maxY }, camera, rect.width, rect.height);
               if (e.shiftKey) {
                 picked.forEach((idx) => selectedPointsSelectionIndices.add(idx));
@@ -1297,6 +1395,19 @@ export function Viewport({
         if (selectedPointsSelectionIndices.size > 0) {
           selectedPointsSelectionIndices.clear();
           commitPointsSelection();
+        }
+      }
+      // Discrete-mode Points Influence: a plain click assigns (or, with
+      // Shift, erases) the currently armed level to the single nearest
+      // point, same missed-click fallthrough as Points Selection above.
+      if (pointsInfluenceHandles.count() > 0 && pointsInfluenceMode === "discrete") {
+        const pickedIdx = pointsInfluenceHandles.pick(ndc, camera, rect.width, rect.height);
+        if (pickedIdx !== null) {
+          const level = e.shiftKey ? 0 : getActiveInfluenceLevel();
+          if (level <= 0) pointsInfluenceMap.delete(pickedIdx);
+          else pointsInfluenceMap.set(pickedIdx, level);
+          commitPointsInfluence();
+          return;
         }
       }
       // Clicking anywhere else drops the point and hands the gizmo back to
@@ -1976,6 +2087,39 @@ export function Viewport({
         selectedPointsSelectionIndices.clear();
       }
 
+      // Points Influence handles — same live-evaluated point source as
+      // Points Selection above, colored as a heatmap of the painted
+      // influence instead of plain selected/unselected.
+      const pointsInfNode = !outputMode
+        ? graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current && n.type === POINTS_INFLUENCE_NODE.type)
+        : undefined;
+      if (pointsInfNode) {
+        pointsInfluenceMode = pointsInfNode.params.mode === "discrete" ? "discrete" : "brush";
+        if (pointsInfluenceNodeId !== pointsInfNode.id) {
+          pointsInfluenceNodeId = pointsInfNode.id;
+          const stored = pointsInfNode.params.influences;
+          pointsInfluenceMap = new Map(
+            stored && typeof stored === "object" ? Object.entries(stored as Record<string, number>).map(([k, v]) => [Number(k), v]) : [],
+          );
+        }
+        const nodeResult = results.get(pointsInfNode.id);
+        const rawPoints = Array.isArray(nodeResult?.points) ? (nodeResult.points as unknown[]) : [];
+        const infPoints = rawPoints.map((p) => asVector3(p, new THREE.Vector3()));
+        const infMatrix = nodeResult?.matrix instanceof THREE.Matrix4 ? (nodeResult.matrix as THREE.Matrix4) : new THREE.Matrix4();
+
+        if (infPoints.length > 0) {
+          pointsInfluenceHandles.sync(infPoints, infMatrix, null, null, false, camera, host.clientHeight, (idx) =>
+            influenceColor(pointsInfluenceMap.get(idx) ?? 0),
+          );
+        } else if (pointsInfluenceHandles.count() > 0) {
+          pointsInfluenceHandles.clear();
+        }
+      } else if (pointsInfluenceHandles.count() > 0) {
+        pointsInfluenceHandles.clear();
+        pointsInfluenceNodeId = null;
+        pointsInfluenceMap.clear();
+      }
+
       // Pivot Transform's single draggable pivot marker — see the comment by
       // pivotHandle's declaration for why it can't ride the normal gizmo.
       const selectedNodeForPivot = graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current);
@@ -2374,6 +2518,7 @@ export function Viewport({
       transformControls?.dispose();
       curveHandles.clear();
       pointsSelectionHandles.clear();
+      pointsInfluenceHandles.clear();
       pivotHandle.clear();
       controls.dispose();
       // Per-viewport editor furniture (grid/axes, corner gizmo, zoom-scrub
@@ -2466,6 +2611,33 @@ export function Viewport({
           }}
         />
       )}
+      {/* Points Influence — Discrete mode's 5 level buttons. Brush mode needs
+          no HUD of its own: the paint gesture is a plain drag, and Brush
+          Radius already lives in ParamPanel like any other param. */}
+      {!outputMode &&
+        selectedNodeId &&
+        (() => {
+          const infNode = graph.nodes.find((n) => n.id === selectedNodeId && n.type === POINTS_INFLUENCE_NODE.type);
+          if (!infNode || infNode.params.mode !== "discrete") return null;
+          const activeLevel = typeof infNode.params.activeLevel === "number" ? infNode.params.activeLevel : POINTS_INFLUENCE_DISCRETE_LEVELS[2];
+          return (
+            <div className="viewport-influence-hud">
+              <span className="viewport-influence-hud-label">Influence</span>
+              {POINTS_INFLUENCE_DISCRETE_LEVELS.map((level, i) => (
+                <button
+                  key={level}
+                  type="button"
+                  className={`viewport-influence-hud-level ${activeLevel === level ? "viewport-influence-hud-level-active" : ""}`}
+                  style={{ backgroundColor: `#${DISCRETE_LEVEL_COLORS[i].toString(16).padStart(6, "0")}` }}
+                  title={`${Math.round(level * 100)}% — click/marquee a point to assign, Shift to erase`}
+                  onClick={() => onTransformChange?.(infNode.id, { activeLevel: level })}
+                >
+                  {Math.round(level * 100)}
+                </button>
+              ))}
+            </div>
+          );
+        })()}
       {/* Passe-partout guide: target-output-aspect crop, shown while a Camera
           node is selected so "Aligner Caméra" reproduces what's actually
           framed — see the comment in tick() next to cameraGuideRef. */}

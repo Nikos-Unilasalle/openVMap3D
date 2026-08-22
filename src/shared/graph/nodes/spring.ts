@@ -109,10 +109,14 @@ function getSpringPointsState(nodeId: string): SpringPointsState {
 /**
  * Springs each point in a list independently — the "Individual Points" mode
  * that lets Spring Vector drive a *subset* of a mesh (via Mesh to Points /
- * Points Selection / Points to Mesh) while the rest stays rigid: a masked-out
- * point (mask value < 0.5) is parked at its own target every frame instead of
- * integrated, so it neither springs nor drifts, and snaps to nothing if it's
- * later unmasked (it was already sitting at the target the whole time).
+ * Points Selection / Points to Mesh) while the rest stays rigid. Mask is a
+ * continuous 0-1 influence, not a binary switch: every point's spring is
+ * always fully integrated (so a low-influence point still carries real
+ * velocity/energy underneath), and the influence just blends the *output*
+ * between the raw target (0 = rigid, exactly where Points Influence painted
+ * it) and the full spring result (1) — a mid-value point visibly springs
+ * with reduced amplitude, matching a painted gradient rather than snapping
+ * in or out at a threshold.
  *
  * A point count change (the upstream mesh/selection changed shape) reseeds
  * every spring at its new target rather than trying to carry old state across
@@ -146,13 +150,16 @@ function springPoints(
 
   const out: THREE.Vector3[] = new Array(targets.length);
   for (let i = 0; i < targets.length; i++) {
-    const masked = mask !== null && (mask[i] ?? 1) < 0.5;
-    const reseed = globalReseed || masked;
+    const influence = mask !== null ? clamp01(mask[i] ?? 1) : 1;
     const axis = state.axes[i];
-    axis[0] = advance(axis[0], targets[i].x, dt, reseed, smoothing, bounciness);
-    axis[1] = advance(axis[1], targets[i].y, dt, reseed, smoothing, bounciness);
-    axis[2] = advance(axis[2], targets[i].z, dt, reseed, smoothing, bounciness);
-    out[i] = new THREE.Vector3(axis[0].value, axis[1].value, axis[2].value);
+    axis[0] = advance(axis[0], targets[i].x, dt, globalReseed, smoothing, bounciness);
+    axis[1] = advance(axis[1], targets[i].y, dt, globalReseed, smoothing, bounciness);
+    axis[2] = advance(axis[2], targets[i].z, dt, globalReseed, smoothing, bounciness);
+    out[i] = new THREE.Vector3(
+      targets[i].x + (axis[0].value - targets[i].x) * influence,
+      targets[i].y + (axis[1].value - targets[i].y) * influence,
+      targets[i].z + (axis[2].value - targets[i].z) * influence,
+    );
   }
   return out;
 }
@@ -177,7 +184,7 @@ export const SPRING_VECTOR_NODE: NodeDefinition = {
     // instead. Mask (same length, 1 = spring / 0 = hold still) is what lets
     // only *some* of those points move — see springPoints' doc comment.
     { id: "points", label: "Points (Individual)", type: "list" },
-    { id: "mask", label: "Mask (1=spring, 0=hold)", type: "list" },
+    { id: "mask", label: "Influence (1=spring, 0=hold, continuous)", type: "list" },
     // The shortcut that makes "OBJ -> Points Selection -> Spring Vector"
     // work with no other nodes: wire Points Selection's own Geometry
     // passthrough in here alongside Points/Mask, and this node writes the

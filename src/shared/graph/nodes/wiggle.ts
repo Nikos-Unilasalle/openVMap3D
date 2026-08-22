@@ -213,7 +213,7 @@ export const WIGGLE_VECTOR_NODE: NodeDefinition = {
     // a mesh (via Mesh to Points / Points Selection / Points to Mesh) while
     // the rest stays rigid.
     { id: "points", label: "Points (Individual)", type: "list" },
-    { id: "mask", label: "Mask (1=wiggle, 0=hold)", type: "list" },
+    { id: "mask", label: "Influence (1=wiggle, 0=hold, continuous)", type: "list" },
   ],
   outputs: [
     { id: "vector", label: "Vector", type: "vector" },
@@ -253,13 +253,18 @@ export const WIGGLE_VECTOR_NODE: NodeDefinition = {
       const basePoints = (inputs.points as unknown[]).map((p) => asVector3(p, new THREE.Vector3(0, 0, 0)));
       const mask = Array.isArray(inputs.mask) ? (inputs.mask as unknown[]).map((m) => Number(m)) : null;
       const points = basePoints.map((p, i) => {
-        if (mask !== null && (mask[i] ?? 1) < 0.5) return p.clone();
+        const influence = mask !== null ? Math.max(0, Math.min(1, mask[i] ?? 1)) : 1;
+        if (influence <= 0) return p.clone();
         // A large, irrational-feeling per-index offset decorrelates each
         // point's noise from its neighbours' — without it every point reads
         // the same fbm3D sample and the whole selection wiggles as one rigid
         // (if offset) blob instead of rippling independently.
         const pn = fbm3D(t, seed + i * 173.17, octaves, persistance, lacunarity);
-        return new THREE.Vector3(p.x + pn.x * amp.x, p.y + pn.y * amp.y, p.z + pn.z * amp.z);
+        return new THREE.Vector3(
+          p.x + pn.x * amp.x * influence,
+          p.y + pn.y * amp.y * influence,
+          p.z + pn.z * amp.z * influence,
+        );
       });
       return { vector: points[0] ?? baseVec.clone(), points };
     }

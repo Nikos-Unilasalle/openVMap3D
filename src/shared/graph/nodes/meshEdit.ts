@@ -101,6 +101,35 @@ function toWeldedMesh(geometry: THREE.BufferGeometry): WeldedMesh | null {
   };
 }
 
+const WELD_QUANT = 1e4; // matches toWeldedMesh's 1e-4 tolerance
+
+function quantizeKey(x: number, y: number, z: number): string {
+  return `${Math.round(x * WELD_QUANT)}_${Math.round(y * WELD_QUANT)}_${Math.round(z * WELD_QUANT)}`;
+}
+
+/**
+ * Maps each RAW (pre-weld) vertex index to its corresponding welded index —
+ * mergeVertices doesn't expose this mapping itself, so it's rebuilt here by
+ * position lookup at the same quantization tolerance the weld used. This is
+ * what lets a per-vertex Points/Influence pair — which is index-aligned to
+ * the RAW buffer, same convention as Mesh to Points/writePointsToMesh — drive
+ * Extrude's per-welded-vertex distance below.
+ */
+function buildRawToWeldedMap(rawPositions: ArrayLike<number>, weldedPositions: Float32Array): Int32Array {
+  const lookup = new Map<string, number>();
+  const weldedCount = weldedPositions.length / 3;
+  for (let v = 0; v < weldedCount; v++) {
+    lookup.set(quantizeKey(weldedPositions[v * 3], weldedPositions[v * 3 + 1], weldedPositions[v * 3 + 2]), v);
+  }
+  const rawCount = rawPositions.length / 3;
+  const map = new Int32Array(rawCount).fill(-1);
+  for (let v = 0; v < rawCount; v++) {
+    const key = quantizeKey(rawPositions[v * 3], rawPositions[v * 3 + 1], rawPositions[v * 3 + 2]);
+    map[v] = lookup.get(key) ?? -1;
+  }
+  return map;
+}
+
 /**
  * Extrudes the selected faces outward along their own averaged vertex
  * normals: duplicates the selected patch's vertices, offsets the duplicates
@@ -114,8 +143,15 @@ function toWeldedMesh(geometry: THREE.BufferGeometry): WeldedMesh | null {
  * Wall winding comes from the selected face's own edge direction (not just
  * the undirected pair) so it comes out facing outward automatically,
  * consistent with the cap, without guessing from geometry.
+ *
+ * `influence`, when given, scales `distance` per welded vertex (a Points
+ * Influence painted gradient) instead of extruding every selected vertex by
+ * the same flat amount — a vertex with 0 influence stays exactly where it
+ * was (a degenerate, zero-length "extrusion" of that one corner), letting a
+ * soft-edged painted patch taper smoothly into the rest of the mesh instead
+ * of a hard step at the selection boundary.
  */
-function extrudeSelected(mesh: WeldedMesh, selected: boolean[], distance: number): WeldedMesh {
+function extrudeSelected(mesh: WeldedMesh, selected: boolean[], distance: number, influence?: Float32Array | null): WeldedMesh {
   const { positions, indices } = mesh;
   const faceCount = indices.length / 3;
   const vertexCount = positions.length / 3;
@@ -144,10 +180,11 @@ function extrudeSelected(mesh: WeldedMesh, selected: boolean[], distance: number
     const ny = vertexNormalSum[v * 3 + 1];
     const nz = vertexNormalSum[v * 3 + 2];
     const len = Math.hypot(nx, ny, nz) || 1;
+    const d = distance * (influence ? (influence[v] ?? 1) : 1);
     outPositions.push(
-      positions[v * 3] + (nx / len) * distance,
-      positions[v * 3 + 1] + (ny / len) * distance,
-      positions[v * 3 + 2] + (nz / len) * distance,
+      positions[v * 3] + (nx / len) * d,
+      positions[v * 3 + 1] + (ny / len) * d,
+      positions[v * 3 + 2] + (nz / len) * d,
     );
     oldToNew[v] = outPositions.length / 3 - 1;
   }
@@ -198,6 +235,14 @@ function extrudeSelected(mesh: WeldedMesh, selected: boolean[], distance: number
   return { positions: new Float32Array(outPositions), indices: new Uint32Array(outIndices) };
 }
 
+/** Cheap order-sensitive checksum for the cache signature — an O(n) pass no worse than the weld/extrude it's gating, so it's fine to run every frame the influence array is wired. */
+function hashInfluence(arr: number[] | null): string {
+  if (!arr) return "none";
+  let h = 0;
+  for (let i = 0; i < arr.length; i++) h = (h * 31 + Math.round(arr[i] * 1000)) | 0;
+  return `${arr.length}:${h}`;
+}
+
 interface MeshEditState {
   mesh?: THREE.Mesh;
   lastSignature?: string;
@@ -235,6 +280,15 @@ export const EXTRUDE_MESH_NODE: NodeDefinition = {
   inputs: [
     { id: "geometry", label: "Geometry", type: "geometry", owns: true },
     { id: "distance", label: "Distance", type: "value" },
+    // Wiring Points + Influence (a Mesh to Points / Points Influence pair,
+    // index-aligned to this same Geometry's raw vertex buffer) switches
+    // selection from the formula fields below to "wherever influence was
+    // painted", and scales each vertex's own extrude distance by its
+    // painted 0-1 value instead of the flat Distance for every selected
+    // vertex — a soft-edged patch that tapers into the surrounding mesh
+    // instead of stepping abruptly at the selection boundary.
+    { id: "points", label: "Points (influence override)", type: "list" },
+    { id: "influence", label: "Influence (0-1 per point)", type: "list" },
   ],
   outputs: [
     { id: "geometry", label: "Geometry", type: "geometry" },
@@ -247,7 +301,10 @@ export const EXTRUDE_MESH_NODE: NodeDefinition = {
     threshold: 0,
     invert: false,
   },
-  paramFields: [{ id: "distance", label: "Distance", kind: "number", step: 0.05 }, ...FACE_SELECTION_PARAM_FIELDS],
+  paramFields: [
+    { id: "distance", label: "Distance", kind: "number", step: 0.05, group: "Extrude" },
+    ...FACE_SELECTION_PARAM_FIELDS.map((f) => ({ ...f, group: "Extrude" })),
+  ],
   evaluate: (inputs, params, ctx) => {
     const inputObj = inputs.geometry instanceof THREE.Object3D ? inputs.geometry : null;
     if (!inputObj) return { geometry: null };
@@ -263,8 +320,15 @@ export const EXTRUDE_MESH_NODE: NodeDefinition = {
     const distance = inputs.distance !== undefined ? Number(inputs.distance) : Number(params.distance) || 0;
     const selection = faceSelectionConfigFromParams(params);
 
+    const rawInfluence =
+      Array.isArray(inputs.points) &&
+      Array.isArray(inputs.influence) &&
+      (inputs.points as unknown[]).length === srcGeom.attributes.position.count
+        ? (inputs.influence as unknown[]).map((v) => Math.max(0, Math.min(1, Number(v) || 0)))
+        : null;
+
     const state = getState(meshEditCache, ctx.nodeId);
-    const signature = `${distance}:${selection.mode}:${selection.axis}:${selection.threshold}:${selection.invert}:${srcGeom.attributes.position.count}:${srcGeom.index?.count ?? -1}`;
+    const signature = `${distance}:${selection.mode}:${selection.axis}:${selection.threshold}:${selection.invert}:${srcGeom.attributes.position.count}:${srcGeom.index?.count ?? -1}:${hashInfluence(rawInfluence)}`;
     if (state.mesh && state.lastSignature === signature) {
       // srcMesh.matrix is only its LOCAL pose — correct for a mesh that
       // directly carries its own transform (Box, Sphere, ...), but wrong for
@@ -285,12 +349,32 @@ export const EXTRUDE_MESH_NODE: NodeDefinition = {
     if (!welded) return primitiveOutputs(inputObj);
 
     const faceCount = welded.indices.length / 3;
-    const selected = selectFaces(welded.positions, welded.indices, faceCount, selection);
+
+    let selected: boolean[];
+    let weldedInfluence: Float32Array | null = null;
+    if (rawInfluence) {
+      const rawToWelded = buildRawToWeldedMap(srcGeom.attributes.position.array as ArrayLike<number>, welded.positions);
+      weldedInfluence = new Float32Array(welded.positions.length / 3);
+      for (let i = 0; i < rawInfluence.length; i++) {
+        const w = rawToWelded[i];
+        if (w >= 0) weldedInfluence[w] = Math.max(weldedInfluence[w], rawInfluence[i]);
+      }
+      selected = new Array(faceCount);
+      for (let f = 0; f < faceCount; f++) {
+        const a = welded.indices[f * 3];
+        const b = welded.indices[f * 3 + 1];
+        const c = welded.indices[f * 3 + 2];
+        selected[f] = weldedInfluence[a] > 1e-4 || weldedInfluence[b] > 1e-4 || weldedInfluence[c] > 1e-4;
+      }
+    } else {
+      selected = selectFaces(welded.positions, welded.indices, faceCount, selection);
+    }
+
     if (distance === 0 || !selected.some(Boolean)) {
       return primitiveOutputs(inputObj);
     }
 
-    const result = extrudeSelected(welded, selected, distance);
+    const result = extrudeSelected(welded, selected, distance, weldedInfluence);
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.BufferAttribute(result.positions, 3));
