@@ -2152,7 +2152,8 @@ export function Viewport({
         ? graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current && n.type === POINTS_INFLUENCE_NODE.type)
         : undefined;
       if (pointsInfNode) {
-        pointsInfluenceMode = pointsInfNode.params.mode === "discrete" ? "discrete" : "brush";
+        pointsInfluenceMode =
+          pointsInfNode.params.mode === "discrete" || pointsInfNode.params.mode === "gradient" ? pointsInfNode.params.mode : "brush";
         if (pointsInfluenceNodeId !== pointsInfNode.id) {
           pointsInfluenceNodeId = pointsInfNode.id;
           const stored = pointsInfNode.params.influences;
