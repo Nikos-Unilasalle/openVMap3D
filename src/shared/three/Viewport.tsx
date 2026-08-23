@@ -14,6 +14,7 @@ import { insertCurvePointAfter, removeCurvePoint } from "../graph/curvePoints";
 import { GizmoTarget, resolveGizmoTarget } from "../graph/transformLookup";
 import { PIVOT_TRANSFORM_NODE } from "../graph/nodes/transform";
 import { createCurvePointHandles } from "./curveHandles";
+import { createPointCloudHandles } from "./pointCloudHandles";
 import { createSceneMembership, isSelfOrDescendantOf } from "./sceneMembership";
 import {
   LATTICE_DEFORM_NODE,
@@ -848,7 +849,11 @@ export function Viewport({
     // two share the marquee overlay and the click/drag-distance heuristic
     // but never both have handles active at once (only one node can be
     // selected in the graph at a time).
-    const pointsSelectionHandles = createCurvePointHandles();
+    //
+    // Point *cloud* handles, not curve handles: these track a mesh's whole
+    // vertex buffer, which is a scale curve handles' one-Mesh-per-point
+    // design cannot survive (see pointCloudHandles.ts).
+    const pointsSelectionHandles = createPointCloudHandles();
     let pointsSelectionNodeId: string | null = null;
     let selectedPointsSelectionIndices = new Set<number>();
 
@@ -865,7 +870,7 @@ export function Viewport({
     //   point at once (1 at the start, 0 at the end) — see isGradientDragging.
     // Mutually exclusive with curve/Points Selection editing by the same
     // "only one node selected at a time" construction.
-    const pointsInfluenceHandles = createCurvePointHandles();
+    const pointsInfluenceHandles = createPointCloudHandles();
     let pointsInfluenceNodeId: string | null = null;
     let pointsInfluenceMode: PointsInfluenceMode = "brush";
     let pointsInfluenceMap = new Map<number, number>();
@@ -2135,7 +2140,7 @@ export function Viewport({
         const selMatrix = nodeResult?.matrix instanceof THREE.Matrix4 ? (nodeResult.matrix as THREE.Matrix4) : new THREE.Matrix4();
 
         if (selPoints.length > 0) {
-          pointsSelectionHandles.sync(selPoints, selMatrix, selectedPointsSelectionIndices, null, false, camera, host.clientHeight);
+          pointsSelectionHandles.sync(selPoints, selMatrix, selectedPointsSelectionIndices);
         } else if (pointsSelectionHandles.count() > 0) {
           pointsSelectionHandles.clear();
         }
@@ -2167,9 +2172,7 @@ export function Viewport({
         const infMatrix = nodeResult?.matrix instanceof THREE.Matrix4 ? (nodeResult.matrix as THREE.Matrix4) : new THREE.Matrix4();
 
         if (infPoints.length > 0) {
-          pointsInfluenceHandles.sync(infPoints, infMatrix, null, null, false, camera, host.clientHeight, (idx) =>
-            influenceColor(pointsInfluenceMap.get(idx) ?? 0),
-          );
+          pointsInfluenceHandles.sync(infPoints, infMatrix, null, (idx) => influenceColor(pointsInfluenceMap.get(idx) ?? 0));
         } else if (pointsInfluenceHandles.count() > 0) {
           pointsInfluenceHandles.clear();
         }
