@@ -1687,22 +1687,28 @@ function MainEditor() {
           onDrawerHeightChange={setTimelineDrawerHeight}
           onSplitHandleMouseDown={onSplitHandleMouseDown}
         />
-        <div style={{ flex: 1, minHeight: 0 }}>
-          <GraphEditor
-            key={`${activeCanvas}:${editorKey}`}
-            graph={graph}
-            registry={DEFAULT_REGISTRY}
-            onGraphChange={onGraphChange}
-            onSelectNode={handleSelectNode}
-            selectedNodeId={selectedNodeId}
-            onSelectNodes={handleSelectNodes}
-            selectedNodeIds={selectedNodeIds}
-            canvasCount={CANVAS_COUNT}
-            activeCanvas={activeCanvas}
-            emptyCanvases={canvases.map(isCanvasEmpty)}
-            onSelectCanvas={switchCanvas}
-          />
-        </div>
+        {/* The node graph editor is the "default" bottom panel — hidden while
+            the Timeline drawer is open so opening Timeline doesn't also pull
+            the graph into view. Closing the drawer (or the drawer's own
+            close button) brings it back, same as before this panel existed. */}
+        {!isTimelineDrawerOpen && (
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <GraphEditor
+              key={`${activeCanvas}:${editorKey}`}
+              graph={graph}
+              registry={DEFAULT_REGISTRY}
+              onGraphChange={onGraphChange}
+              onSelectNode={handleSelectNode}
+              selectedNodeId={selectedNodeId}
+              onSelectNodes={handleSelectNodes}
+              selectedNodeIds={selectedNodeIds}
+              canvasCount={CANVAS_COUNT}
+              activeCanvas={activeCanvas}
+              emptyCanvases={canvases.map(isCanvasEmpty)}
+              onSelectCanvas={switchCanvas}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
