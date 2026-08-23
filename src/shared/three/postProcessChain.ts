@@ -121,9 +121,15 @@ function configurePass(
       pass.edgeGlow = 0.5;
       pass.edgeThickness = Number(cfg.params.edgeThickness) ?? 1.0;
       pass.visibleEdgeColor.copy(edgeColor);
-      if (outlineTarget) {
+      // The node's own Geometry input wins when wired — outlining just that
+      // object, not everything in the render (see the node's doc comment
+      // for why "everything" reads as broken the moment two objects touch).
+      // Falls back to the whole render output otherwise, unchanged from
+      // before Geometry existed.
+      const target = cfg.params.targetObject instanceof THREE.Object3D ? cfg.params.targetObject : outlineTarget;
+      if (target) {
         const meshes: THREE.Mesh[] = [];
-        outlineTarget.traverse((c) => {
+        target.traverse((c) => {
           if (c instanceof THREE.Mesh) meshes.push(c);
         });
         pass.selectedObjects = meshes;

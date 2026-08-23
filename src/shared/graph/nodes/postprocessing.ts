@@ -140,13 +140,28 @@ export const POSTPROCESS_DOF_NODE: NodeDefinition = {
   },
 };
 
-/** Outline / Edge Detection Post-Processing Node */
+/**
+ * Outline / Edge Detection Post-Processing Node.
+ *
+ * Without Geometry wired, the outline falls back to the *entire* Render
+ * output (unchanged from before Geometry existed) — but that default is
+ * only usable for a single isolated object. OutlinePass draws an edge at
+ * the boundary of its selection, not around every individual mesh inside
+ * it: two touching or overlapping "selected" objects (a character standing
+ * on a floor, the ordinary case) merge into one region with no edge between
+ * them, so the outline only ever appears at the outer silhouette of the
+ * *whole scene* — often off-screen, or reduced to a thin line where the
+ * combined shape happens to meet the background. That looked like the
+ * effect doing nothing. Wiring Geometry in with just the object(s) meant to
+ * be outlined restores the actual boundary they have with everything else.
+ */
 export const POSTPROCESS_OUTLINE_NODE: NodeDefinition = {
   type: "postprocess/outline",
   label: "Outline",
   category: "postprocess",
   inputs: [
     { id: "effect", label: "Post-Process", type: "postprocess" },
+    { id: "geometry", label: "Geometry (target, defaults to whole render)", type: "geometry" },
     { id: "edgeColor", label: "Edge Color", type: "color" },
     { id: "edgeStrength", label: "Strength", type: "value" },
     { id: "edgeThickness", label: "Thickness", type: "value" },
@@ -166,11 +181,15 @@ export const POSTPROCESS_OUTLINE_NODE: NodeDefinition = {
     const edgeColor = asColor(inputs.edgeColor, asColor(params.edgeColor, new THREE.Color(0xffffff)));
     const edgeStrength = numberInput(inputs.edgeStrength, params.edgeStrength, 3.0);
     const edgeThickness = numberInput(inputs.edgeThickness, params.edgeThickness, 1.0);
+    // Not serialized — this config lives only for the current frame's
+    // render, the same way Bloom/Vignette/etc. already carry live THREE
+    // objects (edgeColor above) through this same params bag.
+    const targetObject = inputs.geometry instanceof THREE.Object3D ? inputs.geometry : null;
 
     const effectList = accumulateEffect(inputs, {
       type: "outline",
       nodeId: ctx.nodeId,
-      params: { edgeColor, edgeStrength, edgeThickness },
+      params: { edgeColor, edgeStrength, edgeThickness, targetObject },
     });
 
     return { effect: effectList };

@@ -1,3 +1,4 @@
+import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { EvalContext } from "../types";
 import {
@@ -84,6 +85,19 @@ describe("POST-PROCESSING NODES", () => {
     const effects = res.effect as PostProcessConfig[];
     expect(effects[0].type).toBe("outline");
     expect(effects[0].params.edgeStrength).toBe(4.0);
+  });
+
+  it("Outline has no target object when Geometry isn't wired — falls back to the whole render", () => {
+    const res = POSTPROCESS_OUTLINE_NODE.evaluate({}, {}, CTX);
+    const effects = res.effect as PostProcessConfig[];
+    expect(effects[0].params.targetObject).toBeNull();
+  });
+
+  it("Outline carries the wired Geometry through as its target object", () => {
+    const object = new THREE.Group();
+    const res = POSTPROCESS_OUTLINE_NODE.evaluate({ geometry: object }, {}, CTX);
+    const effects = res.effect as PostProcessConfig[];
+    expect(effects[0].params.targetObject).toBe(object);
   });
 
   it("evaluates Film Grain node", () => {
