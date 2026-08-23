@@ -64,8 +64,6 @@ export interface TimelineDrawerProps {
   onToggleMarker?: (frame: number) => void;
   onMoveMarker?: (oldFrame: number, newFrame: number) => void;
   evaluatedResults?: Map<string, Record<string, unknown>>;
-  drawerHeight: number;
-  onDrawerHeightChange: (height: number) => void;
   onSplitHandleMouseDown: (e: React.MouseEvent) => void;
 }
 
@@ -132,8 +130,6 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
   onToggleMarker,
   onMoveMarker: _onMoveMarker,
   evaluatedResults,
-  drawerHeight,
-  onDrawerHeightChange,
   onSplitHandleMouseDown,
 }) => {
   const [viewMode, setViewMode] = useState<"selected" | "all">("selected");
@@ -176,10 +172,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
   const [motionGraphHeight, setMotionGraphHeight] = useState(190);
   const drawerRootRef = useRef<HTMLDivElement>(null);
   const isDraggingRulerRef = useRef(false);
-  const isResizingDrawerRef = useRef(false);
-  const drawerTopRef = useRef(0);
   const isResizingSplitterRef = useRef(false);
-  const [isResizingDrawer, setIsResizingDrawer] = useState(false);
 
   // On open, default the zoom so the scene's frames spread across the whole
   // visible timeline width (rather than the fixed 6px/frame).
@@ -401,16 +394,9 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
     });
   };
 
-  // Global mouse move & up for dragging keyframes, ruler scrubbing, drawer resizing, splitter resizing
+  // Global mouse move & up for dragging keyframes, ruler scrubbing, splitter resizing
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      // Drawer height resize (bottom edge only)
-      if (isResizingDrawerRef.current) {
-        const newHeight = e.clientY - drawerTopRef.current;
-        onDrawerHeightChange(Math.max(160, Math.min(650, newHeight)));
-        return;
-      }
-
       // Splitter resize
       if (isResizingSplitterRef.current) {
         setLeftPaneWidth(Math.max(160, Math.min(450, e.clientX)));
@@ -442,8 +428,6 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
     };
 
     const handleMouseUp = (e: MouseEvent) => {
-      isResizingDrawerRef.current = false;
-      setIsResizingDrawer(false);
       isResizingSplitterRef.current = false;
       isDraggingRulerRef.current = false;
 
@@ -531,7 +515,6 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
     marquee,
     onBatchDuplicateKeyframes,
     onBatchMoveKeyframes,
-    onDrawerHeightChange,
     onFrameChange,
     pixelsPerFrame,
     selectedKeyframeIds,
@@ -642,8 +625,8 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
   return (
     <div
       ref={drawerRootRef}
-      className={`timeline-drawer-root ${isResizingDrawer ? "resizing" : ""} ${isOpen ? "open" : "closed"}`}
-      style={{ height: `${drawerHeight}px` }}
+      className={`timeline-drawer-root ${isOpen ? "open" : "closed"}`}
+      style={{ flex: 1, minHeight: 0 }}
       onMouseEnter={() => setInputZone("timeline")}
       onMouseLeave={() => setInputZone(null)}
       onClick={() => {
@@ -1311,21 +1294,6 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
           )}
         </div>
       )}
-
-      {/* Bottom Edge Resizer (left-drag) */}
-      <div
-        className="timeline-drawer-resizer timeline-drawer-resizer-bottom"
-        title="Drag to resize timeline"
-        onMouseDown={(e) => {
-          if (e.button !== 0) return;
-          e.preventDefault();
-          e.stopPropagation();
-          const rect = drawerRootRef.current?.getBoundingClientRect();
-          drawerTopRef.current = rect?.top ?? 0;
-          isResizingDrawerRef.current = true;
-          setIsResizingDrawer(true);
-        }}
-      />
 
       {/* Easing Popover (same as the mini timeline) */}
       {easingPopover && (

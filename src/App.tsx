@@ -199,7 +199,6 @@ function MainEditor() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [isTimelineDrawerOpen, setIsTimelineDrawerOpen] = useState(false);
-  const [timelineDrawerHeight, setTimelineDrawerHeight] = useState(280);
   const [splitPercent, setSplitPercent] = useState(50);
   // Shift+Tab cycle — see SplitViewport.tsx's SplitViewMode doc comment for
   // why this lives here rather than inside SplitViewport itself.
@@ -1633,7 +1632,7 @@ function MainEditor() {
           onToggleExposed={onToggleExposed}
         />
       )}
-      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", background: "var(--chrome-bg)" }}>
         {!isTimelineDrawerOpen && (
           <TimelineBar
             currentFrame={currentFrame}
@@ -1683,8 +1682,6 @@ function MainEditor() {
           markers={graph.markers ?? []}
           onToggleMarker={onToggleMarker}
           onMoveMarker={onMoveMarker}
-          drawerHeight={timelineDrawerHeight}
-          onDrawerHeightChange={setTimelineDrawerHeight}
           onSplitHandleMouseDown={onSplitHandleMouseDown}
         />
         {/* The node graph editor is the "default" bottom panel — hidden while

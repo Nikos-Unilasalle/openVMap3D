@@ -14,10 +14,6 @@
   overflow: hidden;
 }
 
-.timeline-drawer-root.resizing {
-  transition: none;
-}
-
 .timeline-drawer-root.closed {
   height: 0px !important;
   opacity: 0;
@@ -26,7 +22,12 @@
   border-bottom-color: transparent;
 }
 
-/* Resize handles on top & bottom edges — mini-timeline look: 3px black line, Cmd+Drag */
+/* Top-edge resize handle — adjusts the split between the 3D viewport and
+   this whole bottom section (shared with the node graph's own splitter).
+   The drawer no longer has a bottom-edge resizer of its own: it always
+   fills the rest of that section now that the node graph editor hides
+   itself while the drawer is open (see App.tsx), so there's nothing left
+   below it to negotiate height against. */
 .timeline-drawer-resizer {
   position: absolute;
   top: 0;
@@ -35,11 +36,6 @@
   height: 9px;
   cursor: row-resize;
   z-index: 100;
-}
-
-.timeline-drawer-resizer-bottom {
-  top: auto;
-  bottom: 0;
 }
 
 /* --- HEADER / TOOLBAR --- */
