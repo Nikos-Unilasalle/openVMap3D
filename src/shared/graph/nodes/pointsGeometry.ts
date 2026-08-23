@@ -108,6 +108,124 @@ interface PointsMeshState {
   mesh?: THREE.Mesh;
   /** The source geometry the cached clone was built from — a different one means rebuild, not update. */
   srcGeom?: THREE.BufferGeometry;
+  /** Smoothing group per vertex, derived once from the source's own normals — see buildSmoothingGroups. */
+  smoothingGroup?: Int32Array;
+  groupCount?: number;
+  /** Scratch accumulator for the per-frame normal recompute, sized groupCount * 3. */
+  groupNormals?: Float64Array;
+}
+
+const NORMAL_QUANT = 1e3;
+const POSITION_QUANT = 1e4;
+
+/**
+ * Recovers the shading topology the source geometry already encodes, so a
+ * deformed copy can be re-normalled in the *same style* rather than having
+ * three's default applied over the top of it.
+ *
+ * Shading in this codebase lives in the geometry's `normal` attribute, not
+ * in `material.flatShading` — the Shade node bakes smooth/flat/auto by
+ * welding or splitting vertices and writing normals to match, and an OBJ
+ * arrives with whatever its author baked. `computeVertexNormals()` throws
+ * all of that away: on indexed geometry it averages everything smooth, and
+ * on non-indexed geometry (what OBJLoader produces, and what Shade's flat
+ * and auto modes produce) it gives every triangle its own face normal, so
+ * a smooth or auto-smoothed mesh came out flat the moment it passed through
+ * a spring.
+ *
+ * Two vertices belong to the same smoothing group when they sit at the same
+ * position *and* already share a normal — which is exactly the distinction
+ * those modes encode. Flat shading splits coincident corners onto different
+ * normals, so they stay separate groups and stay flat; smooth shading has
+ * them share one, so they group and re-average smooth; auto splits only
+ * across hard edges, so the hard edges survive and the soft ones don't.
+ * Re-averaging within these groups after the vertices move reproduces the
+ * original look on the new shape.
+ */
+function buildSmoothingGroups(geometry: THREE.BufferGeometry): { groups: Int32Array; count: number } | null {
+  const pos = geometry.attributes.position as THREE.BufferAttribute | undefined;
+  const nor = geometry.attributes.normal as THREE.BufferAttribute | undefined;
+  if (!pos || !nor || nor.count !== pos.count) return null;
+
+  const groups = new Int32Array(pos.count);
+  const lookup = new Map<string, number>();
+  let next = 0;
+
+  for (let i = 0; i < pos.count; i++) {
+    const key =
+      `${Math.round(pos.getX(i) * POSITION_QUANT)}_${Math.round(pos.getY(i) * POSITION_QUANT)}_${Math.round(pos.getZ(i) * POSITION_QUANT)}` +
+      `|${Math.round(nor.getX(i) * NORMAL_QUANT)}_${Math.round(nor.getY(i) * NORMAL_QUANT)}_${Math.round(nor.getZ(i) * NORMAL_QUANT)}`;
+    let g = lookup.get(key);
+    if (g === undefined) {
+      g = next++;
+      lookup.set(key, g);
+    }
+    groups[i] = g;
+  }
+  return { groups, count: next };
+}
+
+/**
+ * Recomputes normals from the current positions, averaging within the
+ * smoothing groups captured above instead of within whatever three would
+ * infer. Same O(faces + vertices) cost as computeVertexNormals, and it
+ * writes into the existing normal buffer so nothing is allocated per frame.
+ */
+function recomputeGroupedNormals(geometry: THREE.BufferGeometry, groups: Int32Array, groupNormals: Float64Array): void {
+  const pos = geometry.attributes.position as THREE.BufferAttribute;
+  const nor = geometry.attributes.normal as THREE.BufferAttribute;
+  const positions = pos.array as Float32Array;
+  const normals = nor.array as Float32Array;
+  const index = geometry.index;
+  const triCount = index ? index.count / 3 : pos.count / 3;
+
+  groupNormals.fill(0);
+
+  for (let t = 0; t < triCount; t++) {
+    const a = index ? index.getX(t * 3) : t * 3;
+    const b = index ? index.getX(t * 3 + 1) : t * 3 + 1;
+    const c = index ? index.getX(t * 3 + 2) : t * 3 + 2;
+
+    const ax = positions[a * 3], ay = positions[a * 3 + 1], az = positions[a * 3 + 2];
+    const bx = positions[b * 3], by = positions[b * 3 + 1], bz = positions[b * 3 + 2];
+    const cx = positions[c * 3], cy = positions[c * 3 + 1], cz = positions[c * 3 + 2];
+
+    // Cross product of two edges — length is proportional to twice the
+    // triangle's area, which is the standard area weighting for averaged
+    // normals, so it is deliberately not normalized here.
+    const e1x = bx - ax, e1y = by - ay, e1z = bz - az;
+    const e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
+    const nx = e1y * e2z - e1z * e2y;
+    const ny = e1z * e2x - e1x * e2z;
+    const nz = e1x * e2y - e1y * e2x;
+
+    // Unrolled rather than looping over [a, b, c]: that array literal would
+    // be one allocation per triangle per frame (~70k on a real OBJ).
+    const ga = groups[a] * 3;
+    groupNormals[ga] += nx;
+    groupNormals[ga + 1] += ny;
+    groupNormals[ga + 2] += nz;
+    const gb = groups[b] * 3;
+    groupNormals[gb] += nx;
+    groupNormals[gb + 1] += ny;
+    groupNormals[gb + 2] += nz;
+    const gc = groups[c] * 3;
+    groupNormals[gc] += nx;
+    groupNormals[gc + 1] += ny;
+    groupNormals[gc + 2] += nz;
+  }
+
+  for (let i = 0; i < pos.count; i++) {
+    const g = groups[i] * 3;
+    const gx = groupNormals[g], gy = groupNormals[g + 1], gz = groupNormals[g + 2];
+    const len = Math.sqrt(gx * gx + gy * gy + gz * gz);
+    if (len > 1e-12) {
+      normals[i * 3] = gx / len;
+      normals[i * 3 + 1] = gy / len;
+      normals[i * 3 + 2] = gz / len;
+    }
+  }
+  nor.needsUpdate = true;
 }
 
 const pointsMeshCache = createNodeCache<PointsMeshState>((s) => {
@@ -164,6 +282,13 @@ export function writePointsToMesh(nodeId: string, inputObj: THREE.Object3D, poin
     state.mesh.castShadow = true;
     state.mesh.receiveShadow = true;
     state.srcGeom = srcGeom;
+
+    // Read the shading intent off the *source* normals, before this clone's
+    // own normals get rewritten from the deformed positions.
+    const smoothing = buildSmoothingGroups(srcGeom);
+    state.smoothingGroup = smoothing?.groups;
+    state.groupCount = smoothing?.count;
+    state.groupNormals = smoothing ? new Float64Array(smoothing.count * 3) : undefined;
   }
 
   const geometry = state.mesh.geometry;
@@ -176,8 +301,16 @@ export function writePointsToMesh(nodeId: string, inputObj: THREE.Object3D, poin
     array[i * 3 + 2] = Number(p?.z) || 0;
   }
   target.needsUpdate = true;
-  // Reuses the existing normal attribute's buffer rather than allocating one.
-  geometry.computeVertexNormals();
+  if (state.smoothingGroup && state.groupNormals) {
+    // Re-average within the source's own smoothing groups, so smooth stays
+    // smooth, flat stays flat and Auto Smooth keeps exactly its hard edges.
+    recomputeGroupedNormals(geometry, state.smoothingGroup, state.groupNormals);
+  } else {
+    // No usable source normals to infer shading from (nothing was ever
+    // baked): three's default is the only sensible answer. Reuses the
+    // existing normal buffer rather than allocating one.
+    geometry.computeVertexNormals();
+  }
   geometry.computeBoundingSphere();
   state.mesh.material = srcMesh.material;
 
