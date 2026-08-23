@@ -199,6 +199,7 @@ function MainEditor() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [isTimelineDrawerOpen, setIsTimelineDrawerOpen] = useState(false);
+  const [timelineDrawerHeight, setTimelineDrawerHeight] = useState(280);
   const [splitPercent, setSplitPercent] = useState(50);
   // Shift+Tab cycle — see SplitViewport.tsx's SplitViewMode doc comment for
   // why this lives here rather than inside SplitViewport itself.
@@ -1632,7 +1633,7 @@ function MainEditor() {
           onToggleExposed={onToggleExposed}
         />
       )}
-      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", background: "var(--chrome-bg)" }}>
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
         {!isTimelineDrawerOpen && (
           <TimelineBar
             currentFrame={currentFrame}
@@ -1682,30 +1683,26 @@ function MainEditor() {
           markers={graph.markers ?? []}
           onToggleMarker={onToggleMarker}
           onMoveMarker={onMoveMarker}
+          drawerHeight={timelineDrawerHeight}
+          onDrawerHeightChange={setTimelineDrawerHeight}
           onSplitHandleMouseDown={onSplitHandleMouseDown}
         />
-        {/* The node graph editor is the "default" bottom panel — hidden while
-            the Timeline drawer is open so opening Timeline doesn't also pull
-            the graph into view. Closing the drawer (or the drawer's own
-            close button) brings it back, same as before this panel existed. */}
-        {!isTimelineDrawerOpen && (
-          <div style={{ flex: 1, minHeight: 0 }}>
-            <GraphEditor
-              key={`${activeCanvas}:${editorKey}`}
-              graph={graph}
-              registry={DEFAULT_REGISTRY}
-              onGraphChange={onGraphChange}
-              onSelectNode={handleSelectNode}
-              selectedNodeId={selectedNodeId}
-              onSelectNodes={handleSelectNodes}
-              selectedNodeIds={selectedNodeIds}
-              canvasCount={CANVAS_COUNT}
-              activeCanvas={activeCanvas}
-              emptyCanvases={canvases.map(isCanvasEmpty)}
-              onSelectCanvas={switchCanvas}
-            />
-          </div>
-        )}
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <GraphEditor
+            key={`${activeCanvas}:${editorKey}`}
+            graph={graph}
+            registry={DEFAULT_REGISTRY}
+            onGraphChange={onGraphChange}
+            onSelectNode={handleSelectNode}
+            selectedNodeId={selectedNodeId}
+            onSelectNodes={handleSelectNodes}
+            selectedNodeIds={selectedNodeIds}
+            canvasCount={CANVAS_COUNT}
+            activeCanvas={activeCanvas}
+            emptyCanvases={canvases.map(isCanvasEmpty)}
+            onSelectCanvas={switchCanvas}
+          />
+        </div>
       </div>
     </div>
   );

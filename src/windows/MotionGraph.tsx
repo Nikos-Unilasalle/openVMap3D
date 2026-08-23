@@ -54,6 +54,13 @@ export interface MotionGraphProps {
   onOpenEasing?: (clientX: number, clientY: number) => void;
   height: number;
   onHeightChange: (height: number) => void;
+  /**
+   * Fill the parent instead of standing at its own fixed `height`. Used when
+   * the graph *replaces* the dope sheet rather than sitting above it: there
+   * is then nothing below to resize against, so the panel measures itself
+   * and its drag handle is dropped.
+   */
+  fill?: boolean;
 }
 
 const CHANNEL_PANE_WIDTH = 150;
@@ -152,6 +159,7 @@ export const MotionGraph: React.FC<MotionGraphProps> = ({
   onOpenEasing,
   height,
   onHeightChange,
+  fill = false,
 }) => {
   const [view, setView] = useState<ValueView>(DEFAULT_VALUE_VIEW);
   const [normalize, setNormalize] = useState(false);
@@ -159,7 +167,21 @@ export const MotionGraph: React.FC<MotionGraphProps> = ({
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
   const [drag, setDrag] = useState<DragState | null>(null);
   const plotRef = useRef<SVGSVGElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const resizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  // In fill mode the height comes from the layout, not the prop, so the SVG
+  // still needs a concrete number to lay its plot out against.
+  const [measuredHeight, setMeasuredHeight] = useState(height);
+  useEffect(() => {
+    if (!fill) return;
+    const el = rootRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      setMeasuredHeight(entry.contentRect.height);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [fill]);
   /** Set once per node selection, so opening the graph frames the curves. */
   const autoFittedFor = useRef<string>("");
 
@@ -172,7 +194,7 @@ export const MotionGraph: React.FC<MotionGraphProps> = ({
     [channels, hidden],
   );
 
-  const plotHeight = Math.max(1, height - 30);
+  const plotHeight = Math.max(1, (fill ? measuredHeight : height) - 30);
   const axis = useMemo(() => makeValueAxis(view, plotHeight), [view, plotHeight]);
   const normalizers = useMemo(() => {
     const map = new Map<string, ReturnType<typeof makeNormalizer>>();
@@ -677,8 +699,9 @@ export const MotionGraph: React.FC<MotionGraphProps> = ({
 
   return (
     <div
+      ref={rootRef}
       className="mg-root"
-      style={{ height }}
+      style={fill ? { flex: 1, minHeight: 0 } : { height }}
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}
     >
@@ -874,14 +897,16 @@ export const MotionGraph: React.FC<MotionGraphProps> = ({
         </div>
       )}
 
-      <div
-        className="mg-resize"
-        onMouseDown={(e) => {
-          e.preventDefault();
-          resizeRef.current = { startY: e.clientY, startHeight: height };
-        }}
-        title="Drag to resize the graph"
-      />
+      {!fill && (
+        <div
+          className="mg-resize"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            resizeRef.current = { startY: e.clientY, startHeight: height };
+          }}
+          title="Drag to resize the graph"
+        />
+      )}
     </div>
   );
 };

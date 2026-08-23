@@ -64,6 +64,8 @@ export interface TimelineDrawerProps {
   onToggleMarker?: (frame: number) => void;
   onMoveMarker?: (oldFrame: number, newFrame: number) => void;
   evaluatedResults?: Map<string, Record<string, unknown>>;
+  drawerHeight: number;
+  onDrawerHeightChange: (height: number) => void;
   onSplitHandleMouseDown: (e: React.MouseEvent) => void;
 }
 
@@ -130,6 +132,8 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
   onToggleMarker,
   onMoveMarker: _onMoveMarker,
   evaluatedResults,
+  drawerHeight,
+  onDrawerHeightChange,
   onSplitHandleMouseDown,
 }) => {
   const [viewMode, setViewMode] = useState<"selected" | "all">("selected");
@@ -168,11 +172,18 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
   const gridViewportRef = useRef<HTMLDivElement>(null);
   const rulerRef = useRef<HTMLDivElement>(null);
   const motionGraphScrollRef = useRef<HTMLDivElement>(null);
-  const [motionGraphOpen, setMotionGraphOpen] = useState(true);
+  // Off by default: opening the Timeline should land on the dope sheet (the
+  // track list everyone starts from), not on the curve editor. The Graph
+  // button in the toolbar swaps to it — see the body below, where the two
+  // are mutually exclusive rather than stacked.
+  const [motionGraphOpen, setMotionGraphOpen] = useState(false);
   const [motionGraphHeight, setMotionGraphHeight] = useState(190);
   const drawerRootRef = useRef<HTMLDivElement>(null);
   const isDraggingRulerRef = useRef(false);
+  const isResizingDrawerRef = useRef(false);
+  const drawerTopRef = useRef(0);
   const isResizingSplitterRef = useRef(false);
+  const [isResizingDrawer, setIsResizingDrawer] = useState(false);
 
   // On open, default the zoom so the scene's frames spread across the whole
   // visible timeline width (rather than the fixed 6px/frame).
@@ -394,9 +405,16 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
     });
   };
 
-  // Global mouse move & up for dragging keyframes, ruler scrubbing, splitter resizing
+  // Global mouse move & up for dragging keyframes, ruler scrubbing, drawer resizing, splitter resizing
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
+      // Drawer height resize (bottom edge only)
+      if (isResizingDrawerRef.current) {
+        const newHeight = e.clientY - drawerTopRef.current;
+        onDrawerHeightChange(Math.max(160, Math.min(650, newHeight)));
+        return;
+      }
+
       // Splitter resize
       if (isResizingSplitterRef.current) {
         setLeftPaneWidth(Math.max(160, Math.min(450, e.clientX)));
@@ -428,6 +446,8 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
     };
 
     const handleMouseUp = (e: MouseEvent) => {
+      isResizingDrawerRef.current = false;
+      setIsResizingDrawer(false);
       isResizingSplitterRef.current = false;
       isDraggingRulerRef.current = false;
 
@@ -515,6 +535,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
     marquee,
     onBatchDuplicateKeyframes,
     onBatchMoveKeyframes,
+    onDrawerHeightChange,
     onFrameChange,
     pixelsPerFrame,
     selectedKeyframeIds,
@@ -625,8 +646,8 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
   return (
     <div
       ref={drawerRootRef}
-      className={`timeline-drawer-root ${isOpen ? "open" : "closed"}`}
-      style={{ flex: 1, minHeight: 0 }}
+      className={`timeline-drawer-root ${isResizingDrawer ? "resizing" : ""} ${isOpen ? "open" : "closed"}`}
+      style={{ height: `${drawerHeight}px` }}
       onMouseEnter={() => setInputZone("timeline")}
       onMouseLeave={() => setInputZone(null)}
       onClick={() => {
@@ -832,10 +853,13 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
       {/* --- BODY: LEFT TRACK TREE & RIGHT GRID --- */}
       <div className="timeline-drawer-body">
         {/* Motion graph — value curves of the selected node, draggable. Its X
-            axis follows the timeline's pixels-per-frame and horizontal scroll
-            so keyframes line up with the grid rows below. Collapsed (Graph
-            button in the toolbar) → nothing shows in the timeline. */}
-        {motionGraphOpen && (
+            axis follows the timeline's pixels-per-frame and horizontal scroll,
+            so switching between the two views keeps keyframes at the same
+            horizontal position. The Graph button in the toolbar swaps which
+            of the two is showing: the curve editor *replaces* the dope sheet
+            rather than stacking above it, so whichever one is up gets the
+            drawer's whole height. */}
+        {motionGraphOpen ? (
           <MotionGraph
             graph={graph}
             registry={registry}
@@ -853,9 +877,9 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
             onOpenEasing={(x, y) => openEasingPopover({ x, y })}
             height={motionGraphHeight}
             onHeightChange={setMotionGraphHeight}
+            fill
           />
-        )}
-
+        ) : (
         <div className="timeline-drawer-body-row">
         {/* Left Tracks Column */}
         <div className="timeline-tracks-pane" style={{ width: `${leftPaneWidth}px` }}>
@@ -1195,6 +1219,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
           </div>
         </div>
       </div>
+      )}
       </div>
 
       {/* --- CONTEXT MENU --- */}
@@ -1294,6 +1319,21 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
           )}
         </div>
       )}
+
+      {/* Bottom Edge Resizer (left-drag) */}
+      <div
+        className="timeline-drawer-resizer timeline-drawer-resizer-bottom"
+        title="Drag to resize timeline"
+        onMouseDown={(e) => {
+          if (e.button !== 0) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const rect = drawerRootRef.current?.getBoundingClientRect();
+          drawerTopRef.current = rect?.top ?? 0;
+          isResizingDrawerRef.current = true;
+          setIsResizingDrawer(true);
+        }}
+      />
 
       {/* Easing Popover (same as the mini timeline) */}
       {easingPopover && (
