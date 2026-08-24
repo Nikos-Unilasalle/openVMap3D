@@ -1,3 +1,5 @@
+import * as THREE from "three";
+import { describe, expect, it } from "vitest";
 import { DISTANCE_NODE, DISTANCES_NODE, PROXIMITY_OBJECT_NODE } from "./distance";
 
 const dummyCtx = { time: 0, step: 0, nodeId: "test" };
@@ -74,11 +76,15 @@ describe("DISTANCES_NODE", () => {
       dummyCtx,
     );
 
-    expect(res.distances).toHaveLength(2);
-    expect(res.distances[0]).toBeCloseTo(5);
-    expect(res.distances[1]).toBeCloseTo(10);
-    expect(res.distancesSq[0]).toBeCloseTo(25);
-    expect(res.distancesSq[1]).toBeCloseTo(100);
+    // evaluate() is typed Record<string, unknown> — narrow the two list
+    // outputs the assertions index into, same as the other node tests do.
+    const distances = res.distances as number[];
+    const distancesSq = res.distancesSq as number[];
+    expect(distances).toHaveLength(2);
+    expect(distances[0]).toBeCloseTo(5);
+    expect(distances[1]).toBeCloseTo(10);
+    expect(distancesSq[0]).toBeCloseTo(25);
+    expect(distancesSq[1]).toBeCloseTo(100);
     expect(res.min).toBeCloseTo(5);
     expect(res.max).toBeCloseTo(10);
     expect(res.count).toBe(2);

@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
-import { createNodeCache } from "../nodeCaches";
+import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { composeNativeMatrix } from "./transform";
 import { COMMON_PRIMITIVE_OUTPUTS, primitiveOutputs } from "./object";
 
@@ -972,14 +972,6 @@ function getPixelSpawnerState(nodeId: string): PixelSpawnerState {
   state.materials?.forEach((m) => m.dispose());
   state.materials = [];
   return state;
-}
-
-function cloneInstance(instance: THREE.Object3D): THREE.Object3D {
-  const clone = instance.clone(true);
-  clone.matrixAutoUpdate = instance.matrixAutoUpdate;
-  clone.matrix.copy(instance.matrix);
-  clone.matrixWorldNeedsUpdate = true;
-  return clone;
 }
 
 /**
