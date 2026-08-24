@@ -1,342 +1,300 @@
-# OpenVMap
+# OpenVMap (Tsuji Studio)
 
-Moteur de Studio 3D et Node Graph Temps Reel pour le Video-Mapping, la Data-Visualisation et les Arts Numeriques.
+Moteur de Studio 3D et Node Graph Temps Réel pour le Vidéo-Mapping, la Data-Visualisation, l'Animation Paramétrique et les Arts Numériques.
 
-Disponible directement en ligne sur le Web et en application Desktop haute performance (Tauri 2, React 18, Three.js, TypeScript).
+Disponible directement en ligne sur le Web et en application Desktop haute performance (Tauri 2, React 19, Three.js, Vite 7, TypeScript).
 
 * **Version en ligne (Web App)** : [https://nikos-unilasalle.github.io/openVMap3D/](https://nikos-unilasalle.github.io/openVMap3D/)
-* **Version Desktop** : macOS, Windows, Linux via Tauri 2.
+* **Version Desktop** : macOS, Windows, Linux via Tauri v2.
 
 ---
 
 ## Sommaire
 
-1. [Presentation du Logiciel](#presentation-du-logiciel)
-2. [Architecture et Moteur d'Evaluation](#architecture-et-moteur-devaluation)
-3. [Types de Sockets et Donnees](#types-de-sockets-et-donnees)
-4. [Catalogue Exhaustif des Nodes](#catalogue-exhaustif-des-nodes)
+1. [Présentation du Logiciel](#présentation-du-logiciel)
+2. [Stack Technique](#stack-technique)
+3. [Architecture et Moteur d'Évaluation](#architecture-et-moteur-dévaluation)
+4. [Types de Sockets et Données](#types-de-sockets-et-données)
+5. [Catalogue Exhaustif des Nœuds (Nodes)](#catalogue-exhaustif-des-nœuds-nodes)
    - [Structure et Primitives 3D](#structure-et-primitives-3d)
-   - [Courbes et Trajectoires (Three.js Curves)](#courbes-et-trajectoires-threejs-curves)
-   - [Camera, Calibration DLT et Transitions](#camera-calibration-dlt-et-transitions)
-   - [Eclairage et Environnement](#eclairage-et-environnement)
-   - [Materiaux et Textures](#materiaux-et-textures)
-   - [Instanciation et Matrices (Array)](#instanciation-et-matrices-array)
-   - [Systeme de Particules](#systeme-de-particules)
+   - [Édition Géométrique et Opérations CSG](#édition-géométrique-et-opérations-csg)
+   - [Import Vectoriel et SVG](#import-vectoriel-et-svg)
+   - [Points, Sélection et Connectivité](#points-sélection-et-connectivité)
+   - [Physique et Raycasting](#physique-et-raycasting)
+   - [Animation, Mouvement et Dynamique (Spring, Trail, Orbit)](#animation-mouvement-et-dynamique-spring-trail-orbit)
+   - [Courbes, Morphing et Shape Keys](#courbes-morphing-et-shape-keys)
+   - [Lumières, Matériaux et Environnement](#lumières-matériaux-et-environnement)
+   - [Instanciation et Formations (Array & Spawner)](#instanciation-et-formations-array--spawner)
+   - [Système de Particules, Champs de Forces et Trajectoires](#système-de-particules-champs-de-forces-et-trajectoires)
+   - [Caméra et Calibration Vidéo-Mapping (DLT)](#caméra-et-calibration-vidéo-mapping-dlt)
    - [Data-Visualisation et Graphiques](#data-visualisation-et-graphiques)
-   - [Post-Traitement et Effets GPU](#post-traitement-et-effets-gpu)
-   - [Mathematiques, Vecteurs et Logique](#mathematiques-vecteurs-et-logique)
-   - [Audio et Analyse Spectrale](#audio-et-analyse-spectrale)
-   - [Entrees et I/O](#entrees-et-io)
-   - [Temps, Animation et Oscillateurs](#temps-animation-et-oscillateurs)
-   - [Listes et Manipulation de Donnees](#listes-et-manipulation-de-donnees)
-   - [Texte et Typographie](#texte-et-typographie)
-   - [Organisation et Multi-Canevas](#organisation-et-multi-canevas)
-5. [Moteur d'Animation Paramétrique et Studio 3D](#moteur-danimation-paramétrique-et-studio-3d)
-   - [Animation Nodal-Paramétrique et Modulations en Continu](#animation-nodal-paramétrique-et-modulations-en-continu)
-   - [Timeline, Interpolation et Keyframing Hybride](#timeline-interpolation-et-keyframing-hybride)
-   - [Gizmos 3D et Manipulation Interactive](#gizmos-3d-et-manipulation-interactive)
-   - [Calibration Video-Mapping (Direct Linear Transformation)](#calibration-video-mapping-direct-linear-transformation)
-6. [Raccourcis Clavier](#raccourcis-clavier)
-7. [Installation et Deploiement](#installation-et-deploiement)
-8. [Licence](#licence)
+   - [Post-Traitement et Shaders GPU](#post-traitement-et-shaders-gpu)
+   - [Audio et Analyse Spectrale (FFT)](#audio-et-analyse-spectrale-fft)
+   - [Mathématiques, Vecteurs et Logique](#mathématiques-vecteurs-et-logique)
+   - [Listes et Manipulation de Données](#listes-et-manipulation-de-données)
+   - [Texte, Typographie et Entrées/Sorties](#texte-typographie-et-entrées-sorties)
+   - [Utilitaires et Organisation](#utilitaires-et-organisation)
+6. [Moteur d'Animation Paramétrique et Studio 3D](#moteur-danimation-paramétrique-et-studio-3d)
+7. [Raccourcis Clavier](#raccourcis-clavier)
+8. [Installation, Tests et Déploiement](#installation-tests-et-déploiement)
+9. [Licence](#licence)
 
 ---
 
-## Presentation du Logiciel
+## Présentation du Logiciel
 
-OpenVMap est un environnement de creation nodale temps reel dedie a la scenographie numerique, au video-mapping architectural, a la data-visualisation 3D et aux installations interactives.
+OpenVMap est un environnement de création nodale temps réel dédié à la scénographie numérique, au vidéo-mapping architectural, à la data-visualisation 3D et aux installations interactives.
 
-Accessible instantanement depuis un navigateur web moderne ou compile en application desktop native avec Tauri v2, OpenVMap combine la puissance de rendu Three.js avec la reactivite d'un graphe de flux de donnees acyclique (DAG). Chaque element visuel, transformation spatiale, comportement physique, modulation sonore et passe de post-traitement est pilote de maniere declarative par les interconnexions de nodes.
-
----
-
-## Architecture et Moteur d'Evaluation
-
-Le graphe d'OpenVMap fonctionne selon un pipeline d'evaluation topologically sorted execute a chaque rafraichissement d'image (60 FPS) :
-
-1. **Resolution des Dependances** : Le graphe trie les nodes de la source vers les puits. Les cycles sont detectes et traites sans bloquer l'execution.
-2. **Propagations et Fallbacks** : Si une prise d'entree n'est pas connectee, la valeur provient du parametre local du node ou de sa valeur par defaut.
-3. **Caches de Geometrie et GPU Hygiene** : Les geometries, textures, frames de Frenet, shaders et simulateurs de particules sont mis en cache par identifiant de node (`nodeId`) et recycles intelligemment pour eviter les allocations memoire inutiles.
-4. **Isolation Live-Edit** : Pendant la manipulation d'un gizmo dans la vue 3D, la matrice de l'objet manipule est preservee temporairement pour permettre l'ecriture inverse sans ecrasement par le graphe.
+Accessible instantanément depuis un navigateur web moderne ou compilé en application desktop native avec Tauri v2, OpenVMap combine la puissance de rendu Three.js avec la réactivité d'un graphe de flux de données acyclique (DAG). Chaque élément visuel, transformation spatiale, comportement physique, modulation sonore et passe de post-traitement est piloté de manière déclarative par les interconnexions de nœuds.
 
 ---
 
-## Types de Sockets et Donnees
+## Stack Technique
 
-Les prises de connexion (sockets) sont identifiees par des codes couleur normalises :
+- **Core UI & Logic** : React 19, TypeScript, Vite 7
+- **Rendu 3D & Moteur Graphique** : Three.js (r185), `three-mesh-bvh`, `three-bvh-csg`
+- **Graphe Nodal & Éditeur** : `@xyflow/react` v12
+- **Gestion d'État** : Zustand v5
+- **Application Native** : Tauri 2 (Rust)
+- **Suite de Tests** : Vitest v4
+- **Parsing & Format** : PapaParse (CSV), Opentype.js, UUID
 
-| Type de Socket | Identifiant | Description | Format de Donnee |
+---
+
+## Architecture et Moteur d'Évaluation
+
+Le graphe d'OpenVMap fonctionne selon un pipeline d'évaluation trié topologiquement et exécuté à chaque rafraîchissement d'image (60 FPS) :
+
+1. **Résolution des Dépendances** : Le graphe trie les nœuds de la source vers les puits. Les cycles sont détectés et traités sans bloquer l'exécution.
+2. **Propagations et Fallbacks** : Si une prise d'entrée n'est pas connectée, la valeur provient du paramètre local du nœud ou de sa valeur par défaut.
+3. **Caches de Géométrie et GPU Hygiene** : Les géométries, textures, frames de Frenet, shaders et simulateurs de particules sont mis en cache par identifiant de nœud (`nodeId`) et recyclés intelligemment pour éviter les allocations mémoire superflues.
+4. **Isolation Live-Edit** : Pendant la manipulation d'un gizmo dans la vue 3D, la matrice de l'objet manipulé est préservée temporairement pour permettre l'écriture inverse sans écrasement par le graphe.
+
+---
+
+## Types de Sockets et Données
+
+Les prises de connexion (sockets) sont identifiées par des codes couleur normalisés :
+
+| Type de Socket | Identifiant | Description | Format de Donnée |
 | :--- | :--- | :--- | :--- |
-| Scalaire | `value` | Nombre flottant ou entier, booleen normalise (0/1) | `number` |
-| Vecteur | `vector` | Coordonnees 3D (X, Y, Z) | `THREE.Vector3` |
-| Matrice | `matrix` | Matrice de transformation 4x4 | `THREE.Matrix4` |
-| Couleur | `color` | Valeur chromatique RGB/RGBA | `THREE.Color` |
-| Geometrie | `geometry` | Objet 3D, Mesh, Group ou Line Three.js | `THREE.Object3D` |
-| Texture | `texture` | Texture bitmap, carte de normale ou canvas | `THREE.Texture` |
-| Courbe | `curve` | Trajectoire 3D continue parametrable | `THREE.Curve<THREE.Vector3>` |
-| Liste | `list` | Tableau ordonne d'elements de tout type | `Array<unknown>` |
-| Texte | `text` | Chaine de caracteres | `string` |
-| Polymorphe | `any` | Socket adaptatif acceptant tout format | `unknown` |
+| **Scalaire** | `value` | Nombre flottant ou entier, booleen (0/1) | `number` |
+| **Vecteur** | `vector` | Coordonnées 3D (X, Y, Z) | `THREE.Vector3` |
+| **Matrice** | `matrix` | Matrice de transformation 4x4 | `THREE.Matrix4` |
+| **Couleur** | `color` | Valeur chromatique RGB/RGBA | `THREE.Color` |
+| **Géométrie** | `geometry` | Objet 3D, Mesh, Group ou Line Three.js | `THREE.Object3D` |
+| **Texture** | `texture` | Texture bitmap, carte de normale ou canvas | `THREE.Texture` |
+| **Courbe** | `curve` | Trajectoire 3D continue paramétrable | `THREE.Curve<THREE.Vector3>` |
+| **Liste** | `list` | Tableau ordonné d'éléments | `Array<unknown>` |
+| **Texte** | `text` | Chaîne de caractères | `string` |
+| **Polymorphe** | `any` | Socket adaptatif acceptant tout format | `unknown` |
 
 ---
 
-## Catalogue Exhaustif des Nodes
+## Catalogue Exhaustif des Nœuds (Nodes)
 
 ### Structure et Primitives 3D
 
-| Node | Type | Entrees | Sorties | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| Box | `object/box` | matrix, texture, normal, color, emissive, uvScale, uvOffset... | geometry, matrix | Pavé 3D paramétrable (largeur, hauteur, profondeur) avec matériaux PBR et textures. |
-| Plane | `object/plane` | matrix, texture, normal, color, emissive, uvScale, uvOffset... | geometry, matrix | Plan 2D dans l'espace 3D avec plaquage UV et options double face. |
-| Sphere | `object/sphere` | matrix, texture, normal, color, emissive, uvScale, uvOffset... | geometry, matrix | Sphère 3D avec contrôle du rayon et des segments de résolution. |
-| Cylinder | `object/cylinder` | matrix, texture, normal, color, emissive, uvScale, uvOffset... | geometry, matrix | Cylindre 3D avec rayons haut/bas configurables et facettes radiales. |
-| Cone | `object/cone` | matrix, texture, normal, color, emissive, uvScale, uvOffset... | geometry, matrix | Cône 3D avec ajustement du rayon de base et de la hauteur. |
-| Disc | `object/disc` | matrix, texture, normal, color, emissive, uvScale, uvOffset... | geometry, matrix | Disque circulaire 2D avec rayon et nombre de segments. |
-| Text 3D | `object/text` | matrix, text, size, height, color, emissive... | geometry, matrix | Typographie vectorielle extrudée en 3D avec biseau configurable. |
-| Empty | `object/empty` | matrix | geometry, matrix | Objet cible invisible servant de repère spatial, de pivot ou de cible d'éclairage. |
-| OBJ Model | `object/obj` | matrix, file | geometry, matrix | Importateur de fichiers 3D au format Wavefront `.obj` avec gestion des sous-objets. |
-| 3D Grid | `calibration/grid` | matrix | geometry, matrix | Grille de repère spatial 3D manipulable au gizmo, avec dimensions et subdivisions configurables. |
-| Merge | `structure/merge` | item1..item8 (dynamique) | geometry | Fusionne jusqu'à 8 flux géométriques en une seule hiérarchie de scène. |
-| Render | `render` | geometry, environment, postprocess, motionBlur | geometry, environment, postprocess | Sortie terminale et configuration de rendu (résolution, framerate, motion blur). |
+| Node | Type | Description |
+| :--- | :--- | :--- |
+| **Box** | `object/box` | Pavé 3D paramétrable (largeur, hauteur, profondeur) avec matériaux PBR et textures. |
+| **Plane** | `object/plane` | Plan 2D dans l'espace 3D avec plaquage UV et options double face. |
+| **Sphere** | `object/sphere` | Sphère 3D avec contrôle du rayon et des segments de résolution. |
+| **Cylinder** | `object/cylinder` | Cylindre 3D avec rayons haut/bas configurables et facettes radiales. |
+| **Cone** | `object/cone` | Cône 3D avec ajustement du rayon de base et de la hauteur. |
+| **Disc** | `object/disc` | Disque circulaire 2D avec rayon et nombre de segments. |
+| **Text 3D** | `object/text` | Typographie vectorielle extrudée en 3D avec biseau configurable. |
+| **Empty** | `object/empty` | Repère spatial invisible, pivot ou cible d'éclairage. |
+| **OBJ Model** | `object/obj` | Importateur de fichiers 3D au format Wavefront `.obj`. |
+| **Frozen Geometry** | `object/frozen` | Géométrie figée en mémoire pour optimisation du rendu. |
+| **3D Grid** | `calibration/grid` | Grille de repère spatial 3D manipulable au gizmo. |
+| **Merge** | `structure/merge` | Fusionne plusieurs flux géométriques en une seule hiérarchie. |
+| **Render** | `render` | Sortie terminale et configuration globale du rendu. |
 
-### Courbes et Trajectoires (Three.js Curves)
+### Édition Géométrique et Opérations CSG
 
-| Node | Type | Entrees | Sorties | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| Curve from Points | `curve/from_points` | pointsList | curve | Génère une courbe 3D à partir d'une liste de points de contrôle (Catmull-Rom, Bézier, Linéaire). |
-| Curve Primitive | `curve/primitive` | - | curve | Génère des courbes géométriques prédéfinies : Hélice (Helix), Cercle, Ligne, Rectangle. |
-| Curve to Mesh | `curve/to_mesh` | curve, thickness, startProgress, endProgress, texture, normal, color, emissive... | geometry, matrix | Génère un tube 3D balayé avec début/fin paramétrables (0-100%), profil d'épaisseur variable et matériaux PBR. |
-| Follow Path | `curve/sample` | curve, progress (0-1), up | position, tangent, matrix, rotation | Échantillonne la position, le vecteur tangentiel et la matrice d'orientation le long d'une courbe. |
-| Curve Deform | `curve/deform` | geometry, curve, progress, stretch | geometry, matrix | Modificateur de déformation courbant un maillage 3D le long d'une trajectoire selon les repères de Frenet. |
-| Lattice Deform | `modifier/lattice` | geometry, matrix, strength, points, bulge, twist, taper, bend, shearX, shearZ | geometry, matrix, cage | Cage de déformation 3D volumétrique (Free-Form Deformation type Blender) avec cage filaire et modulateurs. |
+| Node | Type | Description |
+| :--- | :--- | :--- |
+| **Boolean CSG** | `geometry/boolean` | Opérations booléennes 3D (Union, Difference, Intersection) via BVH-CSG. |
+| **Subdivide** | `geometry/subdivide` | Subdivise le maillage pour augmenter la résolution des sommets. |
+| **Extrude Mesh** | `geometry/extrude` | Extrude les faces ou arêtes d'une géométrie selon un vecteur ou une normale. |
+| **Delete Geometry** | `geometry/delete` | Supprime des sommets/faces selon des critères ou des masques de sélection. |
+| **Shade** | `geometry/shade` | Modifie le mode d'ombrage (Flat Shading vs Smooth Shading) et recalcule les normales. |
+| **Visual Slice** | `geometry/visual_slice` | Découpe visuelle 3D de la scène par des plans de coupe animables. |
+| **Edit Mesh Points**| `geometry/edit_points` | Édition directe des coordonnées de sommets d'un maillage. |
 
-### Camera, Calibration DLT et Transitions
+### Import Vectoriel et SVG
 
-| Node | Type | Entrees | Sorties | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| Camera | `calibration/camera` | matrix, location, rotation, target, fov, active, refPoints | geometry, matrix, fov, projection, error, active | Caméra de rendu avec modes Manuel (Euler/Target Look-At) et Calibré (DLT pour vidéo-mapping). |
-| Fly To | `camera/fly_to` | cameraA, cameraB, progress, trigger, duration, arcHeight | geometry, matrix, fov, active, progress, isFinished | Transition cinématique fluide entre deux caméras avec arc parabolique de vol et assouplissement. |
-| Room Corner | `calibration/room_corner` | - | refPoints, geometry | Modèle géométrique 3D de la pièce physique (Mur A, Mur B, Hauteur) générant 6 repères de calage. |
+| Node | Type | Description |
+| :--- | :--- | :--- |
+| **SVG to Curves** | `svg/to_curves` | Importe des fichiers vectoriels SVG et les convertit en trajectoires 3D. |
+| **SVG to Mesh** | `svg/to_mesh` | Convertit un tracé SVG en surface 2D planifiée. |
+| **SVG to Solid** | `svg/to_solid` | Extrude un tracé SVG vectoriel en objet 3D volumétrique. |
 
-### Eclairage et Environnement
+### Points, Sélection et Connectivité
 
-| Node | Type | Entrees | Sorties | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| Directional Light | `light/directional` | matrix, target, color, intensity, castShadow | geometry, light | Source lumineuse directionnelle (type soleil) avec ombres portées et cible Empty. |
-| Point Light | `light/point` | matrix, color, intensity, distance, decay, castShadow | geometry, light | Source lumineuse omnidirectionnelle ponctuelle avec atténuation physique. |
-| Spot Light | `light/spot` | matrix, target, color, intensity, angle, penumbra, castShadow | geometry, light | Projecteur conique orientable avec angle de diffusion et adoucissement des bords. |
-| Ambient Light | `light/ambient` | color, intensity | geometry, light | Lumière d'ambiance globale uniforme sans ombres portées. |
-| Environment & HDRI | `environment/hdri` | - | environment | Carte d'environnement 32 bits flottants (.hdr / .exr) pour l'illumination globale PBR et reflets. |
+| Node | Type | Description |
+| :--- | :--- | :--- |
+| **Mesh to Points** | `points/from_mesh` | Convertit les sommets d'un maillage 3D en liste de points. |
+| **Points to Mesh** | `points/to_mesh` | Reconstruit un maillage ou nuage à partir de points 3D. |
+| **Points Selection**| `points/selection` | Sélectionne des points par masque, sphère d'influence ou bruit. |
+| **Points Influence**| `points/influence` | Calcule le facteur d'attraction/répulsion par rapport à des cibles. |
+| **Connect Nearby** | `connectivity/nearby` | Interconnecte les points proches par un réseau de lignes/segments filaires. |
 
-### Materiaux et Textures
+### Physique et Raycasting
 
-| Node | Type | Entrees | Sorties | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| Image Texture | `texture/image` | - | texture | Chargeur d'images bitmap (PNG, JPEG, WebP) pour textures diffuses et normales. |
-| Texture Plane | `texture/plane` | matrix, texture | geometry, matrix | Générateur rapide de plan 2D texturé avec transparence alpha. |
-| Texture Transform | `texture/transform` | texture, scale, offset, rotation | texture | Manipulation des coordonnées UV d'une texture (mise à l'échelle, décalage, rotation). |
+| Node | Type | Description |
+| :--- | :--- | :--- |
+| **Raycast** | `physics/raycast` | Lance un rayon unique et détecte les intersections (point, normale, distance). |
+| **Ray Burst** | `physics/ray-burst` | Émet un champ de rayons (burst) 3D et produit les lignes d'impacts et endpoints. |
+| **Sample Surface** | `physics/sample-surface` | Échantillonne des points et normales aléatoires à la surface d'un maillage. |
 
-### Instanciation et Matrices (Array)
+### Animation, Mouvement et Dynamique (Spring, Trail, Orbit)
 
-| Node | Type | Entrees | Sorties | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| Array | `instance/array` | geometry, matrix, count | geometry | Duplication géométrique en modes Linear (1D), Circular (2D), Grid (2D) ou 3D Grid (Volume). |
-| Set Instance Transform | `instance/set_transform` | geometry, matrices, index | geometry | Modifie les matrices de transformation d'un groupe d'instances ou d'une instance ciblée. |
-| Set Instance Color | `instance/set_color` | geometry, colors, index | geometry | Modifie les couleurs d'un groupe d'instances via une liste de couleurs. |
-| Get Instance | `instance/get` | geometry, index | geometry, matrix | Extrait la géométrie et la matrice d'une instance spécifique par son index. |
-| Instances to List | `instance/to_list` | geometry | list | Convertit les matrices de toutes les instances d'un objet en une liste de matrices. |
-| Geometry Transform | `instance/geom_transform` | geometry, matrix | geometry | Applique une transformation matricielle directement sur les sommets (baking géométrique). |
-| Spawner | `structure/spawn` | support, items | geometry | Distribue et instancie des objets 3D de manière aléatoire sur la surface triangulée d'un maillage. |
+| Node | Type | Description |
+| :--- | :--- | :--- |
+| **Orbit** | `motion/orbit` | Génère un mouvement orbital circulaire ou elliptique autour d'un pivot. |
+| **Stagger** | `motion/stagger` | Décale temporellement l'animation de multiples éléments ou instances. |
+| **Time Remap** | `motion/time_remap` | Recadre et applique des courbes d'assouplissement (easing) au temps. |
+| **Spring** | `motion/spring` | Simulation physique de ressort scalaire avec masse, raideur et amortissement. |
+| **Spring Vector** | `motion/spring_vector` | Simulation de ressort 3D sur un vecteur position (effet de suivi fluide). |
+| **Velocity** | `motion/velocity` | Calcule les déltas de vitesse et d'orientation d'un objet en mouvement. |
+| **Trail** | `motion/trail` | Génère une traînée ou un ruban persistant derrière un objet en déplacement. |
+| **Squash & Stretch**| `motion/squash` | Effet d'écrasement et d'étirement préservant le volume selon la vitesse. |
+| **Wiggle** | `animation/wiggle` | Bruit fractal (fBm) pilotant simultanément position, rotation, scale et matrice. |
+| **Wiggle Number** | `math/wiggle-number` | Oscillations scalaires continues basées sur du bruit de gradient. |
+| **Wiggle Vector** | `vector/wiggle-vector` | Bruit 3D vectoriel décorrélé pour déplacements procéduraux. |
 
-### Systeme de Particules
+### Courbes, Morphing et Shape Keys
 
-| Node | Type | Entrees | Sorties | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| Particle Emitter | `particles/emitter` | matrix, rate, speed, spread, lifetime, size | emitterConfig | Définit les paramètres d'émission d'un flux de particules (débit, vitesse, dispersion). |
-| Particle Simulate | `particles/simulate` | emitterConfig, gravity, wind, turbulence | particleState | Moteur physique GPGPU calculant la trajectoire, la gravité, le vent et la durée de vie. |
-| Particle Render | `particles/render` | particleState, texture, color, size, blendMode | geometry | Rendu graphique des particules avec textures de sprites et modes de fusion additive/normale. |
+| Node | Type | Description |
+| :--- | :--- | :--- |
+| **Curve from Points**| `curve/from_points` | Génère une courbe 3D à partir d'une liste de points (Catmull-Rom, Bézier). |
+| **Curve Primitive** | `curve/primitive` | Génère des courbes géométriques (Hélice, Cercle, Ligne, Rectangle). |
+| **Curve to Mesh** | `curve/to_mesh` | Génère un tube 3D balayé avec profil d'épaisseur variable. |
+| **Follow Path** | `curve/sample` | Échantillonne position, tangente et matrice d'orientation le long d'une courbe. |
+| **Curve Deform** | `curve/deform` | Curve-deform pliant un maillage le long d'une trajectoire. |
+| **Curve Shape Key** | `curve/shape_key` | Interpolation fluide (morphing) entre différentes formes de courbes. |
+| **Mesh Shape Key** | `mesh/shape_key` | Interpolation volumétrique (morphing) entre deux maillages 3D compatibles. |
+| **Lattice Deform** | `modifier/lattice` | Cage de déformation volumétrique FFD (Free-Form Deformation) 3D. |
+
+### Lumières, Matériaux et Environnement
+
+| Node | Type | Description |
+| :--- | :--- | :--- |
+| **Directional Light**| `light/directional` | Source lumineuse directionnelle (type soleil) avec ombres portées. |
+| **Point Light** | `light/point` | Source omnidirectionnelle ponctuelle avec atténuation physique. |
+| **Spot Light** | `light/spot` | Projecteur conique orientable avec angle et adoucissement. |
+| **Ambient Light** | `light/ambient` | Lumière d'ambiance globale uniforme. |
+| **Environment HDRI**| `environment/hdri` | Carte d'environnement HDR/EXR 32-bit pour illumination PBR. |
+| **Material PBR** | `material/pbr` | Créateur de matériau PBR complet (roughness, metalness, emissive, normal map). |
+| **Image Texture** | `texture/image` | Chargeur de textures bitmap (PNG, JPEG, WebP). |
+| **Texture Transform**| `texture/transform` | Transformation des coordonnées UV (scale, offset, rotation). |
+
+### Instanciation et Formations (Array & Spawner)
+
+| Node | Type | Description |
+| :--- | :--- | :--- |
+| **Array** | `instance/array` | Duplication matricielle Linear (1D), Circular (2D), Grid ou 3D Grid. |
+| **Set Instance Transform** | `instance/set_transform` | Modifie les matrices de transformation d'un groupe d'instances. |
+| **Set Instance Color** | `instance/set_color` | Applique des variations de couleurs aux instances. |
+| **Get Instance** | `instance/get` | Extrait la géométrie et la matrice d'une instance ciblée. |
+| **Spawner** | `structure/spawn` | Distribue des objets 3D de manière aléatoire sur la surface d'un maillage. |
+
+### Système de Particules, Champs de Forces et Trajectoires
+
+| Node | Type | Description |
+| :--- | :--- | :--- |
+| **Particle Emitter**| `particles/emitter` | Configure l'émission de particules (débit, vitesse, dispersion, durée). |
+| **Emitter From Surface**| `particles/emitter_surface` | Émet des particules depuis les sommets ou la surface d'un maillage. |
+| **Particle Simulate**| `particles/simulate` | Moteur physique calculant les trajectoires, gravité et vent. |
+| **Force Field** | `particles/force_field` | Attracteurs, répulseurs et vortex influençant les particules. |
+| **Particle Render** | `particles/render` | Rendu graphique sous forme de sprites 2D ou billboard. |
+| **Render Instances** | `particles/render_instances` | Rendu des particules sous forme de géométries 3D instanciées. |
+| **Capture Trails** | `particles/capture_trails` | Capture et génère les rubans de trajectoires des particules. |
+
+### Caméra et Calibration Vidéo-Mapping (DLT)
+
+| Node | Type | Description |
+| :--- | :--- | :--- |
+| **Camera** | `calibration/camera` | Caméra avec modes Manuel et Calibré (solveur DLT pour vidéo-mapping). |
+| **Fly To** | `camera/fly_to` | Transition cinématique fluide entre deux caméras avec arc parabolique. |
+| **Room Corner** | `calibration/room_corner` | Générateur de repères de calage 3D pour la pièce physique. |
 
 ### Data-Visualisation et Graphiques
 
-| Node | Type | Entrees | Sorties | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| Bar Graph | `chart/bar` | values, labels, matrix, spacing, width, color | geometry, matrix | Histogramme 3D paramétrique généré à partir d'une liste de nombres scalaires. |
-| Line Graph | `chart/line` | values, matrix, thickness, color | geometry, matrix | Graphique linéaire continu en tube ou ruban 3D. |
-| Scatter Plot | `chart/scatter` | points, matrix, size, color | geometry, matrix | Nuage de points 3D avec marqueurs volumétriques à coordonnées (X, Y, Z). |
-| Pie Chart | `chart/pie` | values, matrix, radius, thickness, innerRadius | geometry, matrix | Camembert ou anneau 3D extrudé avec secteurs colorés proportionnels. |
-| Point Cloud | `chart/point_cloud` | positions, colors, size | geometry, matrix | Rendu optimisé de nuages de points massifs par particules fixes. |
-| Chart Axis | `chart/axis` | matrix, size, ticks, labels | geometry, matrix | Axes de repère orthogonaux 3D gradués avec étiquettes de valeurs. |
+| Node | Type | Description |
+| :--- | :--- | :--- |
+| **Bar Graph** | `chart/bar` | Histogramme 3D paramétrique généré depuis une liste de données. |
+| **Line Graph** | `chart/line` | Graphique linéaire continu en tube ou ruban 3D. |
+| **Scatter Plot** | `chart/scatter` | Nuage de points 3D avec marqueurs volumétriques à coordonnées (X, Y, Z). |
+| **Pie Chart** | `chart/pie` | Camembert ou anneau 3D extrudé avec secteurs proportionnels. |
+| **Point Cloud** | `chart/point_cloud` | Rendu hautement optimisé de nuages de points massifs. |
 
-### Post-Traitement et Effets GPU
+### Post-Traitement et Shaders GPU
 
 | Node | Type | Description |
 | :--- | :--- | :--- |
-| Bloom | `postprocess/bloom` | Effet d'émanation lumineuse et de halo sur les surfaces brillantes et émissives. |
-| Depth of Field | `postprocess/dof` | Flou de profondeur de champ optique avec distance de focus et ouverture réglables. |
-| Film Grain | `postprocess/film_grain` | Simulation de bruit et grain de pellicule argentique analogique. |
-| Vignette | `postprocess/vignette` | Assombrissement progressif des bords de l'image. |
-| Outline | `postprocess/outline` | Détection de contours géométriques pour rendu de style cel-shading ou dessin technique. |
-| Pixelate | `postprocess/pixelate` | Réduction de résolution par blocs pour esthétique pixel-art. |
-| Glitch | `postprocess/glitch` | Décalages horizontaux aléatoires et artefacts de synchronisation vidéo. |
-| Kaleidoscope | `postprocess/kaleidoscope` | Répétition radiale en miroir de l'image projetée. |
-| RGB Shift | `postprocess/rgb_shift` | Aberration chromatique séparant les composantes rouge, verte et bleue. |
-| Antialias | `postprocess/antialias` | Lissage spatial anti-crénelage (FXAA / SMAA). |
-| Color Correction | `postprocess/color_correction` | Étalonnage des couleurs (luminosité, contraste, saturation, teinte). |
-| Fog | `postprocess/fog` | Brume volumétrique basée sur le tampon de profondeur de la scène. |
+| **Bloom** | `postprocess/bloom` | Effet d'émanation lumineuse et halo sur les zones émissives. |
+| **Depth of Field** | `postprocess/dof` | Flou de profondeur de champ optique avec focus paramétrable. |
+| **Outline** | `postprocess/outline` | Détection de contours géométriques pour rendu cel-shading. |
+| **Film Grain** | `postprocess/film_grain` | Grain de pellicule cinéma analogique. |
+| **Vignette** | `postprocess/vignette` | Assombrissement progressif des bords de l'image. |
+| **Pixelate** | `postprocess/pixelate` | Effet rétro pixel-art par réduction de résolution. |
+| **Glitch** | `postprocess/glitch` | Artefacts de désynchronisation vidéo et décalages RGB. |
+| **Kaleidoscope** | `postprocess/kaleidoscope` | Répétition radiale en miroir de la scène. |
+| **RGB Shift** | `postprocess/rgb_shift` | Aberration chromatique séparant les canaux R, G, B. |
+| **Color Correction**| `postprocess/color_correction` | Étalonnage des couleurs (luminosité, contraste, saturation). |
+| **Fog** | `postprocess/fog` | Brume volumétrique basée sur le tampon de profondeur. |
 
-### Animation, Temps et Bruit Procédural (Wiggle)
-
-| Node | Type | Entrees | Sorties | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| Wiggle | `animation/wiggle` | evolution, speed, amplitude, amplitudeVector, rotationAmplitude, scaleAmplitude, seed, octaves, persistance, lacunarity, offset, baseVector, matrix | value, vector, rotation, scale, matrix | Générateur de bruit fractal (fBm) type Blender Animation Nodes produisant simultanément des oscillations scalaires, vectorielles 3D, de rotation Euler et de matrices de transformation complètes. |
-| Wiggle Number | `math/wiggle-number` | evolution, speed, amplitude, seed, octaves, persistance, lacunarity, offset | value | Générateur d'oscillations scalaires continues et cohérentes basées sur du bruit de gradient. |
-| Wiggle Vector | `vector/wiggle-vector` | evolution, speed, amplitude, seed, octaves, persistance, lacunarity, baseVector | vector | Générateur de bruit 3D vectoriel (X, Y, Z) décorrélé pour déplacements procéduraux. |
-| Oscillator | `animation/oscillator` | frequency, phase, amplitude, offset | out | Générateur de formes d'ondes périodiques continues (Sinus, Dent de scie, Carré, Triangle). |
-| Envelope | `animation/envelope` | trigger, attack, release | out | Générateur d'enveloppe Attack / Release réagissant aux triggers et fronts montants. |
-| Time | `time/time` | - | time, step | Horloge temps réel déterministe fournissant le temps écoulé en secondes et le numéro de frame. |
-
-### Mathematiques, Vecteurs et Logique
+### Audio et Analyse Spectrale (FFT)
 
 | Node | Type | Description |
 | :--- | :--- | :--- |
-| Value Math | `math/value_math` | Opérations scalaires : addition, soustraction, multiplication, division, modulo, puissance, sinus, cosinus, etc. |
-| Value Constant | `math/value_constant` | Émetteur d'une valeur numérique constante. |
-| Clamp | `math/clamp` | Restreint une valeur dans un intervalle borné [min, max]. |
-| Map Range | `math/map_range` | Remappe une valeur d'une plage source [inMin, inMax] vers une plage cible [outMin, outMax]. |
-| Vector Math | `math/vector_math` | Opérations vectorielles 3D : addition, soustraction, produit scalaire, produit vectoriel, normalisation, longueur. |
-| Vector Compose | `math/vector_compose` | Assemble trois scalaires X, Y, Z en un vecteur 3D. |
-| Vector Decompose | `math/vector_decompose` | Sépare un vecteur 3D en trois composantes scalaires X, Y, Z. |
-| Distance | `math/distance` | Calcule la distance euclidienne entre deux vecteurs, matrices ou objets 3D. |
-| Proximity Object | `math/proximity_object` | Identifie l'objet ou l'instance la plus proche d'une cible parmi une collection. |
-| Color Math | `math/color_math` | Opérations chromatiques : mélange (blend), addition, multiplication, inversion de couleurs. |
-| Color Compose | `math/color_compose` | Assemble des canaux R, G, B, A en une couleur. |
-| Color Decompose | `math/color_decompose` | Extrait les composantes scalaires R, G, B, A d'une couleur. |
-| Color Constant | `math/color_constant` | Émetteur d'une valeur de couleur fixe. |
-| Random Value | `math/random-value` | Génère des nombres aléatoires selon divers algorithmes (uniforme, gaussien, bruit 1D, exponentiel). |
-| Random Vector | `vector/random-vector` | Génère des vecteurs 3D aléatoires ou répartis sur/dans une sphère. |
-| Random Matrix | `transform/random-matrix` | Génère des matrices de transformation aléatoires (position, rotation, échelle). |
-| Random List | `list/random-list` | Génère une liste de valeurs pseudo-aléatoires continues ou discrètes. |
-| Boolean Logic | `logic/boolean` | Portes logiques booléennes : AND, OR, NOT, XOR. |
-| Compare | `logic/compare` | Comparateurs de valeurs : égal, différent, supérieur, inférieur. |
-| Gate | `logic/gate` | Laisse passer ou bloque un signal en fonction d'un contrôle booléen. |
-| Toggle | `logic/toggle` | Bascule bistable inversant son état à chaque front montant du trigger. |
-| Trigger | `logic/trigger` | Détecte les fronts montants (transition 0 vers 1) et émet une impulsion d'une frame. |
-| Logic Bridge | `logic/bridge` | Pont de conversion et conditionnement logique. |
+| **Microphone Input**| `sound/microphone` | Capture le flux du microphone ou de la carte son en temps réel. |
+| **Audio Spectrum** | `sound/spectrum` | Analyseur de spectre FFT (Basses, Médiums, Aigus). |
+| **Peak Detector** | `sound/peak_detector` | Détecteur d'attaques percussives (beats, kicks) avec seuil. |
+| **Audio Player** | `sound/player` | Lecteur de fichiers audio (.mp3, .wav) avec contrôle de transport. |
+| **Audio Synth** | `sound/synth` | Synthétiseur générateur d'ondes audio pures. |
 
-### Audio et Analyse Spectrale
+### Mathématiques, Vecteurs et Logique
 
 | Node | Type | Description |
 | :--- | :--- | :--- |
-| Microphone Input | `sound/microphone` | Capture le flux audio du microphone ou de la carte son en temps réel. |
-| Audio Spectrum | `sound/spectrum` | Analyseur de spectre FFT extrayant les bandes de fréquences (Basses, Médiums, Aigus). |
-| Audio Peak Detector | `sound/peak_detector` | Détecteur d'attaques et de transitoires percussives (beats, kicks) avec seuil ajustable. |
-| Audio Player | `sound/player` | Lecteur de fichiers audio (.mp3, .wav) avec contrôle de lecture, vitesse et volume. |
-| Audio Synth | `sound/synth` | Synthétiseur sonore générant des formes d'onde audio pures (sinus, carré, scie). |
+| **Value Math** | `math/value_math` | Opérations scalaires (Add, Subtract, Multiply, Divide, Sin, Cos...). |
+| **Clamp** | `math/clamp` | Borne une valeur dans l'intervalle [min, max]. |
+| **Map Range** | `math/map_range` | Remappe une valeur entre une plage source et une cible. |
+| **Vector Math** | `math/vector_math` | Opérations vectorielles 3D (Dot product, Cross product, Normalize...). |
+| **Random Value** | `math/random-value` | Nombres aléatoires (uniforme, gaussien, bruit 1D). |
+| **Boolean Logic** | `logic/boolean` | Portes logiques booléennes (AND, OR, NOT, XOR). |
+| **Compare** | `logic/compare` | Comparateurs (Egal, Différent, Supérieur, Inférieur). |
 
-### Entrees et I/O
-
-| Node | Type | Description |
-| :--- | :--- | :--- |
-| Keyboard | `io/keyboard` | Détecte les appuis sur le clavier en temps réel (`isDown` continu et `pressed` sur front montant). |
-| CSV Reader | `io/csv` | Charge et analyse des fichiers de données tabulaires CSV pour alimenter le graphe. |
-| Inspector | `io/inspector` | Moniteur de débogage affichant en temps réel la valeur circulant dans un fil. |
-
-### Temps, Animation et Oscillateurs
+### Listes et Manipulation de Données
 
 | Node | Type | Description |
 | :--- | :--- | :--- |
-| Time | `time/time` | Émet le temps absolu en secondes, le delta-time et l'index de pas de simulation. |
-| Frame | `time/frame` | Émet le numéro de frame courant de la timeline. |
-| Oscillator | `time/oscillator` | Générateur d'oscillations périodiques (Sinusoïde, Carré, Dent de scie, Triangle) avec phase et fréquence. |
-| Envelope | `time/envelope` | Générateur d'enveloppe temporelle d'Attaque et de Relâchement (Attack / Release). |
-| Random Value | `time/random_value` | Générateur de nombres pseudo-aléatoires uniformes ou gaussiens avec graine (seed). |
-| Random Vector | `time/random_vector` | Générateur de vecteurs 3D aléatoires distribués dans un cube ou une sphère. |
-| Random Matrix | `time/random_matrix` | Générateur de matrices de transformation 3D aléatoires. |
-| Random List | `time/random_list` | Génère une liste de valeurs ou vecteurs aléatoires. |
+| **Generate List** | `list/generate` | Génère une suite arithmétique de nombres. |
+| **Get List Item** | `list/get_item` | Extrait l'élément situé à un index spécifique. |
+| **List Math** | `list/math` | Opération mathématique sur tous les éléments (Somme, Moyenne...). |
+| **Color Palette** | `list/palette` | Collections de palettes chromatiques sous forme de listes. |
 
-### Listes et Manipulation de Donnees
+### Utilitaires et Organisation
 
 | Node | Type | Description |
 | :--- | :--- | :--- |
-| Generate List | `list/generate` | Génère une liste arithmétique de nombres de début à fin avec un pas donné. |
-| Get List Item | `list/get_item` | Extrait l'élément situé à un index spécifique dans une liste. |
-| List Length | `list/length` | Retourne le nombre total d'éléments contenus dans une liste. |
-| Slice List | `list/slice` | Découpe et extrait une sous-section d'une liste entre deux index. |
-| List Math | `list/math` | Applique une opération mathématique sur tous les éléments d'une liste (somme, moyenne, min, max). |
-| List Statistics | `list/statistics` | Calcule les indicateurs statistiques d'une liste (médiane, variance, écart-type). |
-| List Combine Math | `list/combine_math` | Combine deux listes terme à terme selon une opération arithmétique. |
-| Combine Vector Lists | `list/combine_vectors`| Fusionne trois listes scalaires X, Y et Z en une liste de vecteurs 3D. |
-| Split Vector List | `list/split_vectors` | Sépare une liste de vecteurs 3D en trois listes scalaires distinctes X, Y et Z. |
-| Color Palette List | `list/palette` | Fournit des collections de palettes chromatiques harmonieuses sous forme de listes de couleurs. |
-| List Group | `list/group` | Regroupe ou partitionne des éléments de liste. |
-
-### Texte et Typographie
-
-| Node | Type | Description |
-| :--- | :--- | :--- |
-| Text Constant | `text/constant` | Émetteur d'une chaîne de caractères textuelle fixe. |
-| Text Concat | `text/concat` | Concatène plusieurs chaînes de caractères avec un séparateur optionnel. |
-| Text Substring | `text/substring` | Extrait une portion de texte entre deux positions. |
-| Text Length | `text/length` | Retourne la longueur en caractères d'un texte. |
-| Text Case | `text/case` | Convertit le texte en majuscules (uppercase) ou minuscules (lowercase). |
-| Text Replace | `text/replace` | Remplace les occurrences d'une sous-chaîne par une autre. |
-| Text Split | `text/split` | Découpe une chaîne en liste de textes selon un délimiteur. |
-| Text Trim | `text/trim` | Supprime les espaces superflus en début et fin de chaîne. |
-| Text Compare | `text/compare` | Compare l'égalité de deux chaînes de caractères. |
-
-### Utilitaires et Organisation de Graphe
-
-| Node | Type | Description |
-| :--- | :--- | :--- |
-| Reroute | `utility/reroute` | Point de dérivation compact pour organiser et clarifier le câblage du graphe. |
-| Canvas Go To | `canvas/goto`| Bascule automatiquement l'affichage vers l'un des canevas du projet lors d'un trigger. |
+| **Reroute** | `utility/reroute` | Point de dérivation compact pour organiser le câblage du graphe. |
+| **Canvas Go To** | `canvas/goto` | Bascule vers l'un des canevas du projet lors d'un trigger. |
+| **Inspector** | `io/inspector` | Moniteur de débogage affichant en temps réel la valeur circulant dans un câble. |
 
 ---
 
 ## Moteur d'Animation Paramétrique et Studio 3D
 
-OpenVMap est avant tout un **moteur d'animation paramétrique et nodale** en temps réel. Contrairement aux outils d'animation 3D traditionnels à flux figé, chaque transformation, dimension, couleur, déformation de courbe, émission de particules, éclairage ou trajectoire de caméra est calculée et modulée dynamiquement par le graphe :
+OpenVMap intègre un studio complet avec timeline et gizmos interactifs :
 
-### Animation Nodal-Paramétrique et Modulations en Continu
-
-* **Génération Procédurale** : Combinaison de fonctions mathématiques (`Value Math`, `Map Range`, `Vector Math`, `Clamp`) et d'oscillateurs périodiques (`Oscillator`, `Envelope`, `Time`) pour animer la position, la rotation, l'échelle, les couleurs et l'opacité sans poser une seule image-clé fixe.
-* **Réactivité Audio et Entrées en Direct** : Les flux du microphone (`Microphone Input`), l'analyse FFT (`Audio Spectrum`), la détection de rythme (`Audio Peak Detector`) et le clavier (`Keyboard`) modulent instantanément la scène à 60 FPS.
-* **Trajectoires de Courbes et Déformations Dynamiques** : Pilotage continu d'objets le long de trajectoires 3D via `Follow Path` et déformation de maillages complexes par `Curve Deform` selon les repères de Frenet.
-
-### Timeline, Interpolation et Keyframing Hybride
-
-Le studio intègre également un système d'images-clés (keyframes) granulaire fonctionnant en synergie avec les modulations nodales :
-
-* **Pose d'Image-Clé Ciblée** : Survoler n'importe quel champ de saisie ou composante d'axe (X, Y ou Z) dans le panneau latéral et presser la touche `K` pour enregistrer une image-clé sur la frame courante.
-* **Interpolation Temporelle** : Les valeurs entre images-clés sont interpolées automatiquement. Les champs affichent un repère visuel vert sur les frames exactes et orange sur les frames interpolées.
-* **Marqueurs Neutres** : La touche `M` permet de poser des marqueurs visuels déplaçables à la souris sur la réglette de la timeline.
-* **Priorité Absolue du Câblage** : Toute prise reliée par un câble prévaut systématiquement sur l'interpolation des keyframes locales, garantissant le contrôle procédural continu.
-
-### Gizmos 3D et Manipulation Interactive
-
-Tous les objets géométriques 3D, caméras, lumières et grilles disposent d'un contrôle direct par Gizmo dans la vue 3D :
-
-* **Modes de Transformation** :
-  - `T` : Translation (déplacement spatial).
-  - `R` : Rotation (orientation Euler en degrés).
-  - `S` : Mise à l'échelle (Scale).
-* **Contrainte d'Axe** : Les touches `X`, `Y` et `Z` permettent de restreindre la manipulation le long d'un axe unique.
-* **Édition Interactive des Courbes et de la Lattice** :
-  - Les poignées de contrôle 3D s'affichent sous forme de sphères interactives vertes.
-  - Sélectionner une poignée (clic) la passe en cyan et y attache le Gizmo.
-  - `Shift` + Clic permet d'ajouter ou retirer des points de contrôle de la sélection.
-  - `Cmd` (ou `Ctrl`) + Clic gauche & Glisser trace un **rectangle de sélection 2D (Marquee)** dans la vue 3D pour capturer instantanément plusieurs points de contrôle.
-  - Lorsqu'un groupe de points est sélectionné, un **Gizmo au barycentre (centroïde)** apparaît pour translater, pivoter ou mettre à l'échelle tous les points sélectionnés simultanément.
-  - Pour les courbes, les touches `A` et `D` permettent d'insérer ou supprimer des points de contrôle.
-
-### Calibration Video-Mapping (Direct Linear Transformation)
-
-OpenVMap intègre un solveur géométrique DLT pour l'alignement physique des vidéo-projecteurs :
-
-1. Renseigner les dimensions physiques de la pièce (largeur du mur A, mur B, hauteur de plafond) dans le nœud `Room Corner`.
-2. Connecter la sortie `Ref Points` de `Room Corner` à l'entrée `Ref Points` du nœud `Camera`.
-3. Activer le mode calibré et ajuster les 6 poignées colorées sur les coins réels de l'espace projeté.
-4. Le solveur calcule analytiquement la position exacte du projecteur dans l'espace 3D, sa rotation, son champ de vision vertical (FOV) et son décalage d'optique asymétrique (lens shift).
+- **Timeline & Keyframing** : Pressez la touche `K` sur n'importe quel paramètre pour créer une image-clé.
+- **Gizmos 3D** : Manipulez la position (`T`), la rotation (`R`) ou l'échelle (`S`) directement dans la vue 3D.
+- **Marquee Selection** : `Cmd` (ou `Ctrl`) + Clic gauche & Glisser pour sélectionner plusieurs points de contrôle de courbe ou de cage Lattice.
 
 ---
 
@@ -345,76 +303,53 @@ OpenVMap intègre un solveur géométrique DLT pour l'alignement physique des vi
 | Raccourci | Action |
 | :--- | :--- |
 | `Espace` | Lancer / Mettre en pause la lecture de la timeline |
-| `Cmd` + `Espace` / `Ctrl` + `Espace` | Ouvrir la recherche rapide de nœuds au curseur |
-| `T` | Activer le Gizmo de Translation sur l'objet ou les points sélectionnés |
-| `R` | Activer le Gizmo de Rotation sur l'objet ou les points sélectionnés |
-| `S` | Activer le Gizmo d'Échelle (Scale) sur l'objet ou les points sélectionnés |
-| `X` / `Y` / `Z` | Verrouiller la manipulation du Gizmo sur l'axe X, Y ou Z |
-| `Cmd` + Clic gauche & Glisser | Sélection rectangulaire 2D (Marquee) de points de contrôle (Courbes, Lattice) |
-| `Shift` + Clic | Ajouter / retirer des points de contrôle ou nœuds de la sélection |
-| `A` | Insérer un nouveau point de contrôle après la poignée de courbe active |
-| `D` | Supprimer la poignée de courbe active |
-| `K` | Poser ou supprimer une image-clé sur le paramètre ou l'axe survolé |
-| `M` | Poser ou supprimer un marqueur de repère sur la timeline |
-| `Tab` | Masquer ou afficher les aides visuelles de l'éditeur 3D |
-| `Shift` + `Tab` | Basculer la vue scindée (Split View) Graphe / Vue 3D |
-| `Shift` + Clic / Glisser | Sélection multiple de nœuds ou tracé de rectangle de sélection dans le graphe |
-| `Cmd` + `C` / `Cmd` + `V` | Copier / Coller les nœuds sélectionnés avec leurs connexions |
-| `Cmd` + `D` | Dupliquer les nœuds sélectionnés |
-| `Suppr` / `Backspace` | Supprimer les nœuds ou câbles sélectionnés |
-| `Cmd` + `Z` / `Ctrl` + `Z` | Annuler la dernière action (historique jusqu'à 50 étapes) |
-| `Cmd` + `Shift` + `Z` / `Ctrl` + `Y` | Rétablir l'action annulée |
+| `Cmd` + `Espace` / `Ctrl` + `Espace` | Recherche rapide de nœuds au curseur |
+| `T` / `R` / `S` | Gizmos de Translation / Rotation / Échelle |
+| `X` / `Y` / `Z` | Verrouiller le Gizmo sur l'axe X, Y ou Z |
+| `Cmd` + Clic & Glisser | Sélection rectangulaire 2D de points 3D (Courbes, Lattice) |
+| `K` | Enregistrer / Supprimer une image-clé sur le paramètre survolé |
+| `Tab` | Masquer / Afficher les aides visuelles de la scène 3D |
+| `Shift` + `Tab` | Basculer entre vue scindée et vue pleine |
+| `Cmd` + `C` / `Cmd` + `V` | Copier / Coller les nœuds sélectionnés |
+| `Cmd` + `Z` / `Ctrl` + `Z` | Annuler la dernière action |
 
 ---
 
-## Installation et Deploiement
-
-### Prérequis
-
-* Node.js version 18 ou supérieure
-* Rust et Cargo (pour la compilation du backend natif Tauri 2)
-* Gestionnaire de paquets `npm` ou `pnpm`
+## Installation, Tests et Déploiement
 
 ### 1. Cloner le dépôt
-
 ```bash
 git clone https://github.com/Nikos-Unilasalle/openVMap3D.git
 cd openVMap3D
 ```
 
 ### 2. Installer les dépendances
-
 ```bash
 npm install
 ```
 
-### 3. Exécution en mode développement web
-
+### 3. Lancer en mode développement (Web)
 ```bash
 npm run dev
 ```
 
-### 4. Exécution de l'application desktop Tauri
-
+### 4. Lancer en mode application Desktop (Tauri)
 ```bash
 npm run tauri dev
 ```
 
-### 5. Lancer la suite de tests automatisés
-
+### 5. Exécuter la suite de tests unitaires
 ```bash
-npx vitest run
+npm test
 ```
 
-### 6. Compiler l'application pour la production
-
+### 6. Compiler pour la production
 ```bash
 npm run build
-npm run tauri build
 ```
 
 ---
 
 ## Licence
 
-Ce projet est sous licence MIT. Consultez le fichier `LICENSE` pour plus d'informations.
+Ce projet est distribué sous licence MIT. Consultez le fichier `LICENSE` pour plus de détails.
