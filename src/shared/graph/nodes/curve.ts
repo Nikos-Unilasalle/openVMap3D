@@ -16,6 +16,18 @@ import {
 import { DEFAULT_PROFILE_POINTS, evalProfileCurve, ProfilePoint } from "../profileCurve";
 import { setCurveNodePose, getCurveNodePose } from "../curvePoseStore";
 
+/**
+ * `pointsList` has no editable ParamPanel row of its own — it's edited by
+ * dragging control-point handles in the viewport (see curveHandles.ts), not
+ * typed in here — so it never gets the ParamPanel's normal hover-and-press-K
+ * route to its first keyframe (see App.tsx's applyKeyframedParamUpdate doc
+ * comment: a track has to already exist before a drag will just update it).
+ * This button is that missing first step: toggles a `pointsList` keyframe at
+ * the playhead directly, using whatever the points currently are. See
+ * App.tsx's onParamAction.
+ */
+export const TOGGLE_POINTS_KEYFRAME_ACTION = "curve/toggle-points-keyframe";
+
 interface CurveNodeState {
   mesh?: THREE.Mesh;
   /**
@@ -655,6 +667,12 @@ export const CURVE_FROM_POINTS_NODE: NodeDefinition = {
     { id: "closed", label: "Closed", kind: "boolean" },
     { id: "tension", label: "Tension", kind: "number", step: 0.05 },
     { id: "sag", label: "Sag (-Y droop, forces straight segments)", kind: "number", step: 0.05 },
+    {
+      id: "pointsKeyframeButton",
+      label: "Keyframe points at frame",
+      kind: "button",
+      action: TOGGLE_POINTS_KEYFRAME_ACTION,
+    },
   ],
   evaluate: (inputs, params, ctx) => {
     let pts: THREE.Vector3[] = [];

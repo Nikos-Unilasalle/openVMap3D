@@ -74,7 +74,7 @@ export function cloneGraph(graph: Graph): Graph {
     nodes: graph.nodes.map(cloneNode),
     connections: graph.connections.map((c) => ({ ...c })),
     keyframes: cloneKeyframes(graph.keyframes),
-    markers: graph.markers ? [...graph.markers] : undefined,
+    markers: graph.markers ? graph.markers.map((m) => ({ ...m })) : undefined,
     exposedParams: graph.exposedParams ? graph.exposedParams.map((e) => ({ ...e })) : undefined,
   };
 }

@@ -64,6 +64,7 @@ export const ARRAY_NODE: NodeDefinition = {
   inputs: [
     { id: "visible", label: "Visible", type: "value" },
     { id: "geometry", label: "Geometry", type: "geometry", owns: true },
+    { id: "geometries", label: "Geometries (List) — random pick per instance", type: "list" },
     { id: "count", label: "Count", type: "value" },
     { id: "spacing", label: "Spacing", type: "value" },
     { id: "spacingVariance", label: "Spacing Variance (%)", type: "value" },
@@ -99,9 +100,11 @@ export const ARRAY_NODE: NodeDefinition = {
     spacingY: 2.0,
     spacingZ: 2.0,
     centerGrid: true,
+    seed: 0,
   },
   paramFields: [
     { id: "visible", label: "Visible", kind: "boolean" },
+    { id: "seed", label: "Random Pick Seed", kind: "number", step: 1 },
     { id: "mode", label: "Mode", kind: "select", options: ["linear", "circular", "grid", "grid3d", "curve"] },
     { id: "count", label: "Count", kind: "number", step: 1 },
     { id: "axis", label: "Linear Axis", kind: "select", options: ["X", "Y", "Z"] },
@@ -125,6 +128,7 @@ export const ARRAY_NODE: NodeDefinition = {
     const mode = String(instance?.params?.mode || "linear");
     const fields: ParamFieldDef[] = [
       { id: "mode", label: "Mode", kind: "select", options: ["linear", "circular", "grid", "grid3d", "curve"], group: "Pattern & Grid" },
+      { id: "seed", label: "Random Pick Seed", kind: "number", step: 1, group: "Variety" },
     ];
 
     if (mode === "linear") {
@@ -178,7 +182,22 @@ export const ARRAY_NODE: NodeDefinition = {
     group.clear();
 
     const source = inputs.geometry instanceof THREE.Object3D ? inputs.geometry : null;
-    if (!source) return { geometry: group };
+    const pool = Array.isArray(inputs.geometries)
+      ? (inputs.geometries.filter((g) => g instanceof THREE.Object3D) as THREE.Object3D[])
+      : null;
+    if (!source && (!pool || pool.length === 0)) return { geometry: group };
+
+    // Deterministic per-index pick — same hash construct as the spacing
+    // jitter above, so re-evaluating the same graph always reproduces the
+    // same variety instead of reshuffling every frame.
+    const pickSeed = Number(params.seed) || 0;
+    const pickSource = (i: number): THREE.Object3D | null => {
+      if (pool && pool.length > 0) {
+        const h = fract(Math.sin((i + pickSeed * 1000) * 12.9898) * 43758.5453);
+        return pool[Math.floor(h * pool.length) % pool.length];
+      }
+      return source;
+    };
 
     const mode = String(params.mode || "linear");
 
@@ -197,7 +216,9 @@ export const ARRAY_NODE: NodeDefinition = {
 
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
-          const clone = source.clone(true);
+          const itemSource = pickSource(r * cols + c);
+          if (!itemSource) continue;
+          const clone = itemSource.clone(true);
           const instanceMatrix = new THREE.Matrix4();
           const pos = new THREE.Vector3();
 
@@ -240,7 +261,9 @@ export const ARRAY_NODE: NodeDefinition = {
       for (let ix = 0; ix < cX; ix++) {
         for (let iy = 0; iy < cY; iy++) {
           for (let iz = 0; iz < cZ; iz++) {
-            const clone = source.clone(true);
+            const itemSource = pickSource((ix * cY + iy) * cZ + iz);
+            if (!itemSource) continue;
+            const clone = itemSource.clone(true);
             const instanceMatrix = new THREE.Matrix4();
             const pos = new THREE.Vector3(xOffsets[ix], yOffsets[iy], zOffsets[iz]);
 
@@ -298,7 +321,9 @@ export const ARRAY_NODE: NodeDefinition = {
     }
 
     for (let i = 0; i < count; i++) {
-      const clone = source.clone(true);
+      const itemSource = pickSource(i);
+      if (!itemSource) continue;
+      const clone = itemSource.clone(true);
 
       const instanceMatrix = new THREE.Matrix4();
       const pos = new THREE.Vector3();

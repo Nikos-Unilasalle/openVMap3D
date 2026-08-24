@@ -2,7 +2,16 @@ import { open as dialogOpen, save as dialogSave } from "@tauri-apps/plugin-dialo
 import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import { DEFAULT_REGISTRY } from "./nodes";
 import { pruneDanglingConnections } from "./pruneConnections";
-import { CANVAS_COUNT, Graph, NodeRegistry, normalizeCanvases, Project } from "./types";
+import { CANVAS_COUNT, Graph, Marker, NodeRegistry, normalizeCanvases, Project } from "./types";
+
+/**
+ * Markers were saved as bare frame numbers before labels existed
+ * ([[types.ts]]'s Marker). Accept both shapes so an old .tsuji still loads.
+ */
+function normalizeMarkers(raw: unknown): Marker[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((m) => (typeof m === "number" ? { frame: m } : (m as Marker))).filter((m) => Number.isFinite(m?.frame));
+}
 
 export function ensureOvmExtension(filename: string): string {
   if (!filename) return "project_v1.tsuji";
@@ -62,7 +71,9 @@ function cleanGraph(graph: Graph): Graph {
       toSocket: c.toSocket,
     })),
     keyframes: graph.keyframes ? JSON.parse(JSON.stringify(graph.keyframes)) : {},
-    markers: Array.isArray(graph.markers) ? [...graph.markers] : [],
+    markers: Array.isArray(graph.markers)
+      ? graph.markers.map((m) => ({ frame: m.frame, ...(m.label ? { label: m.label } : {}) }))
+      : [],
     exposedParams: Array.isArray(graph.exposedParams)
       ? graph.exposedParams.map((e) => ({ nodeId: e.nodeId, paramId: e.paramId, ...(e.label ? { label: e.label } : {}) }))
       : [],
@@ -146,7 +157,7 @@ function adoptGraph(
       nodes: data.nodes as Graph["nodes"],
       connections: data.connections as Graph["connections"],
       keyframes: data.keyframes && typeof data.keyframes === "object" ? (data.keyframes as Graph["keyframes"]) : {},
-      markers: Array.isArray(data.markers) ? (data.markers as number[]) : [],
+      markers: normalizeMarkers(data.markers),
       exposedParams: Array.isArray(data.exposedParams) ? (data.exposedParams as Graph["exposedParams"]) : [],
     },
     registry,

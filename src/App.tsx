@@ -4,6 +4,9 @@ import { CAMERA_FLY_TO_NODE, CAMERA_NODE } from "./shared/graph/nodes/camera";
 import { DEFAULT_REGISTRY } from "./shared/graph/nodes";
 import { toBoolean } from "./shared/graph/sockets";
 import { BAKE_INSTANCES_ACTION, bakeInstancesToGeometryData } from "./shared/graph/nodes/particleInstances";
+import { TOGGLE_POINTS_KEYFRAME_ACTION } from "./shared/graph/nodes/curve";
+import { RESEED_MESH_POINTS_ACTION } from "./shared/graph/nodes/editMeshPoints";
+import { extractPointsFromMesh } from "./shared/graph/nodes/pointsGeometry";
 import { OBJECT_FROZEN_NODE } from "./shared/graph/nodes/frozenGeometry";
 import { randomId } from "./shared/randomId";
 import { findRenderNodeId } from "./shared/graph/nodes/render";
@@ -30,6 +33,7 @@ import {
   isCanvasEmpty,
   Keyframe,
   KeyframeStore,
+  Marker,
   NodeInstance,
   normalizeCanvases,
   Project,
@@ -902,15 +906,31 @@ function MainEditor() {
     return () => window.removeEventListener("keydown", handleTab);
   }, [selectedNodeId, graph.nodes, onParamChange]);
 
-  /**
-   * Handles a "button" ParamFieldDef click (see ParamPanel's onAction). Only
-   * one action exists today: baking Particle Render (Instances)' live
-   * instances into a brand-new, detached "object/frozen" node — see
-   * bakeInstancesToGeometryData for why this needs a real node rather than
-   * changing the source node's own output.
-   */
+  /** Handles a "button" ParamFieldDef click (see ParamPanel's onAction). */
   const onParamAction = useCallback(
     (nodeId: string, action: string) => {
+      if (action === TOGGLE_POINTS_KEYFRAME_ACTION) {
+        const node = graph.nodes.find((n) => n.id === nodeId);
+        if (!node || currentFrame < 0) return;
+        onToggleKeyframe(nodeId, "pointsList", currentFrame, node.params.pointsList);
+        return;
+      }
+      if (action === RESEED_MESH_POINTS_ACTION) {
+        // The exact Basis object this node last resolved and rendered from —
+        // evaluate.ts stores every node's resolved inputs alongside its
+        // outputs precisely so a case like this can read back what a socket
+        // actually saw, without re-deriving it from the graph.
+        const inputs = evaluatedResults?.get(nodeId)?.__evaluatedInputs as Record<string, unknown> | undefined;
+        const basisObj = inputs?.basis;
+        if (!(basisObj instanceof THREE.Object3D)) {
+          console.warn("Edit Mesh Points: nothing wired into Basis yet.");
+          return;
+        }
+        const extracted = extractPointsFromMesh(basisObj, nodeId, "Edit Mesh Points");
+        if (!extracted) return;
+        onParamChange("pointsList", extracted.points, nodeId);
+        return;
+      }
       if (action !== BAKE_INSTANCES_ACTION) return;
       const data = bakeInstancesToGeometryData(nodeId);
       if (!data) {
@@ -929,7 +949,7 @@ function MainEditor() {
         return { ...prevGraph, nodes: [...prevGraph.nodes, newNode] };
       }, `bake:${nodeId}`);
     },
-    [setGraphWithHistory],
+    [setGraphWithHistory, graph.nodes, currentFrame, onToggleKeyframe, evaluatedResults, onParamChange],
   );
 
   // Same functional-updater reasoning as onParamChange, but writing all
@@ -1510,12 +1530,12 @@ function MainEditor() {
   const onToggleMarker = useCallback((frame: number) => {
     setGraphWithHistory((prevGraph) => {
       const currentMarkers = prevGraph.markers || [];
-      const idx = currentMarkers.indexOf(frame);
-      let nextMarkers: number[];
+      const idx = currentMarkers.findIndex((m) => m.frame === frame);
+      let nextMarkers: Marker[];
       if (idx >= 0) {
-        nextMarkers = currentMarkers.filter((m) => m !== frame);
+        nextMarkers = currentMarkers.filter((m) => m.frame !== frame);
       } else {
-        nextMarkers = [...currentMarkers, frame].sort((a, b) => a - b);
+        nextMarkers = [...currentMarkers, { frame }].sort((a, b) => a.frame - b.frame);
       }
       return { ...prevGraph, markers: nextMarkers };
     }, `marker:toggle:${frame}`);
@@ -1524,10 +1544,21 @@ function MainEditor() {
   const onMoveMarker = useCallback((oldFrame: number, newFrame: number) => {
     setGraphWithHistory((prevGraph) => {
       const currentMarkers = prevGraph.markers || [];
-      const filtered = currentMarkers.filter((m) => m !== oldFrame && m !== newFrame);
-      const nextMarkers = [...filtered, newFrame].sort((a, b) => a - b);
+      const moved = currentMarkers.find((m) => m.frame === oldFrame);
+      const filtered = currentMarkers.filter((m) => m.frame !== oldFrame && m.frame !== newFrame);
+      const nextMarkers = [...filtered, { ...moved, frame: newFrame }].sort((a, b) => a.frame - b.frame);
       return { ...prevGraph, markers: nextMarkers };
     }, `marker:move:${oldFrame}->${newFrame}`);
+  }, [setGraphWithHistory]);
+
+  const onRenameMarker = useCallback((frame: number, label: string) => {
+    setGraphWithHistory((prevGraph) => {
+      const currentMarkers = prevGraph.markers || [];
+      const nextMarkers = currentMarkers.map((m) =>
+        m.frame === frame ? { ...m, ...(label ? { label } : { label: undefined }) } : m,
+      );
+      return { ...prevGraph, markers: nextMarkers };
+    }, `marker:rename:${frame}`);
   }, [setGraphWithHistory]);
 
   return (
@@ -1648,6 +1679,7 @@ function MainEditor() {
             fps={exportFps}
             onToggleMarker={onToggleMarker}
             onMoveMarker={onMoveMarker}
+            onRenameMarker={onRenameMarker}
             onMoveKeyframe={onMoveKeyframe}
             onUpdateKeyframeEasing={onUpdateKeyframeEasing}
             onDeleteKeyframe={onDeleteKeyframe}
@@ -1683,6 +1715,7 @@ function MainEditor() {
           markers={graph.markers ?? []}
           onToggleMarker={onToggleMarker}
           onMoveMarker={onMoveMarker}
+          onRenameMarker={onRenameMarker}
           drawerHeight={timelineDrawerHeight}
           onDrawerHeightChange={setTimelineDrawerHeight}
           onSplitHandleMouseDown={onSplitHandleMouseDown}

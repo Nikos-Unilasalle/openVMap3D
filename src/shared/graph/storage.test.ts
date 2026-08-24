@@ -57,7 +57,7 @@ describe("storage utilities", () => {
             radius: [{ frame: 0, value: 1 }, { frame: 30, value: 5 }],
           },
         },
-        markers: [12, 45, 90],
+        markers: [{ frame: 12 }, { frame: 45, label: "Drop" }, { frame: 90 }],
         exposedParams: [{ nodeId: "1", paramId: "seconds", label: "Time (s)" }],
       };
 
@@ -122,7 +122,7 @@ describe("storage utilities", () => {
       nodes: [{ id: "b", type: "object/sphere", position: { x: 10, y: 20 }, params: {} }],
       connections: [],
       keyframes: {},
-      markers: [7],
+      markers: [{ frame: 7 }],
     };
 
     it("round-trips every canvas and which one was open", () => {
@@ -131,7 +131,7 @@ describe("storage utilities", () => {
       expect(restored.activeCanvas).toBe(1);
       expect(restored.canvases[0].nodes.map((n) => n.id)).toEqual(["a"]);
       expect(restored.canvases[1].nodes.map((n) => n.id)).toEqual(["b"]);
-      expect(restored.canvases[1].markers).toEqual([7]);
+      expect(restored.canvases[1].markers).toEqual([{ frame: 7 }]);
     });
 
     it("always writes and reads a full set of canvas slots", () => {

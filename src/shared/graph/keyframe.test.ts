@@ -142,6 +142,32 @@ describe("KEYFRAME ANIMATION SYSTEM", () => {
     expect(gentle).toBeLessThan(50);
   });
 
+  it("interpolates a curve's pointsList element-wise when both keyframes have the same point count", () => {
+    const v1 = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(10, 0, 0)];
+    const v2 = [new THREE.Vector3(0, 10, 0), new THREE.Vector3(10, 10, 0)];
+
+    const mid = interpolateValue(v1, v2, 0.5, "linear") as THREE.Vector3[];
+    expect(mid).toHaveLength(2);
+    expect(mid[0].y).toBeCloseTo(5);
+    expect(mid[1].y).toBeCloseTo(5);
+    expect(mid[1].x).toBeCloseTo(10);
+
+    // Plain {x,y,z} objects (what a saved .tsuji file round-trips pointsList
+    // as) interpolate the same way as real Vector3s.
+    const p1 = [{ x: 0, y: 0, z: 0 }];
+    const p2 = [{ x: 100, y: 0, z: 0 }];
+    const plainMid = interpolateValue(p1, p2, 0.5, "linear") as THREE.Vector3[];
+    expect(plainMid[0].x).toBeCloseTo(50);
+  });
+
+  it("falls back to a snap when pointsList keyframes disagree on point count", () => {
+    const v1 = [new THREE.Vector3(0, 0, 0)];
+    const v2 = [new THREE.Vector3(1, 1, 1), new THREE.Vector3(2, 2, 2)];
+
+    expect(interpolateValue(v1, v2, 0.25)).toBe(v1);
+    expect(interpolateValue(v1, v2, 0.75)).toBe(v2);
+  });
+
   it("each keyframe carries a single arrival easing that shapes its incoming segment", () => {
     const keyframes: KeyframeStore = {
       "node-1": {

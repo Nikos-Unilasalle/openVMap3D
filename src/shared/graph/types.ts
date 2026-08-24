@@ -117,6 +117,8 @@ export interface EvalContext {
    * `inputs` already carries every value. It exists to name a node.
    */
   inputSources?: ReadonlyMap<string, string>;
+  /** The graph's timeline markers — see the Marker node in nodes/marker.ts. */
+  markers?: Marker[];
 }
 
 /**
@@ -282,16 +284,22 @@ export interface ExposedParamRef {
   label?: string;
 }
 
+/** A timeline marker — a labeled point in time, à la After Effects layer markers. */
+export interface Marker {
+  frame: number;
+  label?: string;
+}
+
 export interface Graph {
   nodes: NodeInstance[];
   connections: Connection[];
   keyframes?: KeyframeStore;
-  markers?: number[];
+  markers?: Marker[];
   exposedParams?: ExposedParamRef[];
 }
 
 export function emptyGraph(): Graph {
-  return { nodes: [], connections: [], keyframes: {}, markers: [], exposedParams: [] };
+  return { nodes: [], connections: [], keyframes: {}, markers: [] as Marker[], exposedParams: [] };
 }
 
 /**

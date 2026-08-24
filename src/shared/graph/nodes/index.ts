@@ -6,10 +6,12 @@ import { DECOMPOSE_MATRIX_NODE, LOOK_AT_NODE, MATRIX_TRANSFORM_NODE, PARENT_NODE
 import { CLAMP_NODE, MAP_RANGE_NODE, VALUE_CONSTANT_NODE, VALUE_MATH_NODE } from "./valueMath";
 import { MERGE_NODE } from "./merge";
 import { OBJECT_BAR_GRAPH_NODE, OBJECT_BOX_NODE, OBJECT_CONE_NODE, OBJECT_CYLINDER_NODE, OBJECT_DISC_NODE, OBJECT_EMPTY_NODE, OBJECT_PLANE_NODE, OBJECT_SPHERE_NODE, OBJECT_TEXT_NODE } from "./object";
+import { EDIT_MESH_POINTS_NODE } from "./editMeshPoints";
 import { CHART_AXIS_NODE, LINE_GRAPH_NODE, PIE_CHART_NODE, POINT_CLOUD_NODE, SCATTER_PLOT_NODE } from "./chart";
 import { CANVAS_GOTO_NODE } from "./canvas";
 import { RENDER_NODE } from "./render";
 import { FRAME_NODE, TIME_NODE } from "./time";
+import { MARKER_NODE } from "./marker";
 import { VECTOR_COMPOSE_NODE, VECTOR_DECOMPOSE_NODE, VECTOR_MATH_NODE } from "./vector";
 import { DISTANCE_NODE, PROXIMITY_OBJECT_NODE } from "./distance";
 import { BOOLEAN_LOGIC_NODE, COMPARE_NODE, GATE_NODE, LOGIC_BRIDGE_NODE, TOGGLE_NODE, TRIGGER_NODE } from "./logic";
@@ -51,6 +53,7 @@ import {
   TEXT_TRIM_NODE,
 } from "./text";
 import {
+  POSTPROCESS_AMBIENT_OCCLUSION_NODE,
   POSTPROCESS_ANTIALIAS_NODE,
   POSTPROCESS_BLOOM_NODE,
   POSTPROCESS_COLOR_CORRECTION_NODE,
@@ -71,6 +74,7 @@ import { CURVES_TO_LINES_NODE } from "./curvesToLines";
 import { CURVES_FROM_POINT_LISTS_NODE } from "./curveFromPointLists";
 import { CURVE_SUBDIVIDE_NODE } from "./curveSubdivide";
 import { CURVE_TO_POINTS_NODE } from "./curveToPoints";
+import { CURVE_SHAPE_KEY_NODE, MESH_SHAPE_KEY_NODE } from "./shapeKey";
 import { LATTICE_DEFORM_NODE } from "./lattice";
 import { BOOLEAN_NODE } from "./boolean";
 import { SUBDIVIDE_NODE } from "./subdivide";
@@ -98,6 +102,7 @@ export const STARTER_NODES = [
   REROUTE_NODE,
   TIME_NODE,
   FRAME_NODE,
+  MARKER_NODE,
   VALUE_CONSTANT_NODE,
   VALUE_MATH_NODE,
   CLAMP_NODE,
@@ -138,7 +143,10 @@ export const STARTER_NODES = [
   CURVES_TO_MESH_NODE,
   SAMPLE_CURVE_NODE,
   CURVE_DEFORM_NODE,
+  CURVE_SHAPE_KEY_NODE,
+  MESH_SHAPE_KEY_NODE,
   OBJECT_BOX_NODE,
+  EDIT_MESH_POINTS_NODE,
   OBJECT_EMPTY_NODE,
   OBJECT_PLANE_NODE,
   OBJECT_SPHERE_NODE,
@@ -230,6 +238,7 @@ export const STARTER_NODES = [
   POSTPROCESS_COLOR_CORRECTION_NODE,
   POSTPROCESS_ANTIALIAS_NODE,
   POSTPROCESS_FOG_NODE,
+  POSTPROCESS_AMBIENT_OCCLUSION_NODE,
   LIST_GROUP_NODE,
   SPAWN_NODE,
   CURVE_TO_LINE_NODE,
@@ -276,10 +285,12 @@ export const STARTER_NODES = [
 export const DEFAULT_REGISTRY = createRegistry(STARTER_NODES);
 
 export * from "./time";
+export * from "./marker";
 export * from "./valueMath";
 export * from "./vector";
 export * from "./transform";
 export * from "./object";
+export * from "./editMeshPoints";
 export * from "./chart";
 export * from "./render";
 export * from "./logic";
@@ -314,6 +325,7 @@ export * from "./listGroup";
 export * from "./spawn";
 export * from "./reroute";
 export * from "./curve";
+export * from "./shapeKey";
 export * from "./curveFromPointLists";
 export * from "./lattice";
 export * from "./subdivide";

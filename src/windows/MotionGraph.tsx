@@ -121,7 +121,14 @@ type DragState =
       startCenter: number;
       startScrollLeft: number;
       startX: number;
+    }
+  | {
+      kind: "scrub";
+      pointerId: number;
     };
+
+/** Playhead hit-test tolerance, in screen px either side of its exact x — wide enough to grab with the mouse, narrow enough to still leave the rest of the plot free for box-select. */
+const PLAYHEAD_HIT_PX = 5;
 
 /**
  * Motion graph — the keyframed parameters of the selected node(s) as editable
@@ -436,6 +443,14 @@ export const MotionGraph: React.FC<MotionGraphProps> = ({
       return;
     }
 
+    // Grabbing the playhead itself scrubs live as the mouse moves, not just
+    // on release — same gesture as the dope sheet's own playhead handle.
+    if (Math.abs(x - frameX(currentFrame)) <= PLAYHEAD_HIT_PX) {
+      onFrameChange(clamp(Math.round(x / pixelsPerFrame), 0, totalFrames));
+      setDrag({ kind: "scrub", pointerId: e.pointerId });
+      return;
+    }
+
     // Empty space: a plain drag boxes a selection, and a click that never moved
     // seeks the playhead (handled on release).
     setDrag({
@@ -483,6 +498,11 @@ export const MotionGraph: React.FC<MotionGraphProps> = ({
       if (scrollRef?.current) {
         scrollRef.current.scrollLeft = drag.startScrollLeft - (x - drag.startX);
       }
+      return;
+    }
+
+    if (drag.kind === "scrub") {
+      onFrameChange(clamp(Math.round(x / pixelsPerFrame), 0, totalFrames));
       return;
     }
   };

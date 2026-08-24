@@ -592,6 +592,19 @@
   background: #c084fc;
 }
 
+.timeline-marker-pin-label {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 9px;
+  font-family: monospace;
+  color: #c084fc;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+
 /* Grid Row Tracks */
 .timeline-grid-row-node {
   height: 28px;

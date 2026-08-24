@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CATEGORY_COLOR, UNKNOWN_CATEGORY_COLOR } from "../shared/graph/categories";
 import { isTimelineZone, setInputZone } from "../shared/graph/inputZoneStore";
-import { EasingType, Graph, NodeRegistry } from "../shared/graph/types";
+import { EasingType, Graph, Marker, NodeRegistry } from "../shared/graph/types";
 import {
   copyKeyframesToClipboard,
   formatParamValue,
@@ -60,9 +60,10 @@ export interface TimelineDrawerProps {
   onPasteKeyframes: (items: KeyframeClipboardItem[], targetBaseFrame: number) => void;
   /** The Render node's frame rate — what the timecode is counted in. */
   fps?: number;
-  markers?: number[];
+  markers?: Marker[];
   onToggleMarker?: (frame: number) => void;
   onMoveMarker?: (oldFrame: number, newFrame: number) => void;
+  onRenameMarker?: (frame: number, label: string) => void;
   evaluatedResults?: Map<string, Record<string, unknown>>;
   drawerHeight: number;
   onDrawerHeightChange: (height: number) => void;
@@ -131,6 +132,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
   markers = [],
   onToggleMarker,
   onMoveMarker: _onMoveMarker,
+  onRenameMarker,
   evaluatedResults,
   drawerHeight,
   onDrawerHeightChange,
@@ -1040,17 +1042,25 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
               })}
 
               {/* Project Markers */}
-              {markers.map((mFrame) => (
+              {markers.map((marker) => (
                 <div
-                  key={mFrame}
+                  key={marker.frame}
                   className="timeline-marker-pin"
-                  style={{ left: `${mFrame * pixelsPerFrame}px` }}
-                  title={`Marker at frame ${mFrame}`}
+                  style={{ left: `${marker.frame * pixelsPerFrame}px` }}
+                  title={`${marker.label ? `"${marker.label}" ` : ""}Marker at frame ${marker.frame} — double-click to label`}
                   onMouseDown={(e) => {
                     e.stopPropagation();
-                    onFrameChange(mFrame);
+                    onFrameChange(marker.frame);
                   }}
-                />
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    if (!onRenameMarker) return;
+                    const next = window.prompt("Marker label", marker.label ?? "");
+                    if (next !== null) onRenameMarker(marker.frame, next.trim());
+                  }}
+                >
+                  {marker.label && <span className="timeline-marker-pin-label">{marker.label}</span>}
+                </div>
               ))}
 
               {/* Playhead Red Cursor on Ruler */}

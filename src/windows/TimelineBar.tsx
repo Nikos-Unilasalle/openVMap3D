@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { EasingType } from "../shared/graph/types";
+import { EasingType, Marker } from "../shared/graph/types";
 import { setInputZone } from "../shared/graph/inputZoneStore";
 import { EasingPopover, EASING_STRENGTH_CONFIG } from "./EasingPopover";
 import { WaveformPeak, clipPixelRange, loadWaveformPeaks } from "./audioWaveform";
@@ -18,7 +18,7 @@ interface TimelineBarProps {
   isPlaying: boolean;
   keyframesEnabled: boolean;
   selectedKeyframes?: Record<number, KeyframeDataAtFrame>;
-  markers?: number[];
+  markers?: Marker[];
   waveformUrl?: string;
   /** Where the audio clip starts on the timeline, and how long it runs. */
   waveformStartFrame?: number;
@@ -26,6 +26,7 @@ interface TimelineBarProps {
   fps?: number;
   onToggleMarker?: (frame: number) => void;
   onMoveMarker?: (oldFrame: number, newFrame: number) => void;
+  onRenameMarker?: (frame: number, label: string) => void;
   onMoveKeyframe?: (oldFrame: number, newFrame: number) => void;
   onUpdateKeyframeEasing?: (frame: number, easeIn: EasingType, easeStrength?: number, easeBezier?: [number, number, number, number]) => void;
   onDeleteKeyframe?: (frame: number) => void;
@@ -163,6 +164,7 @@ export function TimelineBar({
   fps,
   onToggleMarker,
   onMoveMarker,
+  onRenameMarker,
   onMoveKeyframe,
   onUpdateKeyframeEasing,
   onDeleteKeyframe,
@@ -468,7 +470,8 @@ export function TimelineBar({
           {/* Visual markers */}
           {keyframesEnabled &&
             totalFrames > 0 &&
-            markers.map((markerFrame) => {
+            markers.map((marker) => {
+              const markerFrame = marker.frame;
               const displayFrame =
                 dragMarkerState && dragMarkerState.oldFrame === markerFrame
                   ? dragMarkerState.dragFrame
@@ -487,7 +490,13 @@ export function TimelineBar({
                   onMouseEnter={() => setHoveredMarkerFrame(markerFrame)}
                   onMouseLeave={() => setHoveredMarkerFrame((h) => (h === markerFrame ? null : h))}
                   onMouseDown={(e) => handleMarkerMouseDown(e, markerFrame)}
-                  title={`Marker (Frame ${displayFrame}) - Press 'm' on hover to delete, or drag to move`}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    if (!onRenameMarker) return;
+                    const next = window.prompt("Marker label", marker.label ?? "");
+                    if (next !== null) onRenameMarker(markerFrame, next.trim());
+                  }}
+                  title={`${marker.label ? `"${marker.label}" ` : ""}Marker (Frame ${displayFrame}) - Press 'm' on hover to delete, drag to move, double-click to label`}
                 />
               );
             })}

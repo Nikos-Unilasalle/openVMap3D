@@ -25,7 +25,7 @@ import { findCompatibleSocket, segmentIntersectsRect } from "../shared/graph/ins
 import { isGraphZone, setInputZone } from "../shared/graph/inputZoneStore";
 import { randomId } from "../shared/randomId";
 import { SOCKET_COLOR } from "../shared/graph/sockets";
-import { Connection, ExposedParamRef, Graph, KeyframeStore, NodeInstance, NodeRegistry } from "../shared/graph/types";
+import { Connection, ExposedParamRef, Graph, KeyframeStore, Marker, NodeInstance, NodeRegistry } from "../shared/graph/types";
 import { GraphNode, GraphNodeData } from "./GraphNode";
 import { NodePalette } from "./NodePalette";
 import { QuickAddToolbar } from "./QuickAddToolbar";
@@ -157,7 +157,7 @@ function toGraph(
   flowNodes: Node<GraphNodeData>[],
   flowEdges: Edge[],
   existingKeyframes?: KeyframeStore,
-  existingMarkers?: number[],
+  existingMarkers?: Marker[],
   existingExposedParams?: ExposedParamRef[],
 ): Graph {
   const flowNodeIds = new Set(flowNodes.map((f) => f.id));
@@ -924,6 +924,7 @@ function GraphEditorContent({
       connections: [...graph.connections, ...newConnections],
       keyframes: nextKeyframes,
       markers: graph.markers,
+      exposedParams: graph.exposedParams,
     };
 
     setNodes(nextFlowNodes);

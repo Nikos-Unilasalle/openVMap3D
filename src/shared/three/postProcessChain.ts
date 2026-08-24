@@ -9,6 +9,7 @@ import { RGBShiftShader } from "three/examples/jsm/shaders/RGBShiftShader.js";
 import { FilmPass } from "three/examples/jsm/postprocessing/FilmPass.js";
 import { GlitchPass } from "three/examples/jsm/postprocessing/GlitchPass.js";
 import { OutlinePass } from "three/examples/jsm/postprocessing/OutlinePass.js";
+import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
 import { BokehPass } from "three/examples/jsm/postprocessing/BokehPass.js";
 import { FXAAPass } from "three/examples/jsm/postprocessing/FXAAPass.js";
 import { ColorCorrectionShader } from "three/examples/jsm/shaders/ColorCorrectionShader.js";
@@ -66,6 +67,14 @@ function instantiatePass(
       return new BokehPass(scene, camera, { focus: 10.0, aperture: 0.025, maxblur: 0.01 });
     case "outline":
       return new OutlinePass(new THREE.Vector2(width, height), scene, camera);
+    case "ao":
+      // `output` is set per-frame in configurePass from the node's View
+      // param — GTAOPass.OUTPUT.Default is the only mode that actually
+      // multiplies AO onto the scene (copies the frame through, then blends
+      // the AO term on top); every other mode, "Denoise" included despite
+      // sounding like the finished result, replaces the frame with a flat
+      // grayscale AO map instead of compositing it.
+      return new GTAOPass(scene, camera, width, height);
     case "film-grain":
       return new FilmPass(0.35, false);
     case "glitch":
@@ -134,6 +143,20 @@ function configurePass(
         });
         pass.selectedObjects = meshes;
       }
+      break;
+    }
+    case "ao": {
+      const view = String(cfg.params.view || "multiply");
+      pass.output =
+        view === "off" ? GTAOPass.OUTPUT.Off : view === "ao-only" ? GTAOPass.OUTPUT.AO : GTAOPass.OUTPUT.Default;
+      pass.blendIntensity = Number(cfg.params.blendIntensity) ?? 1.0;
+      pass.updateGtaoMaterial({
+        radius: Number(cfg.params.radius) ?? 0.25,
+        distanceExponent: Number(cfg.params.distanceExponent) ?? 1.0,
+        thickness: Number(cfg.params.thickness) ?? 1.0,
+        samples: Math.max(1, Math.round(Number(cfg.params.samples) || 16)),
+        screenSpaceRadius: Boolean(cfg.params.screenSpaceRadius),
+      });
       break;
     }
     case "film-grain": {

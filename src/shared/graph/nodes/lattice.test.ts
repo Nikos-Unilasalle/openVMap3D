@@ -178,6 +178,55 @@ describe("LATTICE DEFORM NODE", () => {
       expect(points[i].z).toBeCloseTo(posAttr.getZ(i));
     }
   });
+
+  it("outputs cagePoints matching pointsList's count, in lattice-local space, for Points Influence to paint on", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
+    const res = LATTICE_DEFORM_NODE.evaluate({ geometry: box }, LATTICE_DEFORM_NODE.defaultParams, CTX);
+    const cagePoints = res.cagePoints as THREE.Vector3[];
+    expect(cagePoints).toHaveLength(2 * 2 * 2); // default subdivisions
+  });
+
+  it("a per-point influence of 0 leaves that control point undeformed, while others still deform fully", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1, 4, 4, 4), new THREE.MeshStandardMaterial());
+    const params = { ...LATTICE_DEFORM_NODE.defaultParams, twist: 45 };
+
+    const fullyDeformed = LATTICE_DEFORM_NODE.evaluate({ geometry: box }, params, CTX);
+    const fullCage = fullyDeformed.cagePoints as THREE.Vector3[];
+
+    // Twist pivots from the h=-0.5 face (zero rotation there), so the point
+    // to zero out is the opposite, h=+0.5 corner — index 7 of a 2x2x2 grid
+    // (i=1,j=1,k=1) — where twist's rotation is actually nonzero.
+    const targetIdx = fullCage.length - 1;
+    const zeroedLast = new Array(fullCage.length).fill(1);
+    zeroedLast[targetIdx] = 0;
+    const partial = LATTICE_DEFORM_NODE.evaluate({ geometry: box, pointInfluence: zeroedLast }, params, CTX);
+    const partialCage = partial.cagePoints as THREE.Vector3[];
+
+    // The zeroed point stayed at (a very close approximation of) its undeformed base position...
+    const base = defaultLatticePoints(2, 2, 2, 2, 2, 2)[targetIdx];
+    expect(partialCage[targetIdx].distanceTo(base)).toBeLessThan(1e-6);
+    // ...while the same point in the fully-deformed pass moved (twist rotated it).
+    expect(fullCage[targetIdx].distanceTo(base)).toBeGreaterThan(1e-3);
+    // Every other point still deformed exactly as before — only the target was dialled down.
+    for (let i = 0; i < fullCage.length; i++) {
+      if (i === targetIdx) continue;
+      expect(partialCage[i].distanceTo(fullCage[i])).toBeLessThan(1e-6);
+    }
+  });
+
+  it("no pointInfluence wired behaves exactly as before — full deformation everywhere", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1, 4, 4, 4), new THREE.MeshStandardMaterial());
+    const params = { ...LATTICE_DEFORM_NODE.defaultParams, twist: 30 };
+    const withoutInfluence = LATTICE_DEFORM_NODE.evaluate({ geometry: box }, params, CTX);
+    const withFullInfluence = LATTICE_DEFORM_NODE.evaluate(
+      { geometry: box, pointInfluence: new Array(8).fill(1) },
+      params,
+      CTX,
+    );
+    const a = withoutInfluence.cagePoints as THREE.Vector3[];
+    const b = withFullInfluence.cagePoints as THREE.Vector3[];
+    for (let i = 0; i < a.length; i++) expect(a[i].distanceTo(b[i])).toBeLessThan(1e-9);
+  });
 });
 
 describe("LATTICE_DEFORM_NODE source transform tracking", () => {

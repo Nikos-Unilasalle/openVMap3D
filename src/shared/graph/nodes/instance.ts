@@ -172,6 +172,11 @@ export const SET_INSTANCE_COLOR_NODE: NodeDefinition = {
     { id: "colors", label: "Colors", type: "list" },
     { id: "color", label: "Default Color", type: "color" },
     INSTANCE_INDEX_INPUT,
+    // Same 1-based id-list targeting as Instance Transform — see its own
+    // input for the full rationale. Takes priority over `index` when
+    // non-empty; each targeted instance still pulls its own colour from
+    // `colors` by its own array index, not one shared item.
+    { id: "ids", label: "Target IDs (List, 1-based)", type: "list" },
   ],
   outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
   defaultParams: { color: new THREE.Color(0xffffff), index: ALL_INSTANCES },
@@ -190,19 +195,30 @@ export const SET_INSTANCE_COLOR_NODE: NodeDefinition = {
     const colorsList = Array.isArray(inputs.colors) ? inputs.colors : [];
     const defaultColor = asColor(inputs.color, asColor(params.color, new THREE.Color(0xffffff)));
     const targetIndex = resolveTargetIndex(inputs.index, params.index);
+    const targetIdsInput = Array.isArray(inputs.ids) ? inputs.ids : [];
+    const targetIdSet = targetIdsInput.length > 0
+      ? new Set(
+          targetIdsInput
+            .map((v) => Math.floor(Number(v)) - 1)
+            .filter((n) => Number.isFinite(n) && n >= 0),
+        )
+      : null;
+    // Own-index colour lookup in ids-list mode, same as ALL_INSTANCES —
+    // never the "one shared item" a lone scalar `index` broadcasts.
+    const listIndex = targetIdSet ? ALL_INSTANCES : targetIndex;
     const materialCache = getMaterialCache(ctx.nodeId);
     const liveMaterialKeys = new Set<string>();
 
     instances.forEach((instance, i) => {
       const clone = cloneInstance(instance);
 
-      if (!isTargeted(i, targetIndex)) {
+      if (!(targetIdSet ? targetIdSet.has(i) : isTargeted(i, targetIndex))) {
         group.add(clone);
         return;
       }
 
-      const colorItem = targetIndex >= 0
-        ? (colorsList.length === 1 ? colorsList[0] : colorsList[targetIndex % (colorsList.length || 1)])
+      const colorItem = listIndex >= 0
+        ? (colorsList.length === 1 ? colorsList[0] : colorsList[listIndex % (colorsList.length || 1)])
         : colorsList[i % (colorsList.length || 1)];
 
       const targetColor = colorsList.length > 0
@@ -295,6 +311,13 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
     { id: "scaleY", label: "Scale Y", type: "any" },
     { id: "scaleZ", label: "Scale Z", type: "any" },
     INSTANCE_INDEX_INPUT,
+    // 1-based like the label says — instance 1 is array index 0 — matching
+    // how a human counts instances, not how the group's children array is
+    // indexed. Takes priority over `index` when non-empty: targets exactly
+    // this set, each still pulling its *own* position/rotation/scale/matrix
+    // from the list inputs (same per-instance lookup ALL_INSTANCES already
+    // uses), not the one shared item a lone `index` broadcasts to its target.
+    { id: "ids", label: "Target IDs (List, 1-based)", type: "list" },
   ],
   outputs: [{ id: "geometry", label: "Geometry", type: "geometry" }],
   defaultParams: {
@@ -382,16 +405,31 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
 
     const targetIndex = resolveTargetIndex(inputs.index, params.index);
 
+    const targetIdsInput = Array.isArray(inputs.ids) ? inputs.ids : [];
+    const targetIdSet = targetIdsInput.length > 0
+      ? new Set(
+          targetIdsInput
+            .map((v) => Math.floor(Number(v)) - 1)
+            .filter((n) => Number.isFinite(n) && n >= 0),
+        )
+      : null;
+    // List items (position/rotation/scale/matrix) are always looked up by
+    // each instance's own array index in ids-list mode — the same
+    // ALL_INSTANCES lookup below, just restricted to the targeted subset —
+    // never the "one shared item, broadcast to a lone target" behavior a
+    // scalar `index` gets.
+    const listIndex = targetIdSet ? ALL_INSTANCES : targetIndex;
+
     instances.forEach((instance, i) => {
       const clone = cloneInstance(instance);
 
-      if (!isTargeted(i, targetIndex)) {
+      if (!(targetIdSet ? targetIdSet.has(i) : isTargeted(i, targetIndex))) {
         group.add(clone);
         return;
       }
 
-      const matItem = targetIndex >= 0 && matricesList.length > 0
-        ? (matricesList.length === 1 ? matricesList[0] : matricesList[targetIndex % matricesList.length])
+      const matItem = listIndex >= 0 && matricesList.length > 0
+        ? (matricesList.length === 1 ? matricesList[0] : matricesList[listIndex % matricesList.length])
         : matricesList[i];
 
       // Check matrix override
@@ -412,33 +450,33 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
         }
       } else {
         // Base vectors from vector list or origin/identity
-        const posItem = targetIndex >= 0 && positionsList.length > 0
-          ? (positionsList.length === 1 ? positionsList[0] : positionsList[targetIndex % positionsList.length])
+        const posItem = listIndex >= 0 && positionsList.length > 0
+          ? (positionsList.length === 1 ? positionsList[0] : positionsList[listIndex % positionsList.length])
           : positionsList[i];
         const basePos = posItem !== undefined
           ? asVector(posItem, new THREE.Vector3(0, 0, 0))
           : new THREE.Vector3(0, 0, 0);
 
         const posOffset = new THREE.Vector3(
-          resolveScalarOrListItem(wired("posX"), i, targetIndex, basePos.x + paramPX),
-          resolveScalarOrListItem(wired("posY"), i, targetIndex, basePos.y + paramPY),
-          resolveScalarOrListItem(wired("posZ"), i, targetIndex, basePos.z + paramPZ),
+          resolveScalarOrListItem(wired("posX"), i, listIndex, basePos.x + paramPX),
+          resolveScalarOrListItem(wired("posY"), i, listIndex, basePos.y + paramPY),
+          resolveScalarOrListItem(wired("posZ"), i, listIndex, basePos.z + paramPZ),
         );
 
         // Rotation — either Euler angles in degrees, or (rotationMode = "align")
         // a per-instance world direction that the chosen axis is rotated to point
         // along (normals list → disc facing the surface, for example). Wiring a
         // Target overrides the direction list: each instance faces the target.
-        const rotItem = targetIndex >= 0 && rotationsList.length > 0
-          ? (rotationsList.length === 1 ? rotationsList[0] : rotationsList[targetIndex % rotationsList.length])
+        const rotItem = listIndex >= 0 && rotationsList.length > 0
+          ? (rotationsList.length === 1 ? rotationsList[0] : rotationsList[listIndex % rotationsList.length])
           : rotationsList[i];
         const baseRot = rotItem !== undefined
           ? asVector(rotItem, new THREE.Vector3(0, 0, 0))
           : new THREE.Vector3(0, 0, 0);
 
-        const rotX = resolveScalarOrListItem(wired("rotX"), i, targetIndex, paramRX);
-        const rotY = resolveScalarOrListItem(wired("rotY"), i, targetIndex, paramRY);
-        const rotZ = resolveScalarOrListItem(wired("rotZ"), i, targetIndex, paramRZ);
+        const rotX = resolveScalarOrListItem(wired("rotX"), i, listIndex, paramRX);
+        const rotY = resolveScalarOrListItem(wired("rotY"), i, listIndex, paramRY);
+        const rotZ = resolveScalarOrListItem(wired("rotZ"), i, listIndex, paramRZ);
 
         const align = String(params.rotationMode || "euler") === "align" || targetPosition !== null;
         const RAD = Math.PI / 180;
@@ -476,9 +514,9 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
           }
         } else {
           const rotOffset = new THREE.Vector3(
-            resolveScalarOrListItem(wired("rotX"), i, targetIndex, baseRot.x + paramRX),
-            resolveScalarOrListItem(wired("rotY"), i, targetIndex, baseRot.y + paramRY),
-            resolveScalarOrListItem(wired("rotZ"), i, targetIndex, baseRot.z + paramRZ),
+            resolveScalarOrListItem(wired("rotX"), i, listIndex, baseRot.x + paramRX),
+            resolveScalarOrListItem(wired("rotY"), i, listIndex, baseRot.y + paramRY),
+            resolveScalarOrListItem(wired("rotZ"), i, listIndex, baseRot.z + paramRZ),
           );
           quat = new THREE.Quaternion().setFromEuler(
             new THREE.Euler((rotOffset.x * RAD), (rotOffset.y * RAD), (rotOffset.z * RAD)),
@@ -486,17 +524,17 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
         }
 
         // Scale
-        const scaleItem = targetIndex >= 0 && scalesList.length > 0
-          ? (scalesList.length === 1 ? scalesList[0] : scalesList[targetIndex % scalesList.length])
+        const scaleItem = listIndex >= 0 && scalesList.length > 0
+          ? (scalesList.length === 1 ? scalesList[0] : scalesList[listIndex % scalesList.length])
           : scalesList[i];
         const baseScale = scaleItem !== undefined
           ? asVector(scaleItem, new THREE.Vector3(1, 1, 1))
           : new THREE.Vector3(1, 1, 1);
 
         const scaleVal = new THREE.Vector3(
-          resolveScalarOrListItem(wired("scaleX"), i, targetIndex, baseScale.x * paramSX),
-          resolveScalarOrListItem(wired("scaleY"), i, targetIndex, baseScale.y * paramSY),
-          resolveScalarOrListItem(wired("scaleZ"), i, targetIndex, baseScale.z * paramSZ),
+          resolveScalarOrListItem(wired("scaleX"), i, listIndex, baseScale.x * paramSX),
+          resolveScalarOrListItem(wired("scaleY"), i, listIndex, baseScale.y * paramSY),
+          resolveScalarOrListItem(wired("scaleZ"), i, listIndex, baseScale.z * paramSZ),
         );
 
         const deltaMat = new THREE.Matrix4();

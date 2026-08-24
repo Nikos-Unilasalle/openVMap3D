@@ -276,4 +276,51 @@ describe("ARRAY_NODE spacing variance for every mode", () => {
       }
     }
   });
+
+  it("picks a random geometry per instance when a Geometries list is wired", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    box.name = "box";
+    const sphere = new THREE.Mesh(new THREE.SphereGeometry(1));
+    sphere.name = "sphere";
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(1));
+    cone.name = "cone";
+
+    const res = ARRAY_NODE.evaluate(
+      { geometries: [box, sphere, cone], count: 12 },
+      { count: 12, mode: "linear", spacing: 2.0, seed: 1 },
+      CTX,
+    );
+
+    const group = res.geometry as THREE.Group;
+    expect(group.children.length).toBe(12);
+    const names = group.children.map((wrapper) => (wrapper.children[0] as THREE.Mesh).name);
+    // Picks from the pool, not the same item every time.
+    expect(new Set(names).size).toBeGreaterThan(1);
+    for (const n of names) expect(["box", "sphere", "cone"]).toContain(n);
+  });
+
+  it("random pick is deterministic — same seed reproduces the same sequence", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    box.name = "box";
+    const sphere = new THREE.Mesh(new THREE.SphereGeometry(1));
+    sphere.name = "sphere";
+
+    const evalOnce = () => {
+      const res = ARRAY_NODE.evaluate(
+        { geometries: [box, sphere] },
+        { count: 8, mode: "linear", seed: 42 },
+        CTX,
+      );
+      return (res.geometry as THREE.Group).children.map((w) => (w.children[0] as THREE.Mesh).name);
+    };
+
+    expect(evalOnce()).toEqual(evalOnce());
+  });
+
+  it("falls back to the single Geometry input when no list is wired", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const res = ARRAY_NODE.evaluate({ geometry: box }, { count: 3, mode: "linear" }, CTX);
+    const group = res.geometry as THREE.Group;
+    expect(group.children.length).toBe(3);
+  });
 });

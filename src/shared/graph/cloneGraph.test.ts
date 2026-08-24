@@ -95,7 +95,7 @@ describe("cloneGraph", () => {
           ],
         },
       },
-      markers: [0, 30, 60],
+      markers: [{ frame: 0 }, { frame: 30 }, { frame: 60, label: "Highlight" }],
       exposedParams: [{ nodeId: "a", paramId: "rotation", label: "Spin" }],
     };
 
@@ -104,16 +104,17 @@ describe("cloneGraph", () => {
     expect(cloned.keyframes?.a?.["rotation.x"]).toHaveLength(2);
     expect(cloned.keyframes?.a?.["rotation.x"][0].value).toBe(0);
     expect(cloned.keyframes?.a?.["rotation.x"][0].easeIn).toBe("smooth");
-    expect(cloned.markers).toEqual([0, 30, 60]);
+    expect(cloned.markers).toEqual([{ frame: 0 }, { frame: 30 }, { frame: 60, label: "Highlight" }]);
     expect(cloned.exposedParams).toEqual([{ nodeId: "a", paramId: "rotation", label: "Spin" }]);
 
     // Mutation of cloned should not affect original
     cloned.keyframes!.a["rotation.x"][0].frame = 99;
-    cloned.markers!.push(120);
+    cloned.markers!.push({ frame: 120 });
+    cloned.markers![0].label = "Renamed";
     cloned.exposedParams![0].label = "Changed";
 
     expect(graph.keyframes!.a["rotation.x"][0].frame).toBe(0);
-    expect(graph.markers).toEqual([0, 30, 60]);
+    expect(graph.markers).toEqual([{ frame: 0 }, { frame: 30 }, { frame: 60, label: "Highlight" }]);
     expect(graph.exposedParams![0].label).toBe("Spin");
   });
 

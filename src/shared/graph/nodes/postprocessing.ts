@@ -380,6 +380,74 @@ export const POSTPROCESS_ANTIALIAS_NODE: NodeDefinition = {
   },
 };
 
+/**
+ * Ambient Occlusion (GTAO) Post-Processing Node.
+ *
+ * Ground-Truth Ambient Occlusion — darkens crevices, corners and contact
+ * points between meshes to fake the light they'd lose to nearby geometry,
+ * same technique as threejs.org's webgl_postprocessing_gtao example. Reads
+ * scene depth/normals, so it costs more than Bloom/Vignette; Samples trades
+ * quality for that cost directly.
+ *
+ * View defaults to "multiply" — the AO term composited onto the render via
+ * `mix(1, ao, blendIntensity)` under GL multiply blending (see
+ * postProcessChain.ts's GTAOPass.OUTPUT.Default), the only one of GTAOPass's
+ * OUTPUT modes that actually blends onto the scene; every other mode
+ * (including "Denoise", easy to reach for since it sounds like the finished
+ * result) *replaces* the frame with a flat grayscale AO map. "ao-only" and
+ * "off" exist for debugging the effect itself, not for normal use.
+ */
+export const POSTPROCESS_AMBIENT_OCCLUSION_NODE: NodeDefinition = {
+  type: "postprocess/ambient-occlusion",
+  label: "Ambient Occlusion",
+  category: "postprocess",
+  inputs: [
+    { id: "effect", label: "Post-Process", type: "postprocess" },
+    { id: "radius", label: "Radius", type: "value" },
+    { id: "blendIntensity", label: "Blend Intensity", type: "value" },
+    { id: "thickness", label: "Thickness", type: "value" },
+    { id: "samples", label: "Samples", type: "value" },
+  ],
+  outputs: [{ id: "effect", label: "Post-Process", type: "postprocess" }],
+  defaultParams: {
+    radius: 0.25,
+    blendIntensity: 1.0,
+    thickness: 1.0,
+    distanceExponent: 1.0,
+    samples: 16,
+    screenSpaceRadius: false,
+    view: "multiply",
+  },
+  paramFields: [
+    { id: "view", label: "View", kind: "select", options: ["multiply", "ao-only", "off"] },
+    { id: "radius", label: "Radius", kind: "number", step: 0.05 },
+    // Not "intensity" — that id auto-groups under ParamPanel's Light Settings
+    // bucket (see getGroupName), which reads wrong for a postprocess effect.
+    { id: "blendIntensity", label: "Blend Intensity", kind: "number", step: 0.1 },
+    { id: "thickness", label: "Thickness", kind: "number", step: 0.1 },
+    { id: "distanceExponent", label: "Distance Exponent", kind: "number", step: 0.1 },
+    { id: "samples", label: "Samples", kind: "number", step: 1 },
+    { id: "screenSpaceRadius", label: "Screen-Space Radius (for far shots)", kind: "boolean" },
+  ],
+  evaluate: (inputs, params, ctx) => {
+    const radius = Math.max(0.001, numberInput(inputs.radius, params.radius, 0.25));
+    const blendIntensity = Math.max(0, numberInput(inputs.blendIntensity, params.blendIntensity, 1.0));
+    const thickness = Math.max(0, numberInput(inputs.thickness, params.thickness, 1.0));
+    const distanceExponent = Math.max(0.1, numberInput(undefined, params.distanceExponent, 1.0));
+    const samples = Math.max(1, Math.round(numberInput(inputs.samples, params.samples, 16)));
+    const screenSpaceRadius = toBoolean(params.screenSpaceRadius ?? 0);
+    const view = ["multiply", "ao-only", "off"].includes(String(params.view)) ? String(params.view) : "multiply";
+
+    const effectList = accumulateEffect(inputs, {
+      type: "ao",
+      nodeId: ctx.nodeId,
+      params: { radius, blendIntensity, thickness, distanceExponent, samples, screenSpaceRadius, view },
+    });
+
+    return { effect: effectList };
+  },
+};
+
 /** Fog & Atmospheric Post-Processing Node */
 export const POSTPROCESS_FOG_NODE: NodeDefinition = {
   type: "postprocess/fog",

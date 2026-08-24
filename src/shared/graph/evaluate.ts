@@ -167,6 +167,14 @@ export function interpolateValue(
     return new THREE.Color().lerpColors(c1, c2, ease);
   }
 
+  // Curve control points (a node's `pointsList` param) — element-wise lerp
+  // when both keyframes have the same point count. A point added/removed
+  // between the two keyframes can't be smoothly matched up, so that case
+  // keeps the snap fallback below.
+  if (Array.isArray(v1) && Array.isArray(v2) && v1.length === v2.length && v1.length > 0) {
+    return v1.map((p1, i) => interpolateValue(p1, v2[i], t, easing, strength, bezier));
+  }
+
   return ease >= 0.5 ? v2 : v1;
 }
 
@@ -204,6 +212,7 @@ function cloneKeyframeValue(value: any): any {
   if (value instanceof THREE.Color) return value.clone();
   if (value instanceof THREE.Euler) return value.clone();
   if (value instanceof THREE.Quaternion) return value.clone();
+  if (Array.isArray(value)) return value.map(cloneKeyframeValue);
   return value;
 }
 
@@ -493,7 +502,14 @@ export function evaluateGraph(graph: Graph, registry: NodeRegistry, ctx: EvalCon
     }
 
     try {
-      const outputs = def.evaluate(inputs, params, { ...ctx, nodeId, connectedInputs, inputSources }) || {};
+      const outputs =
+        def.evaluate(inputs, params, {
+          ...ctx,
+          nodeId,
+          connectedInputs,
+          inputSources,
+          markers: ctx.markers || graph.markers,
+        }) || {};
       applyVisibility(outputs.geometry, inputs[VISIBILITY_SOCKET]);
       results.set(nodeId, {
         ...outputs,

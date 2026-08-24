@@ -562,6 +562,14 @@ export const LATTICE_DEFORM_NODE: NodeDefinition = {
     { id: "visible", label: "Visible", type: "value" },
     { id: "matrix", label: "Matrix", type: "matrix" },
     { id: "strength", label: "Influence", type: "value" },
+    // One 0-1 weight per cage control point (index-aligned with `pointsList`
+    // / the `cagePoints` output below) — a Points Influence node painted on
+    // the cage lets an operator dial deformation strength down over just
+    // part of the lattice, the way the scalar Influence above can only do
+    // uniformly. A point with no entry (list shorter than the grid, or
+    // nothing wired) defaults to full influence, same "missing = 1" the
+    // FFD's own strength blend already uses.
+    { id: "pointInfluence", label: "Per-Point Influence (List)", type: "list" },
     { id: "points", label: "Points List", type: "list" },
     { id: "bulge", label: "Bulge", type: "value" },
     { id: "twist", label: "Twist (°)", type: "value" },
@@ -580,6 +588,13 @@ export const LATTICE_DEFORM_NODE: NodeDefinition = {
     // Points to Mesh, without an extra Mesh to Points node in between (and
     // without that extra node re-doing work this one already did).
     { id: "points", label: "Points (Local)", type: "list" },
+    // The cage's own (deformed) control points, in lattice-local space —
+    // paired with `matrix` above, this is what a Points Influence node wires
+    // into (its own `points` + `matrix` inputs) to paint per-point weight
+    // back into `pointInfluence`. The cage's `geometry` output can't feed
+    // Points Influence's mesh shortcut directly — it's LineSegments, not a
+    // Mesh — so this is the explicit list form instead.
+    { id: "cagePoints", label: "Cage Points (Local)", type: "list" },
   ],
   defaultParams: {
     visible: 1,
@@ -692,6 +707,33 @@ export const LATTICE_DEFORM_NODE: NodeDefinition = {
     // 1. Build Lattice Control Points Grid in local space
     const grid = buildLatticeControlPoints(config, basePoints);
 
+    // Per-point influence (from a Points Influence node painted on
+    // `cagePoints`): blend each control point back toward its own
+    // undeformed base position by however much influence it's missing —
+    // the same "0 = untouched, 1 = full effect" blend the scalar `strength`
+    // above already does globally, just per point instead. A point past the
+    // end of the list (or nothing wired) keeps full influence, so wiring
+    // nothing here behaves exactly as before this input existed.
+    const pointInfluence = Array.isArray(inputs.pointInfluence) ? inputs.pointInfluence.map(Number) : null;
+    const cagePoints: THREE.Vector3[] = [];
+    if (pointInfluence) {
+      let flatIndex = 0;
+      for (let i = 0; i < grid.length; i++) {
+        for (let j = 0; j < grid[i].length; j++) {
+          for (let k = 0; k < grid[i][j].length; k++) {
+            const infl = Math.max(0, Math.min(1, pointInfluence[flatIndex] ?? 1));
+            if (infl < 1) grid[i][j][k].lerp(basePoints[flatIndex] ?? grid[i][j][k], 1 - infl);
+            cagePoints.push(grid[i][j][k].clone());
+            flatIndex++;
+          }
+        }
+      }
+    } else {
+      for (let i = 0; i < grid.length; i++)
+        for (let j = 0; j < grid[i].length; j++)
+          for (let k = 0; k < grid[i][j].length; k++) cagePoints.push(grid[i][j][k].clone());
+    }
+
     // Initialize root container group
     if (!state.group) {
       state.group = new THREE.Group();
@@ -742,6 +784,7 @@ export const LATTICE_DEFORM_NODE: NodeDefinition = {
       return {
         ...primitiveOutputs(state.group),
         cage: state.cageLines,
+        cagePoints,
       };
     }
 
@@ -752,6 +795,7 @@ export const LATTICE_DEFORM_NODE: NodeDefinition = {
       warnMeshRequired(ctx.nodeId, "Lattice Deform", inputObj);
       return {
         ...primitiveOutputs(inputObj),
+        cagePoints,
         cage: state.cageLines,
       };
     }
@@ -852,6 +896,7 @@ export const LATTICE_DEFORM_NODE: NodeDefinition = {
       ...primitiveOutputs(state.group),
       cage: state.cageLines,
       points,
+      cagePoints,
     };
   },
 };

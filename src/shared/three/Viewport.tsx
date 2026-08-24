@@ -13,6 +13,7 @@ import { resolveSceneRoots } from "../graph/sceneRoots";
 import { insertCurvePointAfter, removeCurvePoint } from "../graph/curvePoints";
 import { GizmoTarget, resolveGizmoTarget } from "../graph/transformLookup";
 import { PIVOT_TRANSFORM_NODE } from "../graph/nodes/transform";
+import { VISUAL_SLICE_NODE } from "../graph/nodes/visualSlice";
 import { createCurvePointHandles } from "./curveHandles";
 import { createPointCloudHandles } from "./pointCloudHandles";
 import { createSceneMembership, isSelfOrDescendantOf } from "./sceneMembership";
@@ -22,6 +23,7 @@ import {
   latticeEvaluatedPoints,
 } from "../graph/nodes/lattice";
 import { POINTS_SELECTION_NODE } from "../graph/nodes/pointsSelection";
+import { EDIT_MESH_POINTS_NODE } from "../graph/nodes/editMeshPoints";
 import { POINTS_INFLUENCE_NODE, POINTS_INFLUENCE_DISCRETE_LEVELS, PointsInfluenceMode } from "../graph/nodes/pointsInfluence";
 import { createPostProcessChain } from "./postProcessChain";
 import { computeGizmoWriteback, TransformGizmoMode, TransformPatch } from "./gizmoWriteback";
@@ -78,6 +80,16 @@ let nextSessionOrdinal = 0;
 
 /** At 60fps, one second of grace before an undecodable HUD image is given up on. */
 const MAX_CAPTURE_WAIT_TICKS = 60;
+
+/**
+ * Edit Mesh Points reuses curveHandles — one draggable THREE.Mesh per point —
+ * which is exactly right at a curve's handful of control points and
+ * "catastrophic" (see pointCloudHandles.ts) at real mesh vertex counts. Past
+ * this many points the handles are skipped rather than hanging the viewport;
+ * a low-poly primitive (a Box, a coarse Sphere) stays well under it.
+ */
+const EDIT_MESH_POINTS_HANDLE_CAP = 2000;
+let editMeshPointsCapWarned = false;
 
 const exportImageCache = new Map<string, HTMLImageElement>();
 function getExportImage(url: string): HTMLImageElement | null {
@@ -890,11 +902,44 @@ export function Viewport({
     const pivotHandle = createCurvePointHandles();
     let pivotHandleNodeId: string | null = null;
 
+    // Visual Slice's plane isn't a mesh's pose — it has no location/
+    // rotation/scale of its own for resolveGizmoTarget's "native" case to
+    // find (its own `geometry` output is just the upstream mesh passed
+    // through untouched, clipped). It gets the same "own draggable proxy,
+    // not the normal gizmo" treatment as Pivot Transform's pivot marker
+    // above, except this one needs full translate *and* rotate (a plane is
+    // a point plus a normal direction), so it rides the real
+    // TransformControls via the pickedCurveHandle path below rather than
+    // pivotHandle's position-only marker. A translucent quad, rather than
+    // pivotHandle's bare point, so the plane's current orientation is
+    // visible before you start dragging it.
+    const SLICE_NORMAL_AXIS = new THREE.Vector3(0, 1, 0); // matches DEFAULT_NORMAL in visualSlice.ts
+    const sliceProxy = new THREE.Object3D();
+    const sliceVisualGeometry = new THREE.PlaneGeometry(3, 3);
+    const sliceVisual = new THREE.Mesh(
+      sliceVisualGeometry,
+      new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false }),
+    );
+    // PlaneGeometry faces +Z by default; rotate so the *unrotated* proxy
+    // faces +Y, matching DEFAULT_NORMAL — then sliceProxy.quaternion alone
+    // (set from SLICE_NORMAL_AXIS -> the plane's actual normal below) is the
+    // complete story of the visual's orientation.
+    sliceVisual.rotation.x = -Math.PI / 2;
+    const sliceVisualEdges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(sliceVisualGeometry),
+      new THREE.LineBasicMaterial({ color: 0x38bdf8 }),
+    );
+    sliceVisualEdges.rotation.copy(sliceVisual.rotation);
+    sliceProxy.add(sliceVisual, sliceVisualEdges);
+    sliceProxy.visible = false;
+    let sliceProxyNodeId: string | null = null;
+
     if (!outputMode) {
       editorUiScene.add(curveHandles.group);
       editorUiScene.add(pointsSelectionHandles.group);
       editorUiScene.add(pointsInfluenceHandles.group);
       editorUiScene.add(pivotHandle.group);
+      editorUiScene.add(sliceProxy);
     }
     // Refreshed every tick() — the 'objectChange' listener needs the
     // *current* base matrix for an "offset" target (see below), and this is
@@ -956,6 +1001,10 @@ export function Viewport({
       if (selectedPointIndices.size === 0 || !curvePointsNodeId) return false;
       const node = graphRef.current.nodes.find((n) => n.id === curvePointsNodeId);
       if (!node || !onTransformChangeRef.current) return false;
+      // Fixed topology: every pointsList entry has to keep lining up with the
+      // source mesh's own vertex index for writePointsToMesh's write-back to
+      // mean anything — unlike a curve, there is no legal insert/remove here.
+      if (node.type === EDIT_MESH_POINTS_NODE.type) return false;
 
       const index = Array.from(selectedPointIndices)[0];
       const nextPoints =
@@ -1107,6 +1156,15 @@ export function Viewport({
         // same handle factory, so its one marker carries that same flag.
         if (object === pivotHandle.handleAt(0) && pivotHandleNodeId && onTransformChangeRef.current) {
           onTransformChangeRef.current(pivotHandleNodeId, { pivot: object.position.clone() });
+          return;
+        }
+
+        // Visual Slice's plane proxy: translate moves `point`, rotate turns
+        // `direction` (derived from the proxy's current orientation either
+        // way, since only one of the two actually changed this drag).
+        if (object === sliceProxy && sliceProxyNodeId && onTransformChangeRef.current) {
+          const direction = SLICE_NORMAL_AXIS.clone().applyQuaternion(object.quaternion).normalize();
+          onTransformChangeRef.current(sliceProxyNodeId, { point: object.position.clone(), direction });
           return;
         }
 
@@ -2082,7 +2140,16 @@ export function Viewport({
             asVector3(p, new THREE.Vector3()),
           );
 
-      if (curveTarget && curveNode && curvePoints.length >= 2) {
+      const isEditMeshPointsNode = curveNode?.type === EDIT_MESH_POINTS_NODE.type;
+      const overMeshPointsCap = isEditMeshPointsNode && curvePoints.length > EDIT_MESH_POINTS_HANDLE_CAP;
+      if (overMeshPointsCap && !editMeshPointsCapWarned) {
+        editMeshPointsCapWarned = true;
+        console.warn(
+          `Edit Mesh Points: ${curvePoints.length} vertices is too many for draggable handles (cap ${EDIT_MESH_POINTS_HANDLE_CAP}) — showing no handles for this node. Use it on lower-poly meshes.`,
+        );
+      }
+
+      if (curveTarget && curveNode && curvePoints.length >= 2 && !overMeshPointsCap) {
         if (curvePointsNodeId !== curveNode.id) {
           curvePointsNodeId = curveNode.id;
           selectedPointIndices.clear();
@@ -2108,8 +2175,10 @@ export function Viewport({
             transformControls.object?.userData?.isCurveCentroidHandle);
         const frozenIndices = isDraggingHandle ? selectedPointIndices : null;
         // Curve-from-points draws its own dark-gray curve via a geometry output
-        // (see curve.ts), so skip the straight control-polygon line here.
-        const hideStraightLine = isLatticeNode || curveNode?.type === "curve/from_points";
+        // (see curve.ts), so skip the straight control-polygon line here. A
+        // mesh's vertex-buffer order isn't a path either — a line through it
+        // would zigzag across the mesh rather than trace anything meaningful.
+        const hideStraightLine = isLatticeNode || curveNode?.type === "curve/from_points" || isEditMeshPointsNode;
         curveHandles.sync(curvePoints, spaceMatrix, selectedPointIndices, frozenIndices, !hideStraightLine, camera, host.clientHeight);
       } else if (curveHandles.count() > 0) {
         curveHandles.clear();
@@ -2207,6 +2276,26 @@ export function Viewport({
         pivotHandleNodeId = null;
       }
 
+      // Visual Slice's plane proxy — see its declaration above for why this
+      // can't ride resolveGizmoTarget's normal object-pose path.
+      if (!outputMode && selectedNodeForPivot?.type === VISUAL_SLICE_NODE.type) {
+        sliceProxyNodeId = selectedNodeForPivot.id;
+        sliceProxy.visible = true;
+        // Not synced from params while a drag is live — that would fight
+        // the drag itself with the pre-drag pose every frame.
+        if (!transformControls?.dragging || transformControls.object !== sliceProxy) {
+          const point = asVector3(selectedNodeForPivot.params.point, new THREE.Vector3());
+          const direction = asVector3(selectedNodeForPivot.params.direction, SLICE_NORMAL_AXIS.clone());
+          if (direction.lengthSq() < 1e-12) direction.copy(SLICE_NORMAL_AXIS);
+          direction.normalize();
+          sliceProxy.position.copy(point);
+          sliceProxy.quaternion.setFromUnitVectors(SLICE_NORMAL_AXIS, direction);
+        }
+      } else if (sliceProxyNodeId) {
+        sliceProxy.visible = false;
+        sliceProxyNodeId = null;
+      }
+
       // Move/rotate/scale gizmo: attach to selected mesh, Empty, Light,
       // to the picked control point / multi-point centroid proxy, or to the
       // pivot marker when a Pivot Transform is selected
@@ -2219,6 +2308,8 @@ export function Viewport({
           pickedCurveHandle = curveHandles.getCentroidHandle();
         } else if (pivotHandleNodeId) {
           pickedCurveHandle = pivotHandle.handleAt(0);
+        } else if (sliceProxyNodeId) {
+          pickedCurveHandle = sliceProxy;
         }
       }
 
@@ -2582,6 +2673,11 @@ export function Viewport({
       pointsSelectionHandles.clear();
       pointsInfluenceHandles.clear();
       pivotHandle.clear();
+      sliceProxy.removeFromParent();
+      sliceVisualGeometry.dispose();
+      sliceVisual.material.dispose();
+      sliceVisualEdges.geometry.dispose();
+      sliceVisualEdges.material.dispose();
       controls.dispose();
       // Per-viewport editor furniture (grid/axes, corner gizmo, zoom-scrub
       // bar) is not part of the shared per-node caches — it is built fresh for

@@ -339,6 +339,77 @@ describe("INSTANCE MANIPULATION NODES", () => {
     expect(positionOf(group.children[2]).y).toBeCloseTo(0);
   });
 
+  it("SET_INSTANCE_TRANSFORM_NODE targets exactly the instances named by the 1-based ids list", () => {
+    // Arrange — a linear array of 4 boxes at x = 0, 2, 4, 6.
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const arrayRes = ARRAY_NODE.evaluate({ geometry: box }, { count: 4, spacing: 2 }, CTX);
+
+    // Act — lift instances 1 and 3 (1-based -> array indices 0 and 2), leave 2 and 4 alone.
+    const res = SET_INSTANCE_TRANSFORM_NODE.evaluate(
+      { geometry: arrayRes.geometry, ids: [1, 3] },
+      { posY: 5 },
+      CTX
+    );
+
+    const group = res.geometry as THREE.Group;
+    const yOf = (i: number) => {
+      const pos = new THREE.Vector3();
+      group.children[i].matrix.decompose(pos, new THREE.Quaternion(), new THREE.Vector3());
+      return pos.y;
+    };
+
+    expect(yOf(0)).toBeCloseTo(5);
+    expect(yOf(1)).toBeCloseTo(0);
+    expect(yOf(2)).toBeCloseTo(5);
+    expect(yOf(3)).toBeCloseTo(0);
+  });
+
+  it("SET_INSTANCE_TRANSFORM_NODE ids list: each targeted instance still pulls its own list item, not one shared item", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const arrayRes = ARRAY_NODE.evaluate({ geometry: box }, { count: 3, spacing: 2 }, CTX);
+
+    // Instances 1 and 3 targeted; posY has one entry per instance in the pack
+    // (own-index lookup), not one shared entry the way a scalar `index` cycles.
+    const res = SET_INSTANCE_TRANSFORM_NODE.evaluate(
+      { geometry: arrayRes.geometry, ids: [1, 3], posY: [10, 20, 30] },
+      {},
+      CTX
+    );
+
+    const group = res.geometry as THREE.Group;
+    const yOf = (i: number) => {
+      const pos = new THREE.Vector3();
+      group.children[i].matrix.decompose(pos, new THREE.Quaternion(), new THREE.Vector3());
+      return pos.y;
+    };
+
+    expect(yOf(0)).toBeCloseTo(10);
+    expect(yOf(1)).toBeCloseTo(0); // untargeted — untouched
+    expect(yOf(2)).toBeCloseTo(30);
+  });
+
+  it("SET_INSTANCE_TRANSFORM_NODE ids list takes priority over a wired scalar Index", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const arrayRes = ARRAY_NODE.evaluate({ geometry: box }, { count: 3, spacing: 2 }, CTX);
+
+    const res = SET_INSTANCE_TRANSFORM_NODE.evaluate(
+      { geometry: arrayRes.geometry, index: 0, ids: [2] },
+      { posY: 5 },
+      CTX
+    );
+
+    const group = res.geometry as THREE.Group;
+    const yOf = (i: number) => {
+      const pos = new THREE.Vector3();
+      group.children[i].matrix.decompose(pos, new THREE.Quaternion(), new THREE.Vector3());
+      return pos.y;
+    };
+
+    expect(yOf(0)).toBeCloseTo(0); // Index=0 alone would have lifted this one — ids wins instead
+    expect(yOf(1)).toBeCloseTo(5);
+    expect(yOf(2)).toBeCloseTo(0);
+  });
+
   it("SET_INSTANCE_COLOR_NODE colors only the instance named by the Index input", () => {
     const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0xffffff }));
     const arrayRes = ARRAY_NODE.evaluate({ geometry: box }, { count: 3, spacing: 2 }, CTX);
@@ -359,6 +430,56 @@ describe("INSTANCE MANIPULATION NODES", () => {
     expect(colorOf(2).g).toBe(0);
     expect(colorOf(0).g).toBe(1);
     expect(colorOf(1).g).toBe(1);
+  });
+
+  it("SET_INSTANCE_COLOR_NODE targets exactly the instances named by the 1-based ids list, each pulling its own colour", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0xffffff }));
+    const arrayRes = ARRAY_NODE.evaluate({ geometry: box }, { count: 3, spacing: 2 }, CTX);
+
+    const res = SET_INSTANCE_COLOR_NODE.evaluate(
+      {
+        geometry: arrayRes.geometry,
+        ids: [1, 3],
+        colors: [new THREE.Color(0xff0000), new THREE.Color(0x00ff00), new THREE.Color(0x0000ff)],
+      },
+      {},
+      CTX
+    );
+
+    const group = res.geometry as THREE.Group;
+    const colorOf = (i: number) => {
+      const mesh = (group.children[i] as THREE.Group).children[0] as THREE.Mesh;
+      return (mesh.material as THREE.MeshStandardMaterial).color;
+    };
+
+    expect(colorOf(0).r).toBe(1); // instance 1 -> own colors[0], red
+    expect(colorOf(0).g).toBe(0);
+    expect(colorOf(1).r).toBe(1); // instance 2 untargeted — default white, untouched
+    expect(colorOf(1).g).toBe(1);
+    expect(colorOf(1).b).toBe(1);
+    expect(colorOf(2).b).toBe(1); // instance 3 -> own colors[2], blue
+    expect(colorOf(2).r).toBe(0);
+  });
+
+  it("SET_INSTANCE_COLOR_NODE ids list takes priority over a wired scalar Index", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0xffffff }));
+    const arrayRes = ARRAY_NODE.evaluate({ geometry: box }, { count: 3, spacing: 2 }, CTX);
+
+    const res = SET_INSTANCE_COLOR_NODE.evaluate(
+      { geometry: arrayRes.geometry, index: 0, ids: [2], color: new THREE.Color(0xff0000) },
+      {},
+      CTX
+    );
+
+    const group = res.geometry as THREE.Group;
+    const colorOf = (i: number) => {
+      const mesh = (group.children[i] as THREE.Group).children[0] as THREE.Mesh;
+      return (mesh.material as THREE.MeshStandardMaterial).color;
+    };
+
+    expect(colorOf(0).g).toBe(1); // Index=0 alone would have painted this one — ids wins instead
+    expect(colorOf(1).g).toBe(0); // instance 2 (1-based id 2 -> array index 1) painted red
+    expect(colorOf(2).g).toBe(1);
   });
 
   it("SET_INSTANCE_TRANSFORM_NODE targets every instance when Index is -1 or unwired", () => {

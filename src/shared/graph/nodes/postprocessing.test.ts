@@ -14,6 +14,7 @@ import {
   POSTPROCESS_RGB_SHIFT_NODE,
   POSTPROCESS_VIGNETTE_NODE,
   POSTPROCESS_FOG_NODE,
+  POSTPROCESS_AMBIENT_OCCLUSION_NODE,
   PostProcessConfig,
 } from "./postprocessing";
 
@@ -133,5 +134,42 @@ describe("POST-PROCESSING NODES", () => {
     const effects = res.effect as PostProcessConfig[];
     expect(effects[0].type).toBe("antialias");
     expect(effects[0].params.enabled).toBe(true);
+  });
+
+  it("evaluates Ambient Occlusion node", () => {
+    const res = POSTPROCESS_AMBIENT_OCCLUSION_NODE.evaluate(
+      { radius: 0.5, blendIntensity: 2.0 },
+      { thickness: 1.0, distanceExponent: 1.0, samples: 32, screenSpaceRadius: 1 },
+      CTX,
+    );
+    const effects = res.effect as PostProcessConfig[];
+    expect(effects[0].type).toBe("ao");
+    expect(effects[0].params.radius).toBe(0.5);
+    expect(effects[0].params.blendIntensity).toBe(2.0);
+    expect(effects[0].params.samples).toBe(32);
+    expect(effects[0].params.screenSpaceRadius).toBe(true);
+  });
+
+  it("Ambient Occlusion falls back to defaults with no inputs wired", () => {
+    const res = POSTPROCESS_AMBIENT_OCCLUSION_NODE.evaluate({}, {}, CTX);
+    const effects = res.effect as PostProcessConfig[];
+    expect(effects[0].params.radius).toBe(0.25);
+    expect(effects[0].params.samples).toBe(16);
+    // Defaults to actually compositing onto the render, not replacing it —
+    // GTAOPass.OUTPUT.Denoise (an easy mistake — sounds like "the finished
+    // result") is a raw grayscale AO map with no blend at all.
+    expect(effects[0].params.view).toBe("multiply");
+  });
+
+  it("Ambient Occlusion View selects the debug/off modes when set", () => {
+    const res = POSTPROCESS_AMBIENT_OCCLUSION_NODE.evaluate({}, { view: "ao-only" }, CTX);
+    const effects = res.effect as PostProcessConfig[];
+    expect(effects[0].params.view).toBe("ao-only");
+  });
+
+  it("Ambient Occlusion View ignores a garbage param value and falls back to multiply", () => {
+    const res = POSTPROCESS_AMBIENT_OCCLUSION_NODE.evaluate({}, { view: "not-a-real-mode" }, CTX);
+    const effects = res.effect as PostProcessConfig[];
+    expect(effects[0].params.view).toBe("multiply");
   });
 });

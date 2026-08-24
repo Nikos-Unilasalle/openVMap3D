@@ -23,6 +23,9 @@ export interface TransformPatch {
   influences?: Record<number, number>;
   /** Points Influence's Discrete-mode armed level — written by its viewport HUD buttons. */
   activeLevel?: number;
+  /** Visual Slice's plane point/normal — written directly by its dedicated viewport proxy, not through computeGizmoWriteback (see Viewport.tsx). */
+  point?: THREE.Vector3;
+  direction?: THREE.Vector3;
 }
 
 export interface GizmoWritebackInput {
