@@ -948,3 +948,209 @@ export const TEXTURE_MIX_NODE: NodeDefinition = {
     return { texture: state.texture ?? null };
   },
 };
+
+interface PixelSpawnerState {
+  group?: THREE.Group;
+  materials?: THREE.Material[];
+  defaultBox?: THREE.Mesh;
+}
+
+const pixelSpawnerCache = createNodeCache<PixelSpawnerState>((s) => {
+  if (s.group) disposeObject3D(s.group);
+  s.materials?.forEach((m) => m.dispose());
+  s.defaultBox?.geometry.dispose();
+});
+
+function getPixelSpawnerState(nodeId: string): PixelSpawnerState {
+  let state = pixelSpawnerCache.get(nodeId);
+  if (!state) {
+    state = { group: new THREE.Group(), materials: [] };
+    pixelSpawnerCache.set(nodeId, state);
+  }
+  if (!state.group) state.group = new THREE.Group();
+  state.group.clear();
+  state.materials?.forEach((m) => m.dispose());
+  state.materials = [];
+  return state;
+}
+
+function cloneInstance(instance: THREE.Object3D): THREE.Object3D {
+  const clone = instance.clone(true);
+  clone.matrixAutoUpdate = instance.matrixAutoUpdate;
+  clone.matrix.copy(instance.matrix);
+  clone.matrixWorldNeedsUpdate = true;
+  return clone;
+}
+
+/**
+ * Texture Pixel Spawner node — spawns an instance geometry per pixel of an input texture.
+ * Each instance carries the RGB color of its corresponding pixel.
+ * Supports percentage density limiting (e.g., 50% = 1 in 2 pixels).
+ */
+export const TEXTURE_PIXEL_SPAWNER_NODE: NodeDefinition = {
+  type: "texture/pixel-spawner",
+  label: "Texture Pixel Spawner",
+  category: "instance",
+  inputs: [
+    { id: "texture", label: "Texture", type: "texture" },
+    { id: "geometry", label: "Instance Geometry", type: "geometry", owns: true },
+    { id: "density", label: "Density (%)", type: "value" },
+    { id: "scale", label: "Pixel Scale", type: "value" },
+  ],
+  outputs: [
+    { id: "geometry", label: "Geometry", type: "geometry" },
+    { id: "colors", label: "Colors", type: "list" },
+    { id: "positions", label: "Positions", type: "list" },
+    { id: "intensities", label: "Intensities", type: "list" },
+    { id: "count", label: "Count", type: "value" },
+  ],
+  defaultParams: {
+    density: 100,
+    maxResolution: 64,
+    gridWidth: 10,
+    gridHeight: 10,
+    instanceScale: 1.0,
+    orientation: "xy",
+    sampleMode: "uniform_step",
+    seed: 1,
+    skipAlpha: true,
+    alphaThreshold: 0.1,
+  },
+  dynamicParamFields: () => [
+    { id: "density", label: "Density (%)", kind: "number", step: 5 },
+    { id: "orientation", label: "Orientation", kind: "select", options: ["xy", "xz", "yz"] },
+    { id: "sampleMode", label: "Sample Mode", kind: "select", options: ["uniform_step", "random_seed"] },
+    { id: "seed", label: "Seed", kind: "number", step: 1 },
+    { id: "maxResolution", label: "Max Resolution (px)", kind: "number", step: 16 },
+    { id: "gridWidth", label: "Grid Width", kind: "number", step: 0.5 },
+    { id: "gridHeight", label: "Grid Height", kind: "number", step: 0.5 },
+    { id: "instanceScale", label: "Instance Scale", kind: "number", step: 0.1 },
+    { id: "skipAlpha", label: "Skip Transparent Pixels", kind: "boolean" },
+    { id: "alphaThreshold", label: "Alpha Cutoff", kind: "number", step: 0.05 },
+  ],
+  evaluate: (inputs, params, ctx) => {
+    const state = getPixelSpawnerState(ctx.nodeId);
+    const group = state.group!;
+
+    const texture = inputs.texture instanceof THREE.Texture ? inputs.texture : null;
+    if (!texture || !isDrawable(texture.image) || typeof document === "undefined") {
+      return { geometry: group, colors: [], positions: [], intensities: [], count: 0 };
+    }
+
+    // Default template box if no geometry is connected
+    if (!state.defaultBox) {
+      state.defaultBox = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0xffffff }));
+    }
+
+    const template = inputs.geometry instanceof THREE.Object3D ? inputs.geometry : state.defaultBox;
+
+    const maxRes = Math.max(8, Math.min(256, Math.round(Number(params.maxResolution) || 64)));
+    const canvas = document.createElement("canvas");
+    drawSourceToCanvas(canvas, texture, maxRes);
+    const ctx2d = canvas.getContext("2d");
+    if (!ctx2d) return { geometry: group, colors: [], positions: [], intensities: [], count: 0 };
+
+    const imgData = ctx2d.getImageData(0, 0, maxRes, maxRes);
+    const data = imgData.data;
+
+    const rawDensity = inputs.density !== undefined ? Number(inputs.density) : Number(params.density);
+    const density = Math.max(0, Math.min(100, Number.isFinite(rawDensity) ? rawDensity : 100));
+
+    if (density <= 0) return { geometry: group, colors: [], positions: [], intensities: [], count: 0 };
+
+    const gridW = Math.max(0.1, Number(params.gridWidth) || 10);
+    const gridH = Math.max(0.1, Number(params.gridHeight) || 10);
+    const userScale = inputs.scale !== undefined ? Number(inputs.scale) : Number(params.instanceScale) || 1.0;
+    const sampleMode = String(params.sampleMode || "uniform_step");
+    const orientation = String(params.orientation || "xy").toLowerCase();
+    const skipAlpha = Boolean(params.skipAlpha ?? true);
+    const alphaCutoff = Math.max(0, Math.min(1, Number(params.alphaThreshold) ?? 0.1));
+
+    const step = sampleMode === "uniform_step" && density < 100 ? Math.max(1, Math.round(100 / density)) : 1;
+    const prng = mulberry32(Number(params.seed) || 1);
+
+    const cellW = (gridW / maxRes) * userScale;
+    const cellH = (gridH / maxRes) * userScale;
+
+    const colors: THREE.Color[] = [];
+    const positions: THREE.Vector3[] = [];
+    const intensities: number[] = [];
+
+    let pixelCounter = 0;
+
+    for (let y = 0; y < maxRes; y++) {
+      for (let x = 0; x < maxRes; x++) {
+        pixelCounter++;
+
+        if (sampleMode === "uniform_step") {
+          if (step > 1 && pixelCounter % step !== 0) continue;
+        } else {
+          if (density < 100 && prng() > density / 100) continue;
+        }
+
+        const i = (y * maxRes + x) * 4;
+        const a = data[i + 3] / 255;
+
+        if (skipAlpha && a < alphaCutoff) continue;
+
+        const r = data[i] / 255;
+        const g = data[i + 1] / 255;
+        const b = data[i + 2] / 255;
+
+        const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+
+        const u = (x + 0.5) / maxRes;
+        const v = 1.0 - (y + 0.5) / maxRes;
+
+        const p1 = (u - 0.5) * gridW;
+        const p2 = (v - 0.5) * gridH;
+
+        let pos: THREE.Vector3;
+        let matScale: THREE.Matrix4;
+
+        if (orientation === "xz") {
+          pos = new THREE.Vector3(p1, 0, p2);
+          matScale = new THREE.Matrix4().makeScale(cellW, cellW, cellH);
+        } else if (orientation === "yz") {
+          pos = new THREE.Vector3(0, p2, p1);
+          matScale = new THREE.Matrix4().makeScale(cellW, cellH, cellW);
+        } else {
+          pos = new THREE.Vector3(p1, p2, 0);
+          matScale = new THREE.Matrix4().makeScale(cellW, cellH, cellW);
+        }
+
+        const color = new THREE.Color(r, g, b);
+
+        const clone = template.clone(true);
+
+        clone.traverse((child) => {
+          if (child instanceof THREE.Mesh && child.material) {
+            const mat = (child.material as THREE.Material).clone();
+            if ("color" in mat) {
+              (mat as THREE.MeshStandardMaterial).color.copy(color);
+            }
+            state.materials!.push(mat);
+            child.material = mat;
+          }
+        });
+
+        const instanceMatrix = new THREE.Matrix4();
+        const matPos = new THREE.Matrix4().setPosition(pos);
+        instanceMatrix.copy(matPos.multiply(matScale));
+
+        const wrapper = new THREE.Group();
+        wrapper.matrixAutoUpdate = false;
+        wrapper.matrix.copy(instanceMatrix);
+        wrapper.add(clone);
+
+        group.add(wrapper);
+        colors.push(color);
+        positions.push(pos);
+        intensities.push(luminance);
+      }
+    }
+
+    return { geometry: group, colors, positions, intensities, count: colors.length };
+  },
+};
+

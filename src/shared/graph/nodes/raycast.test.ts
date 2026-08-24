@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { RAYCAST_NODE, RAY_BURST_NODE, SAMPLE_SURFACE_NODE } from "./raycast";
+import { RAYCAST_NODE, RAY_BURST_NODE, SAMPLE_SURFACE_NODE, VOLUME_SCATTER_NODE } from "./raycast";
+import { CURVE_FROM_POINTS_NODE } from "./curve";
 import { initBvhRaycast } from "../../three/bvh";
 import { deserializeGraph } from "../storage";
 import { DEFAULT_REGISTRY } from "./index";
@@ -188,6 +189,52 @@ describe("SAMPLE_SURFACE_NODE", () => {
     expect((res.points as unknown[]).length).toBe(0);
   });
 });
+
+describe("VOLUME_SCATTER_NODE", () => {
+  it("returns count points and normals inside a mesh volume", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2));
+    box.updateMatrixWorld(true);
+    const res = VOLUME_SCATTER_NODE.evaluate(
+      { geometry: box, count: 40, seed: 7 },
+      VOLUME_SCATTER_NODE.defaultParams,
+      { nodeId: "vol_sample_1" } as any,
+    );
+    const points = res.points as THREE.Vector3[];
+    expect(points.length).toBe(40);
+    expect((res.normals as THREE.Vector3[]).length).toBe(40);
+    for (const p of points) {
+      expect(Math.abs(p.x)).toBeLessThanOrEqual(1.0001);
+      expect(Math.abs(p.y)).toBeLessThanOrEqual(1.0001);
+      expect(Math.abs(p.z)).toBeLessThanOrEqual(1.0001);
+    }
+  });
+
+  it("degrades gracefully without a target", () => {
+    const res = VOLUME_SCATTER_NODE.evaluate({}, VOLUME_SCATTER_NODE.defaultParams, { nodeId: "vol_sample_2" } as any);
+    expect((res.points as unknown[]).length).toBe(0);
+  });
+
+  it("produces valid points that feed into Curve from Points", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2));
+    box.updateMatrixWorld(true);
+    const volRes = VOLUME_SCATTER_NODE.evaluate(
+      { geometry: box, count: 10, seed: 1 },
+      VOLUME_SCATTER_NODE.defaultParams,
+      { nodeId: "vol_1" } as any,
+    );
+    const curveRes = CURVE_FROM_POINTS_NODE.evaluate(
+      { points: volRes.points },
+      CURVE_FROM_POINTS_NODE.defaultParams,
+      { nodeId: "curve_1" } as any,
+    );
+    expect(curveRes.curve).toBeDefined();
+    expect(curveRes.geometry).toBeDefined();
+    const line = curveRes.geometry as THREE.Line;
+    const posAttr = line.geometry.attributes.position as THREE.BufferAttribute;
+    expect(posAttr.count).toBeGreaterThan(0);
+  });
+});
+
 
 describe.skipIf(!existsSync("demos/demo_raycast.tsuji"))("demo_raycast.tsuji", () => {
   it("loads and evaluates the ray-burst demo graph", () => {

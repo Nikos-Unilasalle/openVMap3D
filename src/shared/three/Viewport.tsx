@@ -1658,9 +1658,23 @@ export function Viewport({
     }
 
     snapSelectedCameraToEditorRef.current = () => {
-      if (!selectedNodeIdRef.current || !onTransformChangeRef.current) return;
-      const targetNode = graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current);
-      if (!targetNode || targetNode.type !== CAMERA_NODE.type) return;
+      if (!onTransformChangeRef.current) return;
+
+      // Target selected camera node if selected, otherwise find the active or first camera node in graph
+      let targetNode = selectedNodeIdRef.current
+        ? graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current && n.type === CAMERA_NODE.type)
+        : undefined;
+
+      if (!targetNode) {
+        const cameraNodes = graphRef.current.nodes.filter((n) => n.type === CAMERA_NODE.type);
+        if (cameraNodes.length === 0) return;
+
+        targetNode =
+          cameraNodes.find((n) => {
+            const res = latestResultsRef.current?.get(n.id);
+            return res && (res.active === 1 || res.active === true);
+          }) || cameraNodes[0];
+      }
 
       activeCamera.updateMatrixWorld(true);
       const mat = activeCamera.matrixWorld;
@@ -1682,12 +1696,20 @@ export function Viewport({
         euler.z,
       );
 
+      const targetPos = controls.target.clone();
+      const target = new THREE.Vector3(
+        Math.round(targetPos.x * 100) / 100,
+        Math.round(targetPos.y * 100) / 100,
+        Math.round(targetPos.z * 100) / 100,
+      );
+
       const fov = activeCamera instanceof THREE.PerspectiveCamera ? Math.round(activeCamera.fov) : undefined;
 
-      const patch: Record<string, unknown> = { location, rotation };
+      onTransformStartRef.current?.();
+      const patch: Record<string, unknown> = { location, rotation, target };
       if (fov !== undefined) patch.fov = fov;
 
-      onTransformChangeRef.current(selectedNodeIdRef.current, patch);
+      onTransformChangeRef.current(targetNode.id, patch);
     };
 
     // A copied-in projection matrix stays copied in until something rebuilds
@@ -2832,22 +2854,21 @@ export function Viewport({
       {/* Top-Left Viewport HUD & Controls — editor-only, never shown in the output window */}
       {!outputMode && (
         <div className="viewport-hud">
-          {selectedNodeId &&
-            graph.nodes.find((n) => n.id === selectedNodeId)?.type === CAMERA_NODE.type && (
-              <button
-                type="button"
-                className="viewport-hud-button viewport-hud-button-active"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "#38bdf8",
-                  backgroundColor: "rgba(56, 189, 248, 0.15)",
-                  borderColor: "#38bdf8",
-                }}
-                onClick={() => snapSelectedCameraToEditorRef.current?.()}
-                title="Align selected camera to 3D editor view"
-              >
+          {graph.nodes.some((n) => n.type === CAMERA_NODE.type) && (
+            <button
+              type="button"
+              className="viewport-hud-button viewport-hud-button-active"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#38bdf8",
+                backgroundColor: "rgba(56, 189, 248, 0.15)",
+                borderColor: "#38bdf8",
+              }}
+              onClick={() => snapSelectedCameraToEditorRef.current?.()}
+              title="Aligner la caméra active sur la vue 3D actuelle (Align Active Camera to 3D View)"
+            >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
                   <circle cx="12" cy="13" r="4" />

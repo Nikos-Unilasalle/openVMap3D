@@ -86,81 +86,159 @@ export const GENERATE_LIST_NODE: NodeDefinition = {
 };
 
 const LIST_OPS = [
-  "multiply",
   "add",
   "subtract",
+  "multiply",
   "divide",
+  "min",
+  "max",
   "power",
-  "abs",
+  "mod",
   "clamp",
+  "abs",
   "remap_01",
   "reverse",
   "sort_asc",
   "sort_desc",
 ];
 
-/** List Math node — performs element-wise scalar operations or transformations on a list of numerical values. */
+function toNumericList(val: unknown): number[] {
+  if (Array.isArray(val)) {
+    return val.map((x) => Number(x) || 0);
+  }
+  if (val !== undefined && val !== null) {
+    const num = Number(val);
+    if (!isNaN(num)) return [num];
+  }
+  return [];
+}
+
+/** List Math node — performs math operations or transformations between two lists (A and B) or a list with factor and offset. */
 export const LIST_MATH_NODE: NodeDefinition = {
   type: "list/math",
   label: "List Math",
   category: "list",
   inputs: [
-    { id: "list", label: "List", type: "list" },
+    { id: "a", label: "A", type: "list" },
+    { id: "b", label: "B", type: "list" },
     { id: "factor", label: "Factor", type: "value" },
     { id: "offset", label: "Offset", type: "value" },
   ],
   outputs: [{ id: "list", label: "List", type: "list" }],
-  defaultParams: { op: "multiply", factor: 1, offset: 0 },
+  defaultParams: { op: "add", b: 0, factor: 1, offset: 0 },
   paramFields: [
     { id: "op", label: "Operation", kind: "select", options: LIST_OPS },
+    { id: "b", label: "B (fallback)", kind: "number", step: 0.1 },
     { id: "factor", label: "Factor", kind: "number", step: 0.1 },
     { id: "offset", label: "Offset", kind: "number", step: 0.1 },
   ],
   evaluate: (inputs, params) => {
-    const rawList = Array.isArray(inputs.list) ? inputs.list : [];
-    const factor = inputs.factor !== undefined ? Number(inputs.factor) || 0 : Number(params.factor) || 1;
-    const offset = inputs.offset !== undefined ? Number(inputs.offset) || 0 : Number(params.offset) || 0;
-    const op = String(params.op || "multiply");
+    const rawA = inputs.a !== undefined ? inputs.a : inputs.list;
+    const listA = toNumericList(rawA);
+    if (listA.length === 0) return { list: [] };
 
-    const numbers = rawList.map((x) => Number(x) || 0);
+    const op = String(params.op || "add");
 
-    if (numbers.length === 0) return { list: [] };
+    const factor = inputs.factor !== undefined ? Number(inputs.factor) || 0 : (params.factor !== undefined ? Number(params.factor) : 1);
+    const offset = inputs.offset !== undefined ? Number(inputs.offset) || 0 : (params.offset !== undefined ? Number(params.offset) : 0);
 
-    switch (op) {
-      case "remap_01": {
-        let min = Infinity;
-        let max = -Infinity;
-        for (const n of numbers) {
-          if (n < min) min = n;
-          if (n > max) max = n;
-        }
-        const span = max - min;
-        return { list: numbers.map((n) => (span === 0 ? 0 : (n - min) / span)) };
+    // Unary & list transformation operations
+    if (op === "remap_01") {
+      let min = Infinity;
+      let max = -Infinity;
+      for (const n of listA) {
+        if (n < min) min = n;
+        if (n > max) max = n;
       }
-      case "reverse":
-        return { list: [...numbers].reverse() };
-      case "sort_asc":
-        return { list: [...numbers].sort((a, b) => a - b) };
-      case "sort_desc":
-        return { list: [...numbers].sort((a, b) => b - a) };
+      const span = max - min;
+      return { list: listA.map((n) => (span === 0 ? 0 : (n - min) / span) * factor + offset) };
+    }
+    if (op === "abs") return { list: listA.map((n) => Math.abs(n) * factor + offset) };
+    if (op === "reverse") return { list: [...listA].reverse().map((n) => n * factor + offset) };
+    if (op === "sort_asc") return { list: [...listA].sort((x, y) => x - y).map((n) => n * factor + offset) };
+    if (op === "sort_desc") return { list: [...listA].sort((x, y) => y - x).map((n) => n * factor + offset) };
+
+    const hasBInput = inputs.b !== undefined || (params.b !== undefined && Number(params.b) !== 0);
+
+    if (hasBInput) {
+      const rawB = inputs.b;
+      let listB = toNumericList(rawB);
+      if (listB.length === 0) {
+        listB = [Number(params.b) || 0];
+      }
+
+      const len = listB.length > 1 ? Math.max(listA.length, listB.length) : listA.length;
+      const result: number[] = [];
+
+      for (let i = 0; i < len; i++) {
+        const valA = listA[i % listA.length];
+        const valB = listB.length === 1 ? listB[0] : listB[i % listB.length];
+
+        let val = 0;
+        switch (op) {
+          case "subtract":
+            val = valA - valB;
+            break;
+          case "multiply":
+            val = valA * valB;
+            break;
+          case "divide":
+            val = valB === 0 ? 0 : valA / valB;
+            break;
+          case "min":
+            val = Math.min(valA, valB);
+            break;
+          case "max":
+            val = Math.max(valA, valB);
+            break;
+          case "power":
+            val = Math.pow(valA, valB);
+            break;
+          case "mod": {
+            if (valB === 0) {
+              val = 0;
+            } else {
+              const absB = Math.abs(valB);
+              val = ((valA % absB) + absB) % absB;
+            }
+            break;
+          }
+          case "clamp": {
+            const lower = Math.min(0, valB);
+            const upper = Math.max(0, valB);
+            val = Math.min(upper, Math.max(lower, valA));
+            break;
+          }
+          case "add":
+          default:
+            val = valA + valB;
+            break;
+        }
+
+        result.push(val * factor + offset);
+      }
+
+      return { list: result };
+    }
+
+    // Single list math (fallback when B is not supplied)
+    switch (op) {
       case "add":
-        return { list: numbers.map((n) => n + offset) };
+        return { list: listA.map((n) => n + offset) };
       case "subtract":
-        return { list: numbers.map((n) => n - offset) };
+        return { list: listA.map((n) => n - offset) };
       case "divide":
-        return { list: numbers.map((n) => (factor === 0 ? 0 : n / factor)) };
+        return { list: listA.map((n) => (factor === 0 ? 0 : n / factor) + offset) };
       case "power":
-        return { list: numbers.map((n) => Math.pow(n, factor)) };
-      case "abs":
-        return { list: numbers.map((n) => Math.abs(n)) };
+        return { list: listA.map((n) => Math.pow(n, factor) + offset) };
       case "clamp": {
         const lower = Math.min(offset, factor);
         const upper = Math.max(offset, factor);
-        return { list: numbers.map((n) => Math.min(upper, Math.max(lower, n))) };
+        return { list: listA.map((n) => Math.min(upper, Math.max(lower, n))) };
       }
       case "multiply":
       default:
-        return { list: numbers.map((n) => n * factor + offset) };
+        return { list: listA.map((n) => n * factor + offset) };
     }
   },
 };
@@ -410,4 +488,85 @@ export const SPLIT_VECTOR_LIST_NODE: NodeDefinition = {
     return { xList, yList, zList };
   },
 };
+
+function createPrng(seed: number) {
+  let s = Math.floor(Math.abs(seed)) % 2147483647;
+  if (s <= 0) s = 1;
+  return () => {
+    s = (s * 16807) % 2147483647;
+    return (s - 1) / 2147483646;
+  };
+}
+
+/** Random Sample List node — randomly extracts N elements from a list. */
+export const RANDOM_SAMPLE_LIST_NODE: NodeDefinition = {
+  type: "list/random-sample",
+  label: "Random Sample List",
+  category: "list",
+  inputs: [
+    { id: "list", label: "List", type: "list" },
+    { id: "count", label: "Count", type: "value" },
+    { id: "seed", label: "Seed", type: "value" },
+  ],
+  outputs: [
+    { id: "list", label: "Sampled List", type: "list" },
+    { id: "indices", label: "Indices", type: "list" },
+  ],
+  dynamicOutputs: (_connections, connectionTypes) => {
+    const listConn = connectionTypes?.find((c) => c.connection.toSocket === "list");
+    const sourceType = listConn?.sourceSocketType;
+    return [
+      { id: "list", label: "Sampled List", type: sourceType || "list" },
+      { id: "indices", label: "Indices", type: "list" },
+    ];
+  },
+  defaultParams: {
+    count: 5,
+    seed: 1,
+    withReplacement: false,
+  },
+  paramFields: [
+    { id: "count", label: "Count", kind: "number", step: 1 },
+    { id: "seed", label: "Seed", kind: "number", step: 1 },
+    { id: "withReplacement", label: "Allow Duplicates (Replacement)", kind: "boolean" },
+  ],
+  evaluate: (inputs, params) => {
+    const rawList = Array.isArray(inputs.list) ? inputs.list : [];
+    if (rawList.length === 0) return { list: [], indices: [] };
+
+    const rawCount = inputs.count !== undefined ? Number(inputs.count) : Number(params.count);
+    const count = Math.max(0, Math.min(10000, Math.floor(Number.isFinite(rawCount) ? rawCount : 5)));
+    const seed = inputs.seed !== undefined ? Number(inputs.seed) : Number(params.seed);
+    const withReplacement = Boolean(params.withReplacement);
+
+    const prng = createPrng(Number.isFinite(seed) ? seed : 1);
+    const sampledList: unknown[] = [];
+    const sampledIndices: number[] = [];
+
+    if (withReplacement) {
+      for (let i = 0; i < count; i++) {
+        const idx = Math.floor(prng() * rawList.length);
+        sampledIndices.push(idx);
+        sampledList.push(rawList[idx]);
+      }
+    } else {
+      const availableIndices = Array.from({ length: rawList.length }, (_, i) => i);
+      const sampleCount = Math.min(count, rawList.length);
+
+      for (let i = 0; i < sampleCount; i++) {
+        const randomIndex = i + Math.floor(prng() * (availableIndices.length - i));
+        const temp = availableIndices[i];
+        availableIndices[i] = availableIndices[randomIndex];
+        availableIndices[randomIndex] = temp;
+
+        const pickedIdx = availableIndices[i];
+        sampledIndices.push(pickedIdx);
+        sampledList.push(rawList[pickedIdx]);
+      }
+    }
+
+    return { list: sampledList, indices: sampledIndices };
+  },
+};
+
 

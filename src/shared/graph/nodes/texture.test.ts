@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { EvalContext } from "../types";
-import { TEXTURE_IMAGE_NODE, TEXTURE_PLANE_NODE, TEXTURE_PROCEDURAL_NODE, TEXTURE_TO_NORMAL_NODE, TEXTURE_TRANSFORM_NODE } from "./texture";
+import { TEXTURE_IMAGE_NODE, TEXTURE_PIXEL_SPAWNER_NODE, TEXTURE_PLANE_NODE, TEXTURE_PROCEDURAL_NODE, TEXTURE_TO_NORMAL_NODE, TEXTURE_TRANSFORM_NODE } from "./texture";
 
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "tex-test-1" };
 
@@ -62,4 +62,26 @@ describe("TEXTURE NODES", () => {
     expect(transformedTex.repeat.y).toBe(3);
     expect(transformedTex.rotation).toBeCloseTo(Math.PI / 2);
   });
+
+  it("TEXTURE_PIXEL_SPAWNER_NODE registers properly and handles missing DOM / empty inputs gracefully", () => {
+    expect(TEXTURE_PIXEL_SPAWNER_NODE.type).toBe("texture/pixel-spawner");
+    const res = TEXTURE_PIXEL_SPAWNER_NODE.evaluate(
+      { texture: null, density: 50 },
+      TEXTURE_PIXEL_SPAWNER_NODE.defaultParams,
+      CTX
+    );
+    expect(res.geometry).toBeInstanceOf(THREE.Group);
+    expect(res.count).toBe(0);
+    expect(res.colors).toEqual([]);
+    expect(res.positions).toEqual([]);
+    expect(res.intensities).toEqual([]);
+  });
+
+  it("TEXTURE_PIXEL_SPAWNER_NODE supports orientation options (xy, xz, yz)", () => {
+    const fields = TEXTURE_PIXEL_SPAWNER_NODE.dynamicParamFields!({ id: "p", type: "texture/pixel-spawner", position: { x: 0, y: 0 }, params: {} } as never);
+    const orientationField = fields.find((f) => f.id === "orientation") as { options?: string[] };
+    expect(orientationField).toBeDefined();
+    expect(orientationField.options).toEqual(["xy", "xz", "yz"]);
+  });
 });
+

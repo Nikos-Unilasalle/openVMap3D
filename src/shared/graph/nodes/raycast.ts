@@ -3,7 +3,7 @@ import { NodeDefinition } from "../types";
 import { isRealMesh } from "../../three/objectKinds";
 import { clearMeshWarning, warnMeshRequired } from "../meshRequired";
 import { createNodeCache } from "../nodeCaches";
-import { getBoundsTree, sampleSurfacePoints } from "../../three/bvh";
+import { getBoundsTree, sampleSurfacePoints, sampleVolumePoints } from "../../three/bvh";
 import { asColor, numberInput } from "./object";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
@@ -472,3 +472,41 @@ export const SAMPLE_SURFACE_NODE: NodeDefinition = {
     return { points: positions, normals };
   },
 };
+
+/** Volume Scatter Node — N random points + normals inside a mesh's 3D volume. */
+export const VOLUME_SCATTER_NODE: NodeDefinition = {
+  type: "physics/volume_scatter",
+  label: "Volume Scatter",
+  category: "physics",
+  inputs: [
+    { id: "geometry", label: "Volume", type: "geometry" },
+    { id: "count", label: "Count", type: "value" },
+    { id: "seed", label: "Seed", type: "value" },
+  ],
+  outputs: [
+    { id: "points", label: "Points", type: "list" },
+    { id: "normals", label: "Normals", type: "list" },
+  ],
+  defaultParams: {
+    count: 50,
+    seed: 1,
+  },
+  dynamicParamFields: () => [
+    { id: "count", label: "Count", kind: "number", step: 5 },
+    { id: "seed", label: "Seed", kind: "number", step: 1 },
+  ],
+  evaluate: (inputs, params, ctx) => {
+    const object = inputs.geometry instanceof THREE.Object3D ? inputs.geometry : null;
+    if (!object) return { points: [], normals: [] };
+
+    const count = Math.max(0, Math.min(20000, Math.round(numberInput(inputs.count, params.count, 50))));
+    const seed = numberInput(inputs.seed, params.seed, 1);
+    const prng = createPrng(seed);
+
+    const { positions, normals } = sampleVolumePoints(object, count, prng);
+    if (positions.length === 0 && count > 0) warnMeshRequired(ctx.nodeId, "Volume Scatter", object);
+    else clearMeshWarning(ctx.nodeId);
+    return { points: positions, normals };
+  },
+};
+

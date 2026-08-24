@@ -249,3 +249,84 @@ export const PROXIMITY_OBJECT_NODE: NodeDefinition = {
   },
 };
 
+/**
+ * Distances Node: Computes the 3D distance from a list or Group of instances (or vectors/objects)
+ * to a target vector, object, or matrix. Returns the complete list of distances for all instances.
+ */
+export const DISTANCES_NODE: NodeDefinition = {
+  type: "math/distances",
+  label: "Distances",
+  category: "math",
+  inputs: [
+    { id: "instances", label: "Instances / Candidates (List or Group)", type: "any" },
+    { id: "target", label: "Target (Vector / Object / Matrix)", type: "any" },
+  ],
+  outputs: [
+    { id: "distances", label: "Distances", type: "list" },
+    { id: "distancesSq", label: "Distances Sq", type: "list" },
+    { id: "min", label: "Min Distance", type: "value" },
+    { id: "max", label: "Max Distance", type: "value" },
+    { id: "count", label: "Count", type: "value" },
+  ],
+  defaultParams: {
+    tx: 0,
+    ty: 0,
+    tz: 0,
+  },
+  paramFields: [
+    { id: "tx", label: "Target X", kind: "number" },
+    { id: "ty", label: "Target Y", kind: "number" },
+    { id: "tz", label: "Target Z", kind: "number" },
+  ],
+  evaluate: (inputs, params) => {
+    const fallbackTarget = new THREE.Vector3(
+      Number(params.tx) || 0,
+      Number(params.ty) || 0,
+      Number(params.tz) || 0,
+    );
+
+    const targetPos = extractPosition(inputs.target, fallbackTarget);
+
+    let candidates: unknown[] = [];
+    if (Array.isArray(inputs.instances)) {
+      candidates = inputs.instances;
+    } else if (inputs.instances instanceof THREE.Group && inputs.instances.children.length > 0) {
+      candidates = inputs.instances.children;
+    } else if (inputs.instances) {
+      candidates = [inputs.instances];
+    }
+
+    const distances: number[] = [];
+    const distancesSq: number[] = [];
+    let minDist = Infinity;
+    let maxDist = -Infinity;
+
+    for (let i = 0; i < candidates.length; i++) {
+      const item = candidates[i];
+      const pos = extractPosition(item, new THREE.Vector3());
+      const distSq = pos.distanceToSquared(targetPos);
+      const dist = Math.sqrt(distSq);
+
+      distances.push(dist);
+      distancesSq.push(distSq);
+
+      if (dist < minDist) minDist = dist;
+      if (dist > maxDist) maxDist = dist;
+    }
+
+    if (distances.length === 0) {
+      minDist = 0;
+      maxDist = 0;
+    }
+
+    return {
+      distances,
+      distancesSq,
+      min: minDist,
+      max: maxDist,
+      count: distances.length,
+    };
+  },
+};
+
+

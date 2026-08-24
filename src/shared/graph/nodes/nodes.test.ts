@@ -458,12 +458,18 @@ describe("LIST NODES", () => {
     expect(GET_LIST_ITEM_NODE.evaluate({ list: sample, index: 2 }, {}, CTX).val).toBe(30);
   });
 
-  test("list math operations", () => {
-    const sample = [1, 2, 3];
-    const mult = LIST_MATH_NODE.evaluate({ list: sample, factor: 10 }, { op: "multiply" }, CTX).list as number[];
+  test("list math operations with two list inputs A and B + legacy factor/offset support", () => {
+    const sampleA = [1, 2, 3];
+    const mult = LIST_MATH_NODE.evaluate({ a: sampleA, b: 10 }, { op: "multiply" }, CTX).list as number[];
     expect(mult).toEqual([10, 20, 30]);
 
-    const remapped = LIST_MATH_NODE.evaluate({ list: [10, 20, 30] }, { op: "remap_01" }, CTX).list as number[];
+    const legacyMult = LIST_MATH_NODE.evaluate({ list: sampleA, factor: 10, offset: 5 }, { op: "multiply" }, CTX).list as number[];
+    expect(legacyMult).toEqual([15, 25, 35]);
+
+    const combineAdd = LIST_MATH_NODE.evaluate({ a: [10, 20, 30], b: [1, 2, 3] }, { op: "add" }, CTX).list as number[];
+    expect(combineAdd).toEqual([11, 22, 33]);
+
+    const remapped = LIST_MATH_NODE.evaluate({ a: [10, 20, 30] }, { op: "remap_01" }, CTX).list as number[];
     expect(remapped[0]).toBeCloseTo(0);
     expect(remapped[2]).toBeCloseTo(1);
   });

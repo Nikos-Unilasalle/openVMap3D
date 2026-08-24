@@ -147,7 +147,8 @@ Les prises de connexion (sockets) sont identifiées par des codes couleur normal
 | :--- | :--- | :--- |
 | **Raycast** | `physics/raycast` | Lance un rayon unique et détecte les intersections (point, normale, distance). |
 | **Ray Burst** | `physics/ray-burst` | Émet un champ de rayons (burst) 3D et produit les lignes d'impacts et endpoints. |
-| **Sample Surface** | `physics/sample-surface` | Échantillonne des points et normales aléatoires à la surface d'un maillage. |
+| **Sample Surface** | `physics/sample` | Échantillonne des points et normales aléatoires à la surface d'un maillage (Surface Scatter). |
+| **Volume Scatter** | `physics/volume_scatter` | Échantillonne des points et directions aléatoires à l'intérieur du volume 3D d'une géométrie. |
 
 ### Animation, Mouvement et Dynamique (Spring, Trail, Orbit)
 
@@ -200,6 +201,7 @@ Les prises de connexion (sockets) sont identifiées par des codes couleur normal
 | **Set Instance Color** | `instance/set_color` | Applique des variations de couleurs aux instances. |
 | **Get Instance** | `instance/get` | Extrait la géométrie et la matrice d'une instance ciblée. |
 | **Spawner** | `structure/spawn` | Distribue des objets 3D de manière aléatoire sur la surface d'un maillage. |
+| **Texture Pixel Spawner** | `texture/pixel-spawner` | Génère une instance de géométrie 3D par pixel d'une texture (orientation XY, XZ, YZ), avec sorties couleurs, positions et intensités lumineuses (0-1). |
 
 ### Système de Particules, Champs de Forces et Trajectoires
 
@@ -265,6 +267,9 @@ Les prises de connexion (sockets) sont identifiées par des codes couleur normal
 | **Clamp** | `math/clamp` | Borne une valeur dans l'intervalle [min, max]. |
 | **Map Range** | `math/map_range` | Remappe une valeur entre une plage source et une cible. |
 | **Vector Math** | `math/vector_math` | Opérations vectorielles 3D (Dot product, Cross product, Normalize...). |
+| **Distance** | `math/distance` | Calcule la distance euclidienne entre 2 objets, positions ou listes. |
+| **Distances** | `math/distances` | Calcule la liste complète des distances entre une liste/groupe d'instances et une cible (Vector/Object/Matrix). |
+| **Proximity Object** | `object/proximity` | Trouve l'instance ou l'objet le plus proche d'une cible parmi une liste ou un groupe d'instances. |
 | **Random Value** | `math/random-value` | Nombres aléatoires (uniforme, gaussien, bruit 1D). |
 | **Boolean Logic** | `logic/boolean` | Portes logiques booléennes (AND, OR, NOT, XOR). |
 | **Compare** | `logic/compare` | Comparateurs (Egal, Différent, Supérieur, Inférieur). |
@@ -275,8 +280,9 @@ Les prises de connexion (sockets) sont identifiées par des codes couleur normal
 | :--- | :--- | :--- |
 | **Generate List** | `list/generate` | Génère une suite arithmétique de nombres. |
 | **Get List Item** | `list/get_item` | Extrait l'élément situé à un index spécifique. |
-| **List Math** | `list/math` | Opération mathématique sur tous les éléments (Somme, Moyenne...). |
+| **List Math** | `list/math` | Opérations mathématiques terme à terme entre deux listes (A et B) ou une liste et un scalaire (Add, Multiply, Min, Max, Power...). |
 | **Color Palette** | `list/palette` | Collections de palettes chromatiques sous forme de listes. |
+| **Random Sample List**| `list/random-sample` | Échantillonne aléatoirement N éléments d'une liste (avec ou sans remise) et extrait leurs indices. |
 
 ### Utilitaires et Organisation
 

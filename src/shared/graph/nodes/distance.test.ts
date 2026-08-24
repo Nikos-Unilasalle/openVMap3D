@@ -1,6 +1,4 @@
-import { describe, expect, it } from "vitest";
-import * as THREE from "three";
-import { DISTANCE_NODE, PROXIMITY_OBJECT_NODE } from "./distance";
+import { DISTANCE_NODE, DISTANCES_NODE, PROXIMITY_OBJECT_NODE } from "./distance";
 
 const dummyCtx = { time: 0, step: 0, nodeId: "test" };
 
@@ -57,6 +55,59 @@ describe("DISTANCE_NODE", () => {
     expect(res.list).toEqual([1, 2]);
   });
 });
+
+describe("DISTANCES_NODE", () => {
+  it("calculates list of distances from a group or list of instances to a target vector/object", () => {
+    expect(DISTANCES_NODE.type).toBe("math/distances");
+
+    const inst1 = new THREE.Mesh();
+    inst1.position.set(3, 4, 0); // distance = 5
+
+    const inst2 = new THREE.Mesh();
+    inst2.position.set(0, 10, 0); // distance = 10
+
+    const target = new THREE.Vector3(0, 0, 0);
+
+    const res = DISTANCES_NODE.evaluate(
+      { instances: [inst1, inst2], target },
+      DISTANCES_NODE.defaultParams,
+      dummyCtx,
+    );
+
+    expect(res.distances).toHaveLength(2);
+    expect(res.distances[0]).toBeCloseTo(5);
+    expect(res.distances[1]).toBeCloseTo(10);
+    expect(res.distancesSq[0]).toBeCloseTo(25);
+    expect(res.distancesSq[1]).toBeCloseTo(100);
+    expect(res.min).toBeCloseTo(5);
+    expect(res.max).toBeCloseTo(10);
+    expect(res.count).toBe(2);
+  });
+
+  it("handles Group inputs (Array / Texture Pixel Spawner)", () => {
+    const group = new THREE.Group();
+    const inst1 = new THREE.Mesh();
+    inst1.position.set(1, 0, 0);
+    const inst2 = new THREE.Mesh();
+    inst2.position.set(5, 0, 0);
+    group.add(inst1);
+    group.add(inst2);
+
+    const target = new THREE.Vector3(0, 0, 0);
+
+    const res = DISTANCES_NODE.evaluate(
+      { instances: group, target },
+      DISTANCES_NODE.defaultParams,
+      dummyCtx,
+    );
+
+    expect(res.distances).toEqual([1, 5]);
+    expect(res.min).toBe(1);
+    expect(res.max).toBe(5);
+    expect(res.count).toBe(2);
+  });
+});
+
 
 describe("PROXIMITY_OBJECT_NODE", () => {
   it("finds the nearest object in a list of candidate objects", () => {

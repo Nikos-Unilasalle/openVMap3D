@@ -215,3 +215,127 @@ export function sampleSurfacePoints(
 
   return { positions, normals };
 }
+
+/**
+ * Samples `count` random points inside the 3D volume of every mesh inside `object`,
+ * returning world-space positions and directions. Uses BVH-accelerated inside-outside
+ * parity testing over candidate points generated within the object's bounding box.
+ */
+export function sampleVolumePoints(
+  object: THREE.Object3D,
+  count: number,
+  prng: () => number,
+): { positions: THREE.Vector3[]; normals: THREE.Vector3[] } {
+  const meshes: THREE.Mesh[] = [];
+  object.traverse((child) => {
+    if (!isRealMesh(child) || !child.geometry) return;
+    child.updateWorldMatrix(true, false, true);
+    getBoundsTree(child.geometry);
+    meshes.push(child);
+  });
+
+  const positions: THREE.Vector3[] = [];
+  const normals: THREE.Vector3[] = [];
+
+  if (meshes.length === 0 || count <= 0) return { positions, normals };
+
+  const overallBox = new THREE.Box3();
+  const tempBox = new THREE.Box3();
+  for (const mesh of meshes) {
+    if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+    tempBox.copy(mesh.geometry.boundingBox!).applyMatrix4(mesh.matrixWorld);
+    overallBox.union(tempBox);
+  }
+
+  const min = overallBox.min;
+  const max = overallBox.max;
+  const size = new THREE.Vector3().subVectors(max, min);
+  const center = new THREE.Vector3();
+  overallBox.getCenter(center);
+
+  if (size.x <= 1e-6 || size.y <= 1e-6 || size.z <= 1e-6) {
+    for (let i = 0; i < count; i++) {
+      positions.push(center.clone());
+      normals.push(new THREE.Vector3(0, 1, 0));
+    }
+    return { positions, normals };
+  }
+
+  // Backup original material sides and force DoubleSide so backfaces hit the raycast from inside
+  const fallbackMaterial = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+  const originalMaterials: { mesh: THREE.Mesh; origMat: THREE.Material | THREE.Material[] }[] = [];
+
+  for (const mesh of meshes) {
+    originalMaterials.push({ mesh, origMat: mesh.material });
+    if (Array.isArray(mesh.material)) {
+      mesh.material = mesh.material.map((m) => {
+        const cloneMat = m.clone();
+        cloneMat.side = THREE.DoubleSide;
+        return cloneMat;
+      });
+    } else if (mesh.material) {
+      const cloneMat = mesh.material.clone();
+      cloneMat.side = THREE.DoubleSide;
+      mesh.material = cloneMat;
+    } else {
+      mesh.material = fallbackMaterial;
+    }
+  }
+
+  const raycaster = new THREE.Raycaster();
+  raycaster.firstHitOnly = false;
+  // Use non-axis-aligned oblique direction to avoid grazing parallel faces exactly
+  const rayDir = new THREE.Vector3(0.312, 0.941, 0.171).normalize();
+
+  let attempts = 0;
+  const maxAttempts = count * 200;
+
+  while (positions.length < count && attempts < maxAttempts) {
+    attempts++;
+    const candidate = new THREE.Vector3(
+      min.x + prng() * size.x,
+      min.y + prng() * size.y,
+      min.z + prng() * size.z,
+    );
+
+    raycaster.set(candidate, rayDir);
+    let isInside = false;
+    let surfaceNormal = new THREE.Vector3(0, 1, 0);
+
+    for (const mesh of meshes) {
+      const hits = raycaster.intersectObject(mesh, false);
+      if (hits.length % 2 === 1) {
+        isInside = true;
+        if (hits[0].face) {
+          surfaceNormal.copy(hits[0].face.normal).transformDirection(mesh.matrixWorld).normalize();
+        }
+        break;
+      }
+    }
+
+    if (isInside) {
+      positions.push(candidate);
+      const dirFromCenter = candidate.clone().sub(center);
+      if (dirFromCenter.lengthSq() > 1e-6) dirFromCenter.normalize();
+      else dirFromCenter.copy(surfaceNormal);
+      normals.push(dirFromCenter);
+    }
+  }
+
+  // Restore original materials
+  for (const item of originalMaterials) {
+    item.mesh.material = item.origMat;
+  }
+  fallbackMaterial.dispose();
+
+  // Fallback: if sparse geometry produced fewer accepted candidates, fill remaining by copying
+  while (positions.length < count && positions.length > 0) {
+    const idx = Math.floor(prng() * positions.length);
+    positions.push(positions[idx].clone());
+    normals.push(normals[idx].clone());
+  }
+
+  return { positions, normals };
+}
+
+
