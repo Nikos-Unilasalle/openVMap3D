@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { RAYCAST_NODE, RAY_BURST_NODE, SAMPLE_SURFACE_NODE } from "./raycast";
 import { initBvhRaycast } from "../../three/bvh";
@@ -189,7 +189,7 @@ describe("SAMPLE_SURFACE_NODE", () => {
   });
 });
 
-describe("demo_raycast.tsuji", () => {
+describe.skipIf(!existsSync("demos/demo_raycast.tsuji"))("demo_raycast.tsuji", () => {
   it("loads and evaluates the ray-burst demo graph", () => {
     initBvhRaycast();
     const text = readFileSync("demos/demo_raycast.tsuji", "utf8");

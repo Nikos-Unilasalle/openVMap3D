@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { velocityKey } from "./motionBlur";
@@ -34,7 +34,7 @@ function keysOf(meshes: THREE.Mesh[]): string[] {
 
 const WAVE = "demos/demo_stagger_wave.tsuji";
 
-describe("velocity keys", () => {
+describe.skipIf(!existsSync(WAVE))("velocity keys (stagger wave demo)", () => {
   it("instanced geometry is a fresh set of objects every frame", () => {
     // The premise the keying exists for. If this ever stops being true, the
     // per-object matrix the keys replaced would have worked all along.
@@ -90,7 +90,9 @@ describe("velocity keys", () => {
     const deltas = [...after].map(([key, y]) => Math.abs(y - before.get(key)!));
     expect(Math.max(...deltas)).toBeGreaterThan(0.01);
   });
+});
 
+describe("velocity keys unit", () => {
   it("keeps instances of different source nodes apart", () => {
     const ordinals = new Map<string, number>();
     const fromNode = (nodeId: string) => {
@@ -108,3 +110,4 @@ describe("velocity keys", () => {
     expect(velocityKey(new THREE.Mesh(), ordinals)).toBe("anon#0");
   });
 });
+
