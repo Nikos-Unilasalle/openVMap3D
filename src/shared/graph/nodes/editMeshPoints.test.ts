@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { EvalContext } from "../types";
-import { EDIT_MESH_POINTS_NODE } from "./editMeshPoints";
+import { applyWeldedPointMoves, EDIT_MESH_POINTS_NODE } from "./editMeshPoints";
 
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "edit-points-test" };
 
@@ -38,5 +38,49 @@ describe("EDIT_MESH_POINTS_NODE", () => {
   it("returns null with nothing wired into Basis", () => {
     const res = EDIT_MESH_POINTS_NODE.evaluate({}, { pointsList: [] }, CTX);
     expect(res.geometry).toBeNull();
+  });
+});
+
+describe("applyWeldedPointMoves", () => {
+  /** A corner shared by three faces, plus one unrelated vertex — a Box's real layout in miniature. */
+  const corner = () => [
+    new THREE.Vector3(1, 1, 1),
+    new THREE.Vector3(1, 1, 1),
+    new THREE.Vector3(1, 1, 1),
+    new THREE.Vector3(-1, 0, 0),
+  ];
+
+  it("drags every vertex coincident with the moved one, so a corner doesn't tear apart", () => {
+    const moved = applyWeldedPointMoves(corner(), new Map([[0, new THREE.Vector3(1, 5, 1)]]));
+    // All three entries of that corner followed...
+    for (const i of [0, 1, 2]) expect(moved[i].y).toBeCloseTo(5);
+    // ...and the unrelated vertex stayed put.
+    expect(moved[3].x).toBeCloseTo(-1);
+    expect(moved[3].y).toBeCloseTo(0);
+  });
+
+  it("applies exactly one delta to a welded vertex even when several of its coincident twins move together", () => {
+    // A marquee inevitably grabs all of a corner's stacked handles; indices
+    // 0 and 1 both move by +4 in Y, index 2 must end up +4 too, not +8.
+    const moves = new Map([
+      [0, new THREE.Vector3(1, 5, 1)],
+      [1, new THREE.Vector3(1, 5, 1)],
+    ]);
+    const moved = applyWeldedPointMoves(corner(), moves);
+    expect(moved[2].y).toBeCloseTo(5);
+  });
+
+  it("leaves distinct vertices alone — welding never merges points that only happen to be nearby", () => {
+    const points = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0.01, 0, 0)];
+    const moved = applyWeldedPointMoves(points, new Map([[0, new THREE.Vector3(0, 3, 0)]]));
+    expect(moved[0].y).toBeCloseTo(3);
+    expect(moved[1].y).toBeCloseTo(0);
+  });
+
+  it("reads plain {x,y,z} objects, the form a saved .tsuji round-trips pointsList as", () => {
+    const raw = [{ x: 2, y: 0, z: 0 }, { x: 2, y: 0, z: 0 }];
+    const moved = applyWeldedPointMoves(raw, new Map([[0, new THREE.Vector3(2, 7, 0)]]));
+    expect(moved[0]).toBeInstanceOf(THREE.Vector3);
+    expect(moved[1].y).toBeCloseTo(7);
   });
 });

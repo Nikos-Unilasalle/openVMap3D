@@ -23,7 +23,7 @@ import {
   latticeEvaluatedPoints,
 } from "../graph/nodes/lattice";
 import { POINTS_SELECTION_NODE } from "../graph/nodes/pointsSelection";
-import { EDIT_MESH_POINTS_NODE } from "../graph/nodes/editMeshPoints";
+import { applyWeldedPointMoves, EDIT_MESH_POINTS_NODE } from "../graph/nodes/editMeshPoints";
 import { POINTS_INFLUENCE_NODE, POINTS_INFLUENCE_DISCRETE_LEVELS, PointsInfluenceMode } from "../graph/nodes/pointsInfluence";
 import { createPostProcessChain } from "./postProcessChain";
 import { computeGizmoWriteback, TransformGizmoMode, TransformPatch } from "./gizmoWriteback";
@@ -1178,6 +1178,14 @@ export function Viewport({
           if (!node || !onTransformChangeRef.current) return;
           const rawList = Array.isArray(node.params.pointsList) ? [...node.params.pointsList] : [];
           if (pointIdx < 0 || pointIdx >= rawList.length) return;
+          // A mesh's stored points are raw vertex-buffer entries, so a corner
+          // is several coincident ones — the drag has to carry all of them or
+          // the mesh tears open along its seams (see applyWeldedPointMoves).
+          if (node.type === EDIT_MESH_POINTS_NODE.type) {
+            const welded = applyWeldedPointMoves(rawList, new Map([[pointIdx, object.position.clone()]]));
+            onTransformChangeRef.current(node.id, { pointsList: welded });
+            return;
+          }
           // A lattice handle is drawn on the deformed cage, so where it was
           // dropped is not what `pointsList` stores — the base point that
           // lands there once the modulators run is. Storing the handle
@@ -1203,6 +1211,10 @@ export function Viewport({
           const deltaScaleY = dragStartCentroidScale.y !== 0 ? object.scale.y / dragStartCentroidScale.y : 1;
           const deltaScaleZ = dragStartCentroidScale.z !== 0 ? object.scale.z / dragStartCentroidScale.z : 1;
 
+          // Collected rather than written straight into rawList, so the mesh
+          // case below can weld coincident vertices against the *pre-drag*
+          // positions — see applyWeldedPointMoves.
+          const moves = new Map<number, THREE.Vector3>();
           for (const [idx, initialPos] of dragStartPointPositions.entries()) {
             if (idx < 0 || idx >= rawList.length) continue;
             const offset = new THREE.Vector3().subVectors(initialPos, dragStartCentroidPos);
@@ -1211,13 +1223,22 @@ export function Viewport({
             offset.z *= deltaScaleZ;
             offset.applyQuaternion(deltaQuat);
             const newPos = new THREE.Vector3().addVectors(object.position, offset);
+            moves.set(idx, newPos);
+            const handle = curveHandles.handleAt(idx);
+            if (handle) handle.position.copy(newPos);
+          }
+
+          if (node.type === EDIT_MESH_POINTS_NODE.type) {
+            onTransformChangeRef.current(node.id, { pointsList: applyWeldedPointMoves(rawList, moves) });
+            return;
+          }
+
+          for (const [idx, newPos] of moves) {
             // Same deformed-cage conversion as the single-handle path above.
             rawList[idx] =
               node.type === LATTICE_DEFORM_NODE.type
                 ? latticeBasePointForTarget(node.params, idx, newPos)
                 : newPos;
-            const handle = curveHandles.handleAt(idx);
-            if (handle) handle.position.copy(newPos);
           }
 
           onTransformChangeRef.current(node.id, { pointsList: rawList });

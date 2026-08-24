@@ -1,0 +1,228 @@
+{
+  "nodes": [
+    {
+      "id": "time",
+      "type": "time",
+      "position": {
+        "x": -1780,
+        "y": 40
+      },
+      "params": {}
+    },
+    {
+      "id": "target",
+      "type": "object/sphere",
+      "position": {
+        "x": -950,
+        "y": 40
+      },
+      "params": {
+        "scale": {
+          "x": 3,
+          "y": 3,
+          "z": 3
+        },
+        "color": 13421772
+      }
+    },
+    {
+      "id": "cone",
+      "type": "object/cone",
+      "position": {
+        "x": -950,
+        "y": 340
+      },
+      "params": {
+        "scale": {
+          "x": 0.18,
+          "y": 0.35,
+          "z": 0.18
+        },
+        "color": 16353942
+      }
+    },
+    {
+      "id": "burst",
+      "type": "physics/ray-burst",
+      "position": {
+        "x": -520,
+        "y": -40
+      },
+      "params": {
+        "origin": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "count": 300,
+        "radius": 3.5,
+        "seed": 1,
+        "rotate": 18,
+        "color": 4473924
+      }
+    },
+    {
+      "id": "marker_sphere",
+      "type": "object/sphere",
+      "position": {
+        "x": -660,
+        "y": 220
+      },
+      "params": {
+        "scale": {
+          "x": 0.08,
+          "y": 0.08,
+          "z": 0.08
+        },
+        "color": 16442133,
+        "shadeless": 1
+      }
+    },
+    {
+      "id": "marker_array",
+      "type": "structure/array",
+      "position": {
+        "x": -430,
+        "y": 220
+      },
+      "params": {
+        "count": 300,
+        "mode": "linear",
+        "axis": "X",
+        "spacing": 0
+      }
+    },
+    {
+      "id": "marker_positions",
+      "type": "structure/instance-transform",
+      "position": {
+        "x": -190,
+        "y": 220
+      },
+      "params": {
+        "mode": "relative",
+        "pivot": "shared",
+        "index": -1
+      }
+    },
+    {
+      "id": "scatter",
+      "type": "structure/spawn",
+      "position": {
+        "x": -190,
+        "y": 400
+      },
+      "params": {
+        "count": 60,
+        "seed": 2,
+        "placement": "base",
+        "alignToNormal": 1,
+        "dispersion": 0
+      }
+    },
+    {
+      "id": "merge",
+      "type": "structure/merge",
+      "position": {
+        "x": 160,
+        "y": 40
+      },
+      "params": {}
+    },
+    {
+      "id": "output",
+      "type": "render",
+      "position": {
+        "x": 400,
+        "y": 40
+      },
+      "params": {}
+    }
+  ],
+  "connections": [
+    {
+      "id": "time.seconds->burst.time",
+      "fromNode": "time",
+      "fromSocket": "seconds",
+      "toNode": "burst",
+      "toSocket": "time"
+    },
+    {
+      "id": "target.geometry->burst.geometry",
+      "fromNode": "target",
+      "fromSocket": "geometry",
+      "toNode": "burst",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "target.geometry->scatter.support",
+      "fromNode": "target",
+      "fromSocket": "geometry",
+      "toNode": "scatter",
+      "toSocket": "support"
+    },
+    {
+      "id": "cone.geometry->scatter.items",
+      "fromNode": "cone",
+      "fromSocket": "geometry",
+      "toNode": "scatter",
+      "toSocket": "items"
+    },
+    {
+      "id": "marker_sphere.geometry->marker_array.geometry",
+      "fromNode": "marker_sphere",
+      "fromSocket": "geometry",
+      "toNode": "marker_array",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "marker_array.geometry->marker_positions.geometry",
+      "fromNode": "marker_array",
+      "fromSocket": "geometry",
+      "toNode": "marker_positions",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "burst.hitPoints->marker_positions.positions",
+      "fromNode": "burst",
+      "fromSocket": "hitPoints",
+      "toNode": "marker_positions",
+      "toSocket": "positions"
+    },
+    {
+      "id": "burst.geometry->merge.in1",
+      "fromNode": "burst",
+      "fromSocket": "geometry",
+      "toNode": "merge",
+      "toSocket": "in1"
+    },
+    {
+      "id": "target.geometry->merge.in2",
+      "fromNode": "target",
+      "fromSocket": "geometry",
+      "toNode": "merge",
+      "toSocket": "in2"
+    },
+    {
+      "id": "marker_positions.geometry->merge.in3",
+      "fromNode": "marker_positions",
+      "fromSocket": "geometry",
+      "toNode": "merge",
+      "toSocket": "in3"
+    },
+    {
+      "id": "scatter.geometry->merge.in4",
+      "fromNode": "scatter",
+      "fromSocket": "geometry",
+      "toNode": "merge",
+      "toSocket": "in4"
+    },
+    {
+      "id": "merge.geometry->output.geometry",
+      "fromNode": "merge",
+      "fromSocket": "geometry",
+      "toNode": "output",
+      "toSocket": "geometry"
+    }
+  ]
+}

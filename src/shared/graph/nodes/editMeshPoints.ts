@@ -14,6 +14,52 @@ import { TOGGLE_POINTS_KEYFRAME_ACTION } from "./curve";
  */
 export const RESEED_MESH_POINTS_ACTION = "object/reseed-edit-points";
 
+/** Two vertices this close together are the same corner as far as an operator is concerned — see applyWeldedPointMoves. */
+const WELD_EPSILON_SQ = 1e-10;
+
+/**
+ * Applies dragged control-point positions, dragging every *coincident*
+ * vertex along with each one.
+ *
+ * `extractPointsFromMesh` deliberately yields one point per raw
+ * vertex-buffer entry rather than per unique position (see its own comment):
+ * a Box's corner is three entries with the same position but different
+ * normals and UVs. Without welding, a handle drag moved one of those three
+ * and left the other two behind — the corner split open and the mesh tore
+ * along its seams instead of following the handle, which reads as "the mesh
+ * doesn't move" since only a sliver of it does.
+ *
+ * Deltas are read from the pre-move positions and written into a separate
+ * array, so a vertex being dragged never also picks up a neighbour's delta,
+ * and each welded vertex takes exactly one delta even when several of the
+ * points it is coincident with are dragged together (a marquee selection
+ * inevitably grabs all three of a corner's stacked handles at once).
+ */
+export function applyWeldedPointMoves(
+  rawList: unknown[],
+  moves: Map<number, THREE.Vector3>,
+): THREE.Vector3[] {
+  const points = rawList.map((p) => asVector3(p, new THREE.Vector3()));
+  const result = points.map((p) => p.clone());
+  const welded = new Set<number>();
+
+  for (const [index, target] of moves) {
+    const origin = points[index];
+    if (!origin) continue;
+    result[index].copy(target);
+    const delta = new THREE.Vector3().subVectors(target, origin);
+    for (let i = 0; i < points.length; i++) {
+      if (moves.has(i) || welded.has(i)) continue;
+      if (points[i].distanceToSquared(origin) <= WELD_EPSILON_SQ) {
+        result[i].add(delta);
+        welded.add(i);
+      }
+    }
+  }
+
+  return result;
+}
+
 /**
  * Edit Mesh Points — the mesh equivalent of Curve from Points' draggable
  * control-point handles (see curveHandles.ts / curveLookup.ts, which key off
