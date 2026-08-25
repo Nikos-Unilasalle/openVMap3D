@@ -126,7 +126,9 @@ colour-slide, pan, rotation-spin, scale-pingpong all become "an oscillator
 wired into a different property") · `Envelope` (attack/sustain/release —
 doubles as the ease-in/ease-out shaping for trigger-driven animation, with
 `Easing/Curve` supplying the shape of each segment; the two are
-complementary, not redundant) · `Delay`
+complementary, not redundant) · `Pulse` (trigger-driven physical impulse —
+exponential decay back to 0, retriggers stack additively; complementary to
+`Envelope`'s explicit attack/release shaping) · `Delay`
 
 **Logic**
 `Compare` · `Boolean Logic` (AND/OR/NOT/XOR) · `Gate/Switch` ·

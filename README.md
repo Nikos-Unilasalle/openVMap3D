@@ -165,6 +165,7 @@ Les prises de connexion (sockets) sont identifiées par des codes couleur normal
 | **Wiggle** | `animation/wiggle` | Bruit fractal (fBm) pilotant simultanément position, rotation, scale et matrice. |
 | **Wiggle Number** | `math/wiggle-number` | Oscillations scalaires continues basées sur du bruit de gradient. |
 | **Wiggle Vector** | `vector/wiggle-vector` | Bruit 3D vectoriel décorrélé pour déplacements procéduraux. |
+| **Pulse** | `time/pulse` | Génère une impulsion physique qui décroît exponentiellement après un déclenchement (front montant), les redéclenchements s'additionnent. |
 
 ### Courbes, Morphing et Shape Keys
 

@@ -137,3 +137,61 @@ export const ENVELOPE_NODE: NodeDefinition = {
     return { out: level };
   },
 };
+
+/** State cache for Pulse node: nodeId -> { lastTime, prevTrigger, energy } */
+interface PulseState {
+  lastTime: number;
+  prevTrigger: boolean;
+  energy: number;
+}
+
+const pulseStateCache = createNodeCache<PulseState>();
+
+/**
+ * Pulse node — simulates a physical impulse. A rising edge on `trigger` adds
+ * `amplitude` to the node's internal energy, which then decays exponentially
+ * toward 0 with time constant `decay`. Retriggering while still decaying
+ * stacks on top of the current energy instead of resetting it.
+ */
+export const PULSE_NODE: NodeDefinition = {
+  type: "time/pulse",
+  label: "Pulse",
+  category: "time",
+  inputs: [
+    { id: "trigger", label: "Trigger", type: "value" },
+    { id: "decay", label: "Decay", type: "value" },
+  ],
+  outputs: [{ id: "out", label: "Out", type: "value" }],
+  defaultParams: { decay: 0.3, amplitude: 1 },
+  paramFields: [
+    { id: "decay", label: "Decay (s)", kind: "number", group: "General" },
+    { id: "amplitude", label: "Amplitude", kind: "number", group: "General" },
+  ],
+  evaluate: (inputs, params, ctx) => {
+    const trig = toBoolean(inputs.trigger);
+    const decay = Math.max(0.001, inputs.decay !== undefined ? Number(inputs.decay) || 0 : Number(params.decay) || 0.3);
+    const amplitude = Number(params.amplitude) || 0;
+
+    let state = pulseStateCache.get(ctx.nodeId);
+    if (!state) {
+      state = { lastTime: ctx.time, prevTrigger: false, energy: 0 };
+    }
+
+    // Scrub backwards: reseed rather than let a negative dt blow up the decay.
+    const rewound = ctx.time < state.lastTime - 0.5;
+    const dt = rewound ? 0 : Math.max(0, ctx.time - state.lastTime);
+    if (rewound) state.energy = 0;
+
+    state.energy *= Math.exp(-dt / decay);
+
+    if (trig && !state.prevTrigger) {
+      state.energy += amplitude;
+    }
+
+    state.prevTrigger = trig;
+    state.lastTime = ctx.time;
+    pulseStateCache.set(ctx.nodeId, state);
+
+    return { out: state.energy };
+  },
+};

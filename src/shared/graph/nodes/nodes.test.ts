@@ -6,7 +6,7 @@ import { CLAMP_NODE, MAP_RANGE_NODE, VALUE_MATH_NODE } from "./valueMath";
 import { TRANSFORM_NODE, DECOMPOSE_MATRIX_NODE, PARENT_NODE, LOOK_AT_NODE, MATRIX_TRANSFORM_NODE, TRANSFORM_VECTOR_NODE } from "./transform";
 import { VECTOR_COMPOSE_NODE, VECTOR_MATH_NODE, getUnusedAxes } from "./vector";
 import { COMPARE_NODE, BOOLEAN_LOGIC_NODE, TRIGGER_NODE, TOGGLE_NODE, GATE_NODE, LOGIC_BRIDGE_NODE } from "./logic";
-import { OSCILLATOR_NODE, ENVELOPE_NODE } from "./oscillator";
+import { OSCILLATOR_NODE, ENVELOPE_NODE, PULSE_NODE } from "./oscillator";
 import { COLOR_COMPOSE_NODE, COLOR_DECOMPOSE_NODE, COLOR_MATH_NODE } from "./color";
 import { OBJECT_BAR_GRAPH_NODE, OBJECT_BOX_NODE, OBJECT_DISC_NODE, OBJECT_EMPTY_NODE, OBJECT_PLANE_NODE, OBJECT_SPHERE_NODE, OBJECT_TEXT_NODE } from "./object";
 
@@ -306,6 +306,51 @@ describe("OSCILLATOR & ENVELOPE NODES", () => {
     ENVELOPE_NODE.evaluate({ trigger: 1 }, { attack: 1, release: 1 }, ctxEnv); // trigger starts at t=0
     const levelHalf = ENVELOPE_NODE.evaluate({ trigger: 1 }, { attack: 1, release: 1 }, { ...ctxEnv, time: 0.5 }).out as number;
     expect(levelHalf).toBeCloseTo(0.5);
+  });
+
+  test("pulse: no trigger stays at 0", () => {
+    const ctxPulse: EvalContext = { time: 0, step: 0, nodeId: "pulse-idle" };
+    const out = PULSE_NODE.evaluate({}, { decay: 0.3, amplitude: 1 }, ctxPulse).out as number;
+    expect(out).toBe(0);
+  });
+
+  test("pulse: rising edge spikes to amplitude then decays exponentially", () => {
+    const ctxPulse: EvalContext = { time: 0, step: 0, nodeId: "pulse-1" };
+    const peak = PULSE_NODE.evaluate({ trigger: 1 }, { decay: 0.3, amplitude: 1 }, ctxPulse).out as number;
+    expect(peak).toBeCloseTo(1);
+
+    const decayed = PULSE_NODE.evaluate({ trigger: 1 }, { decay: 0.3, amplitude: 1 }, { ...ctxPulse, time: 0.3 }).out as number;
+    expect(decayed).toBeCloseTo(Math.exp(-1), 4); // one time-constant elapsed
+    expect(decayed).toBeLessThan(peak);
+    expect(decayed).toBeGreaterThan(0);
+  });
+
+  test("pulse: long elapsed time with no retrigger decays to ~0", () => {
+    const ctxPulse: EvalContext = { time: 0, step: 0, nodeId: "pulse-2" };
+    PULSE_NODE.evaluate({ trigger: 1 }, { decay: 0.3, amplitude: 1 }, ctxPulse);
+    const settled = PULSE_NODE.evaluate({}, { decay: 0.3, amplitude: 1 }, { ...ctxPulse, time: 3 }).out as number;
+    expect(settled).toBeLessThan(0.01);
+  });
+
+  test("pulse: retrigger while decaying stacks additively", () => {
+    const ctxSingle: EvalContext = { time: 0, step: 0, nodeId: "pulse-single" };
+    PULSE_NODE.evaluate({ trigger: 1 }, { decay: 0.3, amplitude: 1 }, ctxSingle);
+    const singleAt02 = PULSE_NODE.evaluate({ trigger: 0 }, { decay: 0.3, amplitude: 1 }, { ...ctxSingle, time: 0.2 }).out as number;
+
+    const ctxStack: EvalContext = { time: 0, step: 0, nodeId: "pulse-stack" };
+    PULSE_NODE.evaluate({ trigger: 1 }, { decay: 0.3, amplitude: 1 }, ctxStack); // first hit at t=0
+    PULSE_NODE.evaluate({ trigger: 0 }, { decay: 0.3, amplitude: 1 }, { ...ctxStack, time: 0.1 }); // clear edge
+    const stackedAt02 = PULSE_NODE.evaluate({ trigger: 1 }, { decay: 0.3, amplitude: 1 }, { ...ctxStack, time: 0.2 }).out as number; // retrigger at t=0.2
+
+    expect(stackedAt02).toBeGreaterThan(singleAt02);
+  });
+
+  test("pulse: scrubbing backwards resets energy instead of blowing up", () => {
+    const ctxPulse: EvalContext = { time: 5, step: 300, nodeId: "pulse-rewind" };
+    PULSE_NODE.evaluate({ trigger: 1 }, { decay: 0.3, amplitude: 1 }, ctxPulse);
+    const rewound = PULSE_NODE.evaluate({}, { decay: 0.3, amplitude: 1 }, { ...ctxPulse, time: 0, step: 0 }).out as number;
+    expect(rewound).toBe(0);
+    expect(Number.isFinite(rewound)).toBe(true);
   });
 });
 
