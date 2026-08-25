@@ -916,6 +916,98 @@ export const CURVE_PRIMITIVE_NODE: NodeDefinition = {
   },
 };
 
+/**
+ * Wraps a base curve, scaling every sampled point by `scale` around the
+ * curve's own local origin — the curve-space equivalent of Instance
+ * Transform's per-instance Scale, but applied *before* a tube gets built
+ * around it instead of after. Scaling a curve keeps whatever Thickness
+ * Curve to Mesh / Curves to Meshes gives it untouched, since the tube is
+ * built fresh from the already-scaled points; scaling a finished tube MESH
+ * stretches its cross-section right along with its radius — see
+ * CURVE_ARRAY_NODE, built precisely to avoid that coupling.
+ */
+class ScaledCurve3 extends THREE.Curve<THREE.Vector3> {
+  constructor(
+    private base: THREE.Curve<THREE.Vector3>,
+    private scale: number,
+  ) {
+    super();
+  }
+
+  getPoint(t: number, target: THREE.Vector3 = new THREE.Vector3()): THREE.Vector3 {
+    this.base.getPoint(t, target);
+    target.multiplyScalar(this.scale);
+    return target;
+  }
+
+  // Same reasoning as SaggedLineCurve3's own override above: the rebuild
+  // guard downstream (Curves to Meshes' `signature`) is keyed on
+  // JSON.stringify(curve.toJSON()), and the default toJSON() has no idea
+  // `base`/`scale` exist.
+  toJSON(): THREE.CurveJSON & { base: unknown; scale: number } {
+    return { ...super.toJSON(), base: this.base.toJSON(), scale: this.scale };
+  }
+}
+
+/**
+ * Curve Array — duplicates one input curve into a list of N concentrically
+ * scaled copies (Start + i*Step), for feeding Curves to Meshes. Exists
+ * because Array/Instance Transform only ever duplicate baked *geometry*: an
+ * Array of tube meshes scaled up per instance grows their wall thickness
+ * right along with their radius (uniform scale can't tell "the ring's
+ * radius" apart from "the tube's own cross-section" on an already-meshed
+ * tube — same axes, same vertices). Scaling the *curve* first and meshing
+ * once per copy, all through one shared Thickness on Curves to Meshes,
+ * keeps that thickness constant regardless of each ring's radius, while
+ * Count stays a fully wired, generative parameter — no per-ring nodes.
+ */
+export const CURVE_ARRAY_NODE: NodeDefinition = {
+  type: "curve/array",
+  label: "Curve Array",
+  category: "curve",
+  inputs: [
+    { id: "curve", label: "Curve", type: "curve" },
+    { id: "count", label: "Count", type: "value" },
+    { id: "start", label: "Start Scale", type: "value" },
+    { id: "step", label: "Step Scale", type: "value" },
+  ],
+  outputs: [
+    { id: "curves", label: "Curves (List)", type: "list" },
+    // The exact scale factors used, in the same order as `curves` — feed
+    // this into List Statistics' Max (times the base curve's own Radius) to
+    // size a spoke/bound to match the outermost copy exactly, instead of
+    // re-deriving Count*Step by hand and risking it drifting out of sync.
+    { id: "scales", label: "Scales (List)", type: "list" },
+  ],
+  defaultParams: { count: 5, start: 1, step: 0.5 },
+  paramFields: [
+    { id: "count", label: "Count", kind: "number", step: 1 },
+    { id: "start", label: "Start Scale", kind: "number", step: 0.05 },
+    { id: "step", label: "Step Scale", kind: "number", step: 0.05 },
+  ],
+  evaluate: (inputs, params) => {
+    const base = inputs.curve instanceof THREE.Curve ? (inputs.curve as THREE.Curve<THREE.Vector3>) : null;
+    const count = Math.max(
+      0,
+      Math.min(1000, Math.floor(inputs.count !== undefined ? asNumber(inputs.count, 5) : asNumber(params.count, 5))),
+    );
+    const start = inputs.start !== undefined ? asNumber(inputs.start, 1) : asNumber(params.start, 1);
+    const step = inputs.step !== undefined ? asNumber(inputs.step, 0.5) : asNumber(params.step, 0.5);
+
+    if (!base) return { curves: [], scales: [] };
+
+    const curves: THREE.Curve<THREE.Vector3>[] = [];
+    const scales: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const scale = start + i * step;
+      curves.push(new ScaledCurve3(base, scale));
+      scales.push(scale);
+    }
+
+    return { curves, scales };
+  },
+};
+
 /** 3. Curve to Mesh Node (Variable Thickness Profile) */
 export const CURVE_TO_MESH_NODE: NodeDefinition = {
   type: "curve/to_mesh",

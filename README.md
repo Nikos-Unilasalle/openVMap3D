@@ -173,6 +173,7 @@ Les prises de connexion (sockets) sont identifiées par des codes couleur normal
 | :--- | :--- | :--- |
 | **Curve from Points**| `curve/from_points` | Génère une courbe 3D à partir d'une liste de points (Catmull-Rom, Bézier). |
 | **Curve Primitive** | `curve/primitive` | Génère des courbes géométriques (Hélice, Cercle, Ligne, Rectangle). |
+| **Curve Array** | `curve/array` | Duplique une courbe en N copies concentriques mises à l'échelle (Start + i×Step), pour des cercles concentriques à épaisseur de tube constante via Curves to Meshes. |
 | **Curve to Mesh** | `curve/to_mesh` | Génère un tube 3D balayé avec profil d'épaisseur variable. |
 | **Follow Path** | `curve/sample` | Échantillonne position, tangente et matrice d'orientation le long d'une courbe. |
 | **Curve Deform** | `curve/deform` | Curve-deform pliant un maillage le long d'une trajectoire. |

@@ -5,10 +5,12 @@ import { getCurveNodePose } from "../curvePoseStore";
 import { evaluateGraph } from "../evaluate";
 import {
   createVariableThicknessTubeGeometry,
+  CURVE_ARRAY_NODE,
   CURVE_DEFORM_NODE,
   CURVE_FROM_POINTS_NODE,
   CURVE_PRIMITIVE_NODE,
   CURVE_TO_MESH_NODE,
+  CURVES_TO_MESH_NODE,
   SAMPLE_CURVE_NODE,
 } from "./curve";
 
@@ -742,5 +744,119 @@ describe("Curve from Points -> Curve to Mesh: animating Sag actually rebuilds th
     // reused across both calls (CTX has a fixed nodeId), so this only passes
     // if the rebuild guard actually saw the curves as different.
     expect(saggedBox.min.y).toBeLessThan(flatBox.min.y - 1);
+  });
+});
+
+/**
+ * Radial wall thickness of a flat, Y-up ring tube: (outermost - innermost
+ * vertex distance from the Y axis) / 2, among vertices near `centerRadius`
+ * (default: all of them — correct for a mesh holding a single ring; pass an
+ * explicit `centerRadius`/`band` to isolate one ring out of a merged
+ * multi-ring mesh, since a global min/max there would span the whole stack
+ * of rings instead of one tube's own cross-section).
+ */
+function ringWallThickness(group: THREE.Group, centerRadius = Infinity, band = 0.3): number {
+  let mesh: THREE.Mesh | null = null;
+  group.traverse((obj) => {
+    if (!mesh && obj instanceof THREE.Mesh) mesh = obj;
+  });
+  if (!mesh) throw new Error("no mesh found in group");
+  const position = (mesh as THREE.Mesh).geometry.attributes.position;
+  let minR = Infinity;
+  let maxR = -Infinity;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < position.count; i++) {
+    v.fromBufferAttribute(position, i);
+    const r = Math.hypot(v.x, v.z);
+    if (Number.isFinite(centerRadius) && Math.abs(r - centerRadius) > band) continue;
+    minR = Math.min(minR, r);
+    maxR = Math.max(maxR, r);
+  }
+  return (maxR - minR) / 2;
+}
+
+describe("CURVE_ARRAY_NODE", () => {
+  it("duplicates the input curve Count times, scaled by Start + i*Step", () => {
+    const circle = CURVE_PRIMITIVE_NODE.evaluate({}, { primitiveType: "circle", radius: 2 }, CTX).curve as THREE.Curve<THREE.Vector3>;
+    const res = CURVE_ARRAY_NODE.evaluate({ curve: circle }, { count: 4, start: 1, step: 0.5 }, CTX);
+
+    expect(res.scales).toEqual([1, 1.5, 2, 2.5]);
+    const curves = res.curves as THREE.Curve<THREE.Vector3>[];
+    expect(curves).toHaveLength(4);
+
+    // Each copy is the base curve scaled about the local origin — a point
+    // at radius R on the base sits at radius R*scale on copy i.
+    const basePoint = circle.getPoint(0);
+    for (let i = 0; i < curves.length; i++) {
+      const scaled = curves[i].getPoint(0);
+      expect(scaled.x).toBeCloseTo(basePoint.x * (1 + i * 0.5), 5);
+      expect(scaled.z).toBeCloseTo(basePoint.z * (1 + i * 0.5), 5);
+    }
+  });
+
+  it("no curve wired, or Count 0: empty lists, no throw", () => {
+    const noCurve = CURVE_ARRAY_NODE.evaluate({}, { count: 5, start: 1, step: 1 }, CTX);
+    expect(noCurve.curves).toEqual([]);
+    expect(noCurve.scales).toEqual([]);
+
+    const circle = CURVE_PRIMITIVE_NODE.evaluate({}, { primitiveType: "circle", radius: 2 }, CTX).curve as THREE.Curve<THREE.Vector3>;
+    const zeroCount = CURVE_ARRAY_NODE.evaluate({ curve: circle }, { count: 0, start: 1, step: 1 }, CTX);
+    expect(zeroCount.curves).toEqual([]);
+  });
+
+  it("regression: a bigger ring keeps the SAME tube thickness — the bug this node exists to fix", () => {
+    // Instance Transform's per-instance Scale grows a baked tube MESH
+    // uniformly, so its wall thickness grows right along with its radius.
+    // Curve Array scales the CURVE before meshing instead, so Curves to
+    // Meshes' one shared Thickness stays the tube's actual thickness no
+    // matter how big the ring gets.
+    const circle = CURVE_PRIMITIVE_NODE.evaluate({}, { primitiveType: "circle", radius: 2 }, CTX).curve as THREE.Curve<THREE.Vector3>;
+    const { curves } = CURVE_ARRAY_NODE.evaluate({ curve: circle }, { count: 3, start: 1, step: 2 }, CTX) as {
+      curves: THREE.Curve<THREE.Vector3>[];
+    };
+
+    const innerMesh = CURVE_TO_MESH_NODE.evaluate({ curve: curves[0] }, { ...CURVE_TO_MESH_NODE.defaultParams, thickness: 0.1 }, {
+      time: 0,
+      step: 0,
+      nodeId: "ring-inner",
+    }).geometry as THREE.Group;
+    const outerMesh = CURVE_TO_MESH_NODE.evaluate({ curve: curves[2] }, { ...CURVE_TO_MESH_NODE.defaultParams, thickness: 0.1 }, {
+      time: 0,
+      step: 0,
+      nodeId: "ring-outer",
+    }).geometry as THREE.Group;
+
+    // curves[0] is radius 2 (scale 1), curves[2] is radius 10 (scale 5) — a
+    // 5x bigger ring. Discretized tube cross-sections (finite radialSegments)
+    // systematically undershoot the nominal Thickness a bit, so compare the
+    // two measured thicknesses to each other rather than to the nominal
+    // 0.1 — that's the actual property this node exists to guarantee: wall
+    // thickness independent of ring radius, not exact discretization fidelity.
+    const innerThickness = ringWallThickness(innerMesh);
+    const outerThickness = ringWallThickness(outerMesh);
+    expect(innerThickness).toBeGreaterThan(0.05); // sanity: actually built a tube, not a flat line
+    expect(outerThickness).toBeCloseTo(innerThickness, 2);
+  });
+
+  it("end-to-end through Curves to Meshes: one shared Thickness, N different radii", () => {
+    const circle = CURVE_PRIMITIVE_NODE.evaluate({}, { primitiveType: "circle", radius: 1 }, CTX).curve as THREE.Curve<THREE.Vector3>;
+    const { curves } = CURVE_ARRAY_NODE.evaluate({ curve: circle }, { count: 5, start: 1, step: 1 }, CTX) as {
+      curves: THREE.Curve<THREE.Vector3>[];
+    };
+
+    const res = CURVES_TO_MESH_NODE.evaluate(
+      { curves },
+      { ...CURVES_TO_MESH_NODE.defaultParams, thickness: 0.08 },
+      { time: 0, step: 0, nodeId: "web-mesh" },
+    );
+    const group = res.geometry as THREE.Group;
+    // Radii are 1, 2, 3, 4, 5 (Start=1, Step=1) — isolate the innermost and
+    // outermost rings out of the merged mesh and compare their thicknesses
+    // to each other (see the regression test above for why not to a fixed
+    // nominal value).
+    const innerThickness = ringWallThickness(group, 1);
+    const outerThickness = ringWallThickness(group, 5);
+    expect(innerThickness).toBeGreaterThan(0.03);
+    expect(outerThickness).toBeCloseTo(innerThickness, 2);
   });
 });
