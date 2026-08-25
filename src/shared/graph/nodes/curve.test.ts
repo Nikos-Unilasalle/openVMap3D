@@ -64,6 +64,39 @@ describe("CURVE NODES", () => {
     }
   });
 
+  it("CURVE_PRIMITIVE_NODE: Sag droops every shape without moving its endpoints", () => {
+    // "line" is excluded: the primitive is hardcoded to run straight along
+    // Y, the same axis Sag droops along, so drooping "down" is drooping
+    // along the segment's own direction — geometrically a pure reparam of
+    // the same straight path, not a visible bulge. Sag's slack-wire droop
+    // only reads on a segment with some perpendicular-to-Y extent, which
+    // every other primitive shape has (see CURVE_FROM_POINTS_NODE's own sag
+    // tests for the same reason its fixture uses horizontal points).
+    for (const shape of ["circle", "ellipse", "heart", "star", "polygon", "diamond", "arch", "wave", "rectangle", "helix"]) {
+      const taut = CURVE_PRIMITIVE_NODE.evaluate({}, { primitiveType: shape, radius: 2, height: 3, turns: 5, sag: 0 }, CTX)
+        .curve as THREE.Curve<THREE.Vector3>;
+      const sagged = CURVE_PRIMITIVE_NODE.evaluate({}, { primitiveType: shape, radius: 2, height: 3, turns: 5, sag: 0.3 }, CTX)
+        .curve as THREE.Curve<THREE.Vector3>;
+
+      // Sag only pulls the interior of each segment down; the endpoints a
+      // closed/open shape was built from stay exactly where they were.
+      expect(sagged.getPoint(0).distanceTo(taut.getPoint(0)), shape).toBeLessThan(1e-6);
+
+      // Somewhere along the curve, Sag actually moved a point downward —
+      // otherwise the knob silently does nothing for this shape. Sampled at
+      // a step (1/37, prime) that can't land exactly on every shape's own
+      // segment-vertex spacing (20, 24, or turns*10 segments) — landing
+      // exactly on a vertex would read a false "no droop" there, since
+      // droop is 0 at every segment's own endpoints by construction.
+      let maxDrop = 0;
+      for (let i = 1; i < 37; i++) {
+        const t = i / 37;
+        maxDrop = Math.max(maxDrop, taut.getPointAt(t).y - sagged.getPointAt(t).y);
+      }
+      expect(maxDrop, shape).toBeGreaterThan(0.01);
+    }
+  });
+
   it("CURVE_FROM_POINTS_NODE closed emits a closed curve", () => {
     const res = CURVE_FROM_POINTS_NODE.evaluate(
       {
@@ -275,6 +308,33 @@ describe("CURVE_FROM_POINTS_NODE sag (linear type — slack wire droop)", () => 
     expect(res.curve).toBeInstanceOf(THREE.CurvePath);
     const mid = (res.curve as THREE.CurvePath<THREE.Vector3>).getPoint(0.25);
     expect(mid.y).toBeCloseTo(0, 5); // 5 (start Y) - 5 (sag) at the segment's own midpoint
+  });
+
+  it("droops toward true WORLD -Y even when the node itself is rotated, not local -Y", () => {
+    // A segment lying flat along local X, then the whole node rotated 90°
+    // about X: local Y now points along world Z, and local Z now points
+    // along world -Y. A sag that (bug) droops along local -Y would show up
+    // as a world Z shift once rotated; a sag that (fix) compensates for the
+    // node's own rotation still lands on world -Y.
+    const ctxRot: EvalContext = { time: 0, step: 0, nodeId: "sag-rotated" };
+    const flatPoints = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(10, 0, 0)];
+    const rotatedParams = {
+      ...CURVE_FROM_POINTS_NODE.defaultParams,
+      type: "linear",
+      sag: 2,
+      rotation: new THREE.Vector3(Math.PI / 2, 0, 0),
+    };
+
+    const taut = CURVE_FROM_POINTS_NODE.evaluate({ points: flatPoints }, { ...rotatedParams, sag: 0 }, ctxRot);
+    const tautMidWorld = (taut.curve as THREE.CurvePath<THREE.Vector3>).getPoint(0.5).applyMatrix4(getCurveNodePose(ctxRot.nodeId)!);
+
+    const sagged = CURVE_FROM_POINTS_NODE.evaluate({ points: flatPoints }, rotatedParams, ctxRot);
+    const saggedMidWorld = (sagged.curve as THREE.CurvePath<THREE.Vector3>).getPoint(0.5).applyMatrix4(getCurveNodePose(ctxRot.nodeId)!);
+
+    // Drops by exactly `sag` along world Y, and nowhere else.
+    expect(saggedMidWorld.y).toBeCloseTo(tautMidWorld.y - 2, 4);
+    expect(saggedMidWorld.x).toBeCloseTo(tautMidWorld.x, 4);
+    expect(saggedMidWorld.z).toBeCloseTo(tautMidWorld.z, 4);
   });
 });
 

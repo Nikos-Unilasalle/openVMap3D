@@ -579,6 +579,8 @@ export function createVariableThicknessTubeGeometry(
 
 /** 1. Curve from Points Node */
 
+const WORLD_DOWN = new THREE.Vector3(0, -1, 0);
+
 /**
  * A straight segment between two points that droops under its own weight,
  * like a slack wire strung pole-to-pole — a parabolic approximation of a
@@ -586,45 +588,76 @@ export function createVariableThicknessTubeGeometry(
  * cheaper than solving one). `sag` is a world-unit droop depth, peaking at
  * the segment's midpoint (t=0.5) and zero at both endpoints, so the two
  * points the segment was built from are exactly where the curve still meets
- * them — only the interior sags. Deliberately world -Y only (this app's up
- * axis), never a direction derived from the segment itself: real gravity
- * doesn't care which way a wire happens to run.
+ * them — only the interior sags. Real gravity doesn't care which way a wire
+ * happens to run, so this always droops toward world -Y, never a direction
+ * derived from the segment itself — but the curve's own points are defined
+ * in the node's LOCAL space, evaluated before its pose (location/rotation/
+ * scale) is applied downstream. `down` is world -Y pre-rotated into that
+ * local space (see the two curve-producing nodes' evaluate()), so the droop
+ * still lands on world -Y once the node's own transform is applied — a web
+ * tilted 90° sags sideways in its own local frame precisely so it sags
+ * *down* once rendered, instead of drooping along whatever local axis -Y
+ * happened to rotate onto.
  */
 class SaggedLineCurve3 extends THREE.Curve<THREE.Vector3> {
   constructor(
     private v1: THREE.Vector3,
     private v2: THREE.Vector3,
     private sag: number,
+    private down: THREE.Vector3 = WORLD_DOWN,
   ) {
     super();
   }
 
   getPoint(t: number, target: THREE.Vector3 = new THREE.Vector3()): THREE.Vector3 {
     target.lerpVectors(this.v1, this.v2, t);
-    target.y -= this.sag * 4 * t * (1 - t);
+    target.addScaledVector(this.down, this.sag * 4 * t * (1 - t));
     return target;
   }
 
   // THREE.Curve's own toJSON() only ever serializes {metadata, arcLengthDivisions}
-  // — v1/v2/sag are unknown to it, since it has no idea a subclass exists.
+  // — v1/v2/sag/down are unknown to it, since it has no idea a subclass exists.
   // Curve to Mesh's rebuild guard is keyed on JSON.stringify(curve.toJSON())
   // (see CURVE_TO_MESH_NODE's `signature`), so without this override every
   // frame's sag value produced byte-identical JSON: the tube mesh never
-  // rebuilt while animating Sag, even though the curve itself (and its own
-  // preview line, which resamples fresh every frame instead of diffing a
-  // signature) visibly moved.
-  toJSON(): THREE.CurveJSON & { v1: number[]; v2: number[]; sag: number } {
-    return { ...super.toJSON(), v1: this.v1.toArray(), v2: this.v2.toArray(), sag: this.sag };
+  // rebuilt while animating Sag (or Rotation, which now also feeds `down`),
+  // even though the curve itself (and its own preview line, which resamples
+  // fresh every frame instead of diffing a signature) visibly moved.
+  toJSON(): THREE.CurveJSON & { v1: number[]; v2: number[]; sag: number; down: number[] } {
+    return { ...super.toJSON(), v1: this.v1.toArray(), v2: this.v2.toArray(), sag: this.sag, down: this.down.toArray() };
   }
 }
 
+/**
+ * World -Y, expressed in a node's own local space, so a straight segment
+ * drooping "down" by `down` still droops toward true world -Y once the
+ * node's pose (location/rotation/scale) is applied on top. `transformDirection`
+ * ignores translation and normalizes away scale, so only the node's own
+ * rotation (from its Rotation param and any wired Matrix) ends up compensated
+ * for — exactly the part that would otherwise carry local -Y away from true
+ * down. A singular pose (e.g. a zero-scale axis) falls back to local -Y
+ * rather than propagating NaN into every sagged point.
+ */
+function localDownFor(poseMatrix: THREE.Matrix4): THREE.Vector3 {
+  const inverse = new THREE.Matrix4().copy(poseMatrix).invert();
+  const down = WORLD_DOWN.clone().transformDirection(inverse);
+  return Number.isFinite(down.x) && Number.isFinite(down.y) && Number.isFinite(down.z) ? down : WORLD_DOWN.clone();
+}
+
 /** Builds a curve (linear / bezier / catmull-rom) through `pts` — shared by the
- * local preview and the pose-baked world output. `sag` only affects the
+ * local preview and the pose-baked world output. `sag`/`down` only affect the
  * "linear" type — see SaggedLineCurve3 — the other two already bend smoothly
  * through the points on their own. */
-function buildPointsCurve(pts: THREE.Vector3[], type: string, closed: boolean, tension: number, sag = 0): THREE.Curve<THREE.Vector3> {
+function buildPointsCurve(
+  pts: THREE.Vector3[],
+  type: string,
+  closed: boolean,
+  tension: number,
+  sag = 0,
+  down: THREE.Vector3 = WORLD_DOWN,
+): THREE.Curve<THREE.Vector3> {
   if (type === "linear") {
-    const segment = (a: THREE.Vector3, b: THREE.Vector3) => (sag > 0 ? new SaggedLineCurve3(a, b, sag) : new THREE.LineCurve3(a, b));
+    const segment = (a: THREE.Vector3, b: THREE.Vector3) => (sag > 0 ? new SaggedLineCurve3(a, b, sag, down) : new THREE.LineCurve3(a, b));
     const path = new THREE.CurvePath<THREE.Vector3>();
     for (let i = 0; i < pts.length - 1; i++) path.add(segment(pts[i], pts[i + 1]));
     if (closed && pts.length > 2) path.add(segment(pts[pts.length - 1], pts[0]));
@@ -693,9 +726,10 @@ export const CURVE_FROM_POINTS_NODE: NodeDefinition = {
     // remembering to flip Type to Linear silently did nothing; forcing
     // linear here whenever Sag is on means the knob always visibly works.
     const type = sag > 0 ? "linear" : String(params.type || "catmull");
+    const poseMatrix = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale);
 
     let curve: THREE.Curve<THREE.Vector3>;
-    curve = buildPointsCurve(pts, type, closed, tension, sag);
+    curve = buildPointsCurve(pts, type, closed, tension, sag, localDownFor(poseMatrix));
 
     const preview = getCurvePreviewLine(getState(ctx.nodeId), ctx.nodeId, curve);
     applyNativePose(preview, inputs, params, ctx);
@@ -703,7 +737,7 @@ export const CURVE_FROM_POINTS_NODE: NodeDefinition = {
     // Record where the gizmo put this curve so curve-building consumers (Curve
     // to Mesh) can compose it into their own matrix — keeping the geometry they
     // build local, rather than baking a world offset into it.
-    setCurveNodePose(ctx.nodeId, composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+    setCurveNodePose(ctx.nodeId, poseMatrix);
 
     return { curve, geometry: preview };
   },
@@ -718,6 +752,7 @@ export const CURVE_PRIMITIVE_NODE: NodeDefinition = {
     { id: "radius", label: "Radius / Size", type: "value" },
     { id: "height", label: "Height", type: "value" },
     { id: "turns", label: "Turns", type: "value" },
+    { id: "sag", label: "Sag", type: "value" },
     CURVE_TRANSFORM_INPUT,
     CURVE_VISIBLE_INPUT,
   ],
@@ -730,6 +765,9 @@ export const CURVE_PRIMITIVE_NODE: NodeDefinition = {
     radius: 1.5,
     height: 3.0,
     turns: 3.0,
+    // 0 = taut, same shape as before this param existed — see the Sag note
+    // on Curve from Points, the same tradeoff applies here.
+    sag: 0,
     ...CURVE_TRANSFORM_DEFAULTS,
   },
   dynamicParamFields: () => [
@@ -743,86 +781,100 @@ export const CURVE_PRIMITIVE_NODE: NodeDefinition = {
     { id: "radius", label: "Radius / Size", kind: "number", step: 0.1 },
     { id: "height", label: "Height", kind: "number", step: 0.2 },
     { id: "turns", label: "Turns / Sides / Cycles", kind: "number", step: 0.5 },
+    { id: "sag", label: "Sag (-Y droop, forces straight segments)", kind: "number", step: 0.05 },
   ],
   evaluate: (inputs, params, ctx) => {
     const shape = String(params.primitiveType || "helix");
     const radius = inputs.radius !== undefined ? asNumber(inputs.radius, 1.5) : asNumber(params.radius, 1.5);
     const height = inputs.height !== undefined ? asNumber(inputs.height, 3.0) : asNumber(params.height, 3.0);
     const turns = inputs.turns !== undefined ? asNumber(inputs.turns, 3.0) : asNumber(params.turns, 3.0);
-    const steps = 64;
+    const sag = Math.max(0, inputs.sag !== undefined ? asNumber(inputs.sag, 0) : asNumber(params.sag, 0));
+    // Shapes already built from dead-straight edges (star/polygon/diamond/
+    // rectangle/line) sag exactly like Curve from Points does. Shapes built
+    // as one smooth CatmullRomCurve3 (circle/ellipse/heart/arch/wave/helix)
+    // only switch to straight, sag-able segments once Sag is actually
+    // dialled up — same "the knob always visibly works" reasoning as there.
+    const smoothType = sag > 0 ? "linear" : "catmull";
+    // Sag droops each straight segment by its own full depth regardless of
+    // that segment's length (see SaggedLineCurve3) — sampling a round shape
+    // at its usual dense 64 points would droop every one of those 64 tiny
+    // segments independently, reading as broken spikes rather than a single
+    // gentle drape. Coarsen the sample once segments actually go straight,
+    // same way a real anchored strand only has a handful of spans.
+    const steps = sag > 0 ? 20 : 64;
+    const poseMatrix = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale);
+    const localDown = localDownFor(poseMatrix);
 
     let curve: THREE.Curve<THREE.Vector3>;
 
     if (shape === "circle") {
       const pts: THREE.Vector3[] = [];
-      for (let i = 0; i <= steps; i++) {
+      for (let i = 0; i < steps; i++) {
         const theta = (i / steps) * Math.PI * 2;
         pts.push(new THREE.Vector3(Math.cos(theta) * radius, 0, Math.sin(theta) * radius));
       }
-      curve = new THREE.CatmullRomCurve3(pts, true);
+      curve = buildPointsCurve(pts, smoothType, true, 0.5, sag, localDown);
     } else if (shape === "ellipse") {
       const rx = radius;
       const rz = height / 2 || radius;
       const pts: THREE.Vector3[] = [];
-      for (let i = 0; i <= steps; i++) {
+      for (let i = 0; i < steps; i++) {
         const theta = (i / steps) * Math.PI * 2;
         pts.push(new THREE.Vector3(Math.cos(theta) * rx, 0, Math.sin(theta) * rz));
       }
-      curve = new THREE.CatmullRomCurve3(pts, true);
+      curve = buildPointsCurve(pts, smoothType, true, 0.5, sag, localDown);
     } else if (shape === "heart") {
       const s = radius / 16;
       const pts: THREE.Vector3[] = [];
-      for (let i = 0; i <= steps; i++) {
+      for (let i = 0; i < steps; i++) {
         const t = (i / steps) * Math.PI * 2;
         const x = 16 * Math.pow(Math.sin(t), 3);
         const z = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
         pts.push(new THREE.Vector3(x * s, 0, z * s));
       }
-      curve = new THREE.CatmullRomCurve3(pts, true);
+      curve = buildPointsCurve(pts, smoothType, true, 0.5, sag, localDown);
     } else if (shape === "star") {
       const points = Math.max(3, Math.round(turns || 5));
       const inner = radius * 0.5;
-      const path = new THREE.CurvePath<THREE.Vector3>();
+      const pts: THREE.Vector3[] = [];
       for (let i = 0; i < points * 2; i++) {
         const r = i % 2 === 0 ? radius : inner;
         const theta = (i / (points * 2)) * Math.PI * 2 - Math.PI / 2;
-        const a = new THREE.Vector3(Math.cos(theta) * r, 0, Math.sin(theta) * r);
-        const next = (i + 1) % (points * 2);
-        const nr = next % 2 === 0 ? radius : inner;
-        const ntheta = (next / (points * 2)) * Math.PI * 2 - Math.PI / 2;
-        const b = new THREE.Vector3(Math.cos(ntheta) * nr, 0, Math.sin(ntheta) * nr);
-        path.add(new THREE.LineCurve3(a, b));
+        pts.push(new THREE.Vector3(Math.cos(theta) * r, 0, Math.sin(theta) * r));
       }
-      curve = path;
+      curve = buildPointsCurve(pts, "linear", true, 0.5, sag, localDown);
     } else if (shape === "polygon") {
       const sides = Math.max(3, Math.round(turns || 6));
-      const path = new THREE.CurvePath<THREE.Vector3>();
+      const pts: THREE.Vector3[] = [];
       for (let i = 0; i < sides; i++) {
         const theta = (i / sides) * Math.PI * 2 - Math.PI / 2;
-        const a = new THREE.Vector3(Math.cos(theta) * radius, 0, Math.sin(theta) * radius);
-        const nt = ((i + 1) / sides) * Math.PI * 2 - Math.PI / 2;
-        const b = new THREE.Vector3(Math.cos(nt) * radius, 0, Math.sin(nt) * radius);
-        path.add(new THREE.LineCurve3(a, b));
+        pts.push(new THREE.Vector3(Math.cos(theta) * radius, 0, Math.sin(theta) * radius));
       }
-      curve = path;
+      curve = buildPointsCurve(pts, "linear", true, 0.5, sag, localDown);
     } else if (shape === "diamond") {
       const hw = radius;
       const hh = height / 2 || radius;
-      const path = new THREE.CurvePath<THREE.Vector3>();
-      path.add(new THREE.LineCurve3(new THREE.Vector3(0, 0, hh), new THREE.Vector3(hw, 0, 0)));
-      path.add(new THREE.LineCurve3(new THREE.Vector3(hw, 0, 0), new THREE.Vector3(0, 0, -hh)));
-      path.add(new THREE.LineCurve3(new THREE.Vector3(0, 0, -hh), new THREE.Vector3(-hw, 0, 0)));
-      path.add(new THREE.LineCurve3(new THREE.Vector3(-hw, 0, 0), new THREE.Vector3(0, 0, hh)));
-      curve = path;
+      const pts = [
+        new THREE.Vector3(0, 0, hh),
+        new THREE.Vector3(hw, 0, 0),
+        new THREE.Vector3(0, 0, -hh),
+        new THREE.Vector3(-hw, 0, 0),
+      ];
+      curve = buildPointsCurve(pts, "linear", true, 0.5, sag, localDown);
     } else if (shape === "arch") {
       const pts: THREE.Vector3[] = [];
       for (let i = 0; i <= steps; i++) {
         const theta = (i / steps) * Math.PI;
         pts.push(new THREE.Vector3(Math.cos(theta) * radius, 0, Math.sin(theta) * radius));
       }
-      curve = new THREE.CatmullRomCurve3(pts, false);
+      curve = buildPointsCurve(pts, smoothType, false, 0.5, sag, localDown);
     } else if (shape === "line") {
-      curve = new THREE.LineCurve3(new THREE.Vector3(0, -height / 2, 0), new THREE.Vector3(0, height / 2, 0));
+      // Sag droops along -Y, and this segment already runs along Y — so
+      // dialling it up here reparametrizes the same straight path instead
+      // of bulging it. Left wired up for consistency (every primitive takes
+      // the input), it just has nothing to visibly do on this one shape.
+      const pts = [new THREE.Vector3(0, -height / 2, 0), new THREE.Vector3(0, height / 2, 0)];
+      curve = buildPointsCurve(pts, "linear", false, 0.5, sag, localDown);
     } else if (shape === "wave") {
       const cycles = Math.max(0.5, turns || 2);
       const pts: THREE.Vector3[] = [];
@@ -831,19 +883,20 @@ export const CURVE_PRIMITIVE_NODE: NodeDefinition = {
         const theta = t * cycles * Math.PI * 2;
         pts.push(new THREE.Vector3(Math.sin(theta) * radius, 0, -height / 2 + height * t));
       }
-      curve = new THREE.CatmullRomCurve3(pts, false);
+      curve = buildPointsCurve(pts, smoothType, false, 0.5, sag, localDown);
     } else if (shape === "rectangle") {
-      const path = new THREE.CurvePath<THREE.Vector3>();
       const hw = radius;
       const hh = height / 2 || radius;
-      path.add(new THREE.LineCurve3(new THREE.Vector3(-hw, 0, -hh), new THREE.Vector3(hw, 0, -hh)));
-      path.add(new THREE.LineCurve3(new THREE.Vector3(hw, 0, -hh), new THREE.Vector3(hw, 0, hh)));
-      path.add(new THREE.LineCurve3(new THREE.Vector3(hw, 0, hh), new THREE.Vector3(-hw, 0, hh)));
-      path.add(new THREE.LineCurve3(new THREE.Vector3(-hw, 0, hh), new THREE.Vector3(-hw, 0, -hh)));
-      curve = path;
+      const pts = [
+        new THREE.Vector3(-hw, 0, -hh),
+        new THREE.Vector3(hw, 0, -hh),
+        new THREE.Vector3(hw, 0, hh),
+        new THREE.Vector3(-hw, 0, hh),
+      ];
+      curve = buildPointsCurve(pts, "linear", true, 0.5, sag, localDown);
     } else {
       // Helix / Spiral
-      const stepsH = Math.max(32, Math.round(turns * 32));
+      const stepsH = sag > 0 ? Math.max(8, Math.round(turns * 10)) : Math.max(32, Math.round(turns * 32));
       const pts: THREE.Vector3[] = [];
       for (let i = 0; i <= stepsH; i++) {
         const t = i / stepsH;
@@ -851,13 +904,13 @@ export const CURVE_PRIMITIVE_NODE: NodeDefinition = {
         const y = (t - 0.5) * height;
         pts.push(new THREE.Vector3(Math.cos(theta) * radius, y, Math.sin(theta) * radius));
       }
-      curve = new THREE.CatmullRomCurve3(pts, false);
+      curve = buildPointsCurve(pts, smoothType, false, 0.5, sag, localDown);
     }
 
     const preview = getCurvePreviewLine(getState(ctx.nodeId), ctx.nodeId, curve);
     applyNativePose(preview, inputs, params, ctx);
 
-    setCurveNodePose(ctx.nodeId, composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+    setCurveNodePose(ctx.nodeId, poseMatrix);
 
     return { curve, geometry: preview };
   },
