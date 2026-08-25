@@ -917,49 +917,61 @@ export const CURVE_PRIMITIVE_NODE: NodeDefinition = {
 };
 
 /**
- * Wraps a base curve, scaling every sampled point by `scale` around the
- * curve's own local origin — the curve-space equivalent of Instance
- * Transform's per-instance Scale, but applied *before* a tube gets built
- * around it instead of after. Scaling a curve keeps whatever Thickness
- * Curve to Mesh / Curves to Meshes gives it untouched, since the tube is
- * built fresh from the already-scaled points; scaling a finished tube MESH
- * stretches its cross-section right along with its radius — see
- * CURVE_ARRAY_NODE, built precisely to avoid that coupling.
+ * Wraps a base curve, radially rescaling every sampled point around the
+ * curve's own local origin: a point at distance d along direction u becomes
+ * u * (d*scale + offset) — the curve-space equivalent of Instance
+ * Transform's per-instance Scale/Position, but applied *before* a tube gets
+ * built around it instead of after. Scaling/offsetting a curve keeps
+ * whatever Thickness Curve to Mesh / Curves to Meshes gives it untouched,
+ * since the tube is built fresh from the already-moved points; transforming
+ * a finished tube MESH stretches its cross-section right along with its
+ * radius — see CURVE_ARRAY_NODE, built precisely to avoid that coupling.
+ * `offset` is a world-unit push along each point's own direction from the
+ * origin, independent of the base curve's own size — unlike `scale`, it
+ * doesn't need dividing by the base radius by hand to get an exact spacing.
  */
-class ScaledCurve3 extends THREE.Curve<THREE.Vector3> {
+class RadialOffsetCurve3 extends THREE.Curve<THREE.Vector3> {
   constructor(
     private base: THREE.Curve<THREE.Vector3>,
     private scale: number,
+    private offset: number,
   ) {
     super();
   }
 
   getPoint(t: number, target: THREE.Vector3 = new THREE.Vector3()): THREE.Vector3 {
     this.base.getPoint(t, target);
-    target.multiplyScalar(this.scale);
+    const d = target.length();
+    // A point sitting on the curve's own origin has no direction to push
+    // along — leave it there rather than dividing by zero.
+    if (d < 1e-9) return target;
+    target.multiplyScalar((d * this.scale + this.offset) / d);
     return target;
   }
 
   // Same reasoning as SaggedLineCurve3's own override above: the rebuild
   // guard downstream (Curves to Meshes' `signature`) is keyed on
   // JSON.stringify(curve.toJSON()), and the default toJSON() has no idea
-  // `base`/`scale` exist.
-  toJSON(): THREE.CurveJSON & { base: unknown; scale: number } {
-    return { ...super.toJSON(), base: this.base.toJSON(), scale: this.scale };
+  // `base`/`scale`/`offset` exist.
+  toJSON(): THREE.CurveJSON & { base: unknown; scale: number; offset: number } {
+    return { ...super.toJSON(), base: this.base.toJSON(), scale: this.scale, offset: this.offset };
   }
 }
 
 /**
- * Curve Array — duplicates one input curve into a list of N concentrically
- * scaled copies (Start + i*Step), for feeding Curves to Meshes. Exists
- * because Array/Instance Transform only ever duplicate baked *geometry*: an
- * Array of tube meshes scaled up per instance grows their wall thickness
- * right along with their radius (uniform scale can't tell "the ring's
- * radius" apart from "the tube's own cross-section" on an already-meshed
- * tube — same axes, same vertices). Scaling the *curve* first and meshing
- * once per copy, all through one shared Thickness on Curves to Meshes,
- * keeps that thickness constant regardless of each ring's radius, while
- * Count stays a fully wired, generative parameter — no per-ring nodes.
+ * Curve Array — duplicates one input curve into a list of N concentric
+ * copies, each point pushed out by Spacing*i (world units, e.g. "0.5m
+ * between rings" regardless of the base curve's own size) and/or scaled by
+ * Start + i*Step (proportional growth), for feeding Curves to Meshes.
+ * Exists because Array/Instance Transform only ever duplicate baked
+ * *geometry*: an Array of tube meshes scaled up per instance grows their
+ * wall thickness right along with their radius (uniform scale can't tell
+ * "the ring's radius" apart from "the tube's own cross-section" on an
+ * already-meshed tube — same axes, same vertices). Scaling/offsetting the
+ * *curve* first and meshing once per copy, all through one shared Thickness
+ * on Curves to Meshes, keeps that thickness constant regardless of each
+ * ring's radius, while Count stays a fully wired, generative parameter — no
+ * per-ring nodes.
  */
 export const CURVE_ARRAY_NODE: NodeDefinition = {
   type: "curve/array",
@@ -968,22 +980,28 @@ export const CURVE_ARRAY_NODE: NodeDefinition = {
   inputs: [
     { id: "curve", label: "Curve", type: "curve" },
     { id: "count", label: "Count", type: "value" },
+    { id: "spacing", label: "Spacing", type: "value" },
     { id: "start", label: "Start Scale", type: "value" },
     { id: "step", label: "Step Scale", type: "value" },
   ],
   outputs: [
     { id: "curves", label: "Curves (List)", type: "list" },
-    // The exact scale factors used, in the same order as `curves` — feed
-    // this into List Statistics' Max (times the base curve's own Radius) to
-    // size a spoke/bound to match the outermost copy exactly, instead of
-    // re-deriving Count*Step by hand and risking it drifting out of sync.
+    // The exact offset/scale used per copy, same order as `curves` — feed
+    // either into List Statistics' Max to size a spoke/bound to match the
+    // outermost copy exactly (offset directly; scale needs multiplying by
+    // the base curve's own Radius first), instead of re-deriving
+    // Count*Spacing by hand and risking it drifting out of sync.
+    { id: "offsets", label: "Offsets (List)", type: "list" },
     { id: "scales", label: "Scales (List)", type: "list" },
   ],
-  defaultParams: { count: 5, start: 1, step: 0.5 },
+  // Spacing on by default (additive, world units — the common ask); Step at
+  // 0 leaves proportional growth off unless dialled in on top.
+  defaultParams: { count: 5, spacing: 1, start: 1, step: 0 },
   paramFields: [
     { id: "count", label: "Count", kind: "number", step: 1 },
+    { id: "spacing", label: "Spacing (world units, added to radius)", kind: "number", step: 0.05 },
     { id: "start", label: "Start Scale", kind: "number", step: 0.05 },
-    { id: "step", label: "Step Scale", kind: "number", step: 0.05 },
+    { id: "step", label: "Step Scale (proportional growth)", kind: "number", step: 0.05 },
   ],
   evaluate: (inputs, params) => {
     const base = inputs.curve instanceof THREE.Curve ? (inputs.curve as THREE.Curve<THREE.Vector3>) : null;
@@ -991,20 +1009,24 @@ export const CURVE_ARRAY_NODE: NodeDefinition = {
       0,
       Math.min(1000, Math.floor(inputs.count !== undefined ? asNumber(inputs.count, 5) : asNumber(params.count, 5))),
     );
+    const spacing = inputs.spacing !== undefined ? asNumber(inputs.spacing, 1) : asNumber(params.spacing, 1);
     const start = inputs.start !== undefined ? asNumber(inputs.start, 1) : asNumber(params.start, 1);
-    const step = inputs.step !== undefined ? asNumber(inputs.step, 0.5) : asNumber(params.step, 0.5);
+    const step = inputs.step !== undefined ? asNumber(inputs.step, 0) : asNumber(params.step, 0);
 
-    if (!base) return { curves: [], scales: [] };
+    if (!base) return { curves: [], offsets: [], scales: [] };
 
     const curves: THREE.Curve<THREE.Vector3>[] = [];
+    const offsets: number[] = [];
     const scales: number[] = [];
     for (let i = 0; i < count; i++) {
+      const offset = i * spacing;
       const scale = start + i * step;
-      curves.push(new ScaledCurve3(base, scale));
+      curves.push(new RadialOffsetCurve3(base, scale, offset));
+      offsets.push(offset);
       scales.push(scale);
     }
 
-    return { curves, scales };
+    return { curves, offsets, scales };
   },
 };
 

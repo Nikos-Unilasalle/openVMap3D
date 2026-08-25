@@ -776,11 +776,12 @@ function ringWallThickness(group: THREE.Group, centerRadius = Infinity, band = 0
 }
 
 describe("CURVE_ARRAY_NODE", () => {
-  it("duplicates the input curve Count times, scaled by Start + i*Step", () => {
+  it("duplicates the input curve Count times, scaled by Start + i*Step (Spacing off)", () => {
     const circle = CURVE_PRIMITIVE_NODE.evaluate({}, { primitiveType: "circle", radius: 2 }, CTX).curve as THREE.Curve<THREE.Vector3>;
-    const res = CURVE_ARRAY_NODE.evaluate({ curve: circle }, { count: 4, start: 1, step: 0.5 }, CTX);
+    const res = CURVE_ARRAY_NODE.evaluate({ curve: circle }, { count: 4, spacing: 0, start: 1, step: 0.5 }, CTX);
 
     expect(res.scales).toEqual([1, 1.5, 2, 2.5]);
+    expect(res.offsets).toEqual([0, 0, 0, 0]);
     const curves = res.curves as THREE.Curve<THREE.Vector3>[];
     expect(curves).toHaveLength(4);
 
@@ -794,13 +795,31 @@ describe("CURVE_ARRAY_NODE", () => {
     }
   });
 
+  it("Spacing pushes each copy outward by i*Spacing world units, independent of the base curve's own radius", () => {
+    const smallCircle = CURVE_PRIMITIVE_NODE.evaluate({}, { primitiveType: "circle", radius: 1 }, CTX).curve as THREE.Curve<THREE.Vector3>;
+    const bigCircle = CURVE_PRIMITIVE_NODE.evaluate({}, { primitiveType: "circle", radius: 50 }, CTX).curve as THREE.Curve<THREE.Vector3>;
+    const params = { count: 4, spacing: 0.5, start: 1, step: 0 };
+
+    const fromSmall = CURVE_ARRAY_NODE.evaluate({ curve: smallCircle }, params, CTX);
+    const fromBig = CURVE_ARRAY_NODE.evaluate({ curve: bigCircle }, params, CTX);
+
+    expect(fromSmall.offsets).toEqual([0, 0.5, 1, 1.5]);
+    expect(fromBig.offsets).toEqual([0, 0.5, 1, 1.5]); // same, regardless of base radius (1 vs 50)
+
+    // Radius 1 circle, copy 2 (offset 1): radius becomes exactly 1*1 + 1 = 2.
+    const curves = fromSmall.curves as THREE.Curve<THREE.Vector3>[];
+    const p = curves[2].getPoint(0);
+    expect(Math.hypot(p.x, p.z)).toBeCloseTo(2, 5);
+  });
+
   it("no curve wired, or Count 0: empty lists, no throw", () => {
-    const noCurve = CURVE_ARRAY_NODE.evaluate({}, { count: 5, start: 1, step: 1 }, CTX);
+    const noCurve = CURVE_ARRAY_NODE.evaluate({}, { count: 5, spacing: 0, start: 1, step: 1 }, CTX);
     expect(noCurve.curves).toEqual([]);
     expect(noCurve.scales).toEqual([]);
+    expect(noCurve.offsets).toEqual([]);
 
     const circle = CURVE_PRIMITIVE_NODE.evaluate({}, { primitiveType: "circle", radius: 2 }, CTX).curve as THREE.Curve<THREE.Vector3>;
-    const zeroCount = CURVE_ARRAY_NODE.evaluate({ curve: circle }, { count: 0, start: 1, step: 1 }, CTX);
+    const zeroCount = CURVE_ARRAY_NODE.evaluate({ curve: circle }, { count: 0, spacing: 0, start: 1, step: 1 }, CTX);
     expect(zeroCount.curves).toEqual([]);
   });
 
@@ -811,7 +830,7 @@ describe("CURVE_ARRAY_NODE", () => {
     // Meshes' one shared Thickness stays the tube's actual thickness no
     // matter how big the ring gets.
     const circle = CURVE_PRIMITIVE_NODE.evaluate({}, { primitiveType: "circle", radius: 2 }, CTX).curve as THREE.Curve<THREE.Vector3>;
-    const { curves } = CURVE_ARRAY_NODE.evaluate({ curve: circle }, { count: 3, start: 1, step: 2 }, CTX) as {
+    const { curves } = CURVE_ARRAY_NODE.evaluate({ curve: circle }, { count: 3, spacing: 0, start: 1, step: 2 }, CTX) as {
       curves: THREE.Curve<THREE.Vector3>[];
     };
 
@@ -840,7 +859,7 @@ describe("CURVE_ARRAY_NODE", () => {
 
   it("end-to-end through Curves to Meshes: one shared Thickness, N different radii", () => {
     const circle = CURVE_PRIMITIVE_NODE.evaluate({}, { primitiveType: "circle", radius: 1 }, CTX).curve as THREE.Curve<THREE.Vector3>;
-    const { curves } = CURVE_ARRAY_NODE.evaluate({ curve: circle }, { count: 5, start: 1, step: 1 }, CTX) as {
+    const { curves } = CURVE_ARRAY_NODE.evaluate({ curve: circle }, { count: 5, spacing: 0, start: 1, step: 1 }, CTX) as {
       curves: THREE.Curve<THREE.Vector3>[];
     };
 
