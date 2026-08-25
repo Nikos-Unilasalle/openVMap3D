@@ -3,6 +3,7 @@ import { NodeDefinition } from "../types";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { composeNativeMatrix } from "./transform";
 import { COMMON_PRIMITIVE_OUTPUTS, primitiveOutputs } from "./object";
+import { InstancedItemSpec, renderInstanced } from "./instancedRender";
 
 interface TextureNodeState {
   texture?: THREE.Texture;
@@ -1007,6 +1008,7 @@ export const TEXTURE_PIXEL_SPAWNER_NODE: NodeDefinition = {
     seed: 1,
     skipAlpha: true,
     alphaThreshold: 0.1,
+    gpuInstancing: false,
   },
   dynamicParamFields: () => [
     { id: "density", label: "Density (%)", kind: "number", step: 5 },
@@ -1019,6 +1021,7 @@ export const TEXTURE_PIXEL_SPAWNER_NODE: NodeDefinition = {
     { id: "instanceScale", label: "Instance Scale", kind: "number", step: 0.1 },
     { id: "skipAlpha", label: "Skip Transparent Pixels", kind: "boolean" },
     { id: "alphaThreshold", label: "Alpha Cutoff", kind: "number", step: 0.05 },
+    { id: "gpuInstancing", label: "GPU Instancing (1 draw call — disables Get/Set Instance)", kind: "boolean" },
   ],
   evaluate: (inputs, params, ctx) => {
     const state = getPixelSpawnerState(ctx.nodeId);
@@ -1068,6 +1071,9 @@ export const TEXTURE_PIXEL_SPAWNER_NODE: NodeDefinition = {
     const positions: THREE.Vector3[] = [];
     const intensities: number[] = [];
 
+    const gpuInstancing = Boolean(params.gpuInstancing);
+    const instancedItems: InstancedItemSpec[] = [];
+
     let pixelCounter = 0;
 
     for (let y = 0; y < maxRes; y++) {
@@ -1113,34 +1119,40 @@ export const TEXTURE_PIXEL_SPAWNER_NODE: NodeDefinition = {
 
         const color = new THREE.Color(r, g, b);
 
-        const clone = template.clone(true);
-
-        clone.traverse((child) => {
-          if (child instanceof THREE.Mesh && child.material) {
-            const mat = (child.material as THREE.Material).clone();
-            if ("color" in mat) {
-              (mat as THREE.MeshStandardMaterial).color.copy(color);
-            }
-            state.materials!.push(mat);
-            child.material = mat;
-          }
-        });
-
         const instanceMatrix = new THREE.Matrix4();
         const matPos = new THREE.Matrix4().setPosition(pos);
         instanceMatrix.copy(matPos.multiply(matScale));
 
-        const wrapper = new THREE.Group();
-        wrapper.matrixAutoUpdate = false;
-        wrapper.matrix.copy(instanceMatrix);
-        wrapper.add(clone);
+        if (gpuInstancing) {
+          instancedItems.push({ template, matrix: instanceMatrix, color });
+        } else {
+          const clone = template.clone(true);
 
-        group.add(wrapper);
+          clone.traverse((child) => {
+            if (child instanceof THREE.Mesh && child.material) {
+              const mat = (child.material as THREE.Material).clone();
+              if ("color" in mat) {
+                (mat as THREE.MeshStandardMaterial).color.copy(color);
+              }
+              state.materials!.push(mat);
+              child.material = mat;
+            }
+          });
+
+          const wrapper = new THREE.Group();
+          wrapper.matrixAutoUpdate = false;
+          wrapper.matrix.copy(instanceMatrix);
+          wrapper.add(clone);
+
+          group.add(wrapper);
+        }
         colors.push(color);
         positions.push(pos);
         intensities.push(luminance);
       }
     }
+
+    if (gpuInstancing) renderInstanced(ctx.nodeId, group, instancedItems);
 
     return { geometry: group, colors, positions, intensities, count: colors.length };
   },

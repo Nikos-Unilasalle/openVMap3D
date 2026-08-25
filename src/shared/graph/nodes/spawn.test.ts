@@ -233,3 +233,42 @@ describe("SPAWN_NODE with graph-driven objects", () => {
     }
   });
 });
+
+describe("SPAWN_NODE GPU instancing", () => {
+  it("draws one InstancedMesh instead of N cloned children when enabled", () => {
+    const supportMesh = new THREE.Mesh(new THREE.PlaneGeometry(10, 10));
+    const itemMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+
+    const res = SPAWN_NODE.evaluate(
+      { support: supportMesh, items: [itemMesh] },
+      { count: 30, seed: 42, alignToNormal: 1, gpuInstancing: true },
+      { nodeId: "spawn_gpu_1" } as any,
+    );
+
+    const group = res.geometry as THREE.Group;
+    expect(group.children.length).toBe(1);
+    const mesh = group.children[0] as THREE.InstancedMesh;
+    expect(mesh).toBeInstanceOf(THREE.InstancedMesh);
+    expect(mesh.count).toBe(30);
+  });
+
+  it("never mutates the source item in GPU mode either", () => {
+    const supportMesh = new THREE.Mesh(new THREE.PlaneGeometry(10, 10));
+    const itemMatrix = new THREE.Matrix4().compose(
+      new THREE.Vector3(3, 1, -2),
+      new THREE.Quaternion(),
+      new THREE.Vector3(2, 2, 2),
+    );
+    const itemMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    itemMesh.matrixAutoUpdate = false;
+    itemMesh.matrix.copy(itemMatrix);
+
+    SPAWN_NODE.evaluate(
+      { support: supportMesh, items: [itemMesh] },
+      { count: 5, seed: 7, gpuInstancing: true },
+      { nodeId: "spawn_gpu_2" } as any,
+    );
+
+    expect(itemMesh.matrix.equals(itemMatrix)).toBe(true);
+  });
+});

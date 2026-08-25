@@ -324,3 +324,51 @@ describe("ARRAY_NODE spacing variance for every mode", () => {
     expect(group.children.length).toBe(3);
   });
 });
+
+describe("ARRAY_NODE GPU instancing", () => {
+  it("draws one InstancedMesh (single draw call) instead of N cloned children when enabled", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const res = ARRAY_NODE.evaluate(
+      { geometry: box },
+      { mode: "linear", count: 50, axis: "X", spacing: 2.0, gpuInstancing: true },
+      { nodeId: "arr-gpu-1" } as EvalContext,
+    );
+    const group = res.geometry as THREE.Group;
+    expect(group.children.length).toBe(1);
+    const mesh = group.children[0] as THREE.InstancedMesh;
+    expect(mesh).toBeInstanceOf(THREE.InstancedMesh);
+    expect(mesh.count).toBe(50);
+
+    const m = new THREE.Matrix4();
+    const pos = new THREE.Vector3();
+    mesh.getMatrixAt(0, m);
+    m.decompose(pos, new THREE.Quaternion(), new THREE.Vector3());
+    expect(pos.x).toBeCloseTo(0);
+    mesh.getMatrixAt(1, m);
+    m.decompose(pos, new THREE.Quaternion(), new THREE.Vector3());
+    expect(pos.x).toBeCloseTo(2.0);
+  });
+
+  it("keeps the default (no gpuInstancing) behavior producing one child per instance", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const res = ARRAY_NODE.evaluate({ geometry: box }, { mode: "linear", count: 4 }, { nodeId: "arr-gpu-2" } as EvalContext);
+    const group = res.geometry as THREE.Group;
+    expect(group.children.length).toBe(4);
+    expect(group.children[0]).not.toBeInstanceOf(THREE.InstancedMesh);
+  });
+
+  it("buckets a Geometries pool into one InstancedMesh per distinct source", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const sphere = new THREE.Mesh(new THREE.SphereGeometry(1));
+    const res = ARRAY_NODE.evaluate(
+      { geometries: [box, sphere] },
+      { mode: "linear", count: 20, spacing: 1, seed: 1, gpuInstancing: true },
+      { nodeId: "arr-gpu-3" } as EvalContext,
+    );
+    const group = res.geometry as THREE.Group;
+    expect(group.children.length).toBe(2);
+    for (const child of group.children) expect(child).toBeInstanceOf(THREE.InstancedMesh);
+    const totalInstances = group.children.reduce((sum, c) => sum + (c as THREE.InstancedMesh).count, 0);
+    expect(totalInstances).toBe(20);
+  });
+});

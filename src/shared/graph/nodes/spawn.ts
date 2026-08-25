@@ -3,6 +3,7 @@ import { createNodeCache } from "../nodeCaches";
 import { NodeDefinition } from "../types";
 import { clearMeshWarning, warnMeshRequired } from "../meshRequired";
 import { sampleSurfacePoints } from "../../three/bvh";
+import { InstancedItemSpec, renderInstanced } from "./instancedRender";
 
 function toNumberList(v: unknown): number[] {
   if (!Array.isArray(v)) return typeof v === "number" ? [v] : [];
@@ -78,10 +79,17 @@ export const SPAWN_NODE: NodeDefinition = {
     rotZVar: 0,
     alignToNormal: 1,
     dispersion: 0,
+    gpuInstancing: false,
   },
   paramFields: [
     { id: "count", label: "Count", kind: "number", step: 1, group: "Spawning" },
     { id: "seed", label: "Seed", kind: "number", step: 1, group: "Spawning" },
+    {
+      id: "gpuInstancing",
+      label: "GPU Instancing (1 draw call — disables Get/Set Instance)",
+      kind: "boolean",
+      group: "Spawning",
+    },
     { id: "placement", label: "Placement", kind: "select", options: ["center", "base"], group: "Spawning" },
     { id: "alignToNormal", label: "Align to Normal", kind: "boolean", group: "Spawning" },
     { id: "dispersion", label: "Dispersion / Jitter", kind: "number", step: 0.05, group: "Spawning" },
@@ -110,6 +118,9 @@ export const SPAWN_NODE: NodeDefinition = {
     const alignToNormal = params.alignToNormal !== undefined ? Boolean(params.alignToNormal) : true;
     const dispersion = Number.isFinite(Number(params.dispersion)) ? Number(params.dispersion) : 0;
     const placement = String(params.placement || "center") === "base" ? "base" : "center";
+
+    const gpuInstancing = Boolean(params.gpuInstancing);
+    const instancedItems: InstancedItemSpec[] = [];
 
     const prng = createPrng(seed);
 
@@ -165,7 +176,6 @@ export const SPAWN_NODE: NodeDefinition = {
 
       // Select item to clone
       const sourceItem = items[i % items.length];
-      const instance = sourceItem.clone(true);
       // The item's *world* rotation & scale — same reasoning as the surface
       // sampler: a graph-driven item's matrix is the truth, but a curve-to-mesh
       // (or any modifier) hands back a GROUP whose pose lives on the group. We
@@ -218,6 +228,12 @@ export const SPAWN_NODE: NodeDefinition = {
       const anchorOffset = new THREE.Matrix4().makeTranslation(-anchor.x, -anchor.y, -anchor.z);
       const finalMatrix = new THREE.Matrix4().multiplyMatrices(spawnMatrix, anchorOffset);
 
+      if (gpuInstancing) {
+        instancedItems.push({ template: sourceItem, matrix: finalMatrix });
+        continue;
+      }
+
+      const instance = sourceItem.clone(true);
       instance.matrixAutoUpdate = false;
       instance.matrix.copy(finalMatrix);
       finalMatrix.decompose(instance.position, instance.quaternion, instance.scale);
@@ -225,6 +241,7 @@ export const SPAWN_NODE: NodeDefinition = {
       group.add(instance);
     }
 
+    if (gpuInstancing) renderInstanced(ctx.nodeId, group, instancedItems);
     return { geometry: group };
   },
 };
