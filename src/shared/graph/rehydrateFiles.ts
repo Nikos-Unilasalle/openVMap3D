@@ -27,6 +27,7 @@ import { Graph } from "./types";
 const BINARY_EXTENSIONS = new Set([
   "png", "jpg", "jpeg", "webp", "bmp", "hdr", "exr", "tif", "tiff",
   "mp3", "wav", "ogg", "flac", "m4a", "aac",
+  "ply",
 ]);
 
 /**
