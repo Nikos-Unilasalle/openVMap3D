@@ -1,7 +1,9 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { CURVE_TO_POINTS_NODE } from "./curveToPoints";
-import { EvalContext } from "../types";
+import { CURVE_PRIMITIVE_NODE } from "./curve";
+import { EvalContext, Graph, createRegistry } from "../types";
+import { evaluateGraph } from "../evaluate";
 
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "c2p-test" };
 
@@ -56,5 +58,43 @@ describe("CURVE_TO_POINTS_NODE", () => {
     // segment as an equal 50% of the total parameter range).
     const inShortSegment = xs.filter((x) => x <= 1).length;
     expect(inShortSegment).toBeLessThanOrEqual(3);
+  });
+
+  it("regression: bakes in the source curve node's own Location/Rotation/Scale, via the real graph evaluator", () => {
+    const graph: Graph = {
+      nodes: [
+        {
+          id: "prim",
+          type: CURVE_PRIMITIVE_NODE.type,
+          params: {
+            ...CURVE_PRIMITIVE_NODE.defaultParams,
+            primitiveType: "circle",
+            radius: 2,
+            location: new THREE.Vector3(10, 0, 0),
+            rotation: new THREE.Vector3(0, Math.PI / 2, 0),
+          },
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "pts",
+          type: CURVE_TO_POINTS_NODE.type,
+          params: { ...CURVE_TO_POINTS_NODE.defaultParams, maxPoints: 8 },
+          position: { x: 0, y: 0 },
+        },
+      ],
+      connections: [{ id: "prim.curve->pts.curve", fromNode: "prim", fromSocket: "curve", toNode: "pts", toSocket: "curve" }],
+    };
+
+    const registry = createRegistry([CURVE_PRIMITIVE_NODE, CURVE_TO_POINTS_NODE]);
+    const results = evaluateGraph(graph, registry, { time: 0, step: 0, nodeId: "eval" } as EvalContext);
+    const points = results.get("pts")?.points as THREE.Vector3[];
+
+    expect(points.length).toBe(8);
+    // A radius-2 circle centered at local origin, moved to x=10: every point
+    // sits at distance 2 from (10, 0, 0), not from the world origin — this
+    // only holds if Location actually got baked into the sampled points.
+    for (const p of points) {
+      expect(Math.hypot(p.x - 10, p.z)).toBeCloseTo(2, 4);
+    }
   });
 });

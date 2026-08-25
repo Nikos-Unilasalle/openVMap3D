@@ -1314,7 +1314,7 @@ export const SAMPLE_CURVE_NODE: NodeDefinition = {
     { id: "progress", label: "Progress (0-1)", kind: "number", step: 0.01 },
     { id: "up", label: "Up Vector", kind: "vector" },
   ],
-  evaluate: (inputs, params) => {
+  evaluate: (inputs, params, ctx) => {
 
     const curve: THREE.Curve<THREE.Vector3> =
       inputs.curve instanceof THREE.Curve ? inputs.curve : new THREE.CatmullRomCurve3(defaultCurvePoints());
@@ -1343,6 +1343,20 @@ export const SAMPLE_CURVE_NODE: NodeDefinition = {
     // Construct 3D orientation matrix
     const matrix = new THREE.Matrix4().makeBasis(binormal, normal, tangent);
     matrix.setPosition(position);
+
+    // This curve's points/tangents are local to whichever node produced it
+    // (Curve Primitive / Curve from Points) — its own Location/Rotation/
+    // Scale gizmo moved the curve, not its samples. Same lookup Curve to
+    // Mesh uses for its own object matrix, applied here since Position/
+    // Tangent/Matrix are bare values with no matrix of their own for a
+    // later node to compose it into.
+    const curveSourceId = ctx.inputSources?.get("curve");
+    const curvePose = curveSourceId ? getCurveNodePose(curveSourceId) : null;
+    if (curvePose) {
+      matrix.premultiply(curvePose);
+      position.setFromMatrixPosition(matrix);
+      tangent.transformDirection(curvePose).normalize();
+    }
 
     // Extract Euler angles in degrees
     const euler = new THREE.Euler().setFromRotationMatrix(matrix);

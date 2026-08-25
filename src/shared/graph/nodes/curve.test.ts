@@ -404,6 +404,42 @@ describe("SAMPLE_CURVE_NODE progress", () => {
     // 1 is the one exception — every other whole number is another lap.
     expect(positionAt(2).x).toBeCloseTo(0, 5);
   });
+
+  it("regression: bakes in the source curve node's own Location/Rotation/Scale, via the real graph evaluator", () => {
+    const graph: Graph = {
+      nodes: [
+        {
+          id: "prim",
+          type: CURVE_PRIMITIVE_NODE.type,
+          params: {
+            ...CURVE_PRIMITIVE_NODE.defaultParams,
+            primitiveType: "line",
+            height: 10,
+            location: new THREE.Vector3(0, 0, 5),
+          },
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "follow",
+          type: SAMPLE_CURVE_NODE.type,
+          params: { ...SAMPLE_CURVE_NODE.defaultParams, progress: 0.5 },
+          position: { x: 0, y: 0 },
+        },
+      ],
+      connections: [{ id: "prim.curve->follow.curve", fromNode: "prim", fromSocket: "curve", toNode: "follow", toSocket: "curve" }],
+    };
+
+    const registry = createRegistry([CURVE_PRIMITIVE_NODE, SAMPLE_CURVE_NODE]);
+    const results = evaluateGraph(graph, registry, { time: 0, step: 0, nodeId: "eval" } as EvalContext);
+    const position = results.get("follow")?.position as THREE.Vector3;
+
+    // "line" primitive runs from (0,-5,0) to (0,5,0) locally; moved to
+    // z=5, its own midpoint (progress 0.5) should land at (0, 0, 5) —
+    // only true if Location actually made it into Follow Path's output.
+    expect(position.x).toBeCloseTo(0, 4);
+    expect(position.y).toBeCloseTo(0, 4);
+    expect(position.z).toBeCloseTo(5, 4);
+  });
 });
 
 describe("CURVE_TO_MESH_NODE geometry caching", () => {
