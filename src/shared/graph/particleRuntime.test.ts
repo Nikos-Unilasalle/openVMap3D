@@ -25,7 +25,7 @@ describe("buildEmitterConfig", () => {
 
     const config = buildEmitterConfig(position, velocity, 200);
 
-    expect(config).toEqual({ position, velocity, spawnRate: 200, seedPositions: undefined, diameter: 0.25, randomSpawnPick: false, emit: true });
+    expect(config).toEqual({ position, velocity, spawnRate: 200, seedPositions: undefined, diameter: 0.25, randomSpawnPick: false, emit: true, killSignal: false });
   });
 
   test("defaults diameter to 0.25 — the jitter magnitude every emitter used before this param existed", () => {

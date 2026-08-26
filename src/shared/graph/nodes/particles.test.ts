@@ -300,4 +300,41 @@ describe("POINTS_TO_PARTICLES_NODE", () => {
       expect((before.emitter as EmitterConfig).emit).toBe(false);
     });
   });
+
+  describe("Kill Frame", () => {
+    const inputs = { xValues: [0], yValues: [0], zValues: [0] };
+    const defaultKillParams = POINTS_TO_PARTICLES_NODE.defaultParams;
+
+    it("disabled by default (killFrame -1) — killSignal never fires", () => {
+      const res = POINTS_TO_PARTICLES_NODE.evaluate(inputs, defaultKillParams, { time: 10, step: 300, nodeId: "kill-a", currentFrame: 300 });
+      expect((res.emitter as EmitterConfig).killSignal).toBe(false);
+    });
+
+    it("killSignal fires exactly on Kill Frame and stays on after — a level, not a pulse", () => {
+      const params = { ...defaultKillParams, killFrame: 120 };
+      const before = POINTS_TO_PARTICLES_NODE.evaluate(inputs, params, { time: 1, step: 100, nodeId: "kill-b", currentFrame: 100 });
+      const on = POINTS_TO_PARTICLES_NODE.evaluate(inputs, params, { time: 2, step: 120, nodeId: "kill-b", currentFrame: 120 });
+      const after = POINTS_TO_PARTICLES_NODE.evaluate(inputs, params, { time: 5, step: 300, nodeId: "kill-b", currentFrame: 300 });
+      expect((before.emitter as EmitterConfig).killSignal).toBe(false);
+      expect((on.emitter as EmitterConfig).killSignal).toBe(true);
+      expect((after.emitter as EmitterConfig).killSignal).toBe(true);
+    });
+
+    it("killSignal forces emit to false too, even if Spawn Frame's own gate would otherwise be open", () => {
+      // Kill must win outright — a population that's been force-killed
+      // should not also keep quietly respawning through the ordinary
+      // emit-gate path.
+      const params = { ...defaultKillParams, spawnFrame: 0, killFrame: 60 };
+      const res = POINTS_TO_PARTICLES_NODE.evaluate(inputs, params, { time: 3, step: 200, nodeId: "kill-c", currentFrame: 200 });
+      const emitter = res.emitter as EmitterConfig;
+      expect(emitter.killSignal).toBe(true);
+      expect(emitter.emit).toBe(false);
+    });
+
+    it("killFrame 0 is a real, usable frame — not silently treated as disabled", () => {
+      const params = { ...defaultKillParams, killFrame: 0 };
+      const res = POINTS_TO_PARTICLES_NODE.evaluate(inputs, params, { time: 0, step: 0, nodeId: "kill-d", currentFrame: 0 });
+      expect((res.emitter as EmitterConfig).killSignal).toBe(true);
+    });
+  });
 });

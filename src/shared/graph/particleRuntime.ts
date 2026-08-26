@@ -79,6 +79,20 @@ export interface EmitterConfig {
    * at all.
    */
   pointCount?: number;
+  /**
+   * A LEVEL (like `emit`, not a pulse): once true, every particle this
+   * simulation owns gets force-killed — not the gradual "stop respawning,
+   * let the existing population age out naturally" `emit=false` already
+   * gives you, which can take up to a full Lifetime to actually clear the
+   * scene (worse, arbitrarily long if Lifetime was deliberately set past
+   * the animation's own length, exactly what Burst Spawn's own setup
+   * recommends). "Clean up the scene at a specific frame" wants everyone
+   * gone RIGHT NOW, not a fade. Stays true forever once set, same reasoning
+   * as `emit`'s own level-not-pulse contract (see EmitterConfig.emit) —
+   * this is a decision "should this population still exist", never a
+   * one-shot signal to bounce back from.
+   */
+  killSignal?: boolean;
 }
 
 export function buildEmitterConfig(
@@ -90,8 +104,9 @@ export function buildEmitterConfig(
   randomSpawnPick = false,
   emit = true,
   pointCount?: number,
+  killSignal = false,
 ): EmitterConfig {
-  return { position, velocity, spawnRate, seedPositions, diameter, randomSpawnPick, emit, pointCount };
+  return { position, velocity, spawnRate, seedPositions, diameter, randomSpawnPick, emit, pointCount, killSignal };
 }
 
 /** How many of `capacity` texels are actually alive-capable — population = rate × lifetime, capped. */
@@ -493,6 +508,8 @@ interface Simulation {
    * was already closed when the sim was first built.
    */
   lastEmit: boolean;
+  /** Same false→true edge-detection contract as lastEmit, for EmitterConfig.killSignal — see maybeKillOnRisingEdge. */
+  lastKill: boolean;
 }
 
 // One Simulation *per renderer* per node, not one shared across whichever
@@ -673,6 +690,38 @@ function maybeBurstOnEmitRisingEdge(sim: Simulation, burstSpawn: boolean, emitte
   velocity.dispose();
 }
 
+/** Every texel's age set to the same "beyond activeCount" dead sentinel POSITION_SHADER already uses — a force-kill, not the gradual per-texel fade `emit=false` alone gives. Position/velocity reset to zero too: irrelevant once dead, but tidy. */
+function buildKillTextures(gpuCompute: GPUComputationRenderer): { position: THREE.DataTexture; velocity: THREE.DataTexture } {
+  const position = gpuCompute.createTexture();
+  const data = position.image.data as Float32Array;
+  for (let i = 3; i < data.length; i += 4) data[i] = -1.0e6;
+  return { position, velocity: gpuCompute.createTexture() };
+}
+
+/**
+ * The kill counterpart to maybeBurstOnEmitRisingEdge: on killSignal's
+ * false→true edge, force-kills the ENTIRE population immediately by writing
+ * the dead sentinel into every texel of the sim's current ping-pong render
+ * target — "clean up the scene at frame N" wants everyone gone on that
+ * exact frame, not faded out over up to a full Lifetime the way closing the
+ * `emit` gate alone would (worse, arbitrarily slow if Lifetime was
+ * deliberately set past the animation's length, which Burst Spawn's own
+ * setup recommends). Runs at most once per false→true transition.
+ */
+function maybeKillOnRisingEdge(sim: Simulation, killSignal: boolean): void {
+  const risingEdge = !sim.lastKill && killSignal;
+  sim.lastKill = killSignal;
+  if (!risingEdge) return;
+
+  const { position, velocity } = buildKillTextures(sim.gpuCompute);
+  const positionTarget = sim.gpuCompute.getCurrentRenderTarget(sim.positionVar);
+  const velocityTarget = sim.gpuCompute.getCurrentRenderTarget(sim.velocityVar);
+  sim.renderer.copyTextureToTexture(position, positionTarget.texture);
+  sim.renderer.copyTextureToTexture(velocity, velocityTarget.texture);
+  position.dispose();
+  velocity.dispose();
+}
+
 function createSimulation(
   nodeId: string,
   renderer: THREE.WebGLRenderer,
@@ -683,7 +732,8 @@ function createSimulation(
   emitter: EmitterConfig,
 ): Simulation {
   const gpuCompute = new GPUComputationRenderer(size, size, renderer);
-  const position0 = initialPositionTexture(gpuCompute, size, lifetimeGuess, burstSpawn, emitter.emit, emitter);
+  const spawnNow = emitter.emit && !emitter.killSignal;
+  const position0 = initialPositionTexture(gpuCompute, size, lifetimeGuess, burstSpawn, spawnNow, emitter);
   const velocity0 = gpuCompute.createTexture();
 
   const positionVar = gpuCompute.addVariable("texturePosition", POSITION_SHADER, position0);
@@ -741,6 +791,7 @@ function createSimulation(
     lastSteppedStep: currentStep,
     simSeconds: currentStep * STEP_SECONDS,
     lastEmit: emitter.emit,
+    lastKill: emitter.killSignal ?? false,
   };
   // Caching is the caller's job now (see getOrCreateSimulation) — it owns
   // the per-renderer slot this belongs in, not just the node id.
@@ -846,6 +897,7 @@ export function getOrCreateSimulation(
     perRenderer.set(renderer, sim);
   }
   maybeBurstOnEmitRisingEdge(sim, effectiveBurst, emitter);
+  maybeKillOnRisingEdge(sim, emitter.killSignal ?? false);
 
   const active =
     emitter.pointCount !== undefined

@@ -253,9 +253,10 @@ export const POINTS_TO_PARTICLES_NODE: NodeDefinition = {
     { id: "zValues", label: "Z Values (List)", type: "list" },
     { id: "velocity", label: "Velocity", type: "vector" },
     { id: "spawnFrame", label: "Spawn Frame", type: "value" },
+    { id: "killFrame", label: "Kill Frame", type: "value" },
   ],
   outputs: [{ id: "emitter", label: "Emitter", type: "any" }],
-  defaultParams: { velocity: new THREE.Vector3(0, 0, 0), spawnFrame: 0 },
+  defaultParams: { velocity: new THREE.Vector3(0, 0, 0), spawnFrame: 0, killFrame: -1 },
   paramFields: [
     { id: "velocity", label: "Initial Velocity", kind: "vector" },
     {
@@ -264,11 +265,18 @@ export const POINTS_TO_PARTICLES_NODE: NodeDefinition = {
       kind: "number",
       step: 1,
     },
+    {
+      id: "killFrame",
+      label: "Kill Frame (-1 = never — force-kills everyone immediately, not a fade)",
+      kind: "number",
+      step: 1,
+    },
   ],
   evaluate: (inputs, params, ctx) => {
     const state = getSeedState(ctx.nodeId);
     const velocity = asVector(inputs.velocity, asVector(params.velocity, new THREE.Vector3()));
     const spawnFrame = numberInput(inputs.spawnFrame, params.spawnFrame, 0);
+    const killFrame = numberInput(inputs.killFrame, params.killFrame, -1);
     // A LEVEL, not a pulse: once the timeline reaches Spawn Frame this stays
     // true forever after, unlike a one-shot Trigger wired into a plain
     // Emitter's Emit socket, which fires once and drops back to false — the
@@ -277,6 +285,9 @@ export const POINTS_TO_PARTICLES_NODE: NodeDefinition = {
     // evaluate, or a graph with no Render/timeline driving it at all) keeps
     // the old always-true behavior rather than silently spawning nothing.
     const spawnGateOpen = ctx.currentFrame === undefined || ctx.currentFrame >= spawnFrame;
+    // killFrame < 0 (the default) disables killing entirely — a legitimate
+    // frame is always >= 0, so there's no collision with "kill at frame 0".
+    const killSignal = killFrame >= 0 && ctx.currentFrame !== undefined && ctx.currentFrame >= killFrame;
 
     if (state.lastX !== inputs.xValues || state.lastY !== inputs.yValues || state.lastZ !== inputs.zValues) {
       const xValues = toNumberList(inputs.xValues);
@@ -304,7 +315,17 @@ export const POINTS_TO_PARTICLES_NODE: NodeDefinition = {
       // doc) — kept at a sane default only so this EmitterConfig stays a
       // valid one for any code path that hasn't been taught about
       // pointCount yet.
-      emitter: buildEmitterConfig(new THREE.Vector3(), velocity, 200, state.seedPositions, undefined, false, spawnGateOpen, pointCount),
+      emitter: buildEmitterConfig(
+        new THREE.Vector3(),
+        velocity,
+        200,
+        state.seedPositions,
+        undefined,
+        false,
+        spawnGateOpen && !killSignal,
+        pointCount,
+        killSignal,
+      ),
     };
   },
 };
