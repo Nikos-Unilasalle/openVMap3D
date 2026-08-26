@@ -1873,6 +1873,7 @@ export function Viewport({
           capturing: capture !== null,
           currentFrame: exportFrameIndex,
           keyframes: graphRef.current.keyframes,
+          scene,
         });
       } catch (err) {
         console.error("graph evaluation failed", err);

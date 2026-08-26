@@ -119,6 +119,19 @@ export interface EvalContext {
   inputSources?: ReadonlyMap<string, string>;
   /** The graph's timeline markers — see the Marker node in nodes/marker.ts. */
   markers?: Marker[];
+  /**
+   * The scene this frame is being assembled into, for the one kind of node
+   * that has to *photograph* the world rather than add to it — a Light Probe
+   * sampling its surroundings through a cube camera.
+   *
+   * What it holds during evaluation is the previous frame's scene: membership
+   * is applied from this frame's results afterwards. That is fine for a probe
+   * (lighting one frame stale is imperceptible) and would not be fine for
+   * anything needing this frame's geometry — which is the reason this is
+   * documented as narrowly as `renderer` is, rather than offered as a general
+   * handle on the world.
+   */
+  scene?: THREE.Scene;
 }
 
 /**

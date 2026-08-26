@@ -202,6 +202,7 @@ describe("GIZMO_SELECTABLE_TYPES", () => {
       "light/directional",
       "light/point",
       "light/spot",
+      "light/probe",
       "calibration/camera",
       "calibration/grid",
       "modifier/lattice",
