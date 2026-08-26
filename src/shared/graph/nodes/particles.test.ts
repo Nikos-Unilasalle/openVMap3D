@@ -5,6 +5,7 @@ import {
   PARTICLE_EMITTER_FROM_SURFACE_NODE,
   PARTICLE_EMITTER_NODE,
   PARTICLE_RENDER_NODE,
+  POINTS_TO_PARTICLES_NODE,
   clampParticleCapacity,
 } from "./particles";
 import { EmitterConfig } from "../particleRuntime";
@@ -213,5 +214,54 @@ describe("PARTICLE_RENDER_NODE", () => {
     const material = (res.geometry as THREE.Points).material as THREE.ShaderMaterial;
     expect(material.uniforms.fadeSize.value).toBe(0);
     expect(material.uniforms.fadeOpacity.value).toBe(0);
+  });
+});
+
+describe("POINTS_TO_PARTICLES_NODE", () => {
+  it("carries every point as a seed position, with pointCount matching exactly", () => {
+    const res = POINTS_TO_PARTICLES_NODE.evaluate(
+      { xValues: [0, 1, 2], yValues: [10, 11, 12], zValues: [20, 21, 22] },
+      POINTS_TO_PARTICLES_NODE.defaultParams,
+      CTX("pts-a"),
+    );
+    const emitter = res.emitter as EmitterConfig;
+    expect(emitter.pointCount).toBe(3);
+    expect(Array.from(emitter.seedPositions!)).toEqual([0, 10, 20, 1, 11, 21, 2, 12, 22]);
+  });
+
+  it("always spawns (emit is unconditionally true — no gate, no Emit input at all)", () => {
+    const res = POINTS_TO_PARTICLES_NODE.evaluate(
+      { xValues: [0], yValues: [0], zValues: [0] },
+      POINTS_TO_PARTICLES_NODE.defaultParams,
+      CTX("pts-b"),
+    );
+    expect((res.emitter as EmitterConfig).emit).toBe(true);
+  });
+
+  it("pointCount is 0 with nothing wired in — no particles, not a crash", () => {
+    const res = POINTS_TO_PARTICLES_NODE.evaluate({}, POINTS_TO_PARTICLES_NODE.defaultParams, CTX("pts-c"));
+    const emitter = res.emitter as EmitterConfig;
+    expect(emitter.pointCount).toBe(0);
+    expect(emitter.seedPositions).toBeUndefined();
+  });
+
+  it("reuses the same seedPositions array when the input lists are reference-identical, same caching rule as Point Emitter", () => {
+    const nodeId = "pts-d";
+    const xValues = [1, 2];
+    const yValues = [3, 4];
+    const zValues = [5, 6];
+    const first = POINTS_TO_PARTICLES_NODE.evaluate({ xValues, yValues, zValues }, POINTS_TO_PARTICLES_NODE.defaultParams, CTX(nodeId));
+    const second = POINTS_TO_PARTICLES_NODE.evaluate({ xValues, yValues, zValues }, POINTS_TO_PARTICLES_NODE.defaultParams, CTX(nodeId));
+    expect((first.emitter as EmitterConfig).seedPositions).toBe((second.emitter as EmitterConfig).seedPositions);
+  });
+
+  it("takes an initial velocity from the fallback param", () => {
+    const res = POINTS_TO_PARTICLES_NODE.evaluate(
+      { xValues: [0], yValues: [0], zValues: [0] },
+      { ...POINTS_TO_PARTICLES_NODE.defaultParams, velocity: new THREE.Vector3(1, 2, 3) },
+      CTX("pts-e"),
+    );
+    const velocity = (res.emitter as EmitterConfig).velocity;
+    expect([velocity.x, velocity.y, velocity.z]).toEqual([1, 2, 3]);
   });
 });

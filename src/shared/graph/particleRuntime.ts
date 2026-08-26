@@ -67,6 +67,18 @@ export interface EmitterConfig {
    * constant. Existing particles are untouched; only respawn is gated.
    */
   emit: boolean;
+  /**
+   * Set only by particles/points-to-particles: "one particle per point,
+   * spawned all at once" doesn't fit the rate×lifetime population model
+   * (activeParticleCount) every other emitter uses — there's no rate to
+   * tune, the population IS the point count. When set, getOrCreateSimulation
+   * uses this directly instead of spawnRate×lifetime, and forces burst
+   * semantics regardless of Particle Simulate's own Burst Spawn checkbox —
+   * "spawned, not emitted" means the whole population appears immediately
+   * without the user needing to reason about staggering or respawn cycles
+   * at all.
+   */
+  pointCount?: number;
 }
 
 export function buildEmitterConfig(
@@ -77,8 +89,9 @@ export function buildEmitterConfig(
   diameter = 0.25,
   randomSpawnPick = false,
   emit = true,
+  pointCount?: number,
 ): EmitterConfig {
-  return { position, velocity, spawnRate, seedPositions, diameter, randomSpawnPick, emit };
+  return { position, velocity, spawnRate, seedPositions, diameter, randomSpawnPick, emit, pointCount };
 }
 
 /** How many of `capacity` texels are actually alive-capable — population = rate × lifetime, capped. */
@@ -820,17 +833,24 @@ export function getOrCreateSimulation(
   // first exported frames show a simulation that is minutes old. Rebuilding
   // restarts it from the same deterministic initial state every time.
   const rewound = sim !== undefined && currentStep < sim.lastSteppedStep;
+  // particles/points-to-particles carries its own population size (one
+  // particle per point) and always wants the whole thing spawned at once —
+  // see EmitterConfig.pointCount's doc.
+  const effectiveBurst = burstSpawn || emitter.pointCount !== undefined;
   if (!sim || sim.size !== size || rewound) {
     if (sim) {
       sim.gpuCompute.dispose();
       sim.seedTexture?.dispose();
     }
-    sim = createSimulation(nodeId, renderer, size, lifetime, currentStep, burstSpawn, emitter);
+    sim = createSimulation(nodeId, renderer, size, lifetime, currentStep, effectiveBurst, emitter);
     perRenderer.set(renderer, sim);
   }
-  maybeBurstOnEmitRisingEdge(sim, burstSpawn, emitter);
+  maybeBurstOnEmitRisingEdge(sim, effectiveBurst, emitter);
 
-  const active = activeParticleCount(emitter.spawnRate, lifetime, size * size);
+  const active =
+    emitter.pointCount !== undefined
+      ? Math.min(size * size, Math.max(0, Math.floor(emitter.pointCount)))
+      : activeParticleCount(emitter.spawnRate, lifetime, size * size);
   for (const uniforms of [sim.positionVar.material.uniforms, sim.velocityVar.material.uniforms]) {
     uniforms.lifetime.value = lifetime;
     uniforms.lifetimeVariance.value = Math.max(0, Math.min(1, lifetimeVariance));

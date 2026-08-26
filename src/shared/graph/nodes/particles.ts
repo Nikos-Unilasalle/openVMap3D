@@ -228,6 +228,70 @@ export const PARTICLE_EMITTER_FROM_POINTS_NODE: NodeDefinition = {
 };
 
 /**
+ * Points to Particles — the direct "one particle per point, spawned all at
+ * once" sibling to Point Emitter: no spawn rate, no lifetime-driven
+ * population math, no Emit gate to reason about. A Point Cloud/PLY import
+ * IS already a finished, complete set of points — Point Emitter's whole
+ * reason to exist (a continuous rate governing how a population trickles in
+ * over time, respawning as particles age out) doesn't fit "spawn my point
+ * cloud, then let physics take over" at all, which is what
+ * EmitterConfig.pointCount exists for: Particle Simulate uses the point
+ * count directly as the population size and always spawns the whole thing
+ * immediately (see particleRuntime.ts's getOrCreateSimulation), regardless
+ * of its own Burst Spawn checkbox.
+ *
+ * Cache/rebuild rule matches Point Emitter's own: skipped when the three
+ * lists are reference-identical to last frame.
+ */
+export const POINTS_TO_PARTICLES_NODE: NodeDefinition = {
+  type: "particles/points-to-particles",
+  label: "Points to Particles",
+  category: "particles",
+  inputs: [
+    { id: "xValues", label: "X Values (List)", type: "list" },
+    { id: "yValues", label: "Y Values (List)", type: "list" },
+    { id: "zValues", label: "Z Values (List)", type: "list" },
+    { id: "velocity", label: "Velocity", type: "vector" },
+  ],
+  outputs: [{ id: "emitter", label: "Emitter", type: "any" }],
+  defaultParams: { velocity: new THREE.Vector3(0, 0, 0) },
+  paramFields: [{ id: "velocity", label: "Initial Velocity", kind: "vector" }],
+  evaluate: (inputs, params, ctx) => {
+    const state = getSeedState(ctx.nodeId);
+    const velocity = asVector(inputs.velocity, asVector(params.velocity, new THREE.Vector3()));
+
+    if (state.lastX !== inputs.xValues || state.lastY !== inputs.yValues || state.lastZ !== inputs.zValues) {
+      const xValues = toNumberList(inputs.xValues);
+      const yValues = toNumberList(inputs.yValues);
+      const zValues = toNumberList(inputs.zValues);
+      const count = Math.min(xValues.length, yValues.length, zValues.length);
+      let seedPositions: Float32Array | undefined;
+      if (count > 0) {
+        seedPositions = new Float32Array(count * 3);
+        for (let i = 0; i < count; i++) {
+          seedPositions[i * 3] = xValues[i];
+          seedPositions[i * 3 + 1] = yValues[i];
+          seedPositions[i * 3 + 2] = zValues[i];
+        }
+      }
+      state.lastX = inputs.xValues;
+      state.lastY = inputs.yValues;
+      state.lastZ = inputs.zValues;
+      state.seedPositions = seedPositions;
+    }
+
+    const pointCount = state.seedPositions ? Math.floor(state.seedPositions.length / 3) : 0;
+    return {
+      // spawnRate is irrelevant once pointCount is set (see EmitterConfig's
+      // doc) — kept at a sane default only so this EmitterConfig stays a
+      // valid one for any code path that hasn't been taught about
+      // pointCount yet.
+      emitter: buildEmitterConfig(new THREE.Vector3(), velocity, 200, state.seedPositions, undefined, false, true, pointCount),
+    };
+  },
+};
+
+/**
  * Particle Emitter (From Surface) — the geometry-driven sibling of Particle
  * Emitter (From Points): area-weighted-samples the input geometry's surface
  * (sampleSurfacePoints, the same BVH-accelerated sampler Sample Surface and
