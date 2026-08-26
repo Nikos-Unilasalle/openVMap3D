@@ -101,6 +101,8 @@ const POSITION_SHADER = /* glsl */ `
   uniform float time;
   uniform float emitEnabled;
   uniform float lifetimeVariance;
+  uniform float groundEnabled;
+  uniform float groundY;
 
   void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;
@@ -173,7 +175,16 @@ const POSITION_SHADER = /* glsl */ `
       }
       gl_FragColor = vec4(spawnPos, age - myLifetime);
     } else {
-      gl_FragColor = vec4(pos.rgb + vel.rgb * delta, age);
+      vec3 newPos = pos.rgb + vel.rgb * delta;
+      // Belt-and-suspenders alongside VELOCITY_SHADER's own bounce/friction
+      // response: that shader reacts to *last frame's* position, one step
+      // behind this one's own integration, so a large delta or a particle
+      // already deep in free-fall can still integrate a hair past groundY
+      // before its velocity even reflects contact. Clamping the position
+      // directly here is what actually stops a fast-falling cloud from
+      // visibly sinking a little into the ground every frame.
+      if (groundEnabled > 0.5) newPos.y = max(newPos.y, groundY);
+      gl_FragColor = vec4(newPos, age);
     }
   }
 `;
@@ -363,6 +374,10 @@ const VELOCITY_SHADER = /* glsl */ `
   uniform float time;
   uniform float maxSpeed;
   uniform float lifetimeVariance;
+  uniform float groundEnabled;
+  uniform float groundY;
+  uniform float groundBounce;
+  uniform float groundFriction;
 
   ${SIMPLEX_GRADIENT_NOISE_GLSL}
   ${FORCE_FIELD_GLSL}
@@ -396,6 +411,19 @@ const VELOCITY_SHADER = /* glsl */ `
         : vec3(0.0);
       vec3 fields = forceFieldContribution(pos.rgb, time);
       vec3 v = vel.rgb + vec3(0.0, -gravity, 0.0) * delta + wind * delta + flow * delta + fields * delta;
+      // Ground collision: reacts to the position this particle already sits
+      // at (pos.rgb, last frame's) and only when actually moving downward
+      // into it — a particle resting exactly on groundY with v.y already
+      // clamped to ~0 shouldn't re-trigger every frame and re-apply
+      // friction to velocity that's already settled. groundBounce 0 = dead
+      // stop on contact (a cloud settling onto the floor); 1 = perfectly
+      // elastic. groundFriction scales the horizontal (x/z) speed on every
+      // contact — 1 = frictionless slide, 0 = grips instantly.
+      if (groundEnabled > 0.5 && pos.rgb.y <= groundY && v.y < 0.0) {
+        v.y = -v.y * groundBounce;
+        v.x *= groundFriction;
+        v.z *= groundFriction;
+      }
       // Pure integration with no drag term — an accelerating force (the flow
       // field, but gravity/wind too given enough lifetime) would otherwise
       // grow v without bound. maxSpeed <= 0.0 keeps the old unclamped
@@ -536,6 +564,12 @@ function createSimulation(nodeId: string, renderer: THREE.WebGLRenderer, size: n
   positionVar.material.uniforms.seedRandomPick = { value: 0 };
   positionVar.material.uniforms.emitEnabled = { value: 1 };
   positionVar.material.uniforms.time = { value: 0 };
+  positionVar.material.uniforms.groundEnabled = { value: 0 };
+  positionVar.material.uniforms.groundY = { value: 0 };
+  velocityVar.material.uniforms.groundEnabled = { value: 0 };
+  velocityVar.material.uniforms.groundY = { value: 0 };
+  velocityVar.material.uniforms.groundBounce = { value: 0 };
+  velocityVar.material.uniforms.groundFriction = { value: 1 };
   velocityVar.material.uniforms.emitterVelocity = { value: new THREE.Vector3() };
   velocityVar.material.uniforms.gravity = { value: 0 };
   velocityVar.material.uniforms.wind = { value: new THREE.Vector3() };
@@ -584,6 +618,16 @@ export interface FlowFieldConfig {
   speed: number;
 }
 
+/** particles/ground's collision plane — a horizontal (Y-normal) floor at `y`. See the ground-response block in VELOCITY_SHADER and the position clamp in POSITION_SHADER. */
+export interface GroundConfig {
+  enabled: boolean;
+  y: number;
+  /** 0 = dead stop on contact (settles onto the floor), 1 = perfectly elastic bounce. */
+  bounce: number;
+  /** Horizontal (x/z) speed retained per contact — 1 = frictionless slide, 0 = grips instantly. */
+  friction: number;
+}
+
 /** particles/force-field's numeric type tag — matches the fieldType branch in FORCE_FIELD_GLSL exactly. */
 export const FORCE_FIELD_TYPES = ["attractor", "vortex", "wind", "turbulence"] as const;
 export type ForceFieldType = (typeof FORCE_FIELD_TYPES)[number];
@@ -622,6 +666,7 @@ export function getOrCreateSimulation(
   boundsRadius = 0,
   maxSpeed = 0,
   forces: ForceFieldDescriptor[] = [],
+  ground?: GroundConfig,
 ): SimulationResult | null {
   if (!renderer) {
     if (!warnedMissingRenderer) {
@@ -675,6 +720,13 @@ export function getOrCreateSimulation(
   sim.velocityVar.material.uniforms.noiseScale.value = flowField.scale;
   sim.velocityVar.material.uniforms.noiseSpeed.value = flowField.speed;
   sim.velocityVar.material.uniforms.maxSpeed.value = Math.max(0, maxSpeed);
+
+  sim.positionVar.material.uniforms.groundEnabled.value = ground?.enabled ? 1 : 0;
+  sim.positionVar.material.uniforms.groundY.value = ground?.y ?? 0;
+  sim.velocityVar.material.uniforms.groundEnabled.value = ground?.enabled ? 1 : 0;
+  sim.velocityVar.material.uniforms.groundY.value = ground?.y ?? 0;
+  sim.velocityVar.material.uniforms.groundBounce.value = Math.max(0, Math.min(1, ground?.bounce ?? 0));
+  sim.velocityVar.material.uniforms.groundFriction.value = Math.max(0, Math.min(1, ground?.friction ?? 1));
 
   const fieldCount = Math.min(MAX_FORCE_FIELDS, forces.length);
   const fieldUniforms = sim.velocityVar.material.uniforms;

@@ -46,7 +46,15 @@ export const GEOMETRY_TO_POINTS_NODE: NodeDefinition = {
 
     const points: THREE.Vector3[] = [];
     object.traverse((child) => {
-      if (!(child instanceof THREE.Mesh) || !child.geometry?.attributes?.position) return;
+      // A Point Cloud/PLY import (or anything else feeding the graph as
+      // THREE.Points — a particle-cloud rendered geometry, say) is not a
+      // THREE.Mesh at all: `instanceof THREE.Mesh` alone silently walked
+      // straight past it and always returned zero points, with no error to
+      // say why. Vertices to Points is the only bridge into the particle
+      // system's x/y/z-list world (Particle Emitter's "From Points" input),
+      // so a Points-only source had no path into particles at all.
+      if (!(child instanceof THREE.Mesh) && !(child instanceof THREE.Points)) return;
+      if (!child.geometry?.attributes?.position) return;
       // updateWorldMatrix (NOT updateMatrix): graph-driven meshes carry their
       // pose in `matrix` with matrixAutoUpdate off — updateMatrix() would
       // recompute `matrix` from the untouched defaults and destroy it.

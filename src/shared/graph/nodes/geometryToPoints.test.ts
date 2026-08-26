@@ -56,4 +56,34 @@ describe("GEOMETRY_TO_POINTS_NODE", () => {
     const res = GEOMETRY_TO_POINTS_NODE.evaluate({ geometry: empty }, { maxPoints: 2000 }, CTX);
     expect(res.count).toBe(0);
   });
+
+  it("extracts vertices from a THREE.Points source (a Point Cloud/PLY import) — the actual bridge into particles", () => {
+    // Regression test: a PLY/Point Cloud import hands the graph a
+    // THREE.Points, not a THREE.Mesh — the ONLY node that turns geometry
+    // into the x/y/z-list world Particle Emitter (From Points) reads was
+    // silently returning zero points for exactly this source, with nothing
+    // to say why. This is the one path a point cloud has into particles.
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array([0, 0, 0, 1, 2, 3, 4, 5, 6]), 3));
+    const points = new THREE.Points(geometry, new THREE.PointsMaterial());
+
+    const res = GEOMETRY_TO_POINTS_NODE.evaluate({ geometry: points }, { maxPoints: 2000 }, CTX);
+    expect(res.count).toBe(3);
+    expect(res.xValues).toEqual([0, 1, 4]);
+    expect(res.yValues).toEqual([0, 2, 5]);
+    expect(res.zValues).toEqual([0, 3, 6]);
+  });
+
+  it("applies a Points object's own world transform too", () => {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array([0, 0, 0]), 3));
+    const points = new THREE.Points(geometry, new THREE.PointsMaterial());
+    points.matrixAutoUpdate = false;
+    points.matrix.makeTranslation(10, 20, 30);
+
+    const res = GEOMETRY_TO_POINTS_NODE.evaluate({ geometry: points }, { maxPoints: 2000 }, CTX);
+    expect(res.xValues).toEqual([10]);
+    expect(res.yValues).toEqual([20]);
+    expect(res.zValues).toEqual([30]);
+  });
 });

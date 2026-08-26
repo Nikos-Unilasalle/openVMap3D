@@ -42,6 +42,7 @@ import { GEOMETRY_TO_POINTS_NODE } from "./geometryToPoints";
 import { PARTICLES_TO_POINTS_NODE } from "./particlesToPoints";
 import { PARTICLE_RENDER_INSTANCES_NODE } from "./particleInstances";
 import { FORCE_FIELD_NODE } from "./forceField";
+import { GROUND_NODE } from "./ground";
 import { CAPTURE_TRAILS_NODE } from "./particleTrails";
 import {
   TEXT_CASE_NODE,
@@ -232,6 +233,7 @@ export const STARTER_NODES = [
   PARTICLES_TO_POINTS_NODE,
   PARTICLE_RENDER_INSTANCES_NODE,
   FORCE_FIELD_NODE,
+  GROUND_NODE,
   PARTICLE_SIMULATE_NODE,
   PARTICLE_RENDER_NODE,
   POSTPROCESS_BLOOM_NODE,
@@ -360,6 +362,7 @@ export * from "./pointsSelection";
 export * from "./pointsInfluence";
 export * from "./connectivity";
 export * from "./forceField";
+export * from "./ground";
 export * from "./particleTrails";
 export * from "./distance";
 

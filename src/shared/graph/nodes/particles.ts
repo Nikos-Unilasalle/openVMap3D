@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
-import { EmitterConfig, ForceFieldDescriptor, buildEmitterConfig, getOrCreateSimulation } from "../particleRuntime";
+import { EmitterConfig, ForceFieldDescriptor, GroundConfig, buildEmitterConfig, getOrCreateSimulation } from "../particleRuntime";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { toBoolean } from "../sockets";
 import { growingSockets } from "../dynamicInputs";
@@ -335,6 +335,7 @@ const FIELD_INPUTS: NodeDefinition["inputs"] = [
   { id: "flowSpeed", label: "Flow Field Speed", type: "value" },
   { id: "boundsRadius", label: "Bounds Radius", type: "value" },
   { id: "maxSpeed", label: "Max Speed", type: "value" },
+  { id: "ground", label: "Ground", type: "any" },
 ];
 
 /** BIBLE.md's Particle Simulate — the update shader: gravity, wind, lifetime. Owns the GPUComputationRenderer, see particleRuntime.ts. */
@@ -408,6 +409,7 @@ export const PARTICLE_SIMULATE_NODE: NodeDefinition = {
     };
     const boundsRadius = numberInput(inputs.boundsRadius, params.boundsRadius, 0);
     const maxSpeed = numberInput(inputs.maxSpeed, params.maxSpeed, 0);
+    const ground = inputs.ground as GroundConfig | undefined;
     // Sorted by socket index rather than trusting object key order — plain
     // objects don't guarantee it for non-integer-looking keys like "field10".
     const forces = Object.entries(inputs)
@@ -429,6 +431,7 @@ export const PARTICLE_SIMULATE_NODE: NodeDefinition = {
       boundsRadius,
       maxSpeed,
       forces,
+      ground,
     );
     if (!result) return { positions: null, count: 0, lifetime };
     return { positions: result.positionsTexture, count: result.capacity, lifetime };
