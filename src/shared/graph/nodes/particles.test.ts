@@ -264,4 +264,40 @@ describe("POINTS_TO_PARTICLES_NODE", () => {
     const velocity = (res.emitter as EmitterConfig).velocity;
     expect([velocity.x, velocity.y, velocity.z]).toEqual([1, 2, 3]);
   });
+
+  describe("Spawn Frame", () => {
+    const inputs = { xValues: [0], yValues: [0], zValues: [0] };
+    const paramsAt = (spawnFrame: number) => ({ ...POINTS_TO_PARTICLES_NODE.defaultParams, spawnFrame });
+
+    it("gate is closed before Spawn Frame", () => {
+      const res = POINTS_TO_PARTICLES_NODE.evaluate(inputs, paramsAt(30), { time: 1, step: 30, nodeId: "pts-f", currentFrame: 10 });
+      expect((res.emitter as EmitterConfig).emit).toBe(false);
+    });
+
+    it("gate opens exactly on Spawn Frame", () => {
+      const res = POINTS_TO_PARTICLES_NODE.evaluate(inputs, paramsAt(30), { time: 1, step: 30, nodeId: "pts-g", currentFrame: 30 });
+      expect((res.emitter as EmitterConfig).emit).toBe(true);
+    });
+
+    it("is a level, not a pulse — stays open on every frame after Spawn Frame, not just the one it opened on", () => {
+      // The exact bug this param exists to avoid: a one-shot Trigger wired
+      // into a plain Emitter's Emit socket fires once and drops back to
+      // false — any particle that later dies (age > Lifetime) then finds
+      // the gate already closed again and never respawns. Spawn Frame reads
+      // as "has the timeline reached this frame yet", which never closes
+      // again once true.
+      const res = POINTS_TO_PARTICLES_NODE.evaluate(inputs, paramsAt(30), { time: 5, step: 150, nodeId: "pts-h", currentFrame: 150 });
+      expect((res.emitter as EmitterConfig).emit).toBe(true);
+    });
+
+    it("defaults to always-open (spawnFrame 0) when there's no currentFrame in context at all (headless evaluate, no timeline driving it)", () => {
+      const res = POINTS_TO_PARTICLES_NODE.evaluate(inputs, POINTS_TO_PARTICLES_NODE.defaultParams, CTX("pts-i"));
+      expect((res.emitter as EmitterConfig).emit).toBe(true);
+    });
+
+    it("closing the gate again on rewind (scrubbing back before Spawn Frame) is exactly what re-arms a fresh burst on the next pass", () => {
+      const before = POINTS_TO_PARTICLES_NODE.evaluate(inputs, paramsAt(30), { time: 2, step: 60, nodeId: "pts-j", currentFrame: 5 });
+      expect((before.emitter as EmitterConfig).emit).toBe(false);
+    });
+  });
 });
