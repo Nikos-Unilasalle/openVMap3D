@@ -13,7 +13,7 @@ import { resolveSceneRoots } from "../graph/sceneRoots";
 import { insertCurvePointAfter, removeCurvePoint } from "../graph/curvePoints";
 import { GizmoTarget, resolveGizmoTarget } from "../graph/transformLookup";
 import { PIVOT_TRANSFORM_NODE } from "../graph/nodes/transform";
-import { VISUAL_SLICE_NODE } from "../graph/nodes/visualSlice";
+import { CLIP_BOX_NODE, VISUAL_SLICE_NODE } from "../graph/nodes/visualSlice";
 import { createCurvePointHandles } from "./curveHandles";
 import { createPointCloudHandles } from "./pointCloudHandles";
 import { createSceneMembership, isSelfOrDescendantOf } from "./sceneMembership";
@@ -597,7 +597,10 @@ export function Viewport({
     if (!hostRef.current) return;
     const host: HTMLDivElement = hostRef.current;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    // stencil: true — three.js leaves this off by default; the Clip Box /
+    // Visual Slice "solid cap" draws (clipCaps.ts) need a real stencil buffer
+    // or their stencil ops are silent no-ops and no cap ever appears.
+    const renderer = new THREE.WebGLRenderer({ antialias: true, stencil: true });
     // The native app can afford 2x on a retina display; the browser build is
     // CPU/GPU-bound, so cap it lower there — a big fill-rate saving on a 2x
     // display (4x pixels → 2.25x at 1.5) for a barely perceptible softness.
@@ -934,12 +937,32 @@ export function Viewport({
     sliceProxy.visible = false;
     let sliceProxyNodeId: string | null = null;
 
+    // Clip Box's proxy — the same story as sliceProxy, one dimension up. The
+    // cut is a whole oriented volume rather than a plane, so this one also
+    // takes the gizmo's *scale* mode (writing the node's Box Size), and it
+    // draws as a wireframe: six translucent faces stacked in depth read as
+    // fog, while the edges show exactly where the volume starts and stops.
+    const clipBoxProxy = new THREE.Object3D();
+    const clipBoxGeometry = new THREE.BoxGeometry(1, 1, 1);
+    const clipBoxVisual = new THREE.Mesh(
+      clipBoxGeometry,
+      new THREE.MeshBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.06, side: THREE.DoubleSide, depthWrite: false }),
+    );
+    const clipBoxEdges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(clipBoxGeometry),
+      new THREE.LineBasicMaterial({ color: 0xf59e0b }),
+    );
+    clipBoxProxy.add(clipBoxVisual, clipBoxEdges);
+    clipBoxProxy.visible = false;
+    let clipBoxProxyNodeId: string | null = null;
+
     if (!outputMode) {
       editorUiScene.add(curveHandles.group);
       editorUiScene.add(pointsSelectionHandles.group);
       editorUiScene.add(pointsInfluenceHandles.group);
       editorUiScene.add(pivotHandle.group);
       editorUiScene.add(sliceProxy);
+      editorUiScene.add(clipBoxProxy);
     }
     // Refreshed every tick() — the 'objectChange' listener needs the
     // *current* base matrix for an "offset" target (see below), and this is
@@ -1165,6 +1188,21 @@ export function Viewport({
         if (object === sliceProxy && sliceProxyNodeId && onTransformChangeRef.current) {
           const direction = SLICE_NORMAL_AXIS.clone().applyQuaternion(object.quaternion).normalize();
           onTransformChangeRef.current(sliceProxyNodeId, { point: object.position.clone(), direction });
+          return;
+        }
+
+        // Clip Box's volume proxy: all three modes write back at once, since
+        // only whichever one the drag actually changed differs from what the
+        // params already hold. Scale is taken as an absolute — TransformControls
+        // will happily drag an axis through zero into a negative, which would
+        // flip the box inside out rather than shrink it.
+        if (object === clipBoxProxy && clipBoxProxyNodeId && onTransformChangeRef.current) {
+          const euler = new THREE.Euler().setFromQuaternion(object.quaternion);
+          onTransformChangeRef.current(clipBoxProxyNodeId, {
+            location: object.position.clone(),
+            rotation: new THREE.Vector3(euler.x, euler.y, euler.z),
+            size: new THREE.Vector3(Math.abs(object.scale.x), Math.abs(object.scale.y), Math.abs(object.scale.z)),
+          });
           return;
         }
 
@@ -2339,6 +2377,26 @@ export function Viewport({
         sliceProxyNodeId = null;
       }
 
+      // Clip Box's volume proxy — same contract as the slice plane above,
+      // plus scale, since Box Size is part of the pose being dragged.
+      if (!outputMode && selectedNodeForPivot?.type === CLIP_BOX_NODE.type) {
+        clipBoxProxyNodeId = selectedNodeForPivot.id;
+        clipBoxProxy.visible = true;
+        if (!transformControls?.dragging || transformControls.object !== clipBoxProxy) {
+          const location = asVector3(selectedNodeForPivot.params.location, new THREE.Vector3());
+          const rotation = asVector3(selectedNodeForPivot.params.rotation, new THREE.Vector3());
+          const size = asVector3(selectedNodeForPivot.params.size, new THREE.Vector3(1, 1, 1));
+          clipBoxProxy.position.copy(location);
+          clipBoxProxy.quaternion.setFromEuler(new THREE.Euler(rotation.x, rotation.y, rotation.z));
+          // A zero on any axis collapses the proxy to nothing and leaves the
+          // gizmo with no handle left to grab it back by.
+          clipBoxProxy.scale.set(size.x || 1e-3, size.y || 1e-3, size.z || 1e-3);
+        }
+      } else if (clipBoxProxyNodeId) {
+        clipBoxProxy.visible = false;
+        clipBoxProxyNodeId = null;
+      }
+
       // Move/rotate/scale gizmo: attach to selected mesh, Empty, Light,
       // to the picked control point / multi-point centroid proxy, or to the
       // pivot marker when a Pivot Transform is selected
@@ -2353,6 +2411,8 @@ export function Viewport({
           pickedCurveHandle = pivotHandle.handleAt(0);
         } else if (sliceProxyNodeId) {
           pickedCurveHandle = sliceProxy;
+        } else if (clipBoxProxyNodeId) {
+          pickedCurveHandle = clipBoxProxy;
         }
       }
 
@@ -2721,6 +2781,11 @@ export function Viewport({
       sliceVisual.material.dispose();
       sliceVisualEdges.geometry.dispose();
       sliceVisualEdges.material.dispose();
+      clipBoxProxy.removeFromParent();
+      clipBoxGeometry.dispose();
+      clipBoxVisual.material.dispose();
+      clipBoxEdges.geometry.dispose();
+      clipBoxEdges.material.dispose();
       controls.dispose();
       // Per-viewport editor furniture (grid/axes, corner gizmo, zoom-scrub
       // bar) is not part of the shared per-node caches — it is built fresh for

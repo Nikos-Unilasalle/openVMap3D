@@ -156,7 +156,7 @@ export const OBJECT_GLTF_NODE: NodeDefinition = {
     const useOwnMaterials = params.useOwnMaterials !== undefined ? Boolean(params.useOwnMaterials) : true;
     if (!useOwnMaterials) {
       const matParams = extractMaterialParams(inputs, params);
-      const texParams: TextureParams = { activeDiffuse: null, activeNormal: null, scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0 };
+      const texParams: TextureParams = { activeDiffuse: null, activeNormal: null, activeRoughness: null, scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0 };
       group.traverse((child) => {
         if (child instanceof THREE.Mesh) {
           applyMaterialParams(child, matParams, THREE.FrontSide, texParams);

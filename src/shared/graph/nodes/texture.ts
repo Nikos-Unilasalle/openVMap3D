@@ -837,6 +837,96 @@ export const TEXTURE_TO_NORMAL_NODE: NodeDefinition = {
   },
 };
 
+interface ToRoughnessState {
+  texture?: THREE.CanvasTexture;
+  canvas?: HTMLCanvasElement;
+  signature?: string;
+}
+
+const toRoughnessCache = createNodeCache<ToRoughnessState>((s) => s.texture?.dispose());
+
+function getToRoughnessState(nodeId: string): ToRoughnessState {
+  let state = toRoughnessCache.get(nodeId);
+  if (!state) {
+    state = {};
+    toRoughnessCache.set(nodeId, state);
+  }
+  return state;
+}
+
+/**
+ * Texture to Roughness node — approximates a roughness map from a texture's
+ * luminance: darker areas read as rougher (or the reverse, when inverted).
+ * Contrast pushes mid-tones away from 0.5 so flat-looking source textures
+ * still produce a usable range of roughness values.
+ */
+export const TEXTURE_TO_ROUGHNESS_NODE: NodeDefinition = {
+  type: "texture/to_roughness",
+  label: "Texture to Roughness",
+  category: "texture",
+  inputs: [{ id: "texture", label: "Texture", type: "texture" }],
+  outputs: [{ id: "roughness", label: "Roughness Map", type: "texture" }],
+  defaultParams: { invert: false, contrast: 1, minRoughness: 0, maxRoughness: 1, resolution: 256 },
+  dynamicParamFields: () => [
+    { id: "invert", label: "Invert", kind: "boolean" },
+    { id: "contrast", label: "Contrast", kind: "number", step: 0.1 },
+    { id: "minRoughness", label: "Min Roughness", kind: "number", step: 0.05 },
+    { id: "maxRoughness", label: "Max Roughness", kind: "number", step: 0.05 },
+    { id: "resolution", label: "Resolution (px)", kind: "number", step: 64 },
+  ],
+  evaluate: (inputs, params, ctx) => {
+    const state = getToRoughnessState(ctx.nodeId);
+    if (typeof document === "undefined") return { roughness: null };
+    const source = inputs.texture instanceof THREE.Texture ? inputs.texture : null;
+    if (!source || !isDrawable(source.image)) return { roughness: null };
+
+    const invert = Boolean(params.invert);
+    const contrast = Math.max(0, Number(params.contrast) || 1);
+    const minRoughness = Math.max(0, Math.min(1, Number(params.minRoughness) ?? 0));
+    const maxRoughness = Math.max(0, Math.min(1, Number(params.maxRoughness) ?? 1));
+    const resolution = Math.max(16, Math.min(1024, Math.round(Number(params.resolution) || 256)));
+
+    const sig = JSON.stringify([invert, contrast, minRoughness, maxRoughness, resolution, source.uuid, source.version]);
+    if (sig !== state.signature) {
+      state.signature = sig;
+      if (!state.canvas) state.canvas = document.createElement("canvas");
+      const canvas = state.canvas;
+      canvas.width = resolution;
+      canvas.height = resolution;
+      const ctx2d = canvas.getContext("2d");
+      if (!ctx2d) return { roughness: null };
+      ctx2d.drawImage(source.image as CanvasImageSource, 0, 0, resolution, resolution);
+      const img = ctx2d.getImageData(0, 0, resolution, resolution);
+      const data = img.data;
+      const lo = Math.min(minRoughness, maxRoughness);
+      const hi = Math.max(minRoughness, maxRoughness);
+      for (let i = 0; i < data.length; i += 4) {
+        let l = (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]) / 255;
+        if (invert) l = 1 - l;
+        l = Math.max(0, Math.min(1, (l - 0.5) * contrast + 0.5));
+        const v = Math.round((lo + l * (hi - lo)) * 255);
+        data[i] = v;
+        data[i + 1] = v;
+        data[i + 2] = v;
+        data[i + 3] = 255;
+      }
+      ctx2d.putImageData(img, 0, 0);
+
+      if (!state.texture) {
+        state.texture = new THREE.CanvasTexture(canvas);
+        state.texture.wrapS = THREE.RepeatWrapping;
+        state.texture.wrapT = THREE.RepeatWrapping;
+        state.texture.colorSpace = THREE.LinearSRGBColorSpace; // roughness maps stay linear
+      } else {
+        state.texture.image = canvas;
+        state.texture.needsUpdate = true;
+      }
+    }
+
+    return { roughness: state.texture };
+  },
+};
+
 /**
  * Mix Texture node — blends two textures per-pixel by a factor (scalar or a
  * third texture's luminance as a mask), same blend modes as Blender's Mix

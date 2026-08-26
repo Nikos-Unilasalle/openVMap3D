@@ -58,8 +58,10 @@ export function asColor(v: unknown, fallback = new THREE.Color(0xffffff)): THREE
 interface PrimitiveTextureState {
   textureMap?: THREE.Texture;
   normalMap?: THREE.Texture;
+  roughnessMap?: THREE.Texture;
   lastTexturePath?: string;
   lastNormalPath?: string;
+  lastRoughnessPath?: string;
 }
 
 const primitiveTextureCache = createNodeCache<PrimitiveTextureState>();
@@ -76,6 +78,7 @@ function getOrCreatePrimitiveTextureState(nodeId: string): PrimitiveTextureState
 export interface TextureParams {
   activeDiffuse: THREE.Texture | null;
   activeNormal: THREE.Texture | null;
+  activeRoughness: THREE.Texture | null;
   scaleX: number;
   scaleY: number;
   offsetX: number;
@@ -159,11 +162,14 @@ export function extractTextureParams(
 
   const diffuseVal = inputs[p("texture")];
   const normalVal = inputs[p("normal")];
+  const roughnessVal = inputs[p("roughnessMap")];
   const inputDiffuse = diffuseVal instanceof THREE.Texture && diffuseVal.image ? diffuseVal : null;
   const inputNormal = normalVal instanceof THREE.Texture && normalVal.image ? normalVal : null;
+  const inputRoughness = roughnessVal instanceof THREE.Texture && roughnessVal.image ? roughnessVal : null;
 
   const activeDiffuse = inputDiffuse || state.textureMap || null;
   const activeNormal = inputNormal || state.normalMap || null;
+  const activeRoughness = inputRoughness || state.roughnessMap || null;
 
   let scaleX = Number(params[p("uvScaleX")]);
   if (!Number.isFinite(scaleX)) scaleX = 1;
@@ -185,7 +191,7 @@ export function extractTextureParams(
     offsetY = (inputs[p("uvOffset")] as THREE.Vector3).y;
   }
 
-  return { activeDiffuse, activeNormal, scaleX, scaleY, offsetX, offsetY };
+  return { activeDiffuse, activeNormal, activeRoughness, scaleX, scaleY, offsetX, offsetY };
 }
 
 export interface MaterialParams {
@@ -274,6 +280,7 @@ export function applyMaterialParams(
     defaultSide,
     texParams?.activeDiffuse?.uuid ?? "",
     texParams?.activeNormal?.uuid ?? "",
+    texParams?.activeRoughness?.uuid ?? "",
     texParams?.scaleX,
     texParams?.scaleY,
     texParams?.offsetX,
@@ -393,8 +400,25 @@ export function applyMaterialParams(
       mat.normalMap = null;
     }
 
+    const prevRoughnessMap = mat.roughnessMap ?? null;
+    if (texParams?.activeRoughness) {
+      mat.roughnessMap = texParams.activeRoughness;
+      mat.roughnessMap.wrapS = THREE.RepeatWrapping;
+      mat.roughnessMap.wrapT = THREE.RepeatWrapping;
+      mat.roughnessMap.repeat.set(texParams.scaleX, texParams.scaleY);
+      mat.roughnessMap.offset.set(texParams.offsetX, texParams.offsetY);
+      mat.roughnessMap.needsUpdate = true;
+    } else {
+      mat.roughnessMap = null;
+    }
+
     // See the shadeless branch above: only the *defines* need a recompile.
-    if (mat.map !== prevMap || mat.normalMap !== prevNormalMap || mat.transparent !== prevTransparent) {
+    if (
+      mat.map !== prevMap ||
+      mat.normalMap !== prevNormalMap ||
+      mat.roughnessMap !== prevRoughnessMap ||
+      mat.transparent !== prevTransparent
+    ) {
       mat.needsUpdate = true;
     }
   }
@@ -404,6 +428,7 @@ export const COMMON_PRIMITIVE_INPUTS = [
   { id: "visible", label: "Visible", type: "value" as const },
   { id: "texture", label: "Texture Map", type: "texture" as const },
   { id: "normal", label: "Normal Map", type: "texture" as const },
+  { id: "roughnessMap", label: "Roughness Map", type: "texture" as const },
   { id: "matrix", label: "Matrix", type: "matrix" as const },
   { id: "material", label: "Material", type: "material" as const },
   { id: "uvScale", label: "UV Scale", type: "vector" as const },
@@ -542,6 +567,38 @@ export function buildPrimitiveDynamicParamFields(extraFields: ParamFieldDef[] = 
         }
       },
     },
+    {
+      id: "roughnessMapPath",
+      label: "Roughness Map",
+      kind: "file",
+      accept: [".png", ".jpg", ".jpeg", ".webp", ".bmp"],
+      onLoaded: (nodeId, path, content) => {
+        const state = getOrCreatePrimitiveTextureState(nodeId);
+        state.lastRoughnessPath = path;
+        try {
+          const blob = content instanceof Uint8Array ? new Blob([content]) : new Blob([content]);
+          const url = URL.createObjectURL(blob);
+          const texture = new THREE.TextureLoader().load(
+            url,
+            () => {
+              URL.revokeObjectURL(url);
+              const mesh = meshCache.get(nodeId);
+              if (mesh && mesh.material) {
+                if (Array.isArray(mesh.material)) mesh.material.forEach((m) => (m.needsUpdate = true));
+                else mesh.material.needsUpdate = true;
+              }
+            },
+            undefined,
+            () => URL.revokeObjectURL(url)
+          );
+          texture.wrapS = THREE.RepeatWrapping;
+          texture.wrapT = THREE.RepeatWrapping;
+          state.roughnessMap = texture;
+        } catch (err) {
+          console.error("Failed to load primitive roughness map image:", err);
+        }
+      },
+    },
     { id: "uvScaleX", label: "UV Scale X (Tile)", kind: "number", step: 0.1 },
     { id: "uvScaleY", label: "UV Scale Y (Tile)", kind: "number", step: 0.1 },
     { id: "uvOffsetX", label: "UV Offset X", kind: "number", step: 0.05 },
@@ -557,6 +614,7 @@ export const COMMON_DEFAULT_PARAMS = {
   scale: new THREE.Vector3(1, 1, 1),
   texturePath: "",
   normalMapPath: "",
+  roughnessMapPath: "",
   uvScaleX: 1,
   uvScaleY: 1,
   uvOffsetX: 0,

@@ -260,7 +260,7 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
 
     const activeDiffuse = (inputDiffuse || state.textureMap) ?? null;
     const activeNormal = (inputNormal || state.normalMap) ?? null;
-    const texParams: TextureParams = { activeDiffuse, activeNormal, scaleX, scaleY, offsetX, offsetY };
+    const texParams: TextureParams = { activeDiffuse, activeNormal, activeRoughness: null, scaleX, scaleY, offsetX, offsetY };
 
     // Same shared material pipeline every other object node uses (Box,
     // Sphere, Curve to Mesh...) — this is what gets an OBJ the params that
