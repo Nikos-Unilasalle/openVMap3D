@@ -6,6 +6,8 @@ import {
   saveProjectAsWithFilePicker,
   saveProjectToPath,
 } from "../shared/graph/storage";
+import { exportSceneAsFolder } from "../shared/export/exportScene";
+import { saveExportFolder } from "../shared/export/saveExportFolder";
 import { emptyProject, Project } from "../shared/graph/types";
 import { closeOutputWindow, listMonitors, onOutputClosed, openOutputWindow } from "../shared/ipc";
 import logoUrl from "../assets/logo.png";
@@ -158,6 +160,29 @@ export const TopBar: React.FC<TopBarProps> = ({
     } catch (err: unknown) {
       const error = err as Error;
       showToast(`Erreur : ${error.message}`, true);
+    }
+  };
+
+  // EXPORT WEB PAGE — bakes the active canvas into a standalone folder
+  // (index.html + scene.js + textures/) with no server and no re-editable
+  // graph — see exportScene.ts's exportSceneAsFolder doc for exactly what
+  // does and doesn't survive: real textures and a baked transform animation
+  // (from the graph's Render node frameCount/fps, if one exists) both ship,
+  // but per-frame geometry rebuilds (deforming meshes, particle sims) don't.
+  const [isExportingPage, setIsExportingPage] = useState(false);
+  const handleExportWebPage = async () => {
+    setIsExportingPage(true);
+    try {
+      const graph = project.canvases[project.activeCanvas];
+      const baseName = currentFilename.replace(/\.(tsuji|json|ovm)$/i, "") || "scene";
+      const files = await exportSceneAsFolder(graph, baseName);
+      const savedName = await saveExportFolder(files, baseName);
+      if (savedName) showToast(`Scène exportée : ${savedName}`);
+    } catch (err: unknown) {
+      const error = err as Error;
+      showToast(`Erreur export scène : ${error.message}`, true);
+    } finally {
+      setIsExportingPage(false);
     }
   };
 
@@ -340,6 +365,21 @@ export const TopBar: React.FC<TopBarProps> = ({
             {isExporting ? `Export… ${Math.round(exportProgress * 100)}%` : "Export Video"}
           </button>
         )}
+
+        {/* EXPORT WEB PAGE — standalone, offline-capable scene folder (index.html + scene.js + textures/) */}
+        <button
+          className="top-bar-button top-bar-button-export"
+          onClick={handleExportWebPage}
+          disabled={isExportingPage}
+          title="Export the current scene as a standalone web page folder (index.html + textures) — no server, works offline, animated if a Render node is set"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 2 2 7l10 5 10-5-10-5z" />
+            <path d="M2 17l10 5 10-5" />
+            <path d="M2 12l10 5 10-5" />
+          </svg>
+          {isExportingPage ? "Export…" : "Export Web Page"}
+        </button>
 
         {isEditingFilename ? (
           <input

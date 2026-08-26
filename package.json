@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:player-vendor": "vite build --config scripts/vite.player-vendor.config.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
