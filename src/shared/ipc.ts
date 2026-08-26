@@ -4,10 +4,10 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { DEFAULT_REGISTRY } from "./graph/nodes";
 import { rehydrateGraphParams } from "./graph/rehydrateParams";
 import { Graph } from "./graph/types";
+import { isTauri } from "./isTauri";
 
-export function isTauri(): boolean {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
+// Re-exported so existing `from "../ipc"` importers keep working.
+export { isTauri };
 
 export async function maximizeMainWindow(): Promise<void> {
   if (!isTauri()) return;

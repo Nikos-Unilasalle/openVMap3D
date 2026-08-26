@@ -392,6 +392,20 @@ export function ParamPanel({
                   const status = keyframesEnabled ? getKeyframeStatus(keyframes, nodeId, field.id, currentFrame) : "none";
                   const isDriven = connectedSockets?.has(field.id) ?? false;
 
+                  // A note carries no value and no control — it gets the whole
+                  // row so its text can wrap instead of being clipped to the
+                  // label column.
+                  if (field.kind === "note") {
+                    return (
+                      <div
+                        className={"param-note" + (field.tone === "warn" ? " param-note-warn" : "")}
+                        key={field.id}
+                      >
+                        {field.label}
+                      </div>
+                    );
+                  }
+
                   return (
                     <div
                       className={"param-row" + (isDriven ? " param-row-driven" : "")}

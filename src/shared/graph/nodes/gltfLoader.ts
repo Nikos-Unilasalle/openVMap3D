@@ -1,13 +1,264 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
+import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { NodeDefinition } from "../types";
 import { createNodeCache } from "../nodeCaches";
 import { composeNativeMatrixWithPivot } from "./transform";
 import { COMMON_PRIMITIVE_OUTPUTS, TextureParams, applyMaterialParams, extractMaterialParams, primitiveOutputs } from "./object";
+import { isTauri } from "../../isTauri";
+import { describeMissingResources, externalResourceUris, resolveExternalResources } from "./gltfExternalResources";
+
+/**
+ * The Draco decoder owns a worker pool, so it is created once and shared by
+ * every loader rather than per file pick, which would leak a pool per import.
+ *
+ * No setDecoderPath: DRACOLoader already points decoderPaths at its own
+ * wasm/js through `new URL(..., import.meta.url)`, which the bundler rewrites
+ * to real hashed assets. Setting a path by hand would override that with a
+ * copy we'd have to ship and keep in sync with three ourselves.
+ */
+let sharedDraco: DRACOLoader | null = null;
+
+/**
+ * Loaders are per-load rather than shared, because a model with external
+ * files needs its *own* LoadingManager to rewrite their URLs, and a shared
+ * manager would leak one model's rewrites into the next one's load.
+ *
+ * Both decoders are registered because neither is exotic — Draco is what
+ * Blender's "Compression" checkbox and virtually every Sketchfab download
+ * produce, and meshopt is glTF-Transform's default. Without them GLTFLoader
+ * refuses the file outright: Draco by *throwing synchronously* out of
+ * parse(), meshopt through the error callback. Either way the import used to
+ * fail into a silent fallback cube.
+ */
+function makeGltfLoader(manager?: THREE.LoadingManager): GLTFLoader {
+  const loader = new GLTFLoader(manager);
+  if (!sharedDraco) sharedDraco = new DRACOLoader();
+  loader.setDRACOLoader(sharedDraco);
+  loader.setMeshoptDecoder(MeshoptDecoder);
+  return loader;
+}
+
+/** The glTF JSON, from either form of the file, for inspecting what it references. */
+function readGltfJson(data: ArrayBuffer | string): unknown | null {
+  try {
+    if (typeof data === "string") return JSON.parse(data);
+    if (data.byteLength < GLB_HEADER_LENGTH) return null;
+    if (new TextDecoder().decode(new Uint8Array(data, 0, 4)) !== GLB_MAGIC) return null;
+    const view = new DataView(data);
+    const declared = Math.min(view.getUint32(8, true), data.byteLength);
+    let offset = GLB_HEADER_LENGTH;
+    while (offset + 8 <= declared) {
+      const chunkLength = view.getUint32(offset, true);
+      const chunkType = view.getUint32(offset + 4, true);
+      offset += 8;
+      if (offset + chunkLength > data.byteLength) return null;
+      if (chunkType === 0x4e4f534a) {
+        return JSON.parse(new TextDecoder().decode(new Uint8Array(data, offset, chunkLength)));
+      }
+      offset += chunkLength;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Loads a model whose buffers/images live in separate files next to it, by
+ * reading each one off disk and serving it to three under its original URI.
+ *
+ * Only possible with real filesystem access: a browser `<input type="file">`
+ * yields one chosen file and no way to reach its neighbours, so there the
+ * honest answer is to say which files are missing and why.
+ */
+function loadWithExternalResources(
+  gltfPath: string,
+  data: ArrayBuffer | string,
+  uris: string[],
+  onLoaded: (gltf: { scene: THREE.Group }) => void,
+  onError: (err: unknown) => void,
+  onUnavailable: (message: string) => void,
+): void {
+  if (!isTauri()) {
+    onUnavailable(
+      `This .gltf keeps its data in separate files (${uris.slice(0, 3).join(", ")}${uris.length > 3 ? ", …" : ""}), which a browser file picker can't reach — it only ever hands over the one file you chose. Open the model in the desktop app, or export it as a single self-contained .glb.`,
+    );
+    return;
+  }
+
+  void (async () => {
+    try {
+      const { readFile } = await import("@tauri-apps/plugin-fs");
+      const resolved = await resolveExternalResources(gltfPath, uris, readFile);
+      if (resolved.missing.length > 0) {
+        resolved.release();
+        onUnavailable(describeMissingResources(resolved.missing, gltfPath));
+        return;
+      }
+
+      const manager = new THREE.LoadingManager();
+      // three resolves each glTF URI against the (empty) path it was given,
+      // so what reaches the manager is the URI verbatim — the same string
+      // used as the map key.
+      manager.setURLModifier((url) => resolved.urlMap.get(url) ?? url);
+
+      makeGltfLoader(manager).parse(
+        data,
+        "",
+        (gltf) => {
+          // Held until parse resolves: revoking earlier would pull the blobs
+          // out from under textures three has not finished decoding.
+          resolved.release();
+          onLoaded(gltf);
+        },
+        (err) => {
+          resolved.release();
+          onError(err);
+        },
+      );
+    } catch (err) {
+      onError(err);
+    }
+  })();
+}
+
+const GLB_MAGIC = "glTF";
+const GLB_HEADER_LENGTH = 12;
+
+/**
+ * Checks a .glb's own header against how many bytes actually arrived, and
+ * returns a description of the mismatch (null when it's consistent).
+ *
+ * GLTFLoader reads each chunk with `new Uint8Array(data, offset, chunkLength)`
+ * straight from the numbers in the file. When those numbers overrun the buffer
+ * — a truncated download, a half-written export, Git LFS handing back a
+ * pointer file — the browser throws a bare "Length out of range of buffer",
+ * which says nothing about which file or how short it was. The same numbers
+ * checked up front say exactly that.
+ */
+function describeGlbInconsistency(data: ArrayBuffer): string | null {
+  const total = data.byteLength;
+  if (total < GLB_HEADER_LENGTH) {
+    return `The file is only ${total} bytes — too short to be a glTF binary at all. It may be an empty or failed download.`;
+  }
+
+  const view = new DataView(data);
+  const magic = new TextDecoder().decode(new Uint8Array(data, 0, 4));
+  // Not a GLB: three falls back to reading the whole buffer as glTF JSON,
+  // which is a legitimate path, so this isn't ours to reject.
+  if (magic !== GLB_MAGIC) return null;
+
+  const declared = view.getUint32(8, true);
+  if (declared > total) {
+    return `This .glb is truncated: its header declares ${declared.toLocaleString()} bytes but only ${total.toLocaleString()} arrived (${Math.round((total / declared) * 100)}% of the file). Re-export or re-download it — if it came from Git, check whether Git LFS actually fetched it.`;
+  }
+
+  // Walk the chunk table the same way the loader will, so a chunk that
+  // overruns is caught here rather than deep inside three.
+  let offset = GLB_HEADER_LENGTH;
+  let jsonChunk: string | null = null;
+  let binChunkLength: number | null = null;
+  while (offset + 8 <= Math.min(declared, total)) {
+    const chunkLength = view.getUint32(offset, true);
+    const chunkType = view.getUint32(offset + 4, true);
+    offset += 8;
+    if (offset + chunkLength > total) {
+      return `This .glb is malformed: a chunk at byte ${offset} claims ${chunkLength.toLocaleString()} bytes, which runs past the end of the ${total.toLocaleString()}-byte file. It's most likely truncated or was written incompletely.`;
+    }
+    if (chunkType === 0x4e4f534a) jsonChunk = new TextDecoder().decode(new Uint8Array(data, offset, chunkLength));
+    if (chunkType === 0x004e4942) binChunkLength = chunkLength;
+    offset += chunkLength;
+  }
+
+  return jsonChunk ? describeGltfBufferOverrun(jsonChunk, binChunkLength) : null;
+}
+
+/**
+ * The layer below the container: a GLB whose chunks all fit can still carry a
+ * bufferView pointing past the end of the binary chunk it lives in, which is
+ * where the loader's own typed-array reads blow up. Purely diagnostic, so any
+ * surprise in here is swallowed — a validator that throws while explaining a
+ * crash would be worse than no validator.
+ */
+function describeGltfBufferOverrun(jsonChunk: string, binChunkLength: number | null): string | null {
+  try {
+    const gltf = JSON.parse(jsonChunk) as {
+      buffers?: { byteLength?: number; uri?: string }[];
+      bufferViews?: { buffer?: number; byteOffset?: number; byteLength?: number }[];
+    };
+
+    const buffers = gltf.buffers ?? [];
+    const views = gltf.bufferViews ?? [];
+
+    // Buffer 0 of a GLB is the BIN chunk; the JSON's own byteLength for it
+    // should agree with how big that chunk actually is.
+    if (binChunkLength !== null && buffers[0] && typeof buffers[0].byteLength === "number" && buffers[0].uri === undefined) {
+      const declaredBuffer = buffers[0].byteLength;
+      if (declaredBuffer > binChunkLength) {
+        return `This model's data is incomplete: it says its binary buffer is ${declaredBuffer.toLocaleString()} bytes, but the file only carries ${binChunkLength.toLocaleString()}. The export was very likely interrupted — re-export it.`;
+      }
+    }
+
+    for (let i = 0; i < views.length; i++) {
+      const v = views[i];
+      const bufferIndex = v.buffer ?? 0;
+      const start = v.byteOffset ?? 0;
+      const length = v.byteLength ?? 0;
+      // Only buffer 0 of a GLB has a size we can trust here; a uri-backed
+      // buffer isn't in this file at all.
+      const capacity =
+        bufferIndex === 0 && binChunkLength !== null && buffers[0]?.uri === undefined
+          ? binChunkLength
+          : buffers[bufferIndex]?.byteLength;
+      if (typeof capacity !== "number") continue;
+      if (start + length > capacity) {
+        return `This model is corrupt: its bufferView #${i} reads bytes ${start.toLocaleString()}–${(start + length).toLocaleString()} of a buffer that is only ${capacity.toLocaleString()} bytes long. Re-export the model — this file can't be loaded as-is.`;
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Turns a loader failure into something a person can act on. The known causes
+ * get a plain-language line and a way out; anything unrecognised keeps its raw
+ * message, since a message nobody anticipated is exactly the one worth reading
+ * verbatim.
+ */
+function describeLoadFailure(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/DRACOLoader/i.test(message)) {
+    return `Draco-compressed model: the decoder failed to load.\n\n${message}`;
+  }
+  if (/meshopt/i.test(message)) {
+    return `Meshopt-compressed model: the decoder failed to load.\n\n${message}`;
+  }
+  if (/KTX2|basisu/i.test(message)) {
+    return `This model uses KTX2/Basis textures, which aren't supported yet. Re-export with PNG/JPEG textures.\n\n${message}`;
+  }
+  if (/Unexpected token|JSON|Unexpected end/i.test(message)) {
+    return `Not readable as glTF. A .gltf must have its buffers and textures embedded — external .bin/texture files aren't resolved. Export as .glb instead.\n\n${message}`;
+  }
+  // "Length out of range of buffer" / "Invalid typed array length" / "Offset is
+  // outside the bounds of the DataView" — the same overrun, worded differently
+  // per engine. describeGlbInconsistency normally catches these before parse
+  // and says which numbers disagree; this is the backstop when it doesn't.
+  if (/out of range|Invalid typed array length|outside the bounds/i.test(message)) {
+    return `The file's internal sizes don't match how many bytes it actually has, so it's truncated or corrupt. Re-export or re-download it.\n\n${message}`;
+  }
+  return message;
+}
 
 interface GltfState {
   group: THREE.Group;
   lastPath?: string;
+  /** Why the last pick failed, surfaced on the file field's own label. */
+  loadError?: string;
 }
 
 const gltfStateCache = createNodeCache<GltfState>();
@@ -35,12 +286,14 @@ function getOrCreateGltfState(nodeId: string): GltfState {
 }
 
 /**
- * glTF/GLB Model node — imports .gltf/.glb models. Only self-contained files
- * are supported (a .glb, or a .gltf whose buffers/textures are embedded as
- * data URIs): GLTFLoader.parse is given no resourcePath to resolve external
- * .bin/texture files against, matching how OBJ Model has no external-texture
- * resolution either (textures come in via the Diffuse/Normal Map sockets or
- * their own file pickers instead).
+ * glTF/GLB Model node — imports .gltf/.glb models.
+ *
+ * Self-contained files (a .glb, or a .gltf with data: URIs) load straight
+ * from the bytes handed over. A .gltf that keeps its geometry and textures in
+ * sibling files — what Sketchfab, Unity and Blender's "glTF Separate" all
+ * emit — has those read off disk beside it and served to the loader; that
+ * needs real filesystem access, so it works in the desktop app but not from a
+ * browser file picker, which only ever yields the one chosen file.
  */
 export const OBJECT_GLTF_NODE: NodeDefinition = {
   type: "object/gltf",
@@ -76,7 +329,21 @@ export const OBJECT_GLTF_NODE: NodeDefinition = {
     thickness: 0.5,
     useOwnMaterials: 1,
   },
-  dynamicParamFields: () => [
+  dynamicParamFields: (instance) => [
+    // A failed import used to look identical to no import at all — the
+    // fallback cube, and an error only in the devtools console. As its own
+    // note rather than part of the file field's label: these messages are
+    // sentences, and a label is clipped to the panel's width.
+    ...(gltfStateCache.get(instance.id)?.loadError
+      ? [
+          {
+            id: "loadError",
+            label: `⚠ ${gltfStateCache.get(instance.id)!.loadError}`,
+            kind: "note" as const,
+            tone: "warn" as const,
+          },
+        ]
+      : []),
     {
       id: "filePath",
       label: "3D Model (.gltf/.glb)",
@@ -85,32 +352,62 @@ export const OBJECT_GLTF_NODE: NodeDefinition = {
       onLoaded: (nodeId, path, content) => {
         const state = getOrCreateGltfState(nodeId);
         state.lastPath = path;
+        state.loadError = undefined;
         if (!path) {
           state.group.clear();
           return;
         }
 
-        try {
-          const loader = new GLTFLoader();
-          const data = content instanceof Uint8Array ? content.buffer.slice(content.byteOffset, content.byteOffset + content.byteLength) : content;
-          loader.parse(
-            data,
-            "",
-            (gltf) => {
-              gltf.scene.traverse((child) => {
-                if (child instanceof THREE.Mesh) {
-                  child.castShadow = true;
-                  child.receiveShadow = true;
-                  child.userData.nodeId = nodeId;
-                }
-              });
-              state.group.clear();
-              state.group.add(gltf.scene);
-            },
-            (err) => console.error("Failed to parse glTF file content:", err),
-          );
-        } catch (err) {
+        const fail = (err: unknown) => {
+          state.loadError = describeLoadFailure(err);
           console.error("Failed to parse glTF file content:", err);
+        };
+
+        try {
+          const data = content instanceof Uint8Array ? content.buffer.slice(content.byteOffset, content.byteOffset + content.byteLength) : content;
+
+          // Checked before handing it over: the loader's own failure for a
+          // short file is an opaque engine-level RangeError.
+          if (data instanceof ArrayBuffer) {
+            const inconsistency = describeGlbInconsistency(data);
+            if (inconsistency) {
+              state.loadError = inconsistency;
+              console.error("Refused glTF file:", inconsistency);
+              return;
+            }
+          }
+
+          const adopt = (gltf: { scene: THREE.Group }) => {
+            gltf.scene.traverse((child) => {
+              if (child instanceof THREE.Mesh) {
+                child.castShadow = true;
+                child.receiveShadow = true;
+                child.userData.nodeId = nodeId;
+              }
+            });
+            state.group.clear();
+            state.group.add(gltf.scene);
+            state.loadError = undefined;
+          };
+
+          // A .gltf is only the JSON half of a model: its geometry and images
+          // usually sit beside it as separate files. Those have to be found
+          // and served before parsing, or the loader reads whatever the page
+          // answers with instead — see gltfExternalResources.ts.
+          const external = externalResourceUris(readGltfJson(data) ?? {});
+          if (external.length > 0) {
+            loadWithExternalResources(path, data, external, adopt, fail, (message) => {
+              state.loadError = message;
+              console.error("Cannot load glTF:", message);
+            });
+            return;
+          }
+
+          // Draco throws straight out of parse() rather than routing to the
+          // error callback, so both paths have to be handled.
+          makeGltfLoader().parse(data, "", adopt, fail);
+        } catch (err) {
+          fail(err);
         }
       },
     },

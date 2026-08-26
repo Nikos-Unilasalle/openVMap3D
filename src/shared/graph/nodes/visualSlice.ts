@@ -1,8 +1,8 @@
 import * as THREE from "three";
-import { NodeDefinition } from "../types";
+import { NodeDefinition, ParamFieldDef } from "../types";
 import { asVector3, composeNativeMatrix } from "./transform";
 import { primitiveOutputs, asColor } from "./object";
-import { ClipCapPlaneSpec, applyClipCaps, capCoverRadius, removeClipCaps } from "./clipCaps";
+import { ClipCapPlaneSpec, applyClipCaps, capCoverRadius, clipCapsHaveOpenGeometry, removeClipCaps } from "./clipCaps";
 import { createNodeCache } from "../nodeCaches";
 
 const DEFAULT_POINT = new THREE.Vector3(0, 0, 0);
@@ -28,7 +28,31 @@ const BOX_FACES: { normal: THREE.Vector3; u: THREE.Vector3; v: THREE.Vector3 }[]
   { normal: new THREE.Vector3(0, 0, -1), u: new THREE.Vector3(-1, 0, 0), v: new THREE.Vector3(0, 1, 0) },
 ];
 
-const CAP_PARAM_FIELDS = [
+/**
+ * Capping a surface that encloses nothing draws nothing, and used to do so in
+ * silence. The usual culprit is Curve to Mesh with its own "Caps" option off:
+ * that tube is a hollow shell with open ends, so there is no solid for the cut
+ * to expose. Said out loud, with the fix, rather than left as a mystery.
+ */
+function capParamFields(nodeId: string, capEnabled: boolean): ParamFieldDef[] {
+  const openGeometry = capEnabled && clipCapsHaveOpenGeometry(nodeId);
+  return [
+    ...(openGeometry
+      ? [
+          {
+            id: "capOpenGeometryNote",
+            label:
+              "⚠ Cap Cut has nothing to fill: this geometry is an open surface, not a closed solid. If it came from Curve to Mesh, switch on that node's \"Caps (fill open ends)\" and the cut will fill.",
+            kind: "note" as const,
+            tone: "warn" as const,
+          },
+        ]
+      : []),
+    ...CAP_PARAM_FIELDS,
+  ];
+}
+
+const CAP_PARAM_FIELDS: ParamFieldDef[] = [
   { id: "doubleSided", label: "Double Sided (See Inside)", kind: "boolean" as const },
   { id: "capEnabled", label: "Cap Cut (Solid Face)", kind: "boolean" as const },
   { id: "capColor", label: "Cap Color", kind: "color" as const },
@@ -187,12 +211,12 @@ export const CLIP_BOX_NODE: NodeDefinition = {
     clipMode: "inside",
     ...CAP_DEFAULT_PARAMS,
   },
-  paramFields: [
+  dynamicParamFields: (instance) => [
     { id: "location", label: "Box Center", kind: "vector" },
     { id: "rotation", label: "Box Rotation (°)", kind: "vector", step: 1, degrees: true },
     { id: "size", label: "Box Size", kind: "vector" },
     { id: "clipMode", label: "Clip Mode", kind: "select", options: ["inside", "cavity"] },
-    ...CAP_PARAM_FIELDS,
+    ...capParamFields(instance.id, Boolean(instance.params.capEnabled)),
   ],
   evaluate: (inputs, params, ctx) => {
     const inputObj = inputs.geometry instanceof THREE.Object3D ? inputs.geometry : null;
@@ -283,7 +307,7 @@ export const VISUAL_SLICE_NODE: NodeDefinition = {
     invert: 0,
     ...CAP_DEFAULT_PARAMS,
   },
-  paramFields: [
+  dynamicParamFields: (instance) => [
     { id: "point", label: "Plane Point", kind: "vector" },
     // Any id containing "normal" (case-insensitive) gets auto-grouped into
     // "Texture & Files" by ParamPanel's heuristic, built for Normal Map
@@ -291,7 +315,7 @@ export const VISUAL_SLICE_NODE: NodeDefinition = {
     // with textures.
     { id: "direction", label: "Plane Normal", kind: "vector" },
     { id: "invert", label: "Invert", kind: "boolean" },
-    ...CAP_PARAM_FIELDS,
+    ...capParamFields(instance.id, Boolean(instance.params.capEnabled)),
   ],
   evaluate: (inputs, params, ctx) => {
     const inputObj = inputs.geometry instanceof THREE.Object3D ? inputs.geometry : null;

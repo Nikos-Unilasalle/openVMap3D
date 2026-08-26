@@ -29,6 +29,9 @@ import { createNodeCache } from "../nodeCaches";
 /** Marks every mesh this module adds, so a later pass never treats one as real geometry. */
 const CAP_HELPER_FLAG = "__clipCapHelper";
 
+/** The mesh a stencil helper belongs under, so it can be put back if it gets detached. */
+const CAP_SOURCE_REF = "__clipCapSource";
+
 const noopRaycast = () => {};
 
 export interface ClipCapPlaneSpec {
@@ -57,6 +60,8 @@ interface CapState {
   capMeshes: THREE.Mesh[];
   /** What the built rig assumes: rebuild when the mesh set or the plane count changes. */
   signature: string;
+  /** True when nothing being capped encloses a volume, so no cap can appear. */
+  openGeometry: boolean;
 }
 
 const capCache = createNodeCache<CapState>((state) => teardown(state));
@@ -103,6 +108,7 @@ function makeStencilMesh(source: THREE.Mesh, side: THREE.Side, op: THREE.Stencil
 
   const mesh = new THREE.Mesh(source.geometry, material);
   mesh.userData[CAP_HELPER_FLAG] = true;
+  mesh.userData[CAP_SOURCE_REF] = source;
   mesh.raycast = noopRaycast;
   mesh.renderOrder = renderOrder;
   // Identity local matrix under the source mesh: same world transform, for free, every frame.
@@ -149,7 +155,17 @@ function makeCapMesh(owner: THREE.Object3D, renderOrder: number): THREE.Mesh {
  */
 export function applyClipCaps(spec: ClipCapSpec): void {
   const sourceMeshes = collectSourceMeshes(spec.object);
-  const signature = [spec.object.uuid, spec.planes.length, sourceMeshes.map((m) => m.uuid).join(",")].join("|");
+
+  // Only closed meshes may contribute to the stencil. The count of entries
+  // against exits is meaningful for a surface that encloses a volume and
+  // meaningless for one that doesn't — and because every mesh writes into the
+  // *same* buffer, one open mesh doesn't merely fail to cap itself, it
+  // corrupts the count for everything else in the subtree. Curve to Mesh in
+  // Surface mode is exactly this: the filled surface (closed, cappable) ships
+  // alongside the curve's own tube (open), and letting the tube draw cancelled
+  // the surface's cap out to nothing.
+  const cappable = sourceMeshes.filter((mesh) => !geometryHasOpenEdges(mesh.geometry));
+  const signature = [spec.object.uuid, spec.planes.length, cappable.map((m) => m.uuid).join(",")].join("|");
 
   let state = capCache.get(spec.nodeId);
   if (state && (state.object !== spec.object || state.signature !== signature)) {
@@ -158,9 +174,9 @@ export function applyClipCaps(spec: ClipCapSpec): void {
   }
 
   if (!state) {
-    state = { object: spec.object, stencilMeshes: [], capMeshes: [], signature };
+    state = { object: spec.object, stencilMeshes: [], capMeshes: [], signature, openGeometry: false };
     for (let i = 0; i < spec.planes.length; i++) {
-      for (const source of sourceMeshes) {
+      for (const source of cappable) {
         state.stencilMeshes.push(makeStencilMesh(source, THREE.BackSide, THREE.IncrementWrapStencilOp, i + 1));
         state.stencilMeshes.push(makeStencilMesh(source, THREE.FrontSide, THREE.DecrementWrapStencilOp, i + 1));
       }
@@ -170,7 +186,25 @@ export function applyClipCaps(spec: ClipCapSpec): void {
     capCache.set(spec.nodeId, state);
   }
 
-  const perPlane = sourceMeshes.length * 2;
+  // Worth explaining only when *nothing* here can cap; with a mix, the closed
+  // meshes still fill and a warning would be wrong.
+  state.openGeometry = sourceMeshes.length > 0 && cappable.length === 0;
+
+  // Nothing guarantees the subtree we parented into still holds these. A node
+  // that rebuilds its own output every evaluate — Curve to Mesh opens with
+  // group.clear() — drops anything else parented there along with its own
+  // children, silently. The stencil draws survive that (they hang off the
+  // meshes, which get re-added) while the cap quads do not, which looks
+  // exactly like a rig that builds correctly and then draws nothing.
+  for (const cap of state.capMeshes) {
+    if (cap.parent !== spec.object) spec.object.add(cap);
+  }
+  for (const helper of state.stencilMeshes) {
+    const source = helper.userData[CAP_SOURCE_REF] as THREE.Mesh | undefined;
+    if (source && helper.parent !== source) source.add(helper);
+  }
+
+  const perPlane = cappable.length * 2;
   for (let i = 0; i < spec.planes.length; i++) {
     const planeSpec = spec.planes[i];
     for (let j = 0; j < perPlane; j++) {
@@ -225,6 +259,80 @@ export function capCoverRadius(object: THREE.Object3D): number {
 export function clipCapHelperCount(nodeId: string): { stencil: number; caps: number } {
   const state = capCache.get(nodeId);
   return { stencil: state?.stencilMeshes.length ?? 0, caps: state?.capMeshes.length ?? 0 };
+}
+
+/**
+ * Beyond this, the boundary scan below isn't worth the frame it would cost;
+ * an unhelpful silence beats a stall on a million-triangle import.
+ */
+const MAX_TRIANGLES_TO_SCAN = 300_000;
+
+/** Cached per geometry object. A rebuilt geometry is a new object, so nothing needs invalidating. */
+const opennessCache = new WeakMap<THREE.BufferGeometry, boolean>();
+
+/**
+ * Whether a mesh has boundary edges — edges used by exactly one triangle,
+ * which is what makes a surface open rather than a closed solid.
+ *
+ * This decides whether capping can work at all. The stencil technique counts a
+ * ray's entries against its exits, so it only has something to fill where the
+ * surface actually encloses a volume. An open tube (Curve to Mesh with its
+ * "Caps" option off) encloses nothing: a ray straight down its bore meets no
+ * surface at all, the count stays at zero, and no cap is drawn — correctly,
+ * since there is no solid there to cut through.
+ *
+ * Vertices are welded by position first: a tube duplicates its seam and its
+ * rim vertices, so going by index alone would report a closed mesh as open.
+ */
+export function geometryHasOpenEdges(geometry: THREE.BufferGeometry): boolean {
+  const cached = opennessCache.get(geometry);
+  if (cached !== undefined) return cached;
+
+  let open = false;
+  const position = geometry.getAttribute("position");
+  const index = geometry.getIndex();
+  const triangleCount = (index ? index.count : position?.count ?? 0) / 3;
+
+  if (position && triangleCount >= 1 && triangleCount <= MAX_TRIANGLES_TO_SCAN) {
+    // `+ 0` normalises -0 to 0, which otherwise splits two identical vertices
+    // into different keys and reports a watertight mesh as full of holes.
+    const round = (v: number) => Math.round(v * 1e4) / 1e4 + 0;
+    const keyOf = (i: number) => `${round(position.getX(i))},${round(position.getY(i))},${round(position.getZ(i))}`;
+    const at = (i: number) => (index ? index.getX(i) : i);
+
+    const edgeUses = new Map<string, number>();
+    const corner = ["", "", ""];
+    const vertexCount = index ? index.count : position.count;
+    for (let i = 0; i + 2 < vertexCount; i += 3) {
+      corner[0] = keyOf(at(i));
+      corner[1] = keyOf(at(i + 1));
+      corner[2] = keyOf(at(i + 2));
+      for (let e = 0; e < 3; e++) {
+        const p = corner[e];
+        const q = corner[(e + 1) % 3];
+        const edge = p < q ? `${p}|${q}` : `${q}|${p}`;
+        edgeUses.set(edge, (edgeUses.get(edge) ?? 0) + 1);
+      }
+    }
+    for (const uses of edgeUses.values()) {
+      if (uses === 1) {
+        open = true;
+        break;
+      }
+    }
+  }
+
+  opennessCache.set(geometry, open);
+  return open;
+}
+
+/**
+ * Whether the geometry this node is capping encloses no volume, so its caps
+ * cannot draw. Read by the clip nodes to explain the silence.
+ */
+export function clipCapsHaveOpenGeometry(nodeId: string): boolean {
+  const state = capCache.get(nodeId);
+  return state?.openGeometry ?? false;
 }
 
 /** Test seam: the cap quads a node currently owns, in plane order. */

@@ -142,6 +142,13 @@ export type ParamFieldDef =
   | { id: string; label: string; kind: "color"; group?: string }
   | { id: string; label: string; kind: "vector"; step?: number; degrees?: boolean; group?: string }
   | { id: string; label: string; kind: "text"; group?: string }
+  /**
+   * Read-only message with no control attached — a full-width, wrapping,
+   * selectable block. For text that has to be *read* rather than edited: a
+   * loader's failure reason, say, which is too long to survive as a field
+   * label (they truncate to the panel's width with nothing to hover).
+   */
+  | { id: string; label: string; kind: "note"; tone?: "warn"; group?: string }
   | { id: string; label: string; kind: "curve_profile"; group?: string }
   | { id: string; label: string; kind: "color_ramp"; group?: string }
   | {

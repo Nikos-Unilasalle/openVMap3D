@@ -277,3 +277,27 @@
   border-color: #38bdf8;
   background: rgba(255, 255, 255, 0.12);
 }
+
+/* Read-only message field (ParamFieldDef kind: "note"). Spans the row rather
+   than sitting in the label column, so a long message wraps and stays
+   readable instead of being clipped to the panel width. */
+.param-note {
+  grid-column: 1 / -1;
+  margin: 2px 0 6px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  cursor: text;
+  background: rgba(255, 255, 255, 0.06);
+  color: #c9c9c9;
+}
+
+.param-note-warn {
+  background: rgba(248, 113, 113, 0.12);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  color: #fca5a5;
+}

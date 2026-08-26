@@ -3,6 +3,7 @@ import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import { DEFAULT_REGISTRY } from "./nodes";
 import { pruneDanglingConnections } from "./pruneConnections";
 import { CANVAS_COUNT, Graph, Marker, NodeRegistry, normalizeCanvases, Project } from "./types";
+import { isTauri } from "../isTauri";
 
 /**
  * Markers were saved as bare frame numbers before labels existed
@@ -190,9 +191,8 @@ export function deserializeProject(jsonString: string, registry: NodeRegistry = 
   return { canvases: normalizeCanvases(canvases), activeCanvas: clampCanvasIndex(data.activeCanvas) };
 }
 
-export function isTauri(): boolean {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
+// Re-exported so the many existing `from "./storage"` importers keep working.
+export { isTauri };
 
 /**
  * Open file via native Tauri dialog or browser file picker.

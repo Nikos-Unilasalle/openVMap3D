@@ -2,7 +2,8 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { EvalContext } from "../types";
 import { CLIP_BOX_NODE, VISUAL_SLICE_NODE } from "./visualSlice";
-import { clipCapHelperCount, clipCapMeshes } from "./clipCaps";
+import { CURVE_TO_MESH_NODE } from "./curve";
+import { clipCapHelperCount, clipCapMeshes, geometryHasOpenEdges } from "./clipCaps";
 import { disposeNodeCaches } from "../nodeCaches";
 
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "slice-test" };
@@ -290,5 +291,168 @@ describe("CLIP_BOX_NODE", () => {
     }
     CLIP_BOX_NODE.evaluate({ geometry: mesh }, { ...params, doubleSided: 0 }, CTX);
     expect(mesh.material.side).toBe(THREE.BackSide);
+  });
+});
+
+describe("capping geometry that encloses no volume", () => {
+  /** An open-ended tube: a lateral surface only, exactly what Curve to Mesh makes with Caps off. */
+  function openTube() {
+    return new THREE.Mesh(
+      new THREE.CylinderGeometry(0.3, 0.3, 2, 12, 1, true),
+      new THREE.MeshStandardMaterial(),
+    );
+  }
+
+  function noteOf(nodeId: string, params: Record<string, unknown>): string | undefined {
+    const fields = CLIP_BOX_NODE.dynamicParamFields?.({
+      id: nodeId,
+      type: CLIP_BOX_NODE.type,
+      params,
+      position: { x: 0, y: 0 },
+    }) ?? [];
+    return fields.find((f) => f.id === "capOpenGeometryNote")?.label;
+  }
+
+  it("tells open geometry from closed", () => {
+    expect(geometryHasOpenEdges(new THREE.CylinderGeometry(0.3, 0.3, 2, 12, 1, true))).toBe(true);
+    // Closed solids: a capped cylinder and a box both enclose a volume.
+    expect(geometryHasOpenEdges(new THREE.CylinderGeometry(0.3, 0.3, 2, 12, 1, false))).toBe(false);
+    expect(geometryHasOpenEdges(new THREE.BoxGeometry(1, 1, 1))).toBe(false);
+    // A plane is the degenerate open case.
+    expect(geometryHasOpenEdges(new THREE.PlaneGeometry(1, 1))).toBe(true);
+  });
+
+  it("explains the silence when Cap Cut is on but the surface is open", () => {
+    const ctx = { ...CTX, nodeId: "cap-open" };
+    const params = { ...CLIP_BOX_NODE.defaultParams, capEnabled: 1 };
+    CLIP_BOX_NODE.evaluate({ geometry: openTube() }, params, ctx);
+
+    const note = noteOf("cap-open", params) ?? "";
+    expect(note).toMatch(/open surface/i);
+    // Names the actual way out, not just the diagnosis.
+    expect(note).toMatch(/Caps \(fill open ends\)/);
+  });
+
+  it("says nothing when the surface is closed", () => {
+    const ctx = { ...CTX, nodeId: "cap-closed" };
+    const params = { ...CLIP_BOX_NODE.defaultParams, capEnabled: 1 };
+    CLIP_BOX_NODE.evaluate({ geometry: boxMesh() }, params, ctx);
+    expect(noteOf("cap-closed", params)).toBeUndefined();
+  });
+
+  it("says nothing when capping is off, however open the surface is", () => {
+    const ctx = { ...CTX, nodeId: "cap-off" };
+    const params = { ...CLIP_BOX_NODE.defaultParams, capEnabled: 0 };
+    CLIP_BOX_NODE.evaluate({ geometry: openTube() }, params, ctx);
+    expect(noteOf("cap-off", params)).toBeUndefined();
+  });
+
+  it("stays quiet when only some of the meshes are open — the closed ones still cap", () => {
+    const ctx = { ...CTX, nodeId: "cap-mixed" };
+    const params = { ...CLIP_BOX_NODE.defaultParams, capEnabled: 1 };
+    const group = new THREE.Group();
+    group.add(openTube(), boxMesh());
+    CLIP_BOX_NODE.evaluate({ geometry: group }, params, ctx);
+    expect(noteOf("cap-mixed", params)).toBeUndefined();
+  });
+});
+
+describe("an open mesh must not poison the stencil for a closed one beside it", () => {
+  function openTube() {
+    return new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 2, 12, 1, true), new THREE.MeshStandardMaterial());
+  }
+
+  it("caps the closed mesh and leaves the open one out of the stencil pass", () => {
+    const ctx = { ...CTX, nodeId: "mixed-stencil" };
+    const group = new THREE.Group();
+    group.add(openTube(), boxMesh());
+
+    CLIP_BOX_NODE.evaluate({ geometry: group }, { ...CLIP_BOX_NODE.defaultParams, capEnabled: 1 }, ctx);
+
+    // Six planes, and only the *one* closed mesh contributing back+front draws.
+    // Counting both meshes would be 24 — and their counts would cancel out.
+    expect(clipCapHelperCount("mixed-stencil")).toEqual({ stencil: 12, caps: 6 });
+  });
+
+  it("a circle through Curve to Mesh in Surface mode still caps", () => {
+    // The exact graph that showed no caps: the node emits its filled surface
+    // (closed) together with the curve's own tube (open) in one group.
+    const pts: THREE.Vector3[] = [];
+    for (let i = 0; i < 24; i++) {
+      const a = (i / 24) * Math.PI * 2;
+      pts.push(new THREE.Vector3(Math.cos(a), 0, Math.sin(a)));
+    }
+    const curve = new THREE.CatmullRomCurve3(pts, true);
+
+    const built = CURVE_TO_MESH_NODE.evaluate(
+      { curve },
+      { ...CURVE_TO_MESH_NODE.defaultParams, surface: true },
+      { ...CTX, nodeId: "curve-surface" },
+    );
+    const geometry = built.geometry as THREE.Object3D;
+
+    const meshes: THREE.Mesh[] = [];
+    geometry.traverse((o) => {
+      if (o instanceof THREE.Mesh) meshes.push(o);
+    });
+    // Two meshes, one of each kind — the situation that has to be handled.
+    expect(meshes).toHaveLength(2);
+    expect(meshes.filter((m) => geometryHasOpenEdges(m.geometry))).toHaveLength(1);
+
+    const ctx = { ...CTX, nodeId: "curve-surface-clip" };
+    CLIP_BOX_NODE.evaluate({ geometry }, { ...CLIP_BOX_NODE.defaultParams, capEnabled: 1 }, ctx);
+
+    // Only the surface takes part: 6 planes × 2 draws.
+    expect(clipCapHelperCount("curve-surface-clip")).toEqual({ stencil: 12, caps: 6 });
+    // And nothing is claimed to be uncappable, because the surface caps fine.
+    const fields = CLIP_BOX_NODE.dynamicParamFields?.({
+      id: "curve-surface-clip",
+      type: CLIP_BOX_NODE.type,
+      params: { ...CLIP_BOX_NODE.defaultParams, capEnabled: 1 },
+      position: { x: 0, y: 0 },
+    }) ?? [];
+    expect(fields.find((f) => f.id === "capOpenGeometryNote")).toBeUndefined();
+  });
+});
+
+describe("caps survive an upstream node rebuilding its own subtree", () => {
+  function curveNodeOutput(nodeId: string, caps: boolean) {
+    const pts: THREE.Vector3[] = [];
+    for (let i = 0; i <= 10; i++) pts.push(new THREE.Vector3(i * 0.3 - 1.5, Math.sin(i * 0.4), 0));
+    return CURVE_TO_MESH_NODE.evaluate(
+      { curve: new THREE.CatmullRomCurve3(pts, false) },
+      { ...CURVE_TO_MESH_NODE.defaultParams, caps },
+      { ...CTX, nodeId },
+    ).geometry as THREE.Object3D;
+  }
+
+  it("a capped tube stays capped after the curve node re-evaluates", () => {
+    const clipCtx = { ...CTX, nodeId: "tube-clip" };
+    const clipParams = { ...CLIP_BOX_NODE.defaultParams, capEnabled: 1 };
+
+    const group = curveNodeOutput("tube-src", true);
+    CLIP_BOX_NODE.evaluate({ geometry: group }, clipParams, clipCtx);
+
+    const caps = clipCapMeshes("tube-clip");
+    expect(caps).toHaveLength(6);
+    expect(caps.every((c) => c.parent === group)).toBe(true);
+
+    // Curve to Mesh opens its evaluate with group.clear(), so the next frame
+    // detaches every cap quad parented there. The rig looked healthy while
+    // nothing drew.
+    curveNodeOutput("tube-src", true);
+    expect(caps.some((c) => c.parent === group)).toBe(false);
+
+    // Re-evaluating the clip node has to put them back.
+    CLIP_BOX_NODE.evaluate({ geometry: group }, clipParams, clipCtx);
+    expect(clipCapMeshes("tube-clip").every((c) => c.parent === group)).toBe(true);
+    expect(clipCapHelperCount("tube-clip")).toEqual({ stencil: 12, caps: 6 });
+  });
+
+  it("a tube with its own Caps off contributes nothing to the stencil", () => {
+    const clipCtx = { ...CTX, nodeId: "tube-open-clip" };
+    const group = curveNodeOutput("tube-open-src", false);
+    CLIP_BOX_NODE.evaluate({ geometry: group }, { ...CLIP_BOX_NODE.defaultParams, capEnabled: 1 }, clipCtx);
+    expect(clipCapHelperCount("tube-open-clip").stencil).toBe(0);
   });
 });

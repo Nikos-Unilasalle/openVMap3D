@@ -94,6 +94,29 @@ describe("resolveGizmoTarget", () => {
     });
   });
 
+  it("gives an imported glTF model its own native pose, like an OBJ", () => {
+    // Both loaders write location/rotation/scale through
+    // composeNativeMatrixWithPivot and tag their meshes with the node id, so
+    // there is nothing to tell them apart here — glTF was simply never listed.
+    const graph: Graph = { nodes: [node("gltf1", "object/gltf")], connections: [] };
+    expect(resolveGizmoTarget(graph, "gltf1")).toEqual({
+      kind: "native",
+      objectNodeId: "gltf1",
+      deltaSourceNodeId: null,
+    });
+  });
+
+  it("an imported glTF still defers to a Transform wired into its matrix", () => {
+    const graph: Graph = {
+      nodes: [node("t1", "transform"), node("gltf1", "object/gltf")],
+      connections: [wire("t1", "matrix", "gltf1", "matrix")],
+    };
+    expect(resolveGizmoTarget(graph, "gltf1")).toEqual({
+      kind: "absolute",
+      transformNodeId: "t1",
+    });
+  });
+
   it("returns null for an unknown object node id", () => {
     const graph: Graph = { nodes: [], connections: [] };
     expect(resolveGizmoTarget(graph, "missing")).toBeNull();
@@ -160,6 +183,7 @@ describe("GIZMO_SELECTABLE_TYPES", () => {
       "object/scatter_plot",
       "object/point_cloud",
       "object/obj",
+      "object/gltf",
       "object/frozen",
       "object/text",
       "curve/to_mesh",
