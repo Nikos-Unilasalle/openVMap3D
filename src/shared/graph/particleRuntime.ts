@@ -542,12 +542,51 @@ export function initialAge(index: number, capacity: number, lifetimeGuess: numbe
   return burstSpawn ? 0 : -((index / capacity) * lifetimeGuess);
 }
 
-function initialPositionTexture(gpuCompute: GPUComputationRenderer, size: number, lifetimeGuess: number, burstSpawn: boolean): THREE.DataTexture {
+/**
+ * A burst-spawned texel's starting position. Every OTHER texel starts at
+ * (0,0,0) and stays there, invisible (age < 0), until its very first
+ * respawn — POSITION_SHADER's `age > myLifetime` branch is the ONLY place
+ * a particle is ever placed at a real spawn point, and that first respawn
+ * needs up to a full Lifetime of simulated time to fire. burstSpawn already
+ * sets age to 0 (alive immediately) — pairing that with a Lifetime set
+ * longer than the animation (exactly what "spawn everything, then let it
+ * fall" wants, so nothing respawns mid-fall) means that first respawn would
+ * NEVER happen inside the visible window: every particle would sit glued to
+ * the origin for the whole animation, indistinguishable from "no particles"
+ * unless the camera happens to be framed right on (0,0,0). Mirrors the
+ * shader's own sequential seed-index spawn rule (not the random-pick
+ * variant — that's keyed to the sim clock and meaningless to precompute) so
+ * a burst-spawned Point Emitter (From Points) shows its actual cloud shape
+ * from frame 0, not a pile at the origin.
+ */
+export function initialPosition(index: number, emitter: EmitterConfig): [number, number, number] {
+  const seedPositions = emitter.seedPositions;
+  const seedCount = seedPositions ? Math.floor(seedPositions.length / 3) : 0;
+  if (seedCount > 0 && seedPositions) {
+    const seedIdx = index % seedCount;
+    return [seedPositions[seedIdx * 3], seedPositions[seedIdx * 3 + 1], seedPositions[seedIdx * 3 + 2]];
+  }
+  return [emitter.position.x, emitter.position.y, emitter.position.z];
+}
+
+function initialPositionTexture(
+  gpuCompute: GPUComputationRenderer,
+  size: number,
+  lifetimeGuess: number,
+  burstSpawn: boolean,
+  emitter: EmitterConfig,
+): THREE.DataTexture {
   const texture = gpuCompute.createTexture();
   const data = texture.image.data as Float32Array;
   const capacity = size * size;
   for (let i = 0; i < capacity; i++) {
     data[i * 4 + 3] = initialAge(i, capacity, lifetimeGuess, burstSpawn);
+    if (burstSpawn) {
+      const [x, y, z] = initialPosition(i, emitter);
+      data[i * 4] = x;
+      data[i * 4 + 1] = y;
+      data[i * 4 + 2] = z;
+    }
   }
   return texture;
 }
@@ -559,9 +598,10 @@ function createSimulation(
   lifetimeGuess: number,
   currentStep: number,
   burstSpawn: boolean,
+  emitter: EmitterConfig,
 ): Simulation {
   const gpuCompute = new GPUComputationRenderer(size, size, renderer);
-  const position0 = initialPositionTexture(gpuCompute, size, lifetimeGuess, burstSpawn);
+  const position0 = initialPositionTexture(gpuCompute, size, lifetimeGuess, burstSpawn, emitter);
   const velocity0 = gpuCompute.createTexture();
 
   const positionVar = gpuCompute.addVariable("texturePosition", POSITION_SHADER, position0);
@@ -715,7 +755,7 @@ export function getOrCreateSimulation(
       sim.gpuCompute.dispose();
       sim.seedTexture?.dispose();
     }
-    sim = createSimulation(nodeId, renderer, size, lifetime, currentStep, burstSpawn);
+    sim = createSimulation(nodeId, renderer, size, lifetime, currentStep, burstSpawn, emitter);
     perRenderer.set(renderer, sim);
   }
 
