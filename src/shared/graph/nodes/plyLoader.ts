@@ -153,6 +153,15 @@ export const OBJECT_PLY_NODE: NodeDefinition = {
           state.points.geometry = geometry;
           state.hasVertexColor = geometry.hasAttribute("color");
           state.material.vertexColors = state.hasVertexColor;
+          // PointsMaterial multiplies vertex colors BY material.color — it's
+          // not just a fallback for when there's no per-vertex color, it's
+          // always in the mix. Left at whatever the "no vertex colors, use
+          // Fallback Color" branch below last set it to (e.g. the default
+          // param's light blue, 0x38bdf8), every real per-vertex color gets
+          // tinted through that: a low red/high blue-green multiplier reads
+          // exactly as "everything is green/blue". White is the
+          // multiplicative identity — only meaningful with vertexColors on.
+          if (state.hasVertexColor) state.material.color.set(0xffffff);
           state.material.needsUpdate = true;
           state.rawCentroid = geometry.boundingBox?.getCenter(new THREE.Vector3());
           // Freshly parsed positions are never centered yet, regardless of

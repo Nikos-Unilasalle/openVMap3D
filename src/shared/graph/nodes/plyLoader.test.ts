@@ -81,6 +81,36 @@ describe("OBJECT_PLY_NODE", () => {
 
     const material = points.material as THREE.PointsMaterial;
     expect(material.vertexColors).toBe(true);
+    // PointsMaterial multiplies vertex colors BY material.color — anything
+    // but white here tints every real per-vertex color.
+    expect(material.color.getHex()).toBe(0xffffff);
+  });
+
+  it("resets material.color to white once real vertex colors load — regression for the green/blue tint bug", () => {
+    // The bug: evaluate() only ever touched material.color in the
+    // no-vertex-colors branch (to apply the Fallback Color param), so
+    // loading a file WITH colors left material.color at whatever it was
+    // set to before — e.g. the default Fallback Color (0x38bdf8, a light
+    // blue) from an evaluate() that ran before any file was loaded.
+    // PointsMaterial multiplies vertex colors by material.color, so every
+    // real color got tinted through a low-red/high-blue-green multiplier —
+    // reading as "the whole cloud is green/blue" regardless of its actual
+    // per-vertex colors.
+    const nodeId = "ply-test-tint";
+    const node: NodeInstance = { id: nodeId, type: "object/ply_point_cloud", params: OBJECT_PLY_NODE.defaultParams, position: { x: 0, y: 0 } };
+    const ctx: EvalContext = { time: 0, step: 0, nodeId };
+
+    // Evaluate once with no file loaded yet — this is what set material.color
+    // to the (non-white) Fallback Color default in the original bug.
+    OBJECT_PLY_NODE.evaluate({}, OBJECT_PLY_NODE.defaultParams, ctx);
+
+    const fields = OBJECT_PLY_NODE.dynamicParamFields?.(node) ?? [];
+    const fileFieldDef = fields.find((f) => f.id === "filePath") as any;
+    fileFieldDef?.onLoaded?.(nodeId, "cloud.ply", buildTwoPointPly());
+
+    const res = OBJECT_PLY_NODE.evaluate({}, OBJECT_PLY_NODE.defaultParams, ctx);
+    const material = (res.geometry as THREE.Points).material as THREE.PointsMaterial;
+    expect(material.color.getHex()).toBe(0xffffff);
   });
 
   it("auto-centers raw survey-scale coordinates on origin by default, and can be turned off", () => {
