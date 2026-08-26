@@ -33,6 +33,7 @@ import { GEOMETRY_TRANSFORM_NODE, GET_INSTANCE_NODE, INSTANCES_TO_LIST_NODE, SET
 import { LIGHT_AMBIENT_NODE, LIGHT_DIRECTIONAL_NODE, LIGHT_POINT_NODE, LIGHT_SPOT_NODE } from "./light";
 import { ENVIRONMENT_NODE } from "./environment";
 import { OBJECT_OBJ_NODE } from "./objLoader";
+import { OBJECT_GLTF_NODE } from "./gltfLoader";
 import { OBJECT_PLY_NODE } from "./plyLoader";
 import { OBJECT_FROZEN_NODE } from "./frozenGeometry";
 import { TEXTURE_IMAGE_NODE, TEXTURE_MIX_NODE, TEXTURE_PIXEL_SPAWNER_NODE, TEXTURE_PLANE_NODE, TEXTURE_PROCEDURAL_NODE, TEXTURE_TO_NORMAL_NODE, TEXTURE_TRANSFORM_NODE } from "./texture";
@@ -163,6 +164,7 @@ export const STARTER_NODES = [
   SCATTER_PLOT_NODE,
   POINT_CLOUD_NODE,
   OBJECT_OBJ_NODE,
+  OBJECT_GLTF_NODE,
   OBJECT_PLY_NODE,
   OBJECT_FROZEN_NODE,
   TEXTURE_IMAGE_NODE,
@@ -323,6 +325,7 @@ export * from "./grid";
 export * from "./roomCorner";
 export * from "./light";
 export * from "./objLoader";
+export * from "./gltfLoader";
 export * from "./plyLoader";
 export * from "./frozenGeometry";
 export * from "./texture";
