@@ -469,6 +469,17 @@ interface Simulation {
   /** The Float32Array last uploaded as the seed texture — reference equality decides whether to rebuild it (see updateSeedTexture). */
   seedArray?: Float32Array;
   seedTexture?: THREE.DataTexture;
+  /**
+   * `emitter.emit` as of last frame — burstSpawn + "Emit When: only when
+   * driven" wants the whole population to appear at the moment something
+   * drives Emit true, not just whenever the sim happens to be created (the
+   * graph could well be evaluating for several frames with the gate closed
+   * before anything drives it). Comparing against this catches exactly that
+   * false→true edge so the burst re-seed (see maybeBurstOnEmitRisingEdge)
+   * fires once, right when the gate opens, rather than never at all if it
+   * was already closed when the sim was first built.
+   */
+  lastEmit: boolean;
 }
 
 // One Simulation *per renderer* per node, not one shared across whichever
@@ -530,16 +541,25 @@ function updateSeedTexture(sim: Simulation, seedPositions: Float32Array | undefi
 /**
  * A texel's starting age — pulled out of initialPositionTexture as its own
  * pure function purely so it's unit-testable without a WebGLRenderer
- * (everything else GPU-sim-related in this file needs a real one). Staggered
- * negative age (the default) spreads particles' first activation across one
- * Lifetime's worth of "already elapsed" time so they don't all burst on
- * frame 1. burstSpawn is the deliberate opposite: every texel starts at age
- * 0, already alive on frame 0 — "spawn the whole point cloud immediately,
- * then let it fall" wants every particle present from the start, not
- * trickling in over the first Lifetime seconds.
+ * (everything else GPU-sim-related in this file needs a real one).
+ *
+ * Three cases:
+ *  - burstSpawn off: the original staggered negative age, spreading first
+ *    activation across one Lifetime's worth of "already elapsed" time so a
+ *    fresh population doesn't visibly pop into existence on frame 1.
+ *  - burstSpawn on, spawnNow true (the gate is already open — "Emit When:
+ *    always", or "only when driven" with something already driving it
+ *    true): age 0, already alive.
+ *  - burstSpawn on, spawnNow false ("only when driven" with nothing driving
+ *    Emit yet): a dead sentinel — invisible and inert until
+ *    maybeBurstOnEmitRisingEdge re-seeds it the moment Emit actually turns
+ *    on. Staying dead here (rather than falling back to the staggered
+ *    case) matters: staggering would eventually make these visible on its
+ *    own, bypassing the gate entirely.
  */
-export function initialAge(index: number, capacity: number, lifetimeGuess: number, burstSpawn: boolean): number {
-  return burstSpawn ? 0 : -((index / capacity) * lifetimeGuess);
+export function initialAge(index: number, capacity: number, lifetimeGuess: number, burstSpawn: boolean, spawnNow: boolean): number {
+  if (!burstSpawn) return -((index / capacity) * lifetimeGuess);
+  return spawnNow ? 0 : -1;
 }
 
 /**
@@ -569,19 +589,43 @@ export function initialPosition(index: number, emitter: EmitterConfig): [number,
   return [emitter.position.x, emitter.position.y, emitter.position.z];
 }
 
+/**
+ * Fills a fresh DataTexture with every burst-spawned texel's position+age
+ * (spawnNow=true shape of initialAge/initialPosition above) — shared by
+ * createSimulation's initial texture (the gate was already open when the
+ * sim was built) and maybeBurstOnEmitRisingEdge's later re-seed (the gate
+ * just opened on a live sim). Velocity resets to zero alongside it: a
+ * newly-triggered burst shouldn't inherit whatever velocity happened to be
+ * sitting in a texel that was previously dead/waiting.
+ */
+function buildBurstTextures(gpuCompute: GPUComputationRenderer, size: number, emitter: EmitterConfig): { position: THREE.DataTexture; velocity: THREE.DataTexture } {
+  const position = gpuCompute.createTexture();
+  const positionData = position.image.data as Float32Array;
+  const capacity = size * size;
+  for (let i = 0; i < capacity; i++) {
+    const [x, y, z] = initialPosition(i, emitter);
+    positionData[i * 4] = x;
+    positionData[i * 4 + 1] = y;
+    positionData[i * 4 + 2] = z;
+    positionData[i * 4 + 3] = 0;
+  }
+  return { position, velocity: gpuCompute.createTexture() };
+}
+
 function initialPositionTexture(
   gpuCompute: GPUComputationRenderer,
   size: number,
   lifetimeGuess: number,
   burstSpawn: boolean,
+  spawnNow: boolean,
   emitter: EmitterConfig,
 ): THREE.DataTexture {
   const texture = gpuCompute.createTexture();
   const data = texture.image.data as Float32Array;
   const capacity = size * size;
   for (let i = 0; i < capacity; i++) {
-    data[i * 4 + 3] = initialAge(i, capacity, lifetimeGuess, burstSpawn);
-    if (burstSpawn) {
+    data[i * 4 + 3] = initialAge(i, capacity, lifetimeGuess, burstSpawn, spawnNow);
+    if (burstSpawn && spawnNow) {
       const [x, y, z] = initialPosition(i, emitter);
       data[i * 4] = x;
       data[i * 4 + 1] = y;
@@ -589,6 +633,31 @@ function initialPositionTexture(
     }
   }
   return texture;
+}
+
+/**
+ * The other half of the burstSpawn + "only when driven" gate: a sim that
+ * was already alive with the gate closed (emitter.emit false) has every
+ * burst-mode texel parked at the dead sentinel age (see initialAge) since
+ * creation. The moment something drives Emit to true, this writes real
+ * spawn positions (age 0) straight into whichever render target the sim's
+ * ping-pong is currently reading from — not through the shader's own
+ * respawn branch, which would need a full Lifetime of simulated time to
+ * reach every texel (the entire reason burstSpawn exists in the first
+ * place). Runs at most once per false→true transition (see Simulation.lastEmit).
+ */
+function maybeBurstOnEmitRisingEdge(sim: Simulation, burstSpawn: boolean, emitter: EmitterConfig): void {
+  const risingEdge = burstSpawn && !sim.lastEmit && emitter.emit;
+  sim.lastEmit = emitter.emit;
+  if (!risingEdge) return;
+
+  const { position, velocity } = buildBurstTextures(sim.gpuCompute, sim.size, emitter);
+  const positionTarget = sim.gpuCompute.getCurrentRenderTarget(sim.positionVar);
+  const velocityTarget = sim.gpuCompute.getCurrentRenderTarget(sim.velocityVar);
+  sim.renderer.copyTextureToTexture(position, positionTarget.texture);
+  sim.renderer.copyTextureToTexture(velocity, velocityTarget.texture);
+  position.dispose();
+  velocity.dispose();
 }
 
 function createSimulation(
@@ -601,7 +670,7 @@ function createSimulation(
   emitter: EmitterConfig,
 ): Simulation {
   const gpuCompute = new GPUComputationRenderer(size, size, renderer);
-  const position0 = initialPositionTexture(gpuCompute, size, lifetimeGuess, burstSpawn, emitter);
+  const position0 = initialPositionTexture(gpuCompute, size, lifetimeGuess, burstSpawn, emitter.emit, emitter);
   const velocity0 = gpuCompute.createTexture();
 
   const positionVar = gpuCompute.addVariable("texturePosition", POSITION_SHADER, position0);
@@ -658,6 +727,7 @@ function createSimulation(
     size,
     lastSteppedStep: currentStep,
     simSeconds: currentStep * STEP_SECONDS,
+    lastEmit: emitter.emit,
   };
   // Caching is the caller's job now (see getOrCreateSimulation) — it owns
   // the per-renderer slot this belongs in, not just the node id.
@@ -758,6 +828,7 @@ export function getOrCreateSimulation(
     sim = createSimulation(nodeId, renderer, size, lifetime, currentStep, burstSpawn, emitter);
     perRenderer.set(renderer, sim);
   }
+  maybeBurstOnEmitRisingEdge(sim, burstSpawn, emitter);
 
   const active = activeParticleCount(emitter.spawnRate, lifetime, size * size);
   for (const uniforms of [sim.positionVar.material.uniforms, sim.velocityVar.material.uniforms]) {

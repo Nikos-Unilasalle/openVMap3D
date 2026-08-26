@@ -74,16 +74,26 @@ describe("activeParticleCount", () => {
 describe("initialAge", () => {
   test("staggers the default (non-burst) start across one Lifetime — first texel at 0, last texel a full Lifetime in the past", () => {
     const capacity = 100;
-    expect(initialAge(0, capacity, 3, false)).toBe(-0);
-    expect(initialAge(50, capacity, 3, false)).toBeCloseTo(-1.5);
-    expect(initialAge(99, capacity, 3, false)).toBeCloseTo(-2.97);
+    expect(initialAge(0, capacity, 3, false, true)).toBe(-0);
+    expect(initialAge(50, capacity, 3, false, true)).toBeCloseTo(-1.5);
+    expect(initialAge(99, capacity, 3, false, true)).toBeCloseTo(-2.97);
   });
 
-  test("burstSpawn starts every texel at age 0 regardless of index — the whole population already alive on frame 0", () => {
+  test("burstSpawn + spawnNow starts every texel at age 0 regardless of index — the whole population already alive", () => {
     const capacity = 100;
-    expect(initialAge(0, capacity, 3, true)).toBe(0);
-    expect(initialAge(50, capacity, 3, true)).toBe(0);
-    expect(initialAge(99, capacity, 3, true)).toBe(0);
+    expect(initialAge(0, capacity, 3, true, true)).toBe(0);
+    expect(initialAge(50, capacity, 3, true, true)).toBe(0);
+    expect(initialAge(99, capacity, 3, true, true)).toBe(0);
+  });
+
+  test("burstSpawn without spawnNow (gate not yet driven true) parks every texel dead, regardless of index", () => {
+    // Waiting for a later Emit rising edge (maybeBurstOnEmitRisingEdge) to
+    // re-seed real positions — must NOT fall back to the staggered case,
+    // which would eventually make these visible on its own and bypass the
+    // "only when driven" gate entirely.
+    const capacity = 100;
+    expect(initialAge(0, capacity, 3, true, false)).toBeLessThan(0);
+    expect(initialAge(99, capacity, 3, true, false)).toBeLessThan(0);
   });
 });
 
