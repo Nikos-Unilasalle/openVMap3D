@@ -14,6 +14,7 @@ import { insertCurvePointAfter, removeCurvePoint } from "../graph/curvePoints";
 import { GizmoTarget, resolveGizmoTarget } from "../graph/transformLookup";
 import { PIVOT_TRANSFORM_NODE } from "../graph/nodes/transform";
 import { CLIP_BOX_NODE, VISUAL_SLICE_NODE } from "../graph/nodes/visualSlice";
+import { DECAL_NODE } from "../graph/nodes/decal";
 import { createCurvePointHandles } from "./curveHandles";
 import { createPointCloudHandles } from "./pointCloudHandles";
 import { createSceneMembership, isSelfOrDescendantOf } from "./sceneMembership";
@@ -956,6 +957,27 @@ export function Viewport({
     clipBoxProxy.visible = false;
     let clipBoxProxyNodeId: string | null = null;
 
+    // Decal's projector box — the same proxy idea again. A decal's own output
+    // is world-space geometry sitting at the origin, so the normal gizmo path
+    // would put the handles nowhere near the thing being aimed; this shows the
+    // projector volume where it actually is and drags its params instead.
+    const decalProxy = new THREE.Object3D();
+    const decalProxyGeometry = new THREE.BoxGeometry(1, 1, 1);
+    const decalProxyEdges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(decalProxyGeometry),
+      new THREE.LineBasicMaterial({ color: 0x4ade80 }),
+    );
+    // A single filled face marks which way the projector points: the box alone
+    // is symmetrical, and aiming it is the whole job.
+    const decalProxyFace = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshBasicMaterial({ color: 0x4ade80, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }),
+    );
+    decalProxyFace.position.z = 0.5;
+    decalProxy.add(decalProxyEdges, decalProxyFace);
+    decalProxy.visible = false;
+    let decalProxyNodeId: string | null = null;
+
     if (!outputMode) {
       editorUiScene.add(curveHandles.group);
       editorUiScene.add(pointsSelectionHandles.group);
@@ -963,6 +985,7 @@ export function Viewport({
       editorUiScene.add(pivotHandle.group);
       editorUiScene.add(sliceProxy);
       editorUiScene.add(clipBoxProxy);
+      editorUiScene.add(decalProxy);
     }
     // Refreshed every tick() — the 'objectChange' listener needs the
     // *current* base matrix for an "offset" target (see below), and this is
@@ -1202,6 +1225,18 @@ export function Viewport({
             location: object.position.clone(),
             rotation: new THREE.Vector3(euler.x, euler.y, euler.z),
             size: new THREE.Vector3(Math.abs(object.scale.x), Math.abs(object.scale.y), Math.abs(object.scale.z)),
+          });
+          return;
+        }
+
+        // Decal's projector proxy: its pose *is* the projection, so all three
+        // channels go back at once and the decal re-projects next evaluate.
+        if (object === decalProxy && decalProxyNodeId && onTransformChangeRef.current) {
+          const euler = new THREE.Euler().setFromQuaternion(object.quaternion);
+          onTransformChangeRef.current(decalProxyNodeId, {
+            location: object.position.clone(),
+            rotation: new THREE.Vector3(euler.x, euler.y, euler.z),
+            scale: new THREE.Vector3(Math.abs(object.scale.x), Math.abs(object.scale.y), Math.abs(object.scale.z)),
           });
           return;
         }
@@ -2398,6 +2433,23 @@ export function Viewport({
         clipBoxProxyNodeId = null;
       }
 
+      // Decal's projector proxy — same contract as the clip box above.
+      if (!outputMode && selectedNodeForPivot?.type === DECAL_NODE.type) {
+        decalProxyNodeId = selectedNodeForPivot.id;
+        decalProxy.visible = true;
+        if (!transformControls?.dragging || transformControls.object !== decalProxy) {
+          const location = asVector3(selectedNodeForPivot.params.location, new THREE.Vector3());
+          const rotation = asVector3(selectedNodeForPivot.params.rotation, new THREE.Vector3());
+          const size = asVector3(selectedNodeForPivot.params.scale, new THREE.Vector3(1, 1, 1));
+          decalProxy.position.copy(location);
+          decalProxy.quaternion.setFromEuler(new THREE.Euler(rotation.x, rotation.y, rotation.z));
+          decalProxy.scale.set(size.x || 1e-3, size.y || 1e-3, size.z || 1e-3);
+        }
+      } else if (decalProxyNodeId) {
+        decalProxy.visible = false;
+        decalProxyNodeId = null;
+      }
+
       // Move/rotate/scale gizmo: attach to selected mesh, Empty, Light,
       // to the picked control point / multi-point centroid proxy, or to the
       // pivot marker when a Pivot Transform is selected
@@ -2414,6 +2466,8 @@ export function Viewport({
           pickedCurveHandle = sliceProxy;
         } else if (clipBoxProxyNodeId) {
           pickedCurveHandle = clipBoxProxy;
+        } else if (decalProxyNodeId) {
+          pickedCurveHandle = decalProxy;
         }
       }
 
@@ -2787,6 +2841,12 @@ export function Viewport({
       clipBoxVisual.material.dispose();
       clipBoxEdges.geometry.dispose();
       clipBoxEdges.material.dispose();
+      decalProxy.removeFromParent();
+      decalProxyGeometry.dispose();
+      decalProxyEdges.geometry.dispose();
+      decalProxyEdges.material.dispose();
+      decalProxyFace.geometry.dispose();
+      decalProxyFace.material.dispose();
       controls.dispose();
       // Per-viewport editor furniture (grid/axes, corner gizmo, zoom-scrub
       // bar) is not part of the shared per-node caches — it is built fresh for

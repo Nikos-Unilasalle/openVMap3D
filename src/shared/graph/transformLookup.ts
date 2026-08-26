@@ -37,6 +37,7 @@ export const GIZMO_SELECTABLE_TYPES = [
   "structure/merge",
   "object/empty",
   "texture/plane",
+  "object/decal",
   "light/directional",
   "light/point",
   "light/spot",
