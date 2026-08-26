@@ -215,9 +215,26 @@ export const ARRAY_NODE: NodeDefinition = {
     const rawSpacingVariance = inputs.spacingVariance !== undefined ? Number(inputs.spacingVariance) : Number(params.spacingVariance);
     const spacingVariance = Math.max(0, Math.min(100, isNaN(rawSpacingVariance) ? 0 : rawSpacingVariance)) / 100;
 
+    // Unlike linear/circular/curve (capped at 500 via `count`), grid and
+    // grid3d let each dimension grow independently — nothing stopped e.g.
+    // 100x100x100 from producing 1,000,000 raw Group+clone Object3Ds (or an
+    // InstancedMesh with a 1M-entry matrix), which stalls the tab hard enough
+    // that the scene reads as empty. Clamp the *product*, not each axis, so a
+    // wide-but-shallow grid isn't punished the same as a cube; scale every
+    // axis down by the same factor so the requested aspect ratio is kept.
+    const clampGridTotal = (counts: number[], cap: number): number[] => {
+      const total = counts.reduce((a, b) => a * b, 1);
+      if (total <= cap) return counts;
+      const factor = Math.pow(cap / total, 1 / counts.length);
+      return counts.map((c) => Math.max(1, Math.floor(c * factor)));
+    };
+    const gridInstanceCap = gpuInstancing ? 200_000 : 5_000;
+
     if (mode === "grid") {
-      const rows = Math.max(1, Math.floor(Number(params.gridRows) || 3));
-      const cols = Math.max(1, Math.floor(Number(params.gridCols) || 3));
+      const [rows, cols] = clampGridTotal(
+        [Math.max(1, Math.floor(Number(params.gridRows) || 3)), Math.max(1, Math.floor(Number(params.gridCols) || 3))],
+        gridInstanceCap,
+      );
       const spX = inputs.spacingX !== undefined ? Number(inputs.spacingX) : (Number(params.spacingX) || 2.0);
       const spY = inputs.spacingY !== undefined ? Number(inputs.spacingY) : (Number(params.spacingY) || 2.0);
       const plane = String(params.plane || "XZ");
@@ -265,9 +282,14 @@ export const ARRAY_NODE: NodeDefinition = {
     }
 
     if (mode === "grid3d") {
-      const cX = Math.max(1, Math.floor(inputs.countX !== undefined ? Number(inputs.countX) : (Number(params.countX) || 3)));
-      const cY = Math.max(1, Math.floor(inputs.countY !== undefined ? Number(inputs.countY) : (Number(params.countY) || 3)));
-      const cZ = Math.max(1, Math.floor(inputs.countZ !== undefined ? Number(inputs.countZ) : (Number(params.countZ) || 3)));
+      const [cX, cY, cZ] = clampGridTotal(
+        [
+          Math.max(1, Math.floor(inputs.countX !== undefined ? Number(inputs.countX) : (Number(params.countX) || 3))),
+          Math.max(1, Math.floor(inputs.countY !== undefined ? Number(inputs.countY) : (Number(params.countY) || 3))),
+          Math.max(1, Math.floor(inputs.countZ !== undefined ? Number(inputs.countZ) : (Number(params.countZ) || 3))),
+        ],
+        gridInstanceCap,
+      );
       const spX = inputs.spacingX !== undefined ? Number(inputs.spacingX) : (Number(params.spacingX) || 2.0);
       const spY = inputs.spacingY !== undefined ? Number(inputs.spacingY) : (Number(params.spacingY) || 2.0);
       const spZ = inputs.spacingZ !== undefined ? Number(inputs.spacingZ) : (Number(params.spacingZ) || 2.0);
