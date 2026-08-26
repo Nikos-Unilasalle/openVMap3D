@@ -380,6 +380,14 @@ export const PARTICLE_SIMULATE_NODE: NodeDefinition = {
     // otherwise grows velocity without bound (see maxSpeed's comment in
     // particleRuntime.ts's VELOCITY_SHADER).
     maxSpeed: 0,
+    // Off by default — every existing graph keeps the original staggered
+    // startup (particles trickle in over the first Lifetime seconds rather
+    // than all appearing on frame 1). Turn on for "spawn the whole
+    // population immediately, then let it fall/settle" (a Point Cloud
+    // burst-emitted onto a Ground plane): set Lifetime comfortably longer
+    // than the animation so nothing respawns mid-fall, and every particle
+    // is already alive at frame 0 instead of trickling in.
+    burstSpawn: false,
   },
   paramFields: [
     { id: "gravity", label: "Gravity", kind: "number", step: 0.5 },
@@ -387,6 +395,11 @@ export const PARTICLE_SIMULATE_NODE: NodeDefinition = {
     { id: "lifetime", label: "Lifetime (s)", kind: "number", step: 0.5 },
     { id: "lifetimeVariance", label: "Lifetime Variation (%)", kind: "number", step: 5 },
     { id: "count", label: "Max Particles (capped at 65536)", kind: "number", step: 100 },
+    {
+      id: "burstSpawn",
+      label: "Burst Spawn (all particles alive on frame 0, no stagger-in)",
+      kind: "boolean",
+    },
     { id: "flowStrength", label: "Flow Field Strength", kind: "number", step: 0.5, group: "Flow Field" },
     { id: "flowScale", label: "Flow Field Scale", kind: "number", step: 0.1, group: "Flow Field" },
     { id: "flowSpeed", label: "Flow Field Speed", kind: "number", step: 0.05, group: "Flow Field" },
@@ -432,6 +445,7 @@ export const PARTICLE_SIMULATE_NODE: NodeDefinition = {
       maxSpeed,
       forces,
       ground,
+      toBoolean(params.burstSpawn),
     );
     if (!result) return { positions: null, count: 0, lifetime };
     return { positions: result.positionsTexture, count: result.capacity, lifetime };

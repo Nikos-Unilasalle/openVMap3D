@@ -527,21 +527,41 @@ function updateSeedTexture(sim: Simulation, seedPositions: Float32Array | undefi
   return { texture: sim.seedTexture!, count, size };
 }
 
-function initialPositionTexture(gpuCompute: GPUComputationRenderer, size: number, lifetimeGuess: number): THREE.DataTexture {
+/**
+ * A texel's starting age — pulled out of initialPositionTexture as its own
+ * pure function purely so it's unit-testable without a WebGLRenderer
+ * (everything else GPU-sim-related in this file needs a real one). Staggered
+ * negative age (the default) spreads particles' first activation across one
+ * Lifetime's worth of "already elapsed" time so they don't all burst on
+ * frame 1. burstSpawn is the deliberate opposite: every texel starts at age
+ * 0, already alive on frame 0 — "spawn the whole point cloud immediately,
+ * then let it fall" wants every particle present from the start, not
+ * trickling in over the first Lifetime seconds.
+ */
+export function initialAge(index: number, capacity: number, lifetimeGuess: number, burstSpawn: boolean): number {
+  return burstSpawn ? 0 : -((index / capacity) * lifetimeGuess);
+}
+
+function initialPositionTexture(gpuCompute: GPUComputationRenderer, size: number, lifetimeGuess: number, burstSpawn: boolean): THREE.DataTexture {
   const texture = gpuCompute.createTexture();
   const data = texture.image.data as Float32Array;
   const capacity = size * size;
   for (let i = 0; i < capacity; i++) {
-    // Staggered negative age so particles don't all burst on frame 1 — spread
-    // across one lifetime's worth of "already elapsed" time.
-    data[i * 4 + 3] = -((i / capacity) * lifetimeGuess);
+    data[i * 4 + 3] = initialAge(i, capacity, lifetimeGuess, burstSpawn);
   }
   return texture;
 }
 
-function createSimulation(nodeId: string, renderer: THREE.WebGLRenderer, size: number, lifetimeGuess: number, currentStep: number): Simulation {
+function createSimulation(
+  nodeId: string,
+  renderer: THREE.WebGLRenderer,
+  size: number,
+  lifetimeGuess: number,
+  currentStep: number,
+  burstSpawn: boolean,
+): Simulation {
   const gpuCompute = new GPUComputationRenderer(size, size, renderer);
-  const position0 = initialPositionTexture(gpuCompute, size, lifetimeGuess);
+  const position0 = initialPositionTexture(gpuCompute, size, lifetimeGuess, burstSpawn);
   const velocity0 = gpuCompute.createTexture();
 
   const positionVar = gpuCompute.addVariable("texturePosition", POSITION_SHADER, position0);
@@ -667,6 +687,7 @@ export function getOrCreateSimulation(
   maxSpeed = 0,
   forces: ForceFieldDescriptor[] = [],
   ground?: GroundConfig,
+  burstSpawn = false,
 ): SimulationResult | null {
   if (!renderer) {
     if (!warnedMissingRenderer) {
@@ -694,7 +715,7 @@ export function getOrCreateSimulation(
       sim.gpuCompute.dispose();
       sim.seedTexture?.dispose();
     }
-    sim = createSimulation(nodeId, renderer, size, lifetime, currentStep);
+    sim = createSimulation(nodeId, renderer, size, lifetime, currentStep, burstSpawn);
     perRenderer.set(renderer, sim);
   }
 

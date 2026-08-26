@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { describe, expect, test } from "vitest";
-import { activeParticleCount, buildEmitterConfig, textureSizeFor } from "./particleRuntime";
+import { activeParticleCount, buildEmitterConfig, initialAge, textureSizeFor } from "./particleRuntime";
 
 describe("textureSizeFor", () => {
   test("returns the smallest square covering the requested capacity", () => {
@@ -68,5 +68,21 @@ describe("activeParticleCount", () => {
 
   test("is never negative", () => {
     expect(activeParticleCount(-50, 3, 10_000)).toBe(0);
+  });
+});
+
+describe("initialAge", () => {
+  test("staggers the default (non-burst) start across one Lifetime — first texel at 0, last texel a full Lifetime in the past", () => {
+    const capacity = 100;
+    expect(initialAge(0, capacity, 3, false)).toBe(-0);
+    expect(initialAge(50, capacity, 3, false)).toBeCloseTo(-1.5);
+    expect(initialAge(99, capacity, 3, false)).toBeCloseTo(-2.97);
+  });
+
+  test("burstSpawn starts every texel at age 0 regardless of index — the whole population already alive on frame 0", () => {
+    const capacity = 100;
+    expect(initialAge(0, capacity, 3, true)).toBe(0);
+    expect(initialAge(50, capacity, 3, true)).toBe(0);
+    expect(initialAge(99, capacity, 3, true)).toBe(0);
   });
 });
