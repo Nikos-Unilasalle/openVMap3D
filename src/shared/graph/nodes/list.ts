@@ -374,6 +374,50 @@ export const COLOR_PALETTE_LIST_NODE: NodeDefinition = {
   },
 };
 
+/**
+ * Distance Gradient List node — turns a list of distances (e.g. from the
+ * Distances node) into a same-length list of colors sampled off a ramp, so
+ * feeding it straight into Set Instance Color's `colors` input paints a halo
+ * around whatever the distances were measured from (a Mouse node's point,
+ * most often) instead of a single instance flipping color.
+ */
+export const DISTANCE_GRADIENT_LIST_NODE: NodeDefinition = {
+  type: "list/distance-gradient",
+  label: "Distance Gradient List",
+  category: "list",
+  inputs: [
+    { id: "distances", label: "Distances", type: "list" },
+    { id: "radius", label: "Radius", type: "value" },
+  ],
+  outputs: [{ id: "list", label: "Colors", type: "list" }],
+  defaultParams: {
+    radius: 3,
+    power: 1,
+    ramp: DEFAULT_COLOR_RAMP,
+  },
+  paramFields: [
+    { id: "radius", label: "Radius", kind: "number", step: 0.1 },
+    // <1 widens the halo (fades in gently), >1 tightens it (stays at ramp-end
+    // color until close, then snaps in) — the falloff shape, not the reach.
+    { id: "power", label: "Falloff Power", kind: "number", step: 0.1 },
+    { id: "ramp", label: "Ramp (Near → Far)", kind: "color_ramp" },
+  ],
+  evaluate: (inputs, params) => {
+    const distances = Array.isArray(inputs.distances) ? inputs.distances : [];
+    const radius = Math.max(0.0001, inputs.radius !== undefined ? Number(inputs.radius) || 0 : Number(params.radius) || 3);
+    const power = Number(params.power) || 1;
+    const ramp = params.ramp && typeof params.ramp === "object" ? (params.ramp as ColorRamp) : DEFAULT_COLOR_RAMP;
+
+    const list: THREE.Color[] = distances.map((d) => {
+      const raw = Math.max(0, Math.min(1, (Number(d) || 0) / radius));
+      const t = power !== 1 ? Math.pow(raw, power) : raw;
+      return sampleColorRamp(ramp, t);
+    });
+
+    return { list };
+  },
+};
+
 /** Slice List node — returns a sub-slice of an input list. */
 export const SLICE_LIST_NODE: NodeDefinition = {
   type: "list/slice",

@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { GET_LIST_ITEM_NODE, RANDOM_SAMPLE_LIST_NODE } from "./list";
+import { DISTANCE_GRADIENT_LIST_NODE, GET_LIST_ITEM_NODE, RANDOM_SAMPLE_LIST_NODE } from "./list";
 import { CURVE_FROM_POINTS_NODE } from "./curve";
 import { EvalContext } from "../types";
 
@@ -75,6 +75,28 @@ describe("RANDOM_SAMPLE_LIST_NODE", () => {
     const res = RANDOM_SAMPLE_LIST_NODE.evaluate({ list: [], count: 5 }, RANDOM_SAMPLE_LIST_NODE.defaultParams, CTX);
     expect((res.list as unknown[]).length).toBe(0);
     expect((res.indices as unknown[]).length).toBe(0);
+  });
+});
+
+describe("DISTANCE_GRADIENT_LIST_NODE", () => {
+  it("samples the ramp start at distance 0 and the ramp end at/past radius", () => {
+    const res = DISTANCE_GRADIENT_LIST_NODE.evaluate(
+      { distances: [0, 3, 10] },
+      { ...DISTANCE_GRADIENT_LIST_NODE.defaultParams, radius: 5 },
+      CTX,
+    );
+    const colors = res.list as THREE.Color[];
+    expect(colors.length).toBe(3);
+    expect(colors[0].getHex()).toBe(new THREE.Color(0x38bdf8).getHex());
+    expect(colors[2].getHex()).toBe(new THREE.Color(0xec4899).getHex());
+    // Halfway through the radius sits strictly between the two ramp stops.
+    expect(colors[1].getHex()).not.toBe(colors[0].getHex());
+    expect(colors[1].getHex()).not.toBe(colors[2].getHex());
+  });
+
+  it("returns an empty list when given no distances", () => {
+    const res = DISTANCE_GRADIENT_LIST_NODE.evaluate({ distances: [] }, DISTANCE_GRADIENT_LIST_NODE.defaultParams, CTX);
+    expect((res.list as unknown[]).length).toBe(0);
   });
 });
 
