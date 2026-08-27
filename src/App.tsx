@@ -4,7 +4,8 @@ import { CAMERA_FLY_TO_NODE, CAMERA_NODE } from "./shared/graph/nodes/camera";
 import { DEFAULT_REGISTRY } from "./shared/graph/nodes";
 import { toBoolean } from "./shared/graph/sockets";
 import { BAKE_INSTANCES_ACTION, bakeInstancesToGeometryData } from "./shared/graph/nodes/particleInstances";
-import { EXPLODE_GLTF_ACTION, explodeGltfToMeshData } from "./shared/graph/nodes/gltfLoader";
+import { EXPLODE_GLTF_ACTION, ExplodedTexture, explodeGltfToMeshData, gltfSourceDirectory } from "./shared/graph/nodes/gltfLoader";
+import { isTauri } from "./shared/isTauri";
 import { TOGGLE_POINTS_KEYFRAME_ACTION } from "./shared/graph/nodes/curve";
 import { RESEED_MESH_POINTS_ACTION } from "./shared/graph/nodes/editMeshPoints";
 import { extractPointsFromMesh } from "./shared/graph/nodes/pointsGeometry";
@@ -37,6 +38,7 @@ import {
   Marker,
   NodeInstance,
   normalizeCanvases,
+  ParamFieldDef,
   Project,
 } from "./shared/graph/types";
 import { broadcastGraph, maximizeMainWindow, PreviewCameraPose, startBroadcasting } from "./shared/ipc";
@@ -595,6 +597,18 @@ function MainEditor() {
    * the whole 50-entry history.
    */
   const coalesceRef = useRef<{ key: string; at: number } | null>(null);
+  /**
+   * The exact graph object the top-of-stack snapshot was cloned *from*.
+   * pushHistory compares against this to catch the "several edits landed in
+   * one event batch, before graphRef caught up" case a content-equality
+   * check used to guard with `JSON.stringify(top) === JSON.stringify(snapshot)`
+   * — two full-graph stringifies, on top of the clone already taken, on
+   * every single non-coalesced push. That's noise for a small graph and
+   * ruinous for one carrying large baked arrays (an exploded glTF's
+   * geometry): a reference check is exact here (React always hands back a
+   * fresh object on a real change) and costs nothing.
+   */
+  const lastSnapshotSourceRef = useRef<Graph | null>(null);
 
   /**
    * Records the graph as it is *right now* as one undo step.
@@ -611,16 +625,18 @@ function MainEditor() {
     // Still dialling the same control — fold into the step already recorded.
     if (coalesceKey && previous && previous.key === coalesceKey && now - previous.at < HISTORY_COALESCE_MS) return;
 
+    // Several edits can land in one event batch, before graphRef has caught
+    // up — without this they'd each store the same pre-batch graph. See
+    // lastSnapshotSourceRef's own comment for why this is a reference check
+    // rather than the content-equality check it replaced.
+    if (lastSnapshotSourceRef.current === graphRef.current) return;
+
     const history = canvasHistory();
     const snapshot = cloneGraph(graphRef.current);
-    const top = history.past[history.past.length - 1];
-    // Several edits can land in one event batch, before graphRef has caught
-    // up — without this they'd each store the same pre-batch graph.
-    if (top && JSON.stringify(top) === JSON.stringify(snapshot)) return;
-
     history.past.push(snapshot);
     if (history.past.length > HISTORY_LIMIT) history.past.shift();
     history.future = [];
+    lastSnapshotSourceRef.current = graphRef.current;
   }, [canvasHistory]);
 
   const setGraphWithHistory = useCallback(
@@ -686,6 +702,7 @@ function MainEditor() {
 
   const handleLoadProject = (newProject: Project, filename?: string) => {
     historyRef.current = {};
+    lastSnapshotSourceRef.current = null;
     hasUnsavedEditsRef.current = false;
     const rehydrated = normalizeCanvases(newProject.canvases).map((canvas) =>
       rehydrateGraphParams(canvas, DEFAULT_REGISTRY),
@@ -938,17 +955,68 @@ function MainEditor() {
           console.warn("glTF Model: nothing to explode yet — load a model first.");
           return;
         }
-        setGraphWithHistory((prevGraph) => {
-          const source = prevGraph.nodes.find((n) => n.id === nodeId);
-          const baseX = (source?.position.x ?? 300) + 340;
-          const baseY = source?.position.y ?? 200;
-          // A grid rather than a single column: a real model can explode into
-          // dozens of pieces, and a mile-long vertical strip is unnavigable.
-          const COLUMNS = 4;
-          const SPACING_X = 260;
-          const SPACING_Y = 200;
-          const newNodes = meshes.map((mesh, i) => ({
-            id: randomId(),
+
+        // Ids are picked up front, outside the graph updater: the texture
+        // fields' onLoaded() calls below need a real id to key their
+        // module-level cache by, and they run alongside the graph commit
+        // rather than inside it (that updater must stay a pure function of
+        // prevGraph — see pushHistory's own comment on why nothing here can
+        // reach into it).
+        const ids = meshes.map(() => randomId());
+        const frozenFields = OBJECT_FROZEN_NODE.dynamicParamFields?.(
+          { id: "", type: OBJECT_FROZEN_NODE.type, params: {}, position: { x: 0, y: 0 } },
+        ) ?? [];
+        const textureField = frozenFields.find((f) => f.id === "texturePath" && f.kind === "file") as
+          | (ParamFieldDef & { kind: "file" })
+          | undefined;
+        const normalField = frozenFields.find((f) => f.id === "normalMapPath" && f.kind === "file") as
+          | (ParamFieldDef & { kind: "file" })
+          | undefined;
+        const roughnessField = frozenFields.find((f) => f.id === "roughnessMapPath" && f.kind === "file") as
+          | (ParamFieldDef & { kind: "file" })
+          | undefined;
+
+        // Where (if anywhere) exploded textures can be written as real
+        // sibling files rather than staying session-only: next to the model
+        // itself, so the *existing*, generic file-rehydration pass (any node
+        // with a "file" field gets re-read from its stored path on project
+        // load — see rehydrateFileNodesFromDisk) picks them back up for
+        // free, no glTF-specific reload logic needed. Only possible with
+        // real filesystem access and a model that has a real path — a
+        // browser pick or a model with no textures skips straight to the
+        // session-only fallback below.
+        const sourceDir = isTauri() ? gltfSourceDirectory(nodeId) : null;
+        const writes: Promise<void>[] = [];
+
+        /** Feeds one baked texture through the exact path a manual file pick already takes, and best-effort persists it. */
+        const applyTexture = (
+          field: (ParamFieldDef & { kind: "file" }) | undefined,
+          texture: ExplodedTexture | null,
+          newNodeId: string,
+        ): string | undefined => {
+          if (!field || !texture) return undefined;
+          const targetPath = sourceDir ? `${sourceDir}/${texture.fileName}` : texture.fileName;
+          // Populates the live in-memory texture cache immediately, so the
+          // map shows up on screen this frame — independent of, and not
+          // waiting on, the disk write below.
+          field.onLoaded?.(newNodeId, targetPath, texture.bytes);
+          if (sourceDir) {
+            writes.push(
+              import("@tauri-apps/plugin-fs")
+                .then(({ writeFile }) => writeFile(targetPath, texture.bytes))
+                .catch((err) => console.error(`Explode into Nodes: failed to save ${targetPath}:`, err)),
+            );
+          }
+          return targetPath;
+        };
+
+        const newNodes = meshes.map((mesh, i) => {
+          const newNodeId = ids[i];
+          const texturePath = applyTexture(textureField, mesh.map, newNodeId);
+          const normalMapPath = applyTexture(normalField, mesh.normalMap, newNodeId);
+          const roughnessMapPath = applyTexture(roughnessField, mesh.roughnessMap, newNodeId);
+          return {
+            id: newNodeId,
             type: OBJECT_FROZEN_NODE.type,
             params: {
               ...cloneParams(OBJECT_FROZEN_NODE.defaultParams),
@@ -962,14 +1030,39 @@ function MainEditor() {
               opacity: mesh.opacity,
               emissive: new THREE.Color(mesh.emissive),
               emissiveIntensity: mesh.emissiveIntensity,
+              doubleSided: mesh.doubleSided ? 1 : 0,
+              ...(texturePath ? { texturePath } : {}),
+              ...(normalMapPath ? { normalMapPath } : {}),
+              ...(roughnessMapPath ? { roughnessMapPath } : {}),
             },
+            position: { x: 0, y: 0 }, // set below, once baseX/baseY are known
+          };
+        });
+
+        setGraphWithHistory((prevGraph) => {
+          const source = prevGraph.nodes.find((n) => n.id === nodeId);
+          const baseX = (source?.position.x ?? 300) + 340;
+          const baseY = source?.position.y ?? 200;
+          // A grid rather than a single column: a real model can explode into
+          // dozens of pieces, and a mile-long vertical strip is unnavigable.
+          const COLUMNS = 4;
+          const SPACING_X = 260;
+          const SPACING_Y = 200;
+          const positioned = newNodes.map((node, i) => ({
+            ...node,
             position: {
               x: baseX + (i % COLUMNS) * SPACING_X,
               y: baseY + Math.floor(i / COLUMNS) * SPACING_Y,
             },
           }));
-          return { ...prevGraph, nodes: [...prevGraph.nodes, ...newNodes] };
+          return { ...prevGraph, nodes: [...prevGraph.nodes, ...positioned] };
         }, `explode:${nodeId}`);
+
+        if (writes.length > 0) {
+          void Promise.all(writes).then(() => {
+            console.info(`Explode into Nodes: saved ${writes.length} texture(s) beside the model.`);
+          });
+        }
         return;
       }
       if (action !== BAKE_INSTANCES_ACTION) return;

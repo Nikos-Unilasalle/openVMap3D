@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it, vi } from "vitest";
 import { EvalContext, NodeInstance } from "../types";
-import { EXPLODE_GLTF_ACTION, OBJECT_GLTF_NODE, explodeGltfToMeshData } from "./gltfLoader";
+import { EXPLODE_GLTF_ACTION, OBJECT_GLTF_NODE, explodeGltfToMeshData, gltfSourceDirectory, sanitizeFileNamePart } from "./gltfLoader";
 import { evaluateGraph } from "../evaluate";
 import { DEFAULT_REGISTRY } from "./index";
 
@@ -52,6 +52,52 @@ function buildTriangleGlb(): Uint8Array {
 
   view.setUint32(offset, binPadded, true); offset += 4;
   view.setUint32(offset, 0x004e4942, true); offset += 4; // 'BIN\0'
+  bytes.set(binBytes, offset);
+  offset += binPadded;
+
+  return bytes;
+}
+
+/** Same fixture as buildTriangleGlb, but with a material naming `doubleSided`. */
+function buildTriangleGlbWithMaterial(doubleSided: boolean): Uint8Array {
+  const json = JSON.stringify({
+    asset: { version: "2.0" },
+    scene: 0,
+    scenes: [{ nodes: [0] }],
+    nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 }, material: 0 }] }],
+    materials: [{ doubleSided }],
+    buffers: [{ byteLength: 36 }],
+    bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 36, target: 34962 }],
+    accessors: [
+      { bufferView: 0, byteOffset: 0, componentType: 5126, count: 3, type: "VEC3", max: [1, 1, 0], min: [0, 0, 0] },
+    ],
+  });
+  const jsonBytes = new TextEncoder().encode(json);
+  const jsonPadded = (jsonBytes.length + 3) & ~3;
+
+  const bin = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+  const binBytes = new Uint8Array(bin.buffer);
+  const binPadded = (binBytes.length + 3) & ~3;
+
+  const totalLength = 12 + 8 + jsonPadded + 8 + binPadded;
+  const buf = new ArrayBuffer(totalLength);
+  const view = new DataView(buf);
+  const bytes = new Uint8Array(buf);
+  let offset = 0;
+
+  view.setUint32(offset, 0x46546c67, true); offset += 4;
+  view.setUint32(offset, 2, true); offset += 4;
+  view.setUint32(offset, totalLength, true); offset += 4;
+
+  view.setUint32(offset, jsonPadded, true); offset += 4;
+  view.setUint32(offset, 0x4e4f534a, true); offset += 4;
+  bytes.set(jsonBytes, offset);
+  for (let i = jsonBytes.length; i < jsonPadded; i++) bytes[offset + i] = 0x20;
+  offset += jsonPadded;
+
+  view.setUint32(offset, binPadded, true); offset += 4;
+  view.setUint32(offset, 0x004e4942, true); offset += 4;
   bytes.set(binBytes, offset);
   offset += binPadded;
 
@@ -185,6 +231,92 @@ describe("explode into nodes", () => {
     expect(button).toBeDefined();
     expect(button.action).toBe(EXPLODE_GLTF_ACTION);
     expect(button.label).toContain("1");
+  });
+
+  it("reads doubleSided false by default", async () => {
+    const nodeId = "gltf-explode-1side";
+    const field = OBJECT_GLTF_NODE.dynamicParamFields?.({ ...DUMMY, id: nodeId }) ?? [];
+    const fileField = field.find((f) => f.id === "filePath") as any;
+    fileField.onLoaded(nodeId, "triangle.glb", buildTriangleGlbWithMaterial(false));
+    await vi.waitFor(() => {
+      expect(explodeGltfToMeshData(nodeId)[0]?.positions.length).toBe(9);
+    });
+
+    expect(explodeGltfToMeshData(nodeId)[0].doubleSided).toBe(false);
+  });
+
+  it("reads doubleSided true through from the glTF material", async () => {
+    const nodeId = "gltf-explode-2side";
+    const field = OBJECT_GLTF_NODE.dynamicParamFields?.({ ...DUMMY, id: nodeId }) ?? [];
+    const fileField = field.find((f) => f.id === "filePath") as any;
+    fileField.onLoaded(nodeId, "triangle.glb", buildTriangleGlbWithMaterial(true));
+    await vi.waitFor(() => {
+      expect(explodeGltfToMeshData(nodeId)[0]?.positions.length).toBe(9);
+    });
+
+    expect(explodeGltfToMeshData(nodeId)[0].doubleSided).toBe(true);
+  });
+
+  it("has no textures to port when the fixture names none — map fields resolve to null rather than throwing", async () => {
+    const nodeId = "gltf-explode-notex";
+    await loadTriangle(nodeId);
+
+    const [mesh] = explodeGltfToMeshData(nodeId);
+    expect(mesh.map).toBeNull();
+    expect(mesh.normalMap).toBeNull();
+    expect(mesh.roughnessMap).toBeNull();
+  });
+});
+
+describe("gltfSourceDirectory", () => {
+  it("returns null for a node that never loaded anything", () => {
+    expect(gltfSourceDirectory("gltf-nosrc-never-loaded")).toBeNull();
+  });
+
+  it("returns the empty string for a path with no directory component", async () => {
+    const nodeId = "gltf-nosrc-flat";
+    const field = OBJECT_GLTF_NODE.dynamicParamFields?.({ id: nodeId, type: "object/gltf", params: OBJECT_GLTF_NODE.defaultParams, position: { x: 0, y: 0 } }) ?? [];
+    const fileField = field.find((f) => f.id === "filePath") as any;
+    fileField.onLoaded(nodeId, "triangle.glb", buildTriangleGlb());
+    await vi.waitFor(() => {
+      expect(explodeGltfToMeshData(nodeId)[0]?.positions.length).toBe(9);
+    });
+
+    expect(gltfSourceDirectory(nodeId)).toBe("");
+  });
+
+  it("returns the containing directory for a nested path", async () => {
+    const nodeId = "gltf-nosrc-nested";
+    const field = OBJECT_GLTF_NODE.dynamicParamFields?.({ id: nodeId, type: "object/gltf", params: OBJECT_GLTF_NODE.defaultParams, position: { x: 0, y: 0 } }) ?? [];
+    const fileField = field.find((f) => f.id === "filePath") as any;
+    fileField.onLoaded(nodeId, "models/car/model.glb", buildTriangleGlb());
+    await vi.waitFor(() => {
+      expect(explodeGltfToMeshData(nodeId)[0]?.positions.length).toBe(9);
+    });
+
+    expect(gltfSourceDirectory(nodeId)).toBe("models/car");
+  });
+});
+
+describe("sanitizeFileNamePart", () => {
+  it("leaves an already-safe name alone", () => {
+    expect(sanitizeFileNamePart("wheel_diffuse")).toBe("wheel_diffuse");
+  });
+
+  it("replaces unsafe characters with underscores", () => {
+    expect(sanitizeFileNamePart("Body Color/Paint #1")).toBe("Body_Color_Paint_1");
+  });
+
+  it("trims leading and trailing underscores left by stripped characters", () => {
+    expect(sanitizeFileNamePart("  wheel  ")).toBe("wheel");
+  });
+
+  it("falls back to a generic name for a name with no safe characters", () => {
+    expect(sanitizeFileNamePart("###")).toBe("texture");
+  });
+
+  it("falls back to a generic name for an empty string", () => {
+    expect(sanitizeFileNamePart("")).toBe("texture");
   });
 });
 

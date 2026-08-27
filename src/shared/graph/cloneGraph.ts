@@ -26,7 +26,19 @@ export function cloneParamValue(value: unknown): unknown {
   if (value instanceof THREE.Matrix4) return value.clone();
   if (value instanceof THREE.Quaternion) return value.clone();
   if (value instanceof THREE.Euler) return value.clone();
-  if (Array.isArray(value)) return value.map(cloneParamValue);
+  if (Array.isArray(value)) {
+    // Fast path: an array of plain numbers — exactly what baked geometry
+    // is (positions/normals/uvs/index, routinely tens of thousands of
+    // entries once a model has been exploded into nodes) — is cheaper to
+    // shallow-copy in one native call than to run every element through
+    // the six instanceof checks above. Only the first element is checked:
+    // a mixed array isn't a shape any node produces, and the per-element
+    // path below still handles one correctly if it ever shows up.
+    if (value.length === 0 || typeof value[0] !== "object" || value[0] === null) {
+      return value.slice();
+    }
+    return value.map(cloneParamValue);
+  }
   // Textures, meshes and other GPU resources are shared on purpose — a node's
   // cached mesh must stay the same object across frames — so anything that
   // isn't a plain object is passed through by reference rather than copied.

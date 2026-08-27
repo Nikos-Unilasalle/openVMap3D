@@ -7,7 +7,7 @@ import { createNodeCache } from "../nodeCaches";
 import { composeNativeMatrixWithPivot } from "./transform";
 import { COMMON_PRIMITIVE_OUTPUTS, TextureParams, applyMaterialParams, extractMaterialParams, primitiveOutputs } from "./object";
 import { isTauri } from "../../isTauri";
-import { describeMissingResources, externalResourceUris, resolveExternalResources } from "./gltfExternalResources";
+import { describeMissingResources, directoryOf, externalResourceUris, resolveExternalResources } from "./gltfExternalResources";
 
 /**
  * The Draco decoder owns a worker pool, so it is created once and shared by
@@ -258,6 +258,72 @@ function describeLoadFailure(err: unknown): string {
 export const EXPLODE_GLTF_ACTION = "object/gltf-explode-to-nodes";
 
 /**
+ * The directory the loaded model itself lives in, so App.tsx can write
+ * exploded textures out as real sibling files rather than leaving them
+ * session-only. Null with nothing loaded, or a model whose bytes came in
+ * some other way with no path of its own (there isn't one today, but the
+ * check costs nothing and a null here is the correct "can't persist" signal
+ * either way).
+ */
+export function gltfSourceDirectory(nodeId: string): string | null {
+  const path = gltfStateCache.get(nodeId)?.lastPath;
+  return path ? directoryOf(path) : null;
+}
+
+/** A texture baked back out to real file bytes, ready for the same onLoaded() path a manual file pick already takes. */
+export interface ExplodedTexture {
+  bytes: Uint8Array;
+  fileName: string;
+}
+
+/**
+ * Re-encodes a live THREE.Texture's decoded image back to PNG bytes.
+ *
+ * GLTFLoader has already done the actual decode (the texture's `.image` is a
+ * real HTMLImageElement/ImageBitmap by the time a mesh exists at all) — this
+ * only needs to get pixels back out, which a 2D canvas does synchronously via
+ * `toDataURL`. Synchronous matters here: it keeps the whole Explode action a
+ * single, ordinary graph edit rather than a multi-step async flow the rest of
+ * the button-action machinery (App.tsx's onAction) doesn't expect.
+ *
+ * Not attempted for a compressed source (KTX2/Basis) — `.image` there is a
+ * GPU-ready blob, not a decodable bitmap, and this app doesn't support KTX2
+ * import in the first place (see describeLoadFailure).
+ */
+function textureToPngBytes(texture: THREE.Texture, fileName: string): ExplodedTexture | null {
+  if (typeof document === "undefined") return null;
+  const image = texture.image as { width?: number; height?: number } | undefined;
+  const width = image?.width;
+  const height = image?.height;
+  if (!width || !height) return null;
+
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(image as CanvasImageSource, 0, 0, width, height);
+
+    const dataUrl = canvas.toDataURL("image/png");
+    const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return { bytes, fileName };
+  } catch (err) {
+    console.error(`Explode into Nodes: could not re-encode a texture (${fileName}):`, err);
+    return null;
+  }
+}
+
+/** A name safe to use as a filename, derived from whatever the glTF happened to call the thing. */
+export function sanitizeFileNamePart(name: string): string {
+  const cleaned = name.replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "");
+  return cleaned || "texture";
+}
+
+/**
  * One mesh out of a loaded glTF, flattened to the same plain, JSON-serializable
  * shape "object/frozen" already accepts from Particle Render's Bake button —
  * so the result is a real graph node with no tie back to this one or the
@@ -271,11 +337,13 @@ export const EXPLODE_GLTF_ACTION = "object/gltf-explode-to-nodes";
  * already accepts: the new nodes are independent copies, not tied to the
  * source, so moving or re-loading the glTF node afterward doesn't move them.
  *
- * Scoped to geometry and PBR *scalar* material properties (color, roughness,
- * metalness, opacity, emissive) — a glTF material's texture maps are live
- * THREE.Texture objects with no backing graph node to hand them to, so a
- * textured model explodes with its shape and base tint intact but its maps
- * dropped. Untextured / vertex-colored models come through complete.
+ * Diffuse/normal/roughness maps are re-encoded to real PNG bytes (see
+ * textureToPngBytes) and handed back alongside the PBR scalars, for App.tsx
+ * to feed through the exact same file-field `onLoaded()` path a manual pick
+ * already uses — so a textured model explodes looking like the original, not
+ * just shaped like it. Several meshes sharing one material (routine on a
+ * real model — a car's dozen chrome trim pieces, say) share one encode too,
+ * memoized by the texture's own uuid rather than repeated per mesh.
  */
 export interface ExplodedGltfMesh {
   positions: number[];
@@ -288,12 +356,27 @@ export interface ExplodedGltfMesh {
   opacity: number;
   emissive: number;
   emissiveIntensity: number;
+  doubleSided: boolean;
+  map: ExplodedTexture | null;
+  normalMap: ExplodedTexture | null;
+  roughnessMap: ExplodedTexture | null;
 }
 
 export function explodeGltfToMeshData(nodeId: string): ExplodedGltfMesh[] {
   const state = gltfStateCache.get(nodeId);
   if (!state) return [];
   state.group.updateMatrixWorld(true);
+
+  const textureCache = new Map<string, ExplodedTexture | null>();
+  const encodeOnce = (texture: THREE.Texture | null, suffix: string, meshName: string): ExplodedTexture | null => {
+    if (!texture) return null;
+    const cached = textureCache.get(texture.uuid);
+    if (cached !== undefined) return cached;
+    const fileName = `${sanitizeFileNamePart(texture.name || meshName)}_${suffix}.png`;
+    const result = textureToPngBytes(texture, fileName);
+    textureCache.set(texture.uuid, result);
+    return result;
+  };
 
   const out: ExplodedGltfMesh[] = [];
   state.group.traverse((child) => {
@@ -311,6 +394,7 @@ export function explodeGltfToMeshData(nodeId: string): ExplodedGltfMesh[] {
 
     const material = Array.isArray(child.material) ? child.material[0] : child.material;
     const std = material as THREE.MeshStandardMaterial | undefined;
+    const meshName = child.name || material?.name || "mesh";
 
     out.push({
       positions: Array.from(position.array as ArrayLike<number>),
@@ -323,6 +407,10 @@ export function explodeGltfToMeshData(nodeId: string): ExplodedGltfMesh[] {
       opacity: std?.opacity ?? 1,
       emissive: std?.emissive?.getHex() ?? 0x000000,
       emissiveIntensity: std?.emissiveIntensity ?? 1,
+      doubleSided: material?.side === THREE.DoubleSide,
+      map: uv ? encodeOnce(std?.map ?? null, "diffuse", meshName) : null,
+      normalMap: uv ? encodeOnce(std?.normalMap ?? null, "normal", meshName) : null,
+      roughnessMap: uv ? encodeOnce(std?.roughnessMap ?? null, "roughness", meshName) : null,
     });
     baked.dispose();
   });

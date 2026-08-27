@@ -59,6 +59,44 @@ describe("cloneParams", () => {
   test("leaves primitives and strings alone", () => {
     expect(cloneParams({ n: 4, s: "cover", b: true })).toEqual({ n: 4, s: "cover", b: true });
   });
+
+  test("copies a plain-number array (baked geometry) independently, via the fast path", () => {
+    // What an exploded glTF's Frozen Geometry nodes store: positions,
+    // normals, uvs, index — tens of thousands of raw numbers, none of them
+    // a class instance. This is the array shape the fast path exists for.
+    const positions = [0, 0, 0, 1, 0, 0, 0, 1, 0];
+    const cloned = cloneParams({ positions }) as { positions: number[] };
+
+    expect(cloned.positions).toEqual(positions);
+    expect(cloned.positions).not.toBe(positions);
+
+    cloned.positions[0] = 999;
+    expect(positions[0]).toBe(0);
+  });
+
+  test("still deep-clones an array of class instances (e.g. a curve's point list) rather than taking the fast path", () => {
+    const points = [new THREE.Vector3(1, 2, 3), new THREE.Vector3(4, 5, 6)];
+    const cloned = cloneParams({ points }) as { points: THREE.Vector3[] };
+
+    expect(cloned.points[0]).toBeInstanceOf(THREE.Vector3);
+    expect(cloned.points).not.toBe(points);
+    expect(cloned.points[0]).not.toBe(points[0]);
+
+    cloned.points[0].x = 999;
+    expect(points[0].x).toBe(1);
+  });
+
+  test("takes the fast path for an empty array without throwing", () => {
+    expect(cloneParams({ positions: [] })).toEqual({ positions: [] });
+  });
+
+  test("still clones an array mixing plain objects correctly (the slow path, for anything the fast path's first-element check doesn't cover)", () => {
+    const stops = [{ position: 0, color: 0xff0000 }, { position: 1, color: 0x0000ff }];
+    const cloned = cloneParams({ stops }) as { stops: typeof stops };
+
+    cloned.stops[0].position = 0.5;
+    expect(stops[0].position).toBe(0);
+  });
 });
 
 describe("cloneGraph", () => {

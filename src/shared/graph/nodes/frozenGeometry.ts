@@ -60,9 +60,19 @@ export const OBJECT_FROZEN_NODE: NodeDefinition = {
     normals: [] as number[],
     uvs: [] as number[],
     index: null as number[] | null,
+    // A baked-in geometry has no upstream node whose own default side choice
+    // this could otherwise inherit (Box picks FrontSide, Plane picks
+    // DoubleSide, each baked into their own evaluate call) — a source that
+    // was two-sided (glTF's own doubleSided flag, e.g. a leaf or a cloth
+    // panel with real thickness) needs its own switch here instead.
+    doubleSided: 0,
   },
-  paramFields: buildPrimitiveDynamicParamFields()(),
-  dynamicParamFields: buildPrimitiveDynamicParamFields(),
+  paramFields: buildPrimitiveDynamicParamFields([
+    { id: "doubleSided", label: "Double Sided", kind: "boolean", group: "Material" },
+  ])(),
+  dynamicParamFields: buildPrimitiveDynamicParamFields([
+    { id: "doubleSided", label: "Double Sided", kind: "boolean", group: "Material" },
+  ]),
   evaluate: (inputs, params, ctx) => {
     let state = frozenCache.get(ctx.nodeId);
     if (!state || state.builtFrom !== params.positions) {
@@ -83,7 +93,8 @@ export const OBJECT_FROZEN_NODE: NodeDefinition = {
 
     const matParams = extractMaterialParams(inputs, params);
     const texParams = extractTextureParams(inputs, params, ctx.nodeId);
-    applyMaterialParams(mesh, matParams, THREE.FrontSide, texParams);
+    const side = params.doubleSided ? THREE.DoubleSide : THREE.FrontSide;
+    applyMaterialParams(mesh, matParams, side, texParams);
 
     return primitiveOutputs(mesh);
   },
