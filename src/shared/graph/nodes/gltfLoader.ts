@@ -317,6 +317,16 @@ function textureToPngBytes(texture: THREE.Texture, fileName: string): ExplodedTe
   }
 }
 
+/** Flips the V component of a flat [u0,v0,u1,v1,...] array — see the comment at its call site for why. */
+function flipUvV(uv: ArrayLike<number>): number[] {
+  const out = new Array<number>(uv.length);
+  for (let i = 0; i < uv.length; i += 2) {
+    out[i] = uv[i];
+    out[i + 1] = 1 - uv[i + 1];
+  }
+  return out;
+}
+
 /** A name safe to use as a filename, derived from whatever the glTF happened to call the thing. */
 export function sanitizeFileNamePart(name: string): string {
   const cleaned = name.replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "");
@@ -399,7 +409,15 @@ export function explodeGltfToMeshData(nodeId: string): ExplodedGltfMesh[] {
     out.push({
       positions: Array.from(position.array as ArrayLike<number>),
       normals: normal ? Array.from(normal.array as ArrayLike<number>) : [],
-      uvs: uv ? Array.from(uv.array as ArrayLike<number>) : [],
+      // glTF's own V origin is the top of the image; GLTFLoader compensates by
+      // loading its textures with flipY=false. The exploded node's texture
+      // fields go through the ordinary primitive file-load path instead (see
+      // buildPrimitiveDynamicParamFields in object.ts), which defaults to
+      // THREE's usual flipY=true — so without this, every ported UV samples
+      // the wrong vertical band of a shared atlas (e.g. dashboard details
+      // showing up on the hood). Flipping V here, once, keeps the baked UVs
+      // correct for the consumer they're actually headed for.
+      uvs: uv ? flipUvV(uv.array as ArrayLike<number>) : [],
       index: index ? Array.from(index.array as ArrayLike<number>) : null,
       color: std?.color?.getHex() ?? 0xffffff,
       roughness: std?.roughness ?? 0.5,
