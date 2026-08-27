@@ -1031,6 +1031,7 @@ function MainEditor() {
               emissive: new THREE.Color(mesh.emissive),
               emissiveIntensity: mesh.emissiveIntensity,
               doubleSided: mesh.doubleSided ? 1 : 0,
+              shadeless: mesh.shadeless ? 1 : 0,
               ...(texturePath ? { texturePath } : {}),
               ...(normalMapPath ? { normalMapPath } : {}),
               ...(roughnessMapPath ? { roughnessMapPath } : {}),

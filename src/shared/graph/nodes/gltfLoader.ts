@@ -367,6 +367,8 @@ export interface ExplodedGltfMesh {
   emissive: number;
   emissiveIntensity: number;
   doubleSided: boolean;
+  /** KHR_materials_unlit: GLTFLoader represents this as a MeshBasicMaterial, not a `std` field — read off the material's own class instead. */
+  shadeless: boolean;
   map: ExplodedTexture | null;
   normalMap: ExplodedTexture | null;
   roughnessMap: ExplodedTexture | null;
@@ -426,6 +428,12 @@ export function explodeGltfToMeshData(nodeId: string): ExplodedGltfMesh[] {
       emissive: std?.emissive?.getHex() ?? 0x000000,
       emissiveIntensity: std?.emissiveIntensity ?? 1,
       doubleSided: material?.side === THREE.DoubleSide,
+      // KHR_materials_unlit doesn't survive onto the loaded THREE material as
+      // a flag — GLTFLoader's own unlit extension just builds a
+      // MeshBasicMaterial instead of the usual MeshStandardMaterial, so the
+      // class is the only tell. Miss this and the exploded copy silently
+      // upgrades to full PBR lighting — same look, much heavier to shade.
+      shadeless: material instanceof THREE.MeshBasicMaterial,
       map: uv ? encodeOnce(std?.map ?? null, "diffuse", meshName) : null,
       normalMap: uv ? encodeOnce(std?.normalMap ?? null, "normal", meshName) : null,
       roughnessMap: uv ? encodeOnce(std?.roughnessMap ?? null, "roughness", meshName) : null,

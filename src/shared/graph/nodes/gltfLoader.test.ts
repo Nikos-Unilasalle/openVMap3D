@@ -59,14 +59,15 @@ function buildTriangleGlb(): Uint8Array {
 }
 
 /** Same fixture as buildTriangleGlb, but with a material naming `doubleSided`. */
-function buildTriangleGlbWithMaterial(doubleSided: boolean): Uint8Array {
+function buildTriangleGlbWithMaterial(doubleSided: boolean, materialExtra: Record<string, unknown> = {}, topLevelExtra: Record<string, unknown> = {}): Uint8Array {
   const json = JSON.stringify({
     asset: { version: "2.0" },
     scene: 0,
     scenes: [{ nodes: [0] }],
     nodes: [{ mesh: 0 }],
     meshes: [{ primitives: [{ attributes: { POSITION: 0 }, material: 0 }] }],
-    materials: [{ doubleSided }],
+    materials: [{ doubleSided, ...materialExtra }],
+    ...topLevelExtra,
     buffers: [{ byteLength: 36 }],
     bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 36, target: 34962 }],
     accessors: [
@@ -307,6 +308,38 @@ describe("explode into nodes", () => {
     });
 
     expect(explodeGltfToMeshData(nodeId)[0].doubleSided).toBe(true);
+  });
+
+  it("reads shadeless false for an ordinary lit (PBR) material", async () => {
+    const nodeId = "gltf-explode-lit";
+    const field = OBJECT_GLTF_NODE.dynamicParamFields?.({ ...DUMMY, id: nodeId }) ?? [];
+    const fileField = field.find((f) => f.id === "filePath") as any;
+    fileField.onLoaded(nodeId, "triangle.glb", buildTriangleGlbWithMaterial(false));
+    await vi.waitFor(() => {
+      expect(explodeGltfToMeshData(nodeId)[0]?.positions.length).toBe(9);
+    });
+
+    expect(explodeGltfToMeshData(nodeId)[0].shadeless).toBe(false);
+  });
+
+  it("reads shadeless true from a KHR_materials_unlit material, so the exploded copy doesn't silently upgrade to full PBR lighting", async () => {
+    const nodeId = "gltf-explode-unlit";
+    const field = OBJECT_GLTF_NODE.dynamicParamFields?.({ ...DUMMY, id: nodeId }) ?? [];
+    const fileField = field.find((f) => f.id === "filePath") as any;
+    fileField.onLoaded(
+      nodeId,
+      "triangle.glb",
+      buildTriangleGlbWithMaterial(
+        false,
+        { extensions: { KHR_materials_unlit: {} } },
+        { extensionsUsed: ["KHR_materials_unlit"] },
+      ),
+    );
+    await vi.waitFor(() => {
+      expect(explodeGltfToMeshData(nodeId)[0]?.positions.length).toBe(9);
+    });
+
+    expect(explodeGltfToMeshData(nodeId)[0].shadeless).toBe(true);
   });
 
   it("flips the V component of baked UVs to match the ordinary (non-glTF) texture loader's flipY=true convention", async () => {
