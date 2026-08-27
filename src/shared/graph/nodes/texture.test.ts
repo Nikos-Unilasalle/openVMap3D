@@ -1,7 +1,7 @@
 import * as THREE from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { EvalContext } from "../types";
-import { TEXTURE_IMAGE_NODE, TEXTURE_PIXEL_SPAWNER_NODE, TEXTURE_PLANE_NODE, TEXTURE_PROCEDURAL_NODE, TEXTURE_TO_NORMAL_NODE, TEXTURE_TRANSFORM_NODE } from "./texture";
+import { TEXTURE_IMAGE_NODE, TEXTURE_PIXEL_SPAWNER_NODE, TEXTURE_PLANE_NODE, TEXTURE_PROCEDURAL_NODE, TEXTURE_TO_NORMAL_NODE, TEXTURE_TRANSFORM_NODE, replaceCanvasTexture } from "./texture";
 
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "tex-test-1" };
 
@@ -85,3 +85,55 @@ describe("TEXTURE NODES", () => {
   });
 });
 
+describe("replaceCanvasTexture", () => {
+  // A duck-typed stand-in for HTMLCanvasElement: THREE.CanvasTexture only ever
+  // stores the reference as `.image` at construction time, so a plain object
+  // with the right shape exercises the real code path with no DOM required.
+  const fakeCanvas = () => ({ width: 64, height: 64 }) as unknown as HTMLCanvasElement;
+
+  it("creates a texture wired up with the given color space and repeat wrapping", () => {
+    const canvas = fakeCanvas();
+    const texture = replaceCanvasTexture(undefined, canvas, THREE.SRGBColorSpace);
+    expect(texture.image).toBe(canvas);
+    expect(texture.colorSpace).toBe(THREE.SRGBColorSpace);
+    expect(texture.wrapS).toBe(THREE.RepeatWrapping);
+    expect(texture.wrapT).toBe(THREE.RepeatWrapping);
+  });
+
+  it("returns a new texture object on every call, never the one passed in", () => {
+    // This is the actual fix: three.js's fast canvas-upload path
+    // (glCopySubTextureCHROMIUM) assumes a texture's GPU storage still
+    // matches the size it was first allocated at. Reusing the same texture
+    // object across a canvas resize and only flipping `needsUpdate` hits
+    // that assumption and silently corrupts or drops the upload — logged by
+    // Chrome as "Offset overflows texture dimensions" — even though the
+    // canvas itself holds the correct new pixels. A fresh object sidesteps
+    // it by making three allocate GPU storage sized for the canvas as it is
+    // now, every time.
+    const canvas = fakeCanvas();
+    const first = replaceCanvasTexture(undefined, canvas, THREE.SRGBColorSpace);
+    const second = replaceCanvasTexture(first, canvas, THREE.SRGBColorSpace);
+    const third = replaceCanvasTexture(second, canvas, THREE.SRGBColorSpace);
+
+    expect(second).not.toBe(first);
+    expect(third).not.toBe(second);
+  });
+
+  it("disposes the texture it replaces, so a redraw doesn't leak a GPU texture per edit", () => {
+    const canvas = fakeCanvas();
+    const first = replaceCanvasTexture(undefined, canvas, THREE.SRGBColorSpace);
+    const disposeSpy = vi.spyOn(first, "dispose");
+
+    replaceCanvasTexture(first, canvas, THREE.SRGBColorSpace);
+    expect(disposeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing to dispose when there was no previous texture", () => {
+    expect(() => replaceCanvasTexture(undefined, fakeCanvas(), THREE.SRGBColorSpace)).not.toThrow();
+  });
+
+  it("keeps normal/roughness maps linear rather than sRGB", () => {
+    const texture = replaceCanvasTexture(undefined, fakeCanvas(), THREE.LinearSRGBColorSpace);
+    expect(texture.colorSpace).toBe(THREE.LinearSRGBColorSpace);
+  });
+});

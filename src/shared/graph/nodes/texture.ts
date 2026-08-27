@@ -5,6 +5,35 @@ import { composeNativeMatrix } from "./transform";
 import { COMMON_PRIMITIVE_OUTPUTS, primitiveOutputs } from "./object";
 import { InstancedItemSpec, renderInstanced } from "./instancedRender";
 
+/**
+ * Points a CanvasTexture at `canvas`, forcing a fresh texture object rather
+ * than reusing the old one.
+ *
+ * Reusing a CanvasTexture across a canvas *resize* and only flipping
+ * `needsUpdate` looks fine on the CPU side — the canvas itself always has
+ * the right pixels — but Chrome's fast path for canvas-source textures
+ * (`glCopySubTextureCHROMIUM`) assumes the destination GPU texture's storage
+ * still matches the size it was *first* allocated at. A resized canvas
+ * overflows that copy; the browser logs "Offset overflows texture
+ * dimensions" and drops or truncates the upload, leaving stale or
+ * partially-drawn pixels on screen even though the source canvas is correct
+ * — and every redraw after that keeps hitting the same broken copy, so nothing
+ * ever recovers. A new texture object makes three.js allocate GPU storage
+ * sized for the canvas as it is now, every time.
+ */
+export function replaceCanvasTexture(
+  existing: THREE.CanvasTexture | undefined,
+  canvas: HTMLCanvasElement,
+  colorSpace: THREE.ColorSpace,
+): THREE.CanvasTexture {
+  existing?.dispose();
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.colorSpace = colorSpace;
+  return texture;
+}
+
 interface TextureNodeState {
   texture?: THREE.Texture;
   mesh?: THREE.Mesh;
@@ -653,15 +682,7 @@ export const TEXTURE_PROCEDURAL_NODE: NodeDefinition = {
       state.canvas.width = resolution;
       state.canvas.height = resolution;
       drawProcedural(state.canvas, type, colorA, colorB, scale, seed, octaves);
-      if (!state.texture) {
-        state.texture = new THREE.CanvasTexture(state.canvas);
-        state.texture.wrapS = THREE.RepeatWrapping;
-        state.texture.wrapT = THREE.RepeatWrapping;
-        state.texture.colorSpace = THREE.SRGBColorSpace;
-      } else {
-        state.texture.image = state.canvas;
-        state.texture.needsUpdate = true;
-      }
+      state.texture = replaceCanvasTexture(state.texture, state.canvas, THREE.SRGBColorSpace);
     }
 
     // UV tiling / offset, like the image texture node.
@@ -822,15 +843,8 @@ export const TEXTURE_TO_NORMAL_NODE: NodeDefinition = {
       }
       nctx.putImageData(nImg, 0, 0);
 
-      if (!state.texture) {
-        state.texture = new THREE.CanvasTexture(nc);
-        state.texture.wrapS = THREE.RepeatWrapping;
-        state.texture.wrapT = THREE.RepeatWrapping;
-        state.texture.colorSpace = THREE.LinearSRGBColorSpace; // normal maps stay linear
-      } else {
-        state.texture.image = nc;
-        state.texture.needsUpdate = true;
-      }
+      // normal maps stay linear, not sRGB
+      state.texture = replaceCanvasTexture(state.texture, nc, THREE.LinearSRGBColorSpace);
     }
 
     return { normal: state.texture };
@@ -912,15 +926,8 @@ export const TEXTURE_TO_ROUGHNESS_NODE: NodeDefinition = {
       }
       ctx2d.putImageData(img, 0, 0);
 
-      if (!state.texture) {
-        state.texture = new THREE.CanvasTexture(canvas);
-        state.texture.wrapS = THREE.RepeatWrapping;
-        state.texture.wrapT = THREE.RepeatWrapping;
-        state.texture.colorSpace = THREE.LinearSRGBColorSpace; // roughness maps stay linear
-      } else {
-        state.texture.image = canvas;
-        state.texture.needsUpdate = true;
-      }
+      // roughness maps stay linear, not sRGB
+      state.texture = replaceCanvasTexture(state.texture, canvas, THREE.LinearSRGBColorSpace);
     }
 
     return { roughness: state.texture };
@@ -1025,15 +1032,7 @@ export const TEXTURE_MIX_NODE: NodeDefinition = {
       }
       outCtx.putImageData(outImg, 0, 0);
 
-      if (!state.texture) {
-        state.texture = new THREE.CanvasTexture(out);
-        state.texture.wrapS = THREE.RepeatWrapping;
-        state.texture.wrapT = THREE.RepeatWrapping;
-        state.texture.colorSpace = THREE.SRGBColorSpace;
-      } else {
-        state.texture.image = out;
-        state.texture.needsUpdate = true;
-      }
+      state.texture = replaceCanvasTexture(state.texture, out, THREE.SRGBColorSpace);
     }
 
     return { texture: state.texture ?? null };
