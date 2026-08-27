@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { EvalContext } from "../types";
-import { LIGHT_PROBE_NODE, bakeSignature, shouldRebake } from "./lightProbe";
+import { LIGHT_PROBE_NODE, bakeSignature, captureWithProbeHidden, shouldRebake } from "./lightProbe";
 import { disposeNodeCaches } from "../nodeCaches";
 
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "probe-test" };
@@ -135,5 +135,40 @@ describe("LIGHT_PROBE_NODE", () => {
     disposeNodeCaches(["probe-deleted"]);
     const second = LIGHT_PROBE_NODE.evaluate({}, LIGHT_PROBE_NODE.defaultParams, ctx).light;
     expect(second).not.toBe(first);
+  });
+});
+
+describe("captureWithProbeHidden", () => {
+  it("hides the probe for the render and puts it back straight after", () => {
+    const probe = new THREE.LightProbe();
+    let visibleDuringRender: boolean | null = null;
+
+    captureWithProbeHidden(probe, () => {
+      visibleDuringRender = probe.visible;
+    });
+
+    // Hidden while the six faces are photographed, so the probe cannot light
+    // its own capture and its icon cannot fill every face...
+    expect(visibleDuringRender).toBe(false);
+    // ...and lit again immediately. Holding this across the GPU readback left
+    // a probe re-baking every frame dark for most of them.
+    expect(probe.visible).toBe(true);
+  });
+
+  it("puts the probe back even when the render throws", () => {
+    const probe = new THREE.LightProbe();
+    expect(() =>
+      captureWithProbeHidden(probe, () => {
+        throw new Error("context lost");
+      }),
+    ).toThrow("context lost");
+    expect(probe.visible).toBe(true);
+  });
+
+  it("respects a probe that was already hidden", () => {
+    const probe = new THREE.LightProbe();
+    probe.visible = false;
+    captureWithProbeHidden(probe, () => {});
+    expect(probe.visible).toBe(false);
   });
 });

@@ -105,6 +105,30 @@ export function bakeSignature(
   return [position.toArray().join(","), resolution, near, far, sceneChildCount].join("|");
 }
 
+/**
+ * Runs `render` with the probe hidden, then puts it back.
+ *
+ * A probe must not photograph itself: its icon sits exactly at the capture
+ * point and would fill every face, and its own light would feed back,
+ * brightening each successive bake. Hiding it covers both — three skips
+ * invisible objects when it gathers lights, so the light and its icon go
+ * together.
+ *
+ * The window is deliberately only the render. Holding it across the readback
+ * that follows — which just reads a texture already on the GPU — left the
+ * probe dark for however many frames that await spanned, so a probe set to
+ * re-bake every frame spent most of its life contributing nothing.
+ */
+export function captureWithProbeHidden(probe: THREE.Object3D, render: () => void): void {
+  const wasVisible = probe.visible;
+  probe.visible = false;
+  try {
+    render();
+  } finally {
+    probe.visible = wasVisible;
+  }
+}
+
 /** Light Probe node — nine-coefficient ambient lighting sampled from the scene at a point. */
 export const LIGHT_PROBE_NODE: NodeDefinition = {
   type: "light/probe",
@@ -178,26 +202,25 @@ export const LIGHT_PROBE_NODE: NodeDefinition = {
     camera.updateMatrixWorld(true);
 
     state.baking = true;
+    try {
+      captureWithProbeHidden(probe, () => camera.update(renderer, scene));
+    } catch (err) {
+      console.error("Light Probe: capture failed", err);
+      state.baking = false;
+      return { light: probe };
+    }
+
     void (async () => {
-      // The probe must not photograph itself: its icon sits exactly at the
-      // capture point and would fill every face, and its own contribution
-      // would feed back, brightening each successive bake. Hiding the probe
-      // covers both at once — three skips invisible objects when it gathers
-      // lights, so this drops the light and its icon together.
-      const wasVisible = probe.visible;
-      probe.visible = false;
       try {
-        camera.update(renderer, scene);
         const baked = await LightProbeGenerator.fromCubeRenderTarget(renderer, target);
         probe.sh.copy(baked.sh);
         state.bakedSignature = signature;
       } catch (err) {
-        console.error("Light Probe: capture failed", err);
+        console.error("Light Probe: readback failed", err);
       } finally {
         // try/finally around the await rather than a .finally() on a chain:
         // this flag gates every later frame, so a path that skipped clearing
         // it would wedge the probe on whatever it first captured, forever.
-        probe.visible = wasVisible;
         state.baking = false;
       }
     })();
