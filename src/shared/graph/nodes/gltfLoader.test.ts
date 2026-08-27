@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it, vi } from "vitest";
 import { EvalContext, NodeInstance } from "../types";
-import { OBJECT_GLTF_NODE } from "./gltfLoader";
+import { EXPLODE_GLTF_ACTION, OBJECT_GLTF_NODE, explodeGltfToMeshData } from "./gltfLoader";
 import { evaluateGraph } from "../evaluate";
 import { DEFAULT_REGISTRY } from "./index";
 
@@ -101,6 +101,90 @@ describe("OBJECT_GLTF_NODE", () => {
     const obj = results.get("gltf-1")?.geometry as THREE.Object3D;
     expect(obj).toBeInstanceOf(THREE.Object3D);
     expect(obj.visible).toBe(false);
+  });
+});
+
+describe("explode into nodes", () => {
+  const NODE_ID = "gltf-explode-1";
+  const DUMMY = { id: NODE_ID, type: "object/gltf", params: OBJECT_GLTF_NODE.defaultParams, position: { x: 0, y: 0 } };
+
+  async function loadTriangle(nodeId: string) {
+    const field = OBJECT_GLTF_NODE.dynamicParamFields?.({ ...DUMMY, id: nodeId }) ?? [];
+    const fileField = field.find((f) => f.id === "filePath") as any;
+    fileField.onLoaded(nodeId, "triangle.glb", buildTriangleGlb());
+    // Not "length === 1": the fallback cube already satisfies that the
+    // instant onLoaded creates the node's state, before parse() has even
+    // resolved. positions.length === 9 (the triangle's own 3 verts) is the
+    // one signal that can't be true until the real async load has landed.
+    await vi.waitFor(() => {
+      expect(explodeGltfToMeshData(nodeId)[0]?.positions.length).toBe(9);
+    });
+  }
+
+  it("returns nothing for a node that never loaded anything", () => {
+    expect(explodeGltfToMeshData("gltf-never-loaded")).toEqual([]);
+  });
+
+  it("extracts one entry per mesh, with real vertex data", async () => {
+    const nodeId = "gltf-explode-basic";
+    OBJECT_GLTF_NODE.evaluate({}, OBJECT_GLTF_NODE.defaultParams, { ...CTX, nodeId });
+    await loadTriangle(nodeId);
+
+    const [mesh] = explodeGltfToMeshData(nodeId);
+    // The fixture triangle: 3 vertices, non-indexed, no UVs supplied.
+    expect(mesh.positions).toHaveLength(9);
+    expect(mesh.index).toBeNull();
+    expect(mesh.uvs).toEqual([]);
+  });
+
+  it("reads through to three's own implicit default material when a primitive names none", async () => {
+    // glTF's own spec mandates a default material — metallicFactor: 1,
+    // roughnessFactor: 1 — for a primitive naming none, and GLTFLoader
+    // assigns it rather than leaving `.material` unset. So this exercises
+    // the `std` branch, not the `undefined` fallback below it — worth
+    // pinning explicitly, since it means that fallback is for a THREE.Mesh
+    // built some other way, not a bare glTF.
+    const nodeId = "gltf-explode-nomat";
+    await loadTriangle(nodeId);
+    const [mesh] = explodeGltfToMeshData(nodeId);
+    expect(mesh.color).toBe(0xffffff);
+    expect(mesh.roughness).toBe(1);
+    expect(mesh.metalness).toBe(1);
+    expect(mesh.opacity).toBe(1);
+    expect(mesh.emissive).toBe(0x000000);
+  });
+
+  it("bakes the node's own pose into the vertices, so the exploded copy needs no parent transform", async () => {
+    const nodeId = "gltf-explode-posed";
+    await loadTriangle(nodeId);
+
+    const atOrigin = explodeGltfToMeshData(nodeId)[0].positions;
+
+    OBJECT_GLTF_NODE.evaluate(
+      {},
+      { ...OBJECT_GLTF_NODE.defaultParams, location: new THREE.Vector3(5, 0, 0) },
+      { ...CTX, nodeId },
+    );
+    const moved = explodeGltfToMeshData(nodeId)[0].positions;
+
+    // Every baked X coordinate shifted by exactly the Location offset.
+    for (let i = 0; i < atOrigin.length; i += 3) {
+      expect(moved[i]).toBeCloseTo(atOrigin[i] + 5);
+    }
+  });
+
+  it("offers the Explode button only once a model has actually loaded", async () => {
+    const nodeId = "gltf-explode-button";
+    const before = OBJECT_GLTF_NODE.dynamicParamFields?.({ ...DUMMY, id: nodeId }) ?? [];
+    expect(before.find((f) => f.id === "explodeButton")).toBeUndefined();
+
+    await loadTriangle(nodeId);
+
+    const after = OBJECT_GLTF_NODE.dynamicParamFields?.({ ...DUMMY, id: nodeId }) ?? [];
+    const button = after.find((f) => f.id === "explodeButton") as any;
+    expect(button).toBeDefined();
+    expect(button.action).toBe(EXPLODE_GLTF_ACTION);
+    expect(button.label).toContain("1");
   });
 });
 

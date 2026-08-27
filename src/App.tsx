@@ -4,6 +4,7 @@ import { CAMERA_FLY_TO_NODE, CAMERA_NODE } from "./shared/graph/nodes/camera";
 import { DEFAULT_REGISTRY } from "./shared/graph/nodes";
 import { toBoolean } from "./shared/graph/sockets";
 import { BAKE_INSTANCES_ACTION, bakeInstancesToGeometryData } from "./shared/graph/nodes/particleInstances";
+import { EXPLODE_GLTF_ACTION, explodeGltfToMeshData } from "./shared/graph/nodes/gltfLoader";
 import { TOGGLE_POINTS_KEYFRAME_ACTION } from "./shared/graph/nodes/curve";
 import { RESEED_MESH_POINTS_ACTION } from "./shared/graph/nodes/editMeshPoints";
 import { extractPointsFromMesh } from "./shared/graph/nodes/pointsGeometry";
@@ -929,6 +930,46 @@ function MainEditor() {
         const extracted = extractPointsFromMesh(basisObj, nodeId, "Edit Mesh Points");
         if (!extracted) return;
         onParamChange("pointsList", extracted.points, nodeId);
+        return;
+      }
+      if (action === EXPLODE_GLTF_ACTION) {
+        const meshes = explodeGltfToMeshData(nodeId);
+        if (meshes.length === 0) {
+          console.warn("glTF Model: nothing to explode yet — load a model first.");
+          return;
+        }
+        setGraphWithHistory((prevGraph) => {
+          const source = prevGraph.nodes.find((n) => n.id === nodeId);
+          const baseX = (source?.position.x ?? 300) + 340;
+          const baseY = source?.position.y ?? 200;
+          // A grid rather than a single column: a real model can explode into
+          // dozens of pieces, and a mile-long vertical strip is unnavigable.
+          const COLUMNS = 4;
+          const SPACING_X = 260;
+          const SPACING_Y = 200;
+          const newNodes = meshes.map((mesh, i) => ({
+            id: randomId(),
+            type: OBJECT_FROZEN_NODE.type,
+            params: {
+              ...cloneParams(OBJECT_FROZEN_NODE.defaultParams),
+              positions: mesh.positions,
+              normals: mesh.normals,
+              uvs: mesh.uvs,
+              index: mesh.index,
+              color: new THREE.Color(mesh.color),
+              roughness: mesh.roughness,
+              metalness: mesh.metalness,
+              opacity: mesh.opacity,
+              emissive: new THREE.Color(mesh.emissive),
+              emissiveIntensity: mesh.emissiveIntensity,
+            },
+            position: {
+              x: baseX + (i % COLUMNS) * SPACING_X,
+              y: baseY + Math.floor(i / COLUMNS) * SPACING_Y,
+            },
+          }));
+          return { ...prevGraph, nodes: [...prevGraph.nodes, ...newNodes] };
+        }, `explode:${nodeId}`);
         return;
       }
       if (action !== BAKE_INSTANCES_ACTION) return;

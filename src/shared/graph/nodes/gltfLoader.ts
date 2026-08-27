@@ -254,11 +254,88 @@ function describeLoadFailure(err: unknown): string {
   return message;
 }
 
+/** Action id the Explode button sends up to App.tsx's onAction — see explodeGltfToMeshData. */
+export const EXPLODE_GLTF_ACTION = "object/gltf-explode-to-nodes";
+
+/**
+ * One mesh out of a loaded glTF, flattened to the same plain, JSON-serializable
+ * shape "object/frozen" already accepts from Particle Render's Bake button —
+ * so the result is a real graph node with no tie back to this one or the
+ * loaded model.
+ *
+ * Vertices are baked in *world* space (the mesh's full matrixWorld, which
+ * already includes this node's own Location/Rotation/Scale/Pivot) rather than
+ * kept relative to the glTF's own hierarchy, so every new node comes out at
+ * identity pose and already sits exactly where the piece appeared on screen —
+ * no parent chain to reconstruct. The tradeoff is the same one Bake to Mesh
+ * already accepts: the new nodes are independent copies, not tied to the
+ * source, so moving or re-loading the glTF node afterward doesn't move them.
+ *
+ * Scoped to geometry and PBR *scalar* material properties (color, roughness,
+ * metalness, opacity, emissive) — a glTF material's texture maps are live
+ * THREE.Texture objects with no backing graph node to hand them to, so a
+ * textured model explodes with its shape and base tint intact but its maps
+ * dropped. Untextured / vertex-colored models come through complete.
+ */
+export interface ExplodedGltfMesh {
+  positions: number[];
+  normals: number[];
+  uvs: number[];
+  index: number[] | null;
+  color: number;
+  roughness: number;
+  metalness: number;
+  opacity: number;
+  emissive: number;
+  emissiveIntensity: number;
+}
+
+export function explodeGltfToMeshData(nodeId: string): ExplodedGltfMesh[] {
+  const state = gltfStateCache.get(nodeId);
+  if (!state) return [];
+  state.group.updateMatrixWorld(true);
+
+  const out: ExplodedGltfMesh[] = [];
+  state.group.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    const source = child.geometry;
+    if (!source?.getAttribute("position")?.count) return;
+
+    const baked = source.clone();
+    baked.applyMatrix4(child.matrixWorld); // also rotates normals correctly (non-uniform scale included)
+
+    const position = baked.getAttribute("position");
+    const normal = baked.getAttribute("normal");
+    const uv = baked.getAttribute("uv");
+    const index = baked.getIndex();
+
+    const material = Array.isArray(child.material) ? child.material[0] : child.material;
+    const std = material as THREE.MeshStandardMaterial | undefined;
+
+    out.push({
+      positions: Array.from(position.array as ArrayLike<number>),
+      normals: normal ? Array.from(normal.array as ArrayLike<number>) : [],
+      uvs: uv ? Array.from(uv.array as ArrayLike<number>) : [],
+      index: index ? Array.from(index.array as ArrayLike<number>) : null,
+      color: std?.color?.getHex() ?? 0xffffff,
+      roughness: std?.roughness ?? 0.5,
+      metalness: std?.metalness ?? 0,
+      opacity: std?.opacity ?? 1,
+      emissive: std?.emissive?.getHex() ?? 0x000000,
+      emissiveIntensity: std?.emissiveIntensity ?? 1,
+    });
+    baked.dispose();
+  });
+  return out;
+}
+
 interface GltfState {
   group: THREE.Group;
   lastPath?: string;
   /** Why the last pick failed, surfaced on the file field's own label. */
   loadError?: string;
+  /** Real meshes in the last successfully loaded model — undefined until one loads, which is what gates the Explode button. */
+  meshCount?: number;
 }
 
 const gltfStateCache = createNodeCache<GltfState>();
@@ -355,6 +432,7 @@ export const OBJECT_GLTF_NODE: NodeDefinition = {
         state.loadError = undefined;
         if (!path) {
           state.group.clear();
+          state.meshCount = undefined;
           return;
         }
 
@@ -378,16 +456,19 @@ export const OBJECT_GLTF_NODE: NodeDefinition = {
           }
 
           const adopt = (gltf: { scene: THREE.Group }) => {
+            let meshCount = 0;
             gltf.scene.traverse((child) => {
               if (child instanceof THREE.Mesh) {
                 child.castShadow = true;
                 child.receiveShadow = true;
                 child.userData.nodeId = nodeId;
+                meshCount++;
               }
             });
             state.group.clear();
             state.group.add(gltf.scene);
             state.loadError = undefined;
+            state.meshCount = meshCount;
           };
 
           // A .gltf is only the JSON half of a model: its geometry and images
@@ -411,6 +492,16 @@ export const OBJECT_GLTF_NODE: NodeDefinition = {
         }
       },
     },
+    ...(gltfStateCache.get(instance.id)?.meshCount
+      ? [
+          {
+            id: "explodeButton",
+            label: `Explode into ${gltfStateCache.get(instance.id)!.meshCount} Nodes`,
+            kind: "button" as const,
+            action: EXPLODE_GLTF_ACTION,
+          },
+        ]
+      : []),
     { id: "visible", label: "Visible", kind: "boolean", group: "Transform" },
     { id: "location", label: "Location", kind: "vector" },
     { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true },
