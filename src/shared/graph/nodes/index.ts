@@ -24,6 +24,7 @@ import { INSPECTOR_NODE } from "./inspector";
 import { AUDIO_PEAK_DETECTOR_NODE, AUDIO_PLAYER_NODE, AUDIO_SPECTRUM_NODE, AUDIO_SYNTH_NODE, MICROPHONE_INPUT_NODE } from "./sound";
 import { RANDOM_LIST_NODE, RANDOM_MATRIX_NODE, RANDOM_VALUE_NODE, RANDOM_VECTOR_NODE } from "./random";
 import { KEYBOARD_NODE } from "./keyboard";
+import { MOUSE_NODE } from "./mouse";
 import { ARRAY_NODE } from "./array";
 import { INSTANCE_POSITIONS_NODE } from "./instancePositions";
 import { LIST_GROUP_NODE } from "./listGroup";
@@ -201,6 +202,7 @@ export const STARTER_NODES = [
   GATE_NODE,
   LOGIC_BRIDGE_NODE,
   KEYBOARD_NODE,
+  MOUSE_NODE,
   OSCILLATOR_NODE,
   ENVELOPE_NODE,
   PULSE_NODE,

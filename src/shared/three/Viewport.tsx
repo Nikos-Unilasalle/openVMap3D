@@ -46,6 +46,7 @@ import {
   GIZMO_Z_COLOR,
 } from "./viewportScenery";
 import { disposeObject3D } from "../graph/nodeCaches";
+import { registerPointerViewport } from "../graph/pointerStore";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
@@ -652,6 +653,15 @@ export function Viewport({
       ? orthographicCamera
       : perspectiveCamera;
     let camera: THREE.PerspectiveCamera | THREE.OrthographicCamera = activeCamera;
+
+    // Publish this pane as a pointer target, so the Mouse node can unproject
+    // the cursor through the camera actually rendering it — the graph's
+    // Camera-node pose is null whenever the pane is being flown by this
+    // editor camera, which is most of the time. See pointerStore.ts.
+    const unregisterPointerViewport = registerPointerViewport({
+      element: renderer.domElement,
+      getCamera: () => camera,
+    });
 
     const composer = new EffectComposer(renderer);
     const renderPass = new RenderPass(scene, activeCamera);
@@ -2814,6 +2824,7 @@ export function Viewport({
     return () => {
       cancelAnimationFrame(frameId);
       disposeEvalSession(sessionIdRef.current);
+      unregisterPointerViewport();
       resizeObserver.disconnect();
       if (!outputMode) {
         renderer.domElement.removeEventListener("pointerdown", onCanvasPointerDown, { capture: true });
