@@ -954,23 +954,37 @@ def _():
 
 @demo("transform_matrix")
 def _():
-    # A moon around a planet: Parent multiplies the child's matrix by the
-    # parent's, which is the whole point of the node — the moon inherits the
-    # planet's spin without knowing anything about it.
+    # Reworked by hand in the app, then ported back here.
+    #
+    # Parent multiplies one matrix by another, so the moon inherits the
+    # planet's motion without knowing anything about it. Matrix Math then
+    # blends that parented pose against a second, tilted orbit — which is
+    # what makes the moon's path read as an arc rather than a flat circle.
     n = [
-        node("spin", "transform/orbit", -1400, 60, radius=0, speed=40, height=1.2),
-        node("planet", "object/sphere", -1400, 300, scale=v3(1.1, 1.1, 1.1), color=MID, roughness=0.3, metalness=0.4),
-        node("offset", "transform", -1120, 460, location=v3(1.6, 0, 0), scale=v3(0.34, 0.34, 0.34)),
-        node("moon", "object/sphere", -1400, 620, color=PINK, roughness=0.25, metalness=0.45),
-        node("attach", "transform/parent", -820, 500),
-        node("place", "structure/geometry-transform", -540, 620),
+        node("clock", "time", -1940, 398),
+        node("spin", "transform/orbit", -1643, 142, radius=2.125, speed=40, height=1.125, tilt=0.24434609527920614),
+        node("planet", "object/sphere", -1194, 47, scale=v3(1.1, 1.1, 1.1), color=0x8B5CF6, roughness=0.3, metalness=0.4),
+        node("moon", "object/sphere", -1198, 308, location=v3(0, 1.575, 0), scale=v3(0.6, 0.6, 0.6),
+             rotation=v3(0, 0.017453292519943295, 0), color=0xEC4899, roughness=0.25, metalness=0.45),
+        node("attach", "transform/parent", -806, 196),
+        node("swing", "transform/orbit", -835, 551, radius=1.05, speed=100, height=-0.65,
+             tilt=0.6632251157578453, faceTarget=1),
+        node("blend", "matrix/math", -495, 374, op="mix", factor=2.613),
+        node("place", "structure/geometry-transform", -206, 265, rotZ=0, scaleY=1),
     ]
     c = [
+        wire("clock", "seconds", "spin", "time"),
+        wire("clock", "seconds", "swing", "time"),
         wire("spin", "matrix", "planet", "matrix"),
-        wire("spin", "matrix", "attach", "parent"),
-        wire("offset", "matrix", "attach", "child"),
+        wire("spin", "matrix", "swing", "target"),
+        # Note the direction: the *moon's* own matrix is the parent here, the
+        # planet's the child — this is what the reworked version settled on.
+        wire("moon", "matrix", "attach", "parent"),
+        wire("planet", "matrix", "attach", "child"),
+        wire("attach", "matrix", "blend", "a"),
+        wire("swing", "matrix", "blend", "b"),
         wire("moon", "geometry", "place", "geometry"),
-        wire("attach", "matrix", "place", "matrix"),
+        wire("blend", "out", "place", "matrix"),
     ]
     return n, c
 

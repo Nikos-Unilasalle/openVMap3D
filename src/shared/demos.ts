@@ -81,8 +81,8 @@ export const DEMO_CATALOG: DemoCategory[] = [
     demos: [
       {
         file: "demo_transform_matrix.tsuji",
-        label: "Parent & Pivot",
-        description: "A moon inheriting a planet's spin through Parent.",
+        label: "Parent & Matrix Mix",
+        description: "A moon inheriting a planet's orbit, blended with a tilted one.",
       },
       {
         file: "demo_math_vectors.tsuji",

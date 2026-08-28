@@ -207,21 +207,22 @@
           "id": "spin",
           "type": "transform/orbit",
           "position": {
-            "x": -1400,
-            "y": 60
+            "x": -1643,
+            "y": 142
           },
           "params": {
-            "radius": 0,
+            "radius": 2.125,
             "speed": 40,
-            "height": 1.2
+            "height": 1.125,
+            "tilt": 0.24434609527920614
           }
         },
         {
           "id": "planet",
           "type": "object/sphere",
           "position": {
-            "x": -1400,
-            "y": 300
+            "x": -1194,
+            "y": 47
           },
           "params": {
             "scale": {
@@ -235,44 +236,39 @@
           }
         },
         {
-          "id": "offset",
-          "type": "transform",
-          "position": {
-            "x": -1120,
-            "y": 460
-          },
-          "params": {
-            "location": {
-              "x": 1.6,
-              "y": 0,
-              "z": 0
-            },
-            "scale": {
-              "x": 0.34,
-              "y": 0.34,
-              "z": 0.34
-            }
-          }
-        },
-        {
           "id": "moon",
           "type": "object/sphere",
           "position": {
-            "x": -1400,
-            "y": 620
+            "x": -1198,
+            "y": 308
           },
           "params": {
             "color": 15485081,
             "roughness": 0.25,
-            "metalness": 0.45
+            "metalness": 0.45,
+            "location": {
+              "x": 0,
+              "y": 1.575,
+              "z": 0
+            },
+            "scale": {
+              "x": 0.6,
+              "y": 0.6,
+              "z": 0.6
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0.017453292519943295,
+              "z": 0
+            }
           }
         },
         {
           "id": "attach",
           "type": "transform/parent",
           "position": {
-            "x": -820,
-            "y": 500
+            "x": -806,
+            "y": 196
           },
           "params": {}
         },
@@ -280,10 +276,49 @@
           "id": "place",
           "type": "structure/geometry-transform",
           "position": {
-            "x": -540,
-            "y": 620
+            "x": -206,
+            "y": 265
+          },
+          "params": {
+            "rotZ": 0,
+            "scaleY": 1
+          }
+        },
+        {
+          "id": "b4d71093-1702-48f9-a76c-fbf24bf41cc6",
+          "type": "time",
+          "position": {
+            "x": -1940,
+            "y": 398
           },
           "params": {}
+        },
+        {
+          "id": "0199ae1a-9bae-4ba5-ab8d-eb3b17a00749",
+          "type": "transform/orbit",
+          "position": {
+            "x": -835,
+            "y": 551
+          },
+          "params": {
+            "radius": 1.05,
+            "speed": 100,
+            "height": -0.65,
+            "tilt": 0.6632251157578453,
+            "faceTarget": 1
+          }
+        },
+        {
+          "id": "c585d986-2165-4a00-bf9b-385be09f80ad",
+          "type": "matrix/math",
+          "position": {
+            "x": -495,
+            "y": 374
+          },
+          "params": {
+            "op": "mix",
+            "factor": 2.613
+          }
         }
       ],
       "connections": [
@@ -309,20 +344,6 @@
           "toSocket": "matrix"
         },
         {
-          "id": "spin.matrix->attach.parent",
-          "fromNode": "spin",
-          "fromSocket": "matrix",
-          "toNode": "attach",
-          "toSocket": "parent"
-        },
-        {
-          "id": "offset.matrix->attach.child",
-          "fromNode": "offset",
-          "fromSocket": "matrix",
-          "toNode": "attach",
-          "toSocket": "child"
-        },
-        {
           "id": "moon.geometry->place.geometry",
           "fromNode": "moon",
           "fromSocket": "geometry",
@@ -330,11 +351,60 @@
           "toSocket": "geometry"
         },
         {
-          "id": "attach.matrix->place.matrix",
+          "id": "b4d71093-1702-48f9-a76c-fbf24bf41cc6.seconds->spin.time",
+          "fromNode": "b4d71093-1702-48f9-a76c-fbf24bf41cc6",
+          "fromSocket": "seconds",
+          "toNode": "spin",
+          "toSocket": "time"
+        },
+        {
+          "id": "planet.matrix->attach.child",
+          "fromNode": "planet",
+          "fromSocket": "matrix",
+          "toNode": "attach",
+          "toSocket": "child"
+        },
+        {
+          "id": "moon.matrix->attach.parent",
+          "fromNode": "moon",
+          "fromSocket": "matrix",
+          "toNode": "attach",
+          "toSocket": "parent"
+        },
+        {
+          "id": "attach.matrix->c585d986-2165-4a00-bf9b-385be09f80ad.a",
           "fromNode": "attach",
           "fromSocket": "matrix",
+          "toNode": "c585d986-2165-4a00-bf9b-385be09f80ad",
+          "toSocket": "a"
+        },
+        {
+          "id": "c585d986-2165-4a00-bf9b-385be09f80ad.out->place.matrix",
+          "fromNode": "c585d986-2165-4a00-bf9b-385be09f80ad",
+          "fromSocket": "out",
           "toNode": "place",
           "toSocket": "matrix"
+        },
+        {
+          "id": "0199ae1a-9bae-4ba5-ab8d-eb3b17a00749.matrix->c585d986-2165-4a00-bf9b-385be09f80ad.b",
+          "fromNode": "0199ae1a-9bae-4ba5-ab8d-eb3b17a00749",
+          "fromSocket": "matrix",
+          "toNode": "c585d986-2165-4a00-bf9b-385be09f80ad",
+          "toSocket": "b"
+        },
+        {
+          "id": "spin.matrix->0199ae1a-9bae-4ba5-ab8d-eb3b17a00749.target",
+          "fromNode": "spin",
+          "fromSocket": "matrix",
+          "toNode": "0199ae1a-9bae-4ba5-ab8d-eb3b17a00749",
+          "toSocket": "target"
+        },
+        {
+          "id": "b4d71093-1702-48f9-a76c-fbf24bf41cc6.seconds->0199ae1a-9bae-4ba5-ab8d-eb3b17a00749.time",
+          "fromNode": "b4d71093-1702-48f9-a76c-fbf24bf41cc6",
+          "fromSocket": "seconds",
+          "toNode": "0199ae1a-9bae-4ba5-ab8d-eb3b17a00749",
+          "toSocket": "time"
         }
       ],
       "keyframes": {},
