@@ -326,15 +326,6 @@ export const TopBar: React.FC<TopBarProps> = ({
           {isOutputOpen ? "Close Output" : "Output"}
         </button>
 
-        {/* DEMOS — small categorized graphs teaching one node/combination each */}
-        <DemosMenu
-          onLoadDemo={(demoProject, filename) => {
-            onLoadProject(demoProject, filename);
-            showToast(`"${filename}" chargé !`);
-          }}
-          onError={(message) => showToast(message, true)}
-        />
-
         {/* EXPORT VIDEO — frame-by-frame render of the whole timeline to MP4/WebM */}
         {onExportVideo && (
           <button
@@ -350,6 +341,15 @@ export const TopBar: React.FC<TopBarProps> = ({
             {isExporting ? `Export… ${Math.round(exportProgress * 100)}%` : "Export Video"}
           </button>
         )}
+
+        {/* DEMOS — small categorized graphs teaching one node/combination each */}
+        <DemosMenu
+          onLoadDemo={(demoProject, filename) => {
+            onLoadProject(demoProject, filename);
+            showToast(`"${filename}" chargé !`);
+          }}
+          onError={(message) => showToast(message, true)}
+        />
 
         {isEditingFilename ? (
           <input
