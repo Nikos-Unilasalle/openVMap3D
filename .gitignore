@@ -23,3 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 .claude
+
+# Python bytecode from tools/
+__pycache__/
+*.pyc

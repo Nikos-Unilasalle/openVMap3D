@@ -676,34 +676,53 @@ export const GEOMETRY_TRANSFORM_NODE: NodeDefinition = {
     if (inputs.matrix instanceof THREE.Matrix4) {
       transformMat = inputs.matrix.clone();
     } else {
+      /**
+       * Whether a socket actually has a wire in it.
+       *
+       * The per-axis sockets used to win over the vector ones unconditionally
+       * — `inputs.posX !== undefined` — which is always true: the evaluator
+       * fills every unconnected socket from `defaultParams`, and posX/posY/
+       * posZ default to 0. Wiring anything into Location therefore did
+       * nothing at all, the axis zeros silently overwrote it. Same for
+       * Rotation and Scale.
+       *
+       * Precedence now: a wired axis beats a wired vector, a wired vector
+       * beats the panel's axis numbers, and with nothing wired the panel
+       * still wins — so graphs built entirely through the panel behave
+       * exactly as before.
+       */
+      const isWired = (id: string): boolean =>
+        ctx.connectedInputs ? ctx.connectedInputs.has(id) : inputs[id] !== undefined;
+
+      const axis = (componentId: string, vectorId: string, base: number): number => {
+        if (isWired(componentId)) {
+          const wiredValue = Number(inputs[componentId]);
+          return Number.isFinite(wiredValue) ? wiredValue : base;
+        }
+        if (isWired(vectorId)) return base;
+        const param = Number(params[componentId]);
+        return params[componentId] !== undefined && Number.isFinite(param) ? param : base;
+      };
+
       const baseLoc = asVector(inputs.location, asVector(params.location, new THREE.Vector3(0, 0, 0)));
-      const locX = inputs.posX !== undefined ? Number(inputs.posX) : (params.posX !== undefined ? Number(params.posX) : baseLoc.x);
-      const locY = inputs.posY !== undefined ? Number(inputs.posY) : (params.posY !== undefined ? Number(params.posY) : baseLoc.y);
-      const locZ = inputs.posZ !== undefined ? Number(inputs.posZ) : (params.posZ !== undefined ? Number(params.posZ) : baseLoc.z);
       const location = new THREE.Vector3(
-        Number.isFinite(locX) ? locX : baseLoc.x,
-        Number.isFinite(locY) ? locY : baseLoc.y,
-        Number.isFinite(locZ) ? locZ : baseLoc.z,
+        axis("posX", "location", baseLoc.x),
+        axis("posY", "location", baseLoc.y),
+        axis("posZ", "location", baseLoc.z),
       );
 
       const baseRot = asVector(inputs.rotation, asVector(params.rotation, new THREE.Vector3(0, 0, 0)));
-      const rx = inputs.rotX !== undefined ? Number(inputs.rotX) : (params.rotX !== undefined ? Number(params.rotX) : baseRot.x);
-      const ry = inputs.rotY !== undefined ? Number(inputs.rotY) : (params.rotY !== undefined ? Number(params.rotY) : baseRot.y);
-      const rz = inputs.rotZ !== undefined ? Number(inputs.rotZ) : (params.rotZ !== undefined ? Number(params.rotZ) : baseRot.z);
       const rotation = new THREE.Vector3(
-        Number.isFinite(rx) ? rx : baseRot.x,
-        Number.isFinite(ry) ? ry : baseRot.y,
-        Number.isFinite(rz) ? rz : baseRot.z,
+        axis("rotX", "rotation", baseRot.x),
+        axis("rotY", "rotation", baseRot.y),
+        axis("rotZ", "rotation", baseRot.z),
       );
 
       const baseScale = asVector(inputs.scale, asVector(params.scale, new THREE.Vector3(1, 1, 1)));
-      const sx = inputs.scaleX !== undefined ? Number(inputs.scaleX) : (params.scaleX !== undefined ? Number(params.scaleX) : baseScale.x);
-      const sy = inputs.scaleY !== undefined ? Number(inputs.scaleY) : (params.scaleY !== undefined ? Number(params.scaleY) : baseScale.y);
-      const sz = inputs.scaleZ !== undefined ? Number(inputs.scaleZ) : (params.scaleZ !== undefined ? Number(params.scaleZ) : baseScale.z);
       const scale = new THREE.Vector3(
-        Number.isFinite(sx) ? sx : baseScale.x,
-        Number.isFinite(sy) ? sy : baseScale.y,
-        Number.isFinite(sz) ? sz : baseScale.z,
+        axis("scaleX", "scale", baseScale.x),
+        axis("scaleY", "scale", baseScale.y),
+        axis("scaleZ", "scale", baseScale.z),
       );
 
       const euler = new THREE.Euler(

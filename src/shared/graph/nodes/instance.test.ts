@@ -644,3 +644,48 @@ describe("SET_INSTANCE_TRANSFORM_NODE pivot", () => {
     expect(SET_INSTANCE_TRANSFORM_NODE.defaultParams.pivot).toBe("shared");
   });
 });
+
+describe("GEOMETRY_TRANSFORM_NODE vector inputs", () => {
+  const box = () => new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+  const worldPos = (res: Record<string, unknown>) => {
+    const group = res.geometry as THREE.Group;
+    group.updateWorldMatrix(true, true);
+    let found = new THREE.Vector3();
+    group.traverse((c) => {
+      if ((c as THREE.Mesh).isMesh) found = new THREE.Vector3().setFromMatrixPosition(c.matrixWorld);
+    });
+    return found;
+  };
+
+  it("honours a wired Location vector", () => {
+    // Regression: posX/posY/posZ default to 0, and the evaluator fills every
+    // unconnected socket from defaultParams — so the axis sockets used to
+    // read as "provided" always and silently zeroed any wired Location.
+    const res = GEOMETRY_TRANSFORM_NODE.evaluate(
+      { geometry: box(), location: new THREE.Vector3(0.5, 1.8, -2), posX: 0, posY: 0, posZ: 0 },
+      { ...GEOMETRY_TRANSFORM_NODE.defaultParams },
+      { ...CTX, connectedInputs: new Set(["geometry", "location"]) },
+    );
+    const p = worldPos(res);
+    expect([p.x, p.y, p.z]).toEqual([0.5, 1.8, -2]);
+  });
+
+  it("lets a wired axis override the wired vector", () => {
+    const res = GEOMETRY_TRANSFORM_NODE.evaluate(
+      { geometry: box(), location: new THREE.Vector3(0.5, 1.8, -2), posY: 9 },
+      { ...GEOMETRY_TRANSFORM_NODE.defaultParams },
+      { ...CTX, connectedInputs: new Set(["geometry", "location", "posY"]) },
+    );
+    const p = worldPos(res);
+    expect([p.x, p.y, p.z]).toEqual([0.5, 9, -2]);
+  });
+
+  it("still uses the panel's axis numbers when nothing is wired", () => {
+    const res = GEOMETRY_TRANSFORM_NODE.evaluate(
+      { geometry: box(), posX: 3, posY: 0, posZ: 0 },
+      { ...GEOMETRY_TRANSFORM_NODE.defaultParams, posX: 3 },
+      { ...CTX, connectedInputs: new Set(["geometry"]) },
+    );
+    expect(worldPos(res).x).toBe(3);
+  });
+});
