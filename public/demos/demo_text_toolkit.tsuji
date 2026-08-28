@@ -204,75 +204,77 @@
           }
         },
         {
-          "id": "path",
-          "type": "curve/primitive",
+          "id": "source",
+          "type": "text/constant",
           "position": {
-            "x": -1200,
-            "y": 120
+            "x": -1400,
+            "y": 60
           },
           "params": {
-            "primitiveType": "helix",
-            "radius": 1.8,
-            "height": 2.6,
-            "turns": 3,
-            "location": {
-              "x": 0,
-              "y": 0.4,
-              "z": 0
-            }
+            "text": "  tsuji node graph  "
           }
         },
         {
-          "id": "line",
-          "type": "curve/to_line",
+          "id": "clean",
+          "type": "text/trim",
           "position": {
-            "x": -940,
-            "y": 320
-          },
-          "params": {
-            "linewidth": 2.5,
-            "color": 440020
-          }
-        },
-        {
-          "id": "t",
-          "type": "animation/oscillator",
-          "position": {
-            "x": -1200,
-            "y": 380
-          },
-          "params": {
-            "type": "saw",
-            "frequency": 0.2,
-            "amplitude": 0.5,
-            "offset": 0.5
-          }
-        },
-        {
-          "id": "rider",
-          "type": "curve/sample",
-          "position": {
-            "x": -940,
-            "y": 120
+            "x": -1160,
+            "y": 60
           },
           "params": {}
         },
         {
-          "id": "cone",
-          "type": "object/cone",
+          "id": "shout",
+          "type": "text/case",
           "position": {
-            "x": -700,
-            "y": 120
+            "x": -920,
+            "y": 60
           },
           "params": {
-            "scale": {
-              "x": 0.28,
-              "y": 0.5,
-              "z": 0.28
+            "mode": "uppercase"
+          }
+        },
+        {
+          "id": "swap",
+          "type": "text/replace",
+          "position": {
+            "x": -680,
+            "y": 60
+          },
+          "params": {
+            "search": "NODE",
+            "replace": "\u2022"
+          }
+        },
+        {
+          "id": "size",
+          "type": "text/length",
+          "position": {
+            "x": -680,
+            "y": 300
+          },
+          "params": {}
+        },
+        {
+          "id": "label",
+          "type": "object/text",
+          "position": {
+            "x": -420,
+            "y": 160
+          },
+          "params": {
+            "location": {
+              "x": -2.6,
+              "y": 0.35,
+              "z": 0
             },
-            "color": 15485081,
-            "roughness": 0.25,
-            "metalness": 0.4
+            "fontSize": 0.62,
+            "depth": 0.14,
+            "color": 3718648,
+            "emissive": 3718648,
+            "emissiveIntensity": 0.3,
+            "metalness": 0.4,
+            "roughness": 0.2
           }
         }
       ],
@@ -292,32 +294,39 @@
           "toSocket": "environment"
         },
         {
-          "id": "path.curve->line.curve",
-          "fromNode": "path",
-          "fromSocket": "curve",
-          "toNode": "line",
-          "toSocket": "curve"
+          "id": "source.text->clean.text",
+          "fromNode": "source",
+          "fromSocket": "text",
+          "toNode": "clean",
+          "toSocket": "text"
         },
         {
-          "id": "path.curve->rider.curve",
-          "fromNode": "path",
-          "fromSocket": "curve",
-          "toNode": "rider",
-          "toSocket": "curve"
+          "id": "clean.text->shout.text",
+          "fromNode": "clean",
+          "fromSocket": "text",
+          "toNode": "shout",
+          "toSocket": "text"
         },
         {
-          "id": "t.out->rider.progress",
-          "fromNode": "t",
-          "fromSocket": "out",
-          "toNode": "rider",
-          "toSocket": "progress"
+          "id": "shout.text->swap.text",
+          "fromNode": "shout",
+          "fromSocket": "text",
+          "toNode": "swap",
+          "toSocket": "text"
         },
         {
-          "id": "rider.matrix->cone.matrix",
-          "fromNode": "rider",
-          "fromSocket": "matrix",
-          "toNode": "cone",
-          "toSocket": "matrix"
+          "id": "shout.text->size.text",
+          "fromNode": "shout",
+          "fromSocket": "text",
+          "toNode": "size",
+          "toSocket": "text"
+        },
+        {
+          "id": "swap.text->label.text",
+          "fromNode": "swap",
+          "fromSocket": "text",
+          "toNode": "label",
+          "toSocket": "text"
         }
       ],
       "keyframes": {},

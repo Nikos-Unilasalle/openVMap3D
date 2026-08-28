@@ -204,76 +204,90 @@
           }
         },
         {
-          "id": "path",
-          "type": "curve/primitive",
-          "position": {
-            "x": -1200,
-            "y": 120
-          },
-          "params": {
-            "primitiveType": "helix",
-            "radius": 1.8,
-            "height": 2.6,
-            "turns": 3,
-            "location": {
-              "x": 0,
-              "y": 0.4,
-              "z": 0
-            }
-          }
-        },
-        {
-          "id": "line",
-          "type": "curve/to_line",
-          "position": {
-            "x": -940,
-            "y": 320
-          },
-          "params": {
-            "linewidth": 2.5,
-            "color": 440020
-          }
-        },
-        {
-          "id": "t",
+          "id": "swing",
           "type": "animation/oscillator",
           "position": {
-            "x": -1200,
-            "y": 380
+            "x": -1400,
+            "y": 40
           },
           "params": {
-            "type": "saw",
-            "frequency": 0.2,
-            "amplitude": 0.5,
-            "offset": 0.5
+            "type": "sine",
+            "frequency": 0.35,
+            "amplitude": 2,
+            "offset": 0
           }
         },
         {
-          "id": "rider",
-          "type": "curve/sample",
+          "id": "a",
+          "type": "vector/compose",
           "position": {
-            "x": -940,
-            "y": 120
+            "x": -1160,
+            "y": 40
+          },
+          "params": {
+            "y": 1.2,
+            "z": 0
+          }
+        },
+        {
+          "id": "b",
+          "type": "vector/compose",
+          "position": {
+            "x": -1160,
+            "y": 260
+          },
+          "params": {
+            "x": 0,
+            "y": 0.6,
+            "z": 1.6
+          }
+        },
+        {
+          "id": "sum",
+          "type": "vector/math",
+          "position": {
+            "x": -900,
+            "y": 140
+          },
+          "params": {
+            "op": "add"
+          }
+        },
+        {
+          "id": "parts",
+          "type": "vector/decompose",
+          "position": {
+            "x": -640,
+            "y": 300
           },
           "params": {}
         },
         {
-          "id": "cone",
-          "type": "object/cone",
+          "id": "ball",
+          "type": "object/sphere",
           "position": {
-            "x": -700,
-            "y": 120
+            "x": -900,
+            "y": 420
           },
           "params": {
             "scale": {
-              "x": 0.28,
-              "y": 0.5,
-              "z": 0.28
+              "x": 0.55,
+              "y": 0.55,
+              "z": 0.55
             },
-            "color": 15485081,
+            "color": 3718648,
             "roughness": 0.25,
             "metalness": 0.4
           }
+        },
+        {
+          "id": "place",
+          "type": "structure/geometry-transform",
+          "position": {
+            "x": -380,
+            "y": 420
+          },
+          "params": {}
         }
       ],
       "connections": [
@@ -292,32 +306,46 @@
           "toSocket": "environment"
         },
         {
-          "id": "path.curve->line.curve",
-          "fromNode": "path",
-          "fromSocket": "curve",
-          "toNode": "line",
-          "toSocket": "curve"
-        },
-        {
-          "id": "path.curve->rider.curve",
-          "fromNode": "path",
-          "fromSocket": "curve",
-          "toNode": "rider",
-          "toSocket": "curve"
-        },
-        {
-          "id": "t.out->rider.progress",
-          "fromNode": "t",
+          "id": "swing.out->a.x",
+          "fromNode": "swing",
           "fromSocket": "out",
-          "toNode": "rider",
-          "toSocket": "progress"
+          "toNode": "a",
+          "toSocket": "x"
         },
         {
-          "id": "rider.matrix->cone.matrix",
-          "fromNode": "rider",
-          "fromSocket": "matrix",
-          "toNode": "cone",
-          "toSocket": "matrix"
+          "id": "a.out->sum.a",
+          "fromNode": "a",
+          "fromSocket": "out",
+          "toNode": "sum",
+          "toSocket": "a"
+        },
+        {
+          "id": "b.out->sum.b",
+          "fromNode": "b",
+          "fromSocket": "out",
+          "toNode": "sum",
+          "toSocket": "b"
+        },
+        {
+          "id": "sum.out->parts.vector",
+          "fromNode": "sum",
+          "fromSocket": "out",
+          "toNode": "parts",
+          "toSocket": "vector"
+        },
+        {
+          "id": "ball.geometry->place.geometry",
+          "fromNode": "ball",
+          "fromSocket": "geometry",
+          "toNode": "place",
+          "toSocket": "geometry"
+        },
+        {
+          "id": "sum.out->place.location",
+          "fromNode": "sum",
+          "fromSocket": "out",
+          "toNode": "place",
+          "toSocket": "location"
         }
       ],
       "keyframes": {},

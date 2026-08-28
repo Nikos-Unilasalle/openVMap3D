@@ -204,75 +204,86 @@
           }
         },
         {
-          "id": "path",
-          "type": "curve/primitive",
+          "id": "slab",
+          "type": "object/box",
           "position": {
-            "x": -1200,
-            "y": 120
+            "x": -1280,
+            "y": 60
           },
           "params": {
-            "primitiveType": "helix",
-            "radius": 1.8,
-            "height": 2.6,
-            "turns": 3,
             "location": {
-              "x": 0,
-              "y": 0.4,
+              "x": -1.5,
+              "y": 0.6,
               "z": 0
-            }
+            },
+            "scale": {
+              "x": 1.4,
+              "y": 0.5,
+              "z": 1.4
+            },
+            "color": 3718648,
+            "roughness": 0.3,
+            "metalness": 0.35
           }
         },
         {
-          "id": "line",
-          "type": "curve/to_line",
+          "id": "push",
+          "type": "modifier/extrude",
           "position": {
-            "x": -940,
+            "x": -980,
+            "y": 60
+          },
+          "params": {
+            "distance": 0.7,
+            "selectMode": "normal",
+            "axis": "y"
+          }
+        },
+        {
+          "id": "shell",
+          "type": "object/sphere",
+          "position": {
+            "x": -1280,
             "y": 320
           },
           "params": {
-            "linewidth": 2.5,
-            "color": 440020
-          }
-        },
-        {
-          "id": "t",
-          "type": "animation/oscillator",
-          "position": {
-            "x": -1200,
-            "y": 380
-          },
-          "params": {
-            "type": "saw",
-            "frequency": 0.2,
-            "amplitude": 0.5,
-            "offset": 0.5
-          }
-        },
-        {
-          "id": "rider",
-          "type": "curve/sample",
-          "position": {
-            "x": -940,
-            "y": 120
-          },
-          "params": {}
-        },
-        {
-          "id": "cone",
-          "type": "object/cone",
-          "position": {
-            "x": -700,
-            "y": 120
-          },
-          "params": {
+            "location": {
+              "x": 1.5,
+              "y": 1.1,
+              "z": 0
+            },
             "scale": {
-              "x": 0.28,
-              "y": 0.5,
-              "z": 0.28
+              "x": 1.3,
+              "y": 1.3,
+              "z": 1.3
             },
             "color": 15485081,
-            "roughness": 0.25,
-            "metalness": 0.4
+            "roughness": 0.35,
+            "metalness": 0.3
+          }
+        },
+        {
+          "id": "cut",
+          "type": "modifier/delete-geometry",
+          "position": {
+            "x": -980,
+            "y": 320
+          },
+          "params": {
+            "selectMode": "height",
+            "axis": "y",
+            "threshold": 0
+          }
+        },
+        {
+          "id": "flip",
+          "type": "modifier/invert-normals",
+          "position": {
+            "x": -700,
+            "y": 320
+          },
+          "params": {
+            "mode": "both"
           }
         }
       ],
@@ -292,32 +303,25 @@
           "toSocket": "environment"
         },
         {
-          "id": "path.curve->line.curve",
-          "fromNode": "path",
-          "fromSocket": "curve",
-          "toNode": "line",
-          "toSocket": "curve"
+          "id": "slab.geometry->push.geometry",
+          "fromNode": "slab",
+          "fromSocket": "geometry",
+          "toNode": "push",
+          "toSocket": "geometry"
         },
         {
-          "id": "path.curve->rider.curve",
-          "fromNode": "path",
-          "fromSocket": "curve",
-          "toNode": "rider",
-          "toSocket": "curve"
+          "id": "shell.geometry->cut.geometry",
+          "fromNode": "shell",
+          "fromSocket": "geometry",
+          "toNode": "cut",
+          "toSocket": "geometry"
         },
         {
-          "id": "t.out->rider.progress",
-          "fromNode": "t",
-          "fromSocket": "out",
-          "toNode": "rider",
-          "toSocket": "progress"
-        },
-        {
-          "id": "rider.matrix->cone.matrix",
-          "fromNode": "rider",
-          "fromSocket": "matrix",
-          "toNode": "cone",
-          "toSocket": "matrix"
+          "id": "cut.geometry->flip.geometry",
+          "fromNode": "cut",
+          "fromSocket": "geometry",
+          "toNode": "flip",
+          "toSocket": "geometry"
         }
       ],
       "keyframes": {},

@@ -204,76 +204,86 @@
           }
         },
         {
-          "id": "path",
-          "type": "curve/primitive",
+          "id": "spin",
+          "type": "transform/orbit",
           "position": {
-            "x": -1200,
-            "y": 120
+            "x": -1400,
+            "y": 60
           },
           "params": {
-            "primitiveType": "helix",
-            "radius": 1.8,
-            "height": 2.6,
-            "turns": 3,
+            "radius": 0,
+            "speed": 40,
+            "height": 1.2
+          }
+        },
+        {
+          "id": "planet",
+          "type": "object/sphere",
+          "position": {
+            "x": -1400,
+            "y": 300
+          },
+          "params": {
+            "scale": {
+              "x": 1.1,
+              "y": 1.1,
+              "z": 1.1
+            },
+            "color": 9133302,
+            "roughness": 0.3,
+            "metalness": 0.4
+          }
+        },
+        {
+          "id": "offset",
+          "type": "transform",
+          "position": {
+            "x": -1120,
+            "y": 460
+          },
+          "params": {
             "location": {
-              "x": 0,
-              "y": 0.4,
+              "x": 1.6,
+              "y": 0,
               "z": 0
+            },
+            "scale": {
+              "x": 0.34,
+              "y": 0.34,
+              "z": 0.34
             }
           }
         },
         {
-          "id": "line",
-          "type": "curve/to_line",
+          "id": "moon",
+          "type": "object/sphere",
           "position": {
-            "x": -940,
-            "y": 320
+            "x": -1400,
+            "y": 620
           },
           "params": {
-            "linewidth": 2.5,
-            "color": 440020
+            "color": 15485081,
+            "roughness": 0.25,
+            "metalness": 0.45
           }
         },
         {
-          "id": "t",
-          "type": "animation/oscillator",
+          "id": "attach",
+          "type": "transform/parent",
           "position": {
-            "x": -1200,
-            "y": 380
-          },
-          "params": {
-            "type": "saw",
-            "frequency": 0.2,
-            "amplitude": 0.5,
-            "offset": 0.5
-          }
-        },
-        {
-          "id": "rider",
-          "type": "curve/sample",
-          "position": {
-            "x": -940,
-            "y": 120
+            "x": -820,
+            "y": 500
           },
           "params": {}
         },
         {
-          "id": "cone",
-          "type": "object/cone",
+          "id": "place",
+          "type": "structure/geometry-transform",
           "position": {
-            "x": -700,
-            "y": 120
+            "x": -540,
+            "y": 620
           },
-          "params": {
-            "scale": {
-              "x": 0.28,
-              "y": 0.5,
-              "z": 0.28
-            },
-            "color": 15485081,
-            "roughness": 0.25,
-            "metalness": 0.4
-          }
+          "params": {}
         }
       ],
       "connections": [
@@ -292,31 +302,38 @@
           "toSocket": "environment"
         },
         {
-          "id": "path.curve->line.curve",
-          "fromNode": "path",
-          "fromSocket": "curve",
-          "toNode": "line",
-          "toSocket": "curve"
-        },
-        {
-          "id": "path.curve->rider.curve",
-          "fromNode": "path",
-          "fromSocket": "curve",
-          "toNode": "rider",
-          "toSocket": "curve"
-        },
-        {
-          "id": "t.out->rider.progress",
-          "fromNode": "t",
-          "fromSocket": "out",
-          "toNode": "rider",
-          "toSocket": "progress"
-        },
-        {
-          "id": "rider.matrix->cone.matrix",
-          "fromNode": "rider",
+          "id": "spin.matrix->planet.matrix",
+          "fromNode": "spin",
           "fromSocket": "matrix",
-          "toNode": "cone",
+          "toNode": "planet",
+          "toSocket": "matrix"
+        },
+        {
+          "id": "spin.matrix->attach.parent",
+          "fromNode": "spin",
+          "fromSocket": "matrix",
+          "toNode": "attach",
+          "toSocket": "parent"
+        },
+        {
+          "id": "offset.matrix->attach.child",
+          "fromNode": "offset",
+          "fromSocket": "matrix",
+          "toNode": "attach",
+          "toSocket": "child"
+        },
+        {
+          "id": "moon.geometry->place.geometry",
+          "fromNode": "moon",
+          "fromSocket": "geometry",
+          "toNode": "place",
+          "toSocket": "geometry"
+        },
+        {
+          "id": "attach.matrix->place.matrix",
+          "fromNode": "attach",
+          "fromSocket": "matrix",
+          "toNode": "place",
           "toSocket": "matrix"
         }
       ],

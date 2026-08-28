@@ -489,7 +489,7 @@ def _():
     n = [
         node("path", "curve/primitive", -1200, 120, primitiveType="helix", radius=1.8, height=2.6, turns=3, location=v3(0, 0.4, 0)),
         node("line", "curve/to_line", -940, 320, linewidth=2.5, color=CYAN),
-        node("t", "animation/oscillator", -1200, 380, type="sawtooth", frequency=0.2, amplitude=0.5, offset=0.5),
+        node("t", "animation/oscillator", -1200, 380, type="saw", frequency=0.2, amplitude=0.5, offset=0.5),
         node("rider", "curve/sample", -940, 120),
         node("cone", "object/cone", -700, 120, scale=v3(0.28, 0.5, 0.28), color=PINK, roughness=0.25, metalness=0.4),
     ]
@@ -938,6 +938,133 @@ def _():
         node("glow", "postprocess/bloom", -1080, 40, strength=0.7, radius=0.35, threshold=1.5),
     ]
     return n, [wire("glow", "effect", RENDER, "postprocess")]
+
+
+# ============================================================================
+# Second wave — families still without a demo.
+# ============================================================================
+
+@demo("transform_matrix")
+def _():
+    # A moon around a planet: Parent multiplies the child's matrix by the
+    # parent's, which is the whole point of the node — the moon inherits the
+    # planet's spin without knowing anything about it.
+    n = [
+        node("spin", "transform/orbit", -1400, 60, radius=0, speed=40, height=1.2),
+        node("planet", "object/sphere", -1400, 300, scale=v3(1.1, 1.1, 1.1), color=MID, roughness=0.3, metalness=0.4),
+        node("offset", "transform", -1120, 460, location=v3(1.6, 0, 0), scale=v3(0.34, 0.34, 0.34)),
+        node("moon", "object/sphere", -1400, 620, color=PINK, roughness=0.25, metalness=0.45),
+        node("attach", "transform/parent", -820, 500),
+        node("place", "structure/geometry-transform", -540, 620),
+    ]
+    c = [
+        wire("spin", "matrix", "planet", "matrix"),
+        wire("spin", "matrix", "attach", "parent"),
+        wire("offset", "matrix", "attach", "child"),
+        wire("moon", "geometry", "place", "geometry"),
+        wire("attach", "matrix", "place", "matrix"),
+    ]
+    return n, c
+
+
+@demo("math_vectors")
+def _():
+    n = [
+        node("swing", "animation/oscillator", -1400, 40, type="sine", frequency=0.35, amplitude=2, offset=0),
+        node("a", "vector/compose", -1160, 40, y=1.2, z=0),
+        node("b", "vector/compose", -1160, 260, x=0, y=0.6, z=1.6),
+        node("sum", "vector/math", -900, 140, op="add"),
+        node("parts", "vector/decompose", -640, 300),
+        node("ball", "object/sphere", -900, 420, scale=v3(0.55, 0.55, 0.55), color=BLUE, roughness=0.25, metalness=0.4),
+        node("place", "structure/geometry-transform", -380, 420),
+    ]
+    c = [
+        wire("swing", "out", "a", "x"),
+        wire("a", "out", "sum", "a"),
+        wire("b", "out", "sum", "b"),
+        wire("sum", "out", "parts", "vector"),
+        wire("ball", "geometry", "place", "geometry"),
+        wire("sum", "out", "place", "location"),
+    ]
+    return n, c
+
+
+@demo("math_spring")
+def _():
+    # Square wave in, spring out: the ball snaps between two heights and the
+    # spring is what turns each jump into an overshoot and settle.
+    n = [
+        node("steps", "animation/oscillator", -1280, 60, type="square", frequency=0.25, amplitude=0.8, offset=1.2),
+        node("damped", "math/spring", -1020, 60, smoothing=0.25, bounciness=0.55),
+        node("ball", "object/sphere", -1280, 300, scale=v3(0.7, 0.7, 0.7), color=PINK, roughness=0.2, metalness=0.45),
+        node("lift", "structure/geometry-transform", -700, 180),
+    ]
+    c = [
+        wire("steps", "out", "damped", "target"),
+        wire("ball", "geometry", "lift", "geometry"),
+        wire("damped", "value", "lift", "posY"),
+    ]
+    return n, c
+
+
+@demo("modifier_mesh_edit")
+def _():
+    n = [
+        node("slab", "object/box", -1280, 60, location=v3(-1.5, 0.6, 0), scale=v3(1.4, 0.5, 1.4), color=BLUE, roughness=0.3, metalness=0.35),
+        node("push", "modifier/extrude", -980, 60, distance=0.7, selectMode="normal", axis="y"),
+        node("shell", "object/sphere", -1280, 320, location=v3(1.5, 1.1, 0), scale=v3(1.3, 1.3, 1.3), color=PINK, roughness=0.35, metalness=0.3),
+        # threshold is in the geometry's own local space (sphere radius 0.5),
+        # not world units — 0 is exactly the equator, which is the node's own
+        # documented default.
+        node("cut", "modifier/delete-geometry", -980, 320, selectMode="height", axis="y", threshold=0),
+        # With the top half gone you are looking at back faces; flipping them
+        # is what makes the opened shell read as a solid bowl.
+        node("flip", "modifier/invert-normals", -700, 320, mode="both"),
+    ]
+    c = [
+        wire("slab", "geometry", "push", "geometry"),
+        wire("shell", "geometry", "cut", "geometry"),
+        wire("cut", "geometry", "flip", "geometry"),
+    ]
+    return n, c
+
+
+@demo("text_toolkit")
+def _():
+    n = [
+        node("source", "text/constant", -1400, 60, text="  tsuji node graph  "),
+        node("clean", "text/trim", -1160, 60),
+        node("shout", "text/case", -920, 60, mode="uppercase"),
+        node("swap", "text/replace", -680, 60, search="NODE", replace="•"),
+        node("size", "text/length", -680, 300),
+        node("label", "object/text", -420, 160, location=v3(-2.6, 0.35, 0), fontSize=0.62, depth=0.14,
+             color=BLUE, emissive=BLUE, emissiveIntensity=0.3, metalness=0.4, roughness=0.2),
+    ]
+    c = [
+        wire("source", "text", "clean", "text"),
+        wire("clean", "text", "shout", "text"),
+        wire("shout", "text", "swap", "text"),
+        wire("shout", "text", "size", "text"),
+        wire("swap", "text", "label", "text"),
+    ]
+    return n, c
+
+
+@demo("post_kaleidoscope")
+def _():
+    n = [
+        node("tower", "object/cylinder", -1180, 320, location=v3(0, 1, 0), scale=v3(0.8, 2, 0.8),
+             color=PINK, emissive=PINK, emissiveIntensity=0.4, roughness=0.25, metalness=0.5),
+        node("mirror", "postprocess/kaleidoscope", -1180, 40, sides=6, angle=0),
+        node("blocky", "postprocess/pixelate", -920, 40, pixelSize=4),
+        node("grade", "postprocess/color-correction", -660, 40, brightness=0.02, contrast=1.15, saturation=1.3),
+    ]
+    c = [
+        wire("mirror", "effect", "blocky", "effect"),
+        wire("blocky", "effect", "grade", "effect"),
+        wire("grade", "effect", RENDER, "postprocess"),
+    ]
+    return n, c
 
 
 def main(only=None):

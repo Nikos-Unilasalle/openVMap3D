@@ -204,6 +204,44 @@
           }
         },
         {
+          "id": "box",
+          "type": "object/box",
+          "position": {
+            "x": -1114,
+            "y": 133
+          },
+          "params": {
+            "location": {
+              "x": 0,
+              "y": 1.025,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "color": 16777215,
+            "roughness": 0.4,
+            "metalness": 0.1
+          }
+        },
+        {
+          "id": "swing",
+          "type": "animation/oscillator",
+          "position": {
+            "x": -1113,
+            "y": 336
+          },
+          "params": {
+            "type": "sine",
+            "frequency": 1,
+            "phase": 0,
+            "amplitude": 49.125,
+            "offset": 0
+          }
+        },
+        {
           "id": "cage",
           "type": "modifier/lattice",
           "position": {
@@ -216,6 +254,11 @@
               "y": 1.1,
               "z": 0
             },
+            "scale": {
+              "x": 1,
+              "y": 0.7,
+              "z": 1
+            },
             "sizeX": 2.6,
             "sizeY": 2.6,
             "sizeZ": 2.6,
@@ -223,77 +266,7 @@
             "bulge": 0.45,
             "strength": 1,
             "showCage": true,
-            "pointsList": [],
-            "scale": {
-              "x": 1,
-              "y": 0.7,
-              "z": 1
-            },
-            "rotation": {
-              "x": 0,
-              "y": 0,
-              "z": 0
-            }
-          }
-        },
-        {
-          "id": "92c9c86b-e5fa-4830-989f-2590d9547cd4",
-          "type": "object/box",
-          "position": {
-            "x": -1114,
-            "y": 133
-          },
-          "params": {
-            "visible": 1,
-            "location": {
-              "x": 0,
-              "y": 1.025,
-              "z": 0
-            },
-            "rotation": {
-              "x": 0,
-              "y": 0,
-              "z": 0
-            },
-            "scale": {
-              "x": 1,
-              "y": 1,
-              "z": 1
-            },
-            "texturePath": "",
-            "normalMapPath": "",
-            "roughnessMapPath": "",
-            "uvScaleX": 1,
-            "uvScaleY": 1,
-            "uvOffsetX": 0,
-            "uvOffsetY": 0,
-            "color": 16777215,
-            "emissive": 0,
-            "emissiveIntensity": 1,
-            "shadeless": 0,
-            "roughness": 0.4,
-            "metalness": 0.1,
-            "wireframe": 0,
-            "opacity": 1,
-            "transmission": 0,
-            "thickness": 0.5
-          }
-        },
-        {
-          "id": "0f826689-f36a-415b-920d-dc4e49cbd9f1",
-          "type": "animation/oscillator",
-          "position": {
-            "x": -1113,
-            "y": 336
-          },
-          "params": {
-            "type": "sine",
-            "frequency": 1,
-            "phase": 0,
-            "amplitude": 49.125,
-            "offset": 0,
-            "curve": "linear",
-            "curveStrength": 1
+            "pointsList": []
           }
         }
       ],
@@ -313,15 +286,15 @@
           "toSocket": "environment"
         },
         {
-          "id": "92c9c86b-e5fa-4830-989f-2590d9547cd4.geometry->cage.geometry",
-          "fromNode": "92c9c86b-e5fa-4830-989f-2590d9547cd4",
+          "id": "box.geometry->cage.geometry",
+          "fromNode": "box",
           "fromSocket": "geometry",
           "toNode": "cage",
           "toSocket": "geometry"
         },
         {
-          "id": "0f826689-f36a-415b-920d-dc4e49cbd9f1.out->cage.twist",
-          "fromNode": "0f826689-f36a-415b-920d-dc4e49cbd9f1",
+          "id": "swing.out->cage.twist",
+          "fromNode": "swing",
           "fromSocket": "out",
           "toNode": "cage",
           "toSocket": "twist"

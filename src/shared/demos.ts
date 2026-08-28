@@ -25,6 +25,11 @@ export const DEMO_CATALOG: DemoCategory[] = [
     title: "Objects",
     demos: [
       {
+        file: "demo_text_toolkit.tsuji",
+        label: "Text Toolkit",
+        description: "Trim, case, replace and length on one string.",
+      },
+      {
         file: "demo_object_primitives.tsuji",
         label: "Primitives",
         description: "Cylinder, cone and disc merged into one object.",
@@ -44,6 +49,11 @@ export const DEMO_CATALOG: DemoCategory[] = [
   {
     title: "Modifiers",
     demos: [
+      {
+        file: "demo_modifier_mesh_edit.tsuji",
+        label: "Extrude & Delete",
+        description: "Faces pushed out, and a shell opened then flipped.",
+      },
       {
         file: "demo_modifier_boolean.tsuji",
         label: "Boolean",
@@ -70,6 +80,16 @@ export const DEMO_CATALOG: DemoCategory[] = [
     title: "Transform & Structure",
     demos: [
       {
+        file: "demo_transform_matrix.tsuji",
+        label: "Parent & Pivot",
+        description: "A moon inheriting a planet's spin through Parent.",
+      },
+      {
+        file: "demo_math_vectors.tsuji",
+        label: "Vector Math",
+        description: "Compose, add and decompose a position vector.",
+      },
+      {
         file: "demo_transform_basics.tsuji",
         label: "Geometry Transform",
         description: "Position, rotate and scale one object.",
@@ -84,6 +104,11 @@ export const DEMO_CATALOG: DemoCategory[] = [
   {
     title: "Time & Animation",
     demos: [
+      {
+        file: "demo_math_spring.tsuji",
+        label: "Spring",
+        description: "A square wave damped into overshoot and settle.",
+      },
       {
         file: "demo_time_remap.tsuji",
         label: "Time Remap",
@@ -184,6 +209,11 @@ export const DEMO_CATALOG: DemoCategory[] = [
   {
     title: "Lighting & Post-Processing",
     demos: [
+      {
+        file: "demo_post_kaleidoscope.tsuji",
+        label: "Kaleidoscope",
+        description: "Mirrored, pixelated and graded in one chain.",
+      },
       {
         file: "demo_lighting_lights.tsuji",
         label: "Light Types",

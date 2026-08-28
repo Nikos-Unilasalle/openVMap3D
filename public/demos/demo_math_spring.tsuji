@@ -204,76 +204,57 @@
           }
         },
         {
-          "id": "path",
-          "type": "curve/primitive",
-          "position": {
-            "x": -1200,
-            "y": 120
-          },
-          "params": {
-            "primitiveType": "helix",
-            "radius": 1.8,
-            "height": 2.6,
-            "turns": 3,
-            "location": {
-              "x": 0,
-              "y": 0.4,
-              "z": 0
-            }
-          }
-        },
-        {
-          "id": "line",
-          "type": "curve/to_line",
-          "position": {
-            "x": -940,
-            "y": 320
-          },
-          "params": {
-            "linewidth": 2.5,
-            "color": 440020
-          }
-        },
-        {
-          "id": "t",
+          "id": "steps",
           "type": "animation/oscillator",
           "position": {
-            "x": -1200,
-            "y": 380
+            "x": -1280,
+            "y": 60
           },
           "params": {
-            "type": "saw",
-            "frequency": 0.2,
-            "amplitude": 0.5,
-            "offset": 0.5
+            "type": "square",
+            "frequency": 0.25,
+            "amplitude": 0.8,
+            "offset": 1.2
           }
         },
         {
-          "id": "rider",
-          "type": "curve/sample",
+          "id": "damped",
+          "type": "math/spring",
           "position": {
-            "x": -940,
-            "y": 120
+            "x": -1020,
+            "y": 60
           },
-          "params": {}
+          "params": {
+            "smoothing": 0.25,
+            "bounciness": 0.55
+          }
         },
         {
-          "id": "cone",
-          "type": "object/cone",
+          "id": "ball",
+          "type": "object/sphere",
           "position": {
-            "x": -700,
-            "y": 120
+            "x": -1280,
+            "y": 300
           },
           "params": {
             "scale": {
-              "x": 0.28,
-              "y": 0.5,
-              "z": 0.28
+              "x": 0.7,
+              "y": 0.7,
+              "z": 0.7
             },
             "color": 15485081,
-            "roughness": 0.25,
-            "metalness": 0.4
+            "roughness": 0.2,
+            "metalness": 0.45
           }
+        },
+        {
+          "id": "lift",
+          "type": "structure/geometry-transform",
+          "position": {
+            "x": -700,
+            "y": 180
+          },
+          "params": {}
         }
       ],
       "connections": [
@@ -292,32 +273,25 @@
           "toSocket": "environment"
         },
         {
-          "id": "path.curve->line.curve",
-          "fromNode": "path",
-          "fromSocket": "curve",
-          "toNode": "line",
-          "toSocket": "curve"
-        },
-        {
-          "id": "path.curve->rider.curve",
-          "fromNode": "path",
-          "fromSocket": "curve",
-          "toNode": "rider",
-          "toSocket": "curve"
-        },
-        {
-          "id": "t.out->rider.progress",
-          "fromNode": "t",
+          "id": "steps.out->damped.target",
+          "fromNode": "steps",
           "fromSocket": "out",
-          "toNode": "rider",
-          "toSocket": "progress"
+          "toNode": "damped",
+          "toSocket": "target"
         },
         {
-          "id": "rider.matrix->cone.matrix",
-          "fromNode": "rider",
-          "fromSocket": "matrix",
-          "toNode": "cone",
-          "toSocket": "matrix"
+          "id": "ball.geometry->lift.geometry",
+          "fromNode": "ball",
+          "fromSocket": "geometry",
+          "toNode": "lift",
+          "toSocket": "geometry"
+        },
+        {
+          "id": "damped.value->lift.posY",
+          "fromNode": "damped",
+          "fromSocket": "value",
+          "toNode": "lift",
+          "toSocket": "posY"
         }
       ],
       "keyframes": {},
