@@ -28,19 +28,83 @@
   z-index: 50;
 }
 
-.demos-menu-category + .demos-menu-category {
-  margin-top: 10px;
-  padding-top: 10px;
+/* Collapsed headings sit as one list; the separator would read as clutter
+   between fourteen single rows, so only an expanded section gets one. */
+.demos-menu-category:has(.is-open) + .demos-menu-category,
+.demos-menu-category:has(.is-open) {
+  margin-top: 8px;
+  padding-top: 8px;
   border-top: 1px solid var(--chrome-border);
 }
 
+.demos-menu-search {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  background: var(--chrome-surface);
+  border: 1px solid var(--chrome-border);
+  border-radius: 6px;
+  color: var(--chrome-text);
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.demos-menu-search:focus {
+  border-color: #f2c14e;
+}
+
 .demos-menu-category-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  font-family: inherit;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  text-align: left;
   color: var(--chrome-text-muted);
-  padding: 4px 8px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.demos-menu-category-title:hover,
+.demos-menu-category-title.is-open {
+  background: rgba(242, 193, 78, 0.1);
+  color: #f2c14e;
+}
+
+.demos-menu-caret {
+  width: 9px;
+  font-size: 9px;
+}
+
+.demos-menu-count {
+  margin-left: auto;
+  font-weight: 600;
+  opacity: 0.65;
+}
+
+.demos-menu-empty,
+.demos-menu-footer {
+  padding: 8px;
+  font-size: 11px;
+  color: var(--chrome-text-muted);
+}
+
+.demos-menu-footer {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--chrome-border);
+  text-align: right;
+  font-size: 10px;
 }
 
 .demos-menu-item {

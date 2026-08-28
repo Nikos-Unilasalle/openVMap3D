@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
-import { DEMO_CATALOG } from "../shared/demos";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { DEMO_CATALOG, DemoEntry } from "../shared/demos";
 import { deserializeProject } from "../shared/graph/storage";
 import { Project } from "../shared/graph/types";
 import "./demos-menu.css";
@@ -9,14 +9,27 @@ export interface DemosMenuProps {
   onError: (message: string) => void;
 }
 
+function matches(demo: DemoEntry, category: string, query: string): boolean {
+  const haystack = `${demo.label} ${demo.description} ${category}`.toLowerCase();
+  return query.split(/\s+/).every((term) => haystack.includes(term));
+}
+
 /**
  * Anchored dropdown, not a full-screen popover — a demo list is read top to
  * bottom and picked once, unlike EasingPopover's positioned editor, so it
  * doesn't need x/y placement math, just to hang off its own trigger button.
+ *
+ * Categories collapse because the catalog outgrew a plain list: fully
+ * expanded it is ~2700px of content in a ~520px panel, so five sixths of the
+ * demos sat below the fold with nothing to navigate by. Collapsed, all
+ * fourteen headings fit at once and the panel becomes a table of contents;
+ * the filter box is the shortcut for when you already know the name.
  */
 export const DemosMenu: React.FC<DemosMenuProps> = ({ onLoadDemo, onError }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [loadingFile, setLoadingFile] = useState<string | null>(null);
+  const [openCategory, setOpenCategory] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -34,6 +47,26 @@ export const DemosMenu: React.FC<DemosMenuProps> = ({ onLoadDemo, onError }) => 
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [isOpen]);
+
+  // Reopening should feel like opening, not like resuming someone else's scroll.
+  useEffect(() => {
+    if (!isOpen) {
+      setQuery("");
+      setOpenCategory(null);
+    }
+  }, [isOpen]);
+
+  const trimmed = query.trim().toLowerCase();
+  const filtered = useMemo(
+    () =>
+      DEMO_CATALOG.map((category) => ({
+        ...category,
+        demos: trimmed ? category.demos.filter((d) => matches(d, category.title, trimmed)) : category.demos,
+      })).filter((category) => category.demos.length > 0),
+    [trimmed],
+  );
+
+  const total = filtered.reduce((n, c) => n + c.demos.length, 0);
 
   const handlePick = async (file: string) => {
     setLoadingFile(file);
@@ -67,25 +100,52 @@ export const DemosMenu: React.FC<DemosMenuProps> = ({ onLoadDemo, onError }) => 
 
       {isOpen && (
         <div className="demos-menu-panel">
-          {DEMO_CATALOG.map((category) => (
-            <div className="demos-menu-category" key={category.title}>
-              <div className="demos-menu-category-title">{category.title}</div>
-              {category.demos.map((demo) => (
+          <input
+            className="demos-menu-search"
+            autoFocus
+            value={query}
+            placeholder="Filtrer les démos…"
+            onChange={(e) => setQuery(e.target.value)}
+          />
+
+          {filtered.length === 0 && <div className="demos-menu-empty">Aucune démo pour « {query} »</div>}
+
+          {filtered.map((category) => {
+            // A search already narrows things down — keep every hit visible
+            // rather than making the reader open each category to find it.
+            const expanded = trimmed !== "" || openCategory === category.title;
+            return (
+              <div className="demos-menu-category" key={category.title}>
                 <button
-                  key={demo.file}
                   type="button"
-                  className="demos-menu-item"
-                  disabled={loadingFile !== null}
-                  onClick={() => handlePick(demo.file)}
-                  title={demo.description}
+                  className={`demos-menu-category-title${expanded ? " is-open" : ""}`}
+                  onClick={() => setOpenCategory(expanded && !trimmed ? null : category.title)}
                 >
-                  <span className="demos-menu-item-label">{demo.label}</span>
-                  <span className="demos-menu-item-desc">{demo.description}</span>
-                  {loadingFile === demo.file && <span className="demos-menu-item-loading">…</span>}
+                  <span className="demos-menu-caret">{expanded ? "▾" : "▸"}</span>
+                  {category.title}
+                  <span className="demos-menu-count">{category.demos.length}</span>
                 </button>
-              ))}
-            </div>
-          ))}
+
+                {expanded &&
+                  category.demos.map((demo) => (
+                    <button
+                      key={demo.file}
+                      type="button"
+                      className="demos-menu-item"
+                      disabled={loadingFile !== null}
+                      onClick={() => handlePick(demo.file)}
+                      title={demo.description}
+                    >
+                      <span className="demos-menu-item-label">{demo.label}</span>
+                      <span className="demos-menu-item-desc">{demo.description}</span>
+                      {loadingFile === demo.file && <span className="demos-menu-item-loading">…</span>}
+                    </button>
+                  ))}
+              </div>
+            );
+          })}
+
+          <div className="demos-menu-footer">{total} démos</div>
         </div>
       )}
     </div>
