@@ -720,22 +720,6 @@ def _():
     return n, c
 
 
-@demo("trail_squash")
-def _():
-    n = [
-        node("orbit", "transform/orbit", -1160, 60, radius=2.2, speed=90, height=1.2),
-        node("ball", "object/sphere", -1160, 300, scale=v3(0.5, 0.5, 0.5), color=PINK, emissive=PINK, emissiveIntensity=0.35, roughness=0.2, metalness=0.4),
-        node("squash", "modifier/squash-stretch", -860, 180, intensity=0.9, maxSpeed=4, smoothing=0.35, bounciness=0.4),
-        node("speed", "math/velocity", -860, 420),
-    ]
-    c = [
-        wire("orbit", "matrix", "ball", "matrix"),
-        wire("ball", "geometry", "squash", "geometry"),
-        wire("orbit", "matrix", "speed", "matrix"),
-    ]
-    return n, c
-
-
 def main(only=None):
     names = [only] if only else list(DEMOS_SPEC)
     for name in names:

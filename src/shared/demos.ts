@@ -95,11 +95,6 @@ export const DEMO_CATALOG: DemoCategory[] = [
         description: "Layered noise on position, rotation and scale.",
       },
       {
-        file: "demo_trail_squash.tsuji",
-        label: "Squash & Stretch",
-        description: "An orbiting ball deformed by its own speed.",
-      },
-      {
         file: "demo_time_spin.tsuji",
         label: "Continuous Spin",
         description: "Time -> Value Math drives a steady rotation.",
