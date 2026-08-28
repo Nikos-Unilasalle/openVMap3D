@@ -47,8 +47,16 @@ def wire(a, sa, b, sb):
     return {"id": f"{a}.{sa}->{b}.{sb}", "fromNode": a, "fromSocket": sa, "toNode": b, "toSocket": sb}
 
 
-def write_demo(name, nodes, conns, markers=None, extra_canvas=None):
+def write_demo(name, nodes, conns, markers=None, extra_canvas=None, setup_overrides=None):
+    """setup_overrides maps a setup node type to params merged into it — for
+    the rare demo whose subject the stock setup actively hides (a Light Probe's
+    coloured bounce cannot be seen under three white key lights)."""
     base_nodes, base_conns = setup_blocks()
+    if setup_overrides:
+        base_nodes = [
+            {**n, "params": {**n["params"], **setup_overrides[n["type"]]}} if n["type"] in setup_overrides else n
+            for n in base_nodes
+        ]
     canvas = {
         "nodes": base_nodes + nodes,
         "connections": base_conns + conns,
@@ -1067,11 +1075,40 @@ def _():
     return n, c
 
 
+@demo("lighting_probe")
+def _():
+    # A Light Probe photographs its surroundings and reduces them to nine
+    # spherical-harmonic coefficients, so it knows the wall on its left is
+    # blue and the one on its right is pink — an Ambient Light only knows one
+    # flat colour. Three shadeless panels give it something unambiguous to
+    # read, and a matte white sphere is where you see it: coloured bounce on
+    # each flank, which the setup's white point lights cannot produce.
+    #
+    # updateMode "always" rather than the "once" default: a single bake races
+    # the frame the walls first exist on, and re-baking keeps the demo honest
+    # if you recolour a panel in the panel.
+    wall = dict(shadeless=1, roughness=1, metalness=0)
+    n = [
+        node("back", "object/plane", -1240, 40, location=v3(0, 1.1, -2.3), scale=v3(5, 3.2, 1), color=CYAN, **wall),
+        node("left", "object/plane", -1240, 240, location=v3(-2.3, 1.1, 0), rotation=v3(0, 1.5708, 0), scale=v3(5, 3.2, 1), color=BLUE, **wall),
+        node("right", "object/plane", -1240, 440, location=v3(2.3, 1.1, 0), rotation=v3(0, -1.5708, 0), scale=v3(5, 3.2, 1), color=PINK, **wall),
+        # Above the sphere, not inside it — a probe sitting at the object's
+        # own centre photographs the inside of that object and nothing else.
+        node("probe", "light/probe", -900, 240, location=v3(0, 2.3, 0), intensity=3.4, updateMode="always", resolution=64),
+        node("ball", "object/sphere", -900, 460, location=v3(0, 0.45, 0), scale=v3(1.9, 1.9, 1.9), color=0xFFFFFF, roughness=0.9, metalness=0),
+    ]
+    # The one demo that dims the shared setup: at their stock intensity the
+    # three white key lights bury the probe's coloured bounce under white,
+    # which is the whole thing this demo exists to show.
+    return n, [], {"light/point": {"intensity": 6}}
+
+
 def main(only=None):
     names = [only] if only else list(DEMOS_SPEC)
     for name in names:
-        nodes, conns = DEMOS_SPEC[name]()
-        write_demo(name, nodes, conns)
+        spec = DEMOS_SPEC[name]()
+        nodes, conns = spec[0], spec[1]
+        write_demo(name, nodes, conns, setup_overrides=spec[2] if len(spec) > 2 else None)
 
 
 if __name__ == "__main__":

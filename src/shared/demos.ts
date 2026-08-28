@@ -210,6 +210,11 @@ export const DEMO_CATALOG: DemoCategory[] = [
     title: "Lighting & Post-Processing",
     demos: [
       {
+        file: "demo_lighting_probe.tsuji",
+        label: "Light Probe",
+        description: "Coloured walls bouncing onto a matte sphere.",
+      },
+      {
         file: "demo_post_kaleidoscope.tsuji",
         label: "Kaleidoscope",
         description: "Mirrored, pixelated and graded in one chain.",
