@@ -1,0 +1,32 @@
+{
+  "nodes": [
+    {
+      "id": "box",
+      "type": "object/box",
+      "position": { "x": -400, "y": 40 },
+      "params": { "color": 2263544 }
+    },
+    {
+      "id": "xform",
+      "type": "structure/geometry-transform",
+      "position": { "x": -140, "y": 40 },
+      "params": {
+        "mode": "relative",
+        "posX": 2,
+        "rotY": 45,
+        "scaleX": 1.5,
+        "scaleY": 1.5,
+        "scaleZ": 1.5
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "box.geometry->xform.geometry",
+      "fromNode": "box",
+      "fromSocket": "geometry",
+      "toNode": "xform",
+      "toSocket": "geometry"
+    }
+  ]
+}

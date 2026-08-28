@@ -1,0 +1,38 @@
+{
+  "nodes": [
+    {
+      "id": "ball",
+      "type": "object/sphere",
+      "position": { "x": -440, "y": 40 },
+      "params": { "metalness": 0.9, "roughness": 0.15, "color": 16777215 }
+    },
+    {
+      "id": "env",
+      "type": "lighting/environment",
+      "position": { "x": -440, "y": 260 },
+      "params": { "color": 4142678, "intensity": 1.4 }
+    },
+    {
+      "id": "output",
+      "type": "render",
+      "position": { "x": -140, "y": 40 },
+      "params": {}
+    }
+  ],
+  "connections": [
+    {
+      "id": "ball.geometry->output.geometry",
+      "fromNode": "ball",
+      "fromSocket": "geometry",
+      "toNode": "output",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "env.environment->output.environment",
+      "fromNode": "env",
+      "fromSocket": "environment",
+      "toNode": "output",
+      "toSocket": "environment"
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "nodes": [
+    {
+      "id": "ball",
+      "type": "object/sphere",
+      "position": { "x": -440, "y": 40 },
+      "params": { "color": 16353942, "scale": { "x": 0.6, "y": 0.6, "z": 0.6 } }
+    },
+    {
+      "id": "bob",
+      "type": "animation/oscillator",
+      "position": { "x": -440, "y": -180 },
+      "params": { "type": "sine", "frequency": 0.5, "amplitude": 1.2 }
+    },
+    {
+      "id": "xform",
+      "type": "structure/geometry-transform",
+      "position": { "x": -180, "y": 40 },
+      "params": { "mode": "relative" }
+    }
+  ],
+  "connections": [
+    {
+      "id": "ball.geometry->xform.geometry",
+      "fromNode": "ball",
+      "fromSocket": "geometry",
+      "toNode": "xform",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "bob.out->xform.posY",
+      "fromNode": "bob",
+      "fromSocket": "out",
+      "toNode": "xform",
+      "toSocket": "posY"
+    }
+  ]
+}

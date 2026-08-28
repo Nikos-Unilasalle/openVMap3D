@@ -193,7 +193,7 @@ describe("evaluateGraph", () => {
     const { DEFAULT_REGISTRY } = await import("./nodes");
     const { rehydrateGraphParams } = await import("./rehydrateParams");
 
-    const demosDir = path.join(__dirname, "../../../demos");
+    const demosDir = path.join(__dirname, "../../../public/demos");
     const files = fs.readdirSync(demosDir).filter((f) => f.endsWith(".tsuji") || f.endsWith(".ovm"));
 
     const { deserializeProject } = await import("./storage");

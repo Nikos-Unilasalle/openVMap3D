@@ -1,0 +1,33 @@
+{
+  "nodes": [
+    {
+      "id": "box",
+      "type": "object/box",
+      "position": { "x": -440, "y": 40 },
+      "params": { "scale": { "x": 0.6, "y": 0.6, "z": 0.6 }, "color": 2765122 }
+    },
+    {
+      "id": "grid",
+      "type": "structure/array",
+      "position": { "x": -180, "y": 40 },
+      "params": {
+        "mode": "grid",
+        "plane": "XZ",
+        "gridCols": 6,
+        "gridRows": 6,
+        "spacingX": 1.2,
+        "spacingY": 1.2,
+        "centerGrid": true
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "box.geometry->grid.geometry",
+      "fromNode": "box",
+      "fromSocket": "geometry",
+      "toNode": "grid",
+      "toSocket": "geometry"
+    }
+  ]
+}

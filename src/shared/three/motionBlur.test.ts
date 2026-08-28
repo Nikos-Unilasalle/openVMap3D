@@ -32,7 +32,7 @@ function keysOf(meshes: THREE.Mesh[]): string[] {
   return meshes.map((mesh) => velocityKey(mesh, ordinals));
 }
 
-const WAVE = "demos/demo_stagger_wave.tsuji";
+const WAVE = "public/demos/demo_stagger_wave.tsuji";
 
 describe.skipIf(!existsSync(WAVE))("velocity keys (stagger wave demo)", () => {
   it("instanced geometry is a fresh set of objects every frame", () => {

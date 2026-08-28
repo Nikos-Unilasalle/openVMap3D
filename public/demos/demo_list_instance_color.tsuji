@@ -1,0 +1,59 @@
+{
+  "nodes": [
+    {
+      "id": "box",
+      "type": "object/box",
+      "position": { "x": -700, "y": 40 },
+      "params": { "scale": { "x": 0.6, "y": 0.6, "z": 0.6 } }
+    },
+    {
+      "id": "grid",
+      "type": "structure/array",
+      "position": { "x": -440, "y": 40 },
+      "params": {
+        "mode": "grid",
+        "plane": "XZ",
+        "gridCols": 8,
+        "gridRows": 8,
+        "spacingX": 1.1,
+        "spacingY": 1.1,
+        "centerGrid": true
+      }
+    },
+    {
+      "id": "palette",
+      "type": "list/color-palette",
+      "position": { "x": -440, "y": -140 },
+      "params": { "count": 64 }
+    },
+    {
+      "id": "tint",
+      "type": "structure/instance-color",
+      "position": { "x": -180, "y": 40 },
+      "params": { "index": -1 }
+    }
+  ],
+  "connections": [
+    {
+      "id": "box.geometry->grid.geometry",
+      "fromNode": "box",
+      "fromSocket": "geometry",
+      "toNode": "grid",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "grid.geometry->tint.geometry",
+      "fromNode": "grid",
+      "fromSocket": "geometry",
+      "toNode": "tint",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "palette.list->tint.colors",
+      "fromNode": "palette",
+      "fromSocket": "list",
+      "toNode": "tint",
+      "toSocket": "colors"
+    }
+  ]
+}

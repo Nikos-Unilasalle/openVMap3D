@@ -1,0 +1,51 @@
+{
+  "nodes": [
+    {
+      "id": "box",
+      "type": "object/box",
+      "position": { "x": -700, "y": 40 },
+      "params": { "color": 3718648, "scale": { "x": 1.2, "y": 0.3, "z": 0.3 } }
+    },
+    {
+      "id": "time",
+      "type": "time",
+      "position": { "x": -700, "y": -180 },
+      "params": {}
+    },
+    {
+      "id": "speed",
+      "type": "value/math",
+      "position": { "x": -440, "y": -180 },
+      "params": { "op": "multiply", "b": 60 }
+    },
+    {
+      "id": "xform",
+      "type": "structure/geometry-transform",
+      "position": { "x": -180, "y": 40 },
+      "params": { "mode": "relative" }
+    }
+  ],
+  "connections": [
+    {
+      "id": "time.seconds->speed.a",
+      "fromNode": "time",
+      "fromSocket": "seconds",
+      "toNode": "speed",
+      "toSocket": "a"
+    },
+    {
+      "id": "box.geometry->xform.geometry",
+      "fromNode": "box",
+      "fromSocket": "geometry",
+      "toNode": "xform",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "speed.out->xform.rotY",
+      "fromNode": "speed",
+      "fromSocket": "out",
+      "toNode": "xform",
+      "toSocket": "rotY"
+    }
+  ]
+}

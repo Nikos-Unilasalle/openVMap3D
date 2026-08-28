@@ -1,0 +1,38 @@
+{
+  "nodes": [
+    {
+      "id": "ball",
+      "type": "object/sphere",
+      "position": { "x": -440, "y": 40 },
+      "params": { "color": 1122867, "emissive": 1122867, "emissiveIntensity": 3, "shadeless": 1 }
+    },
+    {
+      "id": "bloom",
+      "type": "postprocess/bloom",
+      "position": { "x": -440, "y": 260 },
+      "params": { "strength": 1.8, "radius": 0.5, "threshold": 0.2 }
+    },
+    {
+      "id": "output",
+      "type": "render",
+      "position": { "x": -140, "y": 40 },
+      "params": {}
+    }
+  ],
+  "connections": [
+    {
+      "id": "ball.geometry->output.geometry",
+      "fromNode": "ball",
+      "fromSocket": "geometry",
+      "toNode": "output",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "bloom.effect->output.postprocess",
+      "fromNode": "bloom",
+      "fromSocket": "effect",
+      "toNode": "output",
+      "toSocket": "postprocess"
+    }
+  ]
+}

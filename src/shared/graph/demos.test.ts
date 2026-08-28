@@ -6,7 +6,10 @@ import { DEFAULT_REGISTRY } from "./nodes/index";
 import { evaluateGraph } from "./evaluate";
 import { initBvhRaycast } from "../three/bvh";
 
-const DEMO_DIR = join(process.cwd(), "demos");
+// Lives under public/ (not a top-level demos/ folder) so Vite ships these
+// files verbatim into dist and the in-app Demos menu can fetch() them at
+// runtime — a top-level demos/ folder is source-tree-only and isn't bundled.
+const DEMO_DIR = join(process.cwd(), "public/demos");
 
 describe("demo .tsuji files", () => {
   const files = readdirSync(DEMO_DIR).filter((f) => f.endsWith(".tsuji"));

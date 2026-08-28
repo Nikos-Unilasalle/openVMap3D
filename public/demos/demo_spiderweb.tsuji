@@ -1,0 +1,1076 @@
+{
+  "canvases": [
+    {
+      "nodes": [
+        {
+          "id": "de8b2a66-ccc6-443e-a053-3956018f5c22",
+          "type": "curve/primitive",
+          "position": {
+            "x": -96,
+            "y": -43
+          },
+          "params": {
+            "primitiveType": "polygon",
+            "radius": 1.925,
+            "height": 0.95,
+            "turns": 8.125,
+            "sag": 0.138,
+            "visible": 1,
+            "location": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            }
+          }
+        },
+        {
+          "id": "cc355c31-b677-4143-b843-5af218b07b8a",
+          "type": "list/generate",
+          "position": {
+            "x": 696,
+            "y": 284
+          },
+          "params": {
+            "count": 4,
+            "start": 0.7,
+            "step": 0.3
+          }
+        },
+        {
+          "id": "80dd5988-d456-4bcb-adf7-224ec2b8101c",
+          "type": "value/constant",
+          "position": {
+            "x": -97,
+            "y": 202
+          },
+          "params": {
+            "type": "integer",
+            "value": 5
+          }
+        },
+        {
+          "id": "1bfa978f-30b1-483f-9290-a6e5db184baf",
+          "type": "curve/primitive",
+          "position": {
+            "x": 757,
+            "y": 494
+          },
+          "params": {
+            "primitiveType": "line",
+            "radius": 21.125,
+            "height": 5.8,
+            "turns": 8.125,
+            "sag": 0.564,
+            "visible": 1,
+            "location": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "rotation": {
+              "x": 1.5707963267948966,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            }
+          }
+        },
+        {
+          "id": "b6ce00ad-0093-45d8-835f-9ca163a1fcab",
+          "type": "curve/to_mesh",
+          "position": {
+            "x": 1298,
+            "y": 565
+          },
+          "params": {
+            "visible": 1,
+            "location": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "thickness": 0.009,
+            "startProgress": 0,
+            "endProgress": 1,
+            "tubularSegments": 877,
+            "radialSegments": 12,
+            "closed": false,
+            "caps": false,
+            "color": 3718648,
+            "emissive": 0,
+            "emissiveIntensity": 1,
+            "shadeless": false,
+            "roughness": 0.4,
+            "metalness": 0.1,
+            "wireframe": false,
+            "opacity": 1,
+            "surfaceColor": 3718648,
+            "surfaceEmissive": 0,
+            "surfaceEmissiveIntensity": 1,
+            "surfaceShadeless": false,
+            "surfaceRoughness": 0.4,
+            "surfaceMetalness": 0.1,
+            "surfaceWireframe": false,
+            "surfaceOpacity": 1,
+            "uvScaleX": 1,
+            "uvScaleY": 1,
+            "uvOffsetX": 0,
+            "uvOffsetY": 0,
+            "profile": [
+              {
+                "x": 0,
+                "y": 1
+              },
+              {
+                "x": 0.4878468944685671,
+                "y": 1
+              },
+              {
+                "x": 1,
+                "y": 1
+              }
+            ],
+            "pointsList": [
+              {
+                "x": -2,
+                "y": 0,
+                "z": 0
+              },
+              {
+                "x": -0.5,
+                "y": 1.5,
+                "z": 0
+              },
+              {
+                "x": 0.5,
+                "y": -1.5,
+                "z": 0
+              },
+              {
+                "x": 2,
+                "y": 0,
+                "z": 0
+              }
+            ],
+            "doubleSided": true,
+            "surface": false,
+            "surfaceMode": "extrude",
+            "depth": 0.2,
+            "surfaceSegments": 64,
+            "surfaceRings": 8,
+            "surfaceIterations": 60,
+            "showCurve": 1
+          }
+        },
+        {
+          "id": "03eeca8b-03bc-4a0b-ba81-25a7f63e6914",
+          "type": "value/math",
+          "position": {
+            "x": 547,
+            "y": 413
+          },
+          "params": {
+            "op": "multiply",
+            "a": 0,
+            "b": 0
+          }
+        },
+        {
+          "id": "b4ee5c3b-a411-421f-90d7-34ffa36a2ff8",
+          "type": "value/constant",
+          "position": {
+            "x": -518,
+            "y": 259
+          },
+          "params": {
+            "type": "float",
+            "value": 1.033
+          }
+        },
+        {
+          "id": "1dd68c91-5871-4e15-8b58-94f61db37f5a",
+          "type": "value/math",
+          "position": {
+            "x": -71,
+            "y": 342
+          },
+          "params": {
+            "op": "multiply",
+            "a": 0,
+            "b": 4.725
+          }
+        },
+        {
+          "id": "b465a278-9cdb-4ec8-8fe0-36f0e1a9e972",
+          "type": "structure/array",
+          "position": {
+            "x": 1623,
+            "y": 555
+          },
+          "params": {
+            "visible": 1,
+            "count": 5,
+            "mode": "circular",
+            "curveOrient": false,
+            "axis": "X",
+            "spacing": 2,
+            "spacingVariance": 0,
+            "radius": 0,
+            "plane": "XZ",
+            "totalAngle": 360,
+            "orient": true,
+            "gridRows": 3,
+            "gridCols": 3,
+            "countX": 3,
+            "countY": 3,
+            "countZ": 3,
+            "spacingX": 2,
+            "spacingY": 2,
+            "spacingZ": 2,
+            "centerGrid": true,
+            "seed": 0
+          }
+        },
+        {
+          "id": "80e38f4c-7717-4957-96d3-793980f4b097",
+          "type": "list/statistics",
+          "position": {
+            "x": -90,
+            "y": 606
+          },
+          "params": {}
+        },
+        {
+          "id": "c793abe9-33d2-4a37-979d-d05ae4db4085",
+          "type": "value/math",
+          "position": {
+            "x": 227,
+            "y": 652
+          },
+          "params": {
+            "op": "multiply",
+            "a": 0,
+            "b": 2
+          }
+        },
+        {
+          "id": "c1d34adc-7003-4efe-a613-9f181c3101fc",
+          "type": "value/constant",
+          "position": {
+            "x": -544,
+            "y": 74
+          },
+          "params": {
+            "type": "float",
+            "value": 1.6
+          }
+        },
+        {
+          "id": "9528c4aa-1865-44d9-8976-fb94da4256b7",
+          "type": "value/math",
+          "position": {
+            "x": 446,
+            "y": 628
+          },
+          "params": {
+            "op": "multiply",
+            "a": 0,
+            "b": 2
+          }
+        },
+        {
+          "id": "48c32b99-53ab-460c-ac33-1a594ddb03ad",
+          "type": "value/constant",
+          "position": {
+            "x": -539,
+            "y": 713
+          },
+          "params": {
+            "type": "integer",
+            "value": 14
+          }
+        },
+        {
+          "id": "bd418a99-6986-422a-ba0a-8cfb3e2ca5bb",
+          "type": "value/math",
+          "position": {
+            "x": -129,
+            "y": 929
+          },
+          "params": {
+            "op": "divide",
+            "a": 0,
+            "b": 2
+          }
+        },
+        {
+          "id": "476aadad-22c5-4710-a045-8fc1f13cbe6d",
+          "type": "value/math",
+          "position": {
+            "x": 1439,
+            "y": 973
+          },
+          "params": {
+            "op": "divide",
+            "a": 360,
+            "b": 0
+          }
+        },
+        {
+          "id": "a36edeb1-7dd7-4755-8b8c-73706d7156ca",
+          "type": "structure/instance-transform",
+          "position": {
+            "x": 2057,
+            "y": 556
+          },
+          "params": {
+            "mode": "absolute",
+            "pivot": "individual",
+            "index": -1,
+            "rotationMode": "align",
+            "alignAxis": "Z",
+            "posX": 0,
+            "posY": 0,
+            "posZ": 0,
+            "rotX": 0,
+            "rotY": 0,
+            "rotZ": 0,
+            "scaleX": 1,
+            "scaleY": 1,
+            "scaleZ": 1
+          }
+        },
+        {
+          "id": "042ae5b7-1547-45b6-adfe-d5ca9d282cfb",
+          "type": "list/generate",
+          "position": {
+            "x": 1724,
+            "y": 913
+          },
+          "params": {
+            "count": 10,
+            "start": 0,
+            "step": 1
+          }
+        },
+        {
+          "id": "1bb15978-d9ae-4f23-852a-57ab3bf02ddc",
+          "type": "curve/to_mesh_list",
+          "position": {
+            "x": 853,
+            "y": -83
+          },
+          "params": {
+            "visible": 1,
+            "location": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "thickness": 0.009,
+            "startProgress": 0,
+            "endProgress": 1,
+            "tubularSegments": 640,
+            "radialSegments": 12,
+            "caps": false,
+            "color": 3718648,
+            "emissive": 0,
+            "emissiveIntensity": 1,
+            "shadeless": false,
+            "roughness": 0.4,
+            "metalness": 0.1,
+            "wireframe": false,
+            "opacity": 1,
+            "transmission": 0,
+            "uvScaleX": 1,
+            "uvScaleY": 1,
+            "uvOffsetX": 0,
+            "uvOffsetY": 0,
+            "profile": [
+              {
+                "x": 0,
+                "y": 1
+              },
+              {
+                "x": 0.6149943364168398,
+                "y": 1
+              },
+              {
+                "x": 1,
+                "y": 1
+              }
+            ],
+            "doubleSided": true
+          }
+        },
+        {
+          "id": "42942ddc-e694-43b9-8bf0-c888ad7d68f8",
+          "type": "curve/array",
+          "position": {
+            "x": 244,
+            "y": -75
+          },
+          "params": {
+            "count": 5,
+            "spacing": 1,
+            "start": 1,
+            "step": 0
+          }
+        },
+        {
+          "id": "14ac3b56-a9a8-4c2b-9f7e-8a6abaa48691",
+          "type": "material/standard",
+          "position": {
+            "x": 376,
+            "y": 90
+          },
+          "params": {
+            "color": 16777215,
+            "emissive": 0,
+            "emissiveIntensity": 1,
+            "shadeless": 0,
+            "roughness": 0.2,
+            "metalness": 0.1,
+            "wireframe": 0,
+            "opacity": 1,
+            "transmission": 0.5,
+            "thickness": 0.5
+          }
+        },
+        {
+          "id": "1af2c0f8-f25a-45f0-b84b-9954af4a2bbf",
+          "type": "curve/subdivide",
+          "position": {
+            "x": 1292,
+            "y": 286
+          },
+          "params": {
+            "subdivisions": 10,
+            "closed": 0,
+            "type": "catmull",
+            "tension": 0.212
+          }
+        },
+        {
+          "id": "77e2be81-a3e7-4825-9c17-13d14ebaa5d4",
+          "type": "curve/to_points",
+          "position": {
+            "x": 1025,
+            "y": 361
+          },
+          "params": {
+            "maxPoints": 2
+          }
+        },
+        {
+          "id": "1de97349-4b82-4917-bf4f-1a4d4ce752a6",
+          "type": "curve/from_points",
+          "position": {
+            "x": 1547,
+            "y": 229
+          },
+          "params": {
+            "type": "catmull",
+            "closed": false,
+            "tension": 0.5,
+            "sag": 0.15,
+            "pointsList": [
+              {
+                "x": -2,
+                "y": 0,
+                "z": 0
+              },
+              {
+                "x": -0.5,
+                "y": 1.5,
+                "z": 0
+              },
+              {
+                "x": 0.5,
+                "y": -1.5,
+                "z": 0
+              },
+              {
+                "x": 2,
+                "y": 0,
+                "z": 0
+              }
+            ],
+            "visible": 1,
+            "location": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            }
+          }
+        },
+        {
+          "id": "9105263b-bf36-4df2-9a6a-9ace1daa9ae7",
+          "type": "value/math",
+          "position": {
+            "x": 951,
+            "y": 202
+          },
+          "params": {
+            "op": "multiply",
+            "a": 0,
+            "b": 2
+          }
+        }
+      ],
+      "connections": [
+        {
+          "id": "80dd5988-d456-4bcb-adf7-224ec2b8101c.out->03eeca8b-03bc-4a0b-ba81-25a7f63e6914.a",
+          "fromNode": "80dd5988-d456-4bcb-adf7-224ec2b8101c",
+          "fromSocket": "out",
+          "toNode": "03eeca8b-03bc-4a0b-ba81-25a7f63e6914",
+          "toSocket": "a"
+        },
+        {
+          "id": "b4ee5c3b-a411-421f-90d7-34ffa36a2ff8.out->cc355c31-b677-4143-b843-5af218b07b8a.step",
+          "fromNode": "b4ee5c3b-a411-421f-90d7-34ffa36a2ff8",
+          "fromSocket": "out",
+          "toNode": "cc355c31-b677-4143-b843-5af218b07b8a",
+          "toSocket": "step"
+        },
+        {
+          "id": "b4ee5c3b-a411-421f-90d7-34ffa36a2ff8.out->1dd68c91-5871-4e15-8b58-94f61db37f5a.a",
+          "fromNode": "b4ee5c3b-a411-421f-90d7-34ffa36a2ff8",
+          "fromSocket": "out",
+          "toNode": "1dd68c91-5871-4e15-8b58-94f61db37f5a",
+          "toSocket": "a"
+        },
+        {
+          "id": "1dd68c91-5871-4e15-8b58-94f61db37f5a.out->03eeca8b-03bc-4a0b-ba81-25a7f63e6914.b",
+          "fromNode": "1dd68c91-5871-4e15-8b58-94f61db37f5a",
+          "fromSocket": "out",
+          "toNode": "03eeca8b-03bc-4a0b-ba81-25a7f63e6914",
+          "toSocket": "b"
+        },
+        {
+          "id": "b6ce00ad-0093-45d8-835f-9ca163a1fcab.geometry->b465a278-9cdb-4ec8-8fe0-36f0e1a9e972.geometry",
+          "fromNode": "b6ce00ad-0093-45d8-835f-9ca163a1fcab",
+          "fromSocket": "geometry",
+          "toNode": "b465a278-9cdb-4ec8-8fe0-36f0e1a9e972",
+          "toSocket": "geometry"
+        },
+        {
+          "id": "cc355c31-b677-4143-b843-5af218b07b8a.list->80e38f4c-7717-4957-96d3-793980f4b097.list",
+          "fromNode": "cc355c31-b677-4143-b843-5af218b07b8a",
+          "fromSocket": "list",
+          "toNode": "80e38f4c-7717-4957-96d3-793980f4b097",
+          "toSocket": "list"
+        },
+        {
+          "id": "80e38f4c-7717-4957-96d3-793980f4b097.max->c793abe9-33d2-4a37-979d-d05ae4db4085.a",
+          "fromNode": "80e38f4c-7717-4957-96d3-793980f4b097",
+          "fromSocket": "max",
+          "toNode": "c793abe9-33d2-4a37-979d-d05ae4db4085",
+          "toSocket": "a"
+        },
+        {
+          "id": "c1d34adc-7003-4efe-a613-9f181c3101fc.out->de8b2a66-ccc6-443e-a053-3956018f5c22.radius",
+          "fromNode": "c1d34adc-7003-4efe-a613-9f181c3101fc",
+          "fromSocket": "out",
+          "toNode": "de8b2a66-ccc6-443e-a053-3956018f5c22",
+          "toSocket": "radius"
+        },
+        {
+          "id": "c1d34adc-7003-4efe-a613-9f181c3101fc.out->c793abe9-33d2-4a37-979d-d05ae4db4085.b",
+          "fromNode": "c1d34adc-7003-4efe-a613-9f181c3101fc",
+          "fromSocket": "out",
+          "toNode": "c793abe9-33d2-4a37-979d-d05ae4db4085",
+          "toSocket": "b"
+        },
+        {
+          "id": "c793abe9-33d2-4a37-979d-d05ae4db4085.out->9528c4aa-1865-44d9-8976-fb94da4256b7.a",
+          "fromNode": "c793abe9-33d2-4a37-979d-d05ae4db4085",
+          "fromSocket": "out",
+          "toNode": "9528c4aa-1865-44d9-8976-fb94da4256b7",
+          "toSocket": "a"
+        },
+        {
+          "id": "9528c4aa-1865-44d9-8976-fb94da4256b7.out->1bfa978f-30b1-483f-9290-a6e5db184baf.height",
+          "fromNode": "9528c4aa-1865-44d9-8976-fb94da4256b7",
+          "fromSocket": "out",
+          "toNode": "1bfa978f-30b1-483f-9290-a6e5db184baf",
+          "toSocket": "height"
+        },
+        {
+          "id": "48c32b99-53ab-460c-ac33-1a594ddb03ad.out->de8b2a66-ccc6-443e-a053-3956018f5c22.turns",
+          "fromNode": "48c32b99-53ab-460c-ac33-1a594ddb03ad",
+          "fromSocket": "out",
+          "toNode": "de8b2a66-ccc6-443e-a053-3956018f5c22",
+          "toSocket": "turns"
+        },
+        {
+          "id": "48c32b99-53ab-460c-ac33-1a594ddb03ad.out->bd418a99-6986-422a-ba0a-8cfb3e2ca5bb.a",
+          "fromNode": "48c32b99-53ab-460c-ac33-1a594ddb03ad",
+          "fromSocket": "out",
+          "toNode": "bd418a99-6986-422a-ba0a-8cfb3e2ca5bb",
+          "toSocket": "a"
+        },
+        {
+          "id": "b465a278-9cdb-4ec8-8fe0-36f0e1a9e972.geometry->a36edeb1-7dd7-4755-8b8c-73706d7156ca.geometry",
+          "fromNode": "b465a278-9cdb-4ec8-8fe0-36f0e1a9e972",
+          "fromSocket": "geometry",
+          "toNode": "a36edeb1-7dd7-4755-8b8c-73706d7156ca",
+          "toSocket": "geometry"
+        },
+        {
+          "id": "476aadad-22c5-4710-a045-8fc1f13cbe6d.out->042ae5b7-1547-45b6-adfe-d5ca9d282cfb.step",
+          "fromNode": "476aadad-22c5-4710-a045-8fc1f13cbe6d",
+          "fromSocket": "out",
+          "toNode": "042ae5b7-1547-45b6-adfe-d5ca9d282cfb",
+          "toSocket": "step"
+        },
+        {
+          "id": "bd418a99-6986-422a-ba0a-8cfb3e2ca5bb.out->b465a278-9cdb-4ec8-8fe0-36f0e1a9e972.count",
+          "fromNode": "bd418a99-6986-422a-ba0a-8cfb3e2ca5bb",
+          "fromSocket": "out",
+          "toNode": "b465a278-9cdb-4ec8-8fe0-36f0e1a9e972",
+          "toSocket": "count"
+        },
+        {
+          "id": "bd418a99-6986-422a-ba0a-8cfb3e2ca5bb.out->042ae5b7-1547-45b6-adfe-d5ca9d282cfb.count",
+          "fromNode": "bd418a99-6986-422a-ba0a-8cfb3e2ca5bb",
+          "fromSocket": "out",
+          "toNode": "042ae5b7-1547-45b6-adfe-d5ca9d282cfb",
+          "toSocket": "count"
+        },
+        {
+          "id": "de8b2a66-ccc6-443e-a053-3956018f5c22.curve->42942ddc-e694-43b9-8bf0-c888ad7d68f8.curve",
+          "fromNode": "de8b2a66-ccc6-443e-a053-3956018f5c22",
+          "fromSocket": "curve",
+          "toNode": "42942ddc-e694-43b9-8bf0-c888ad7d68f8",
+          "toSocket": "curve"
+        },
+        {
+          "id": "80dd5988-d456-4bcb-adf7-224ec2b8101c.out->42942ddc-e694-43b9-8bf0-c888ad7d68f8.count",
+          "fromNode": "80dd5988-d456-4bcb-adf7-224ec2b8101c",
+          "fromSocket": "out",
+          "toNode": "42942ddc-e694-43b9-8bf0-c888ad7d68f8",
+          "toSocket": "count"
+        },
+        {
+          "id": "42942ddc-e694-43b9-8bf0-c888ad7d68f8.curves->1bb15978-d9ae-4f23-852a-57ab3bf02ddc.curves",
+          "fromNode": "42942ddc-e694-43b9-8bf0-c888ad7d68f8",
+          "fromSocket": "curves",
+          "toNode": "1bb15978-d9ae-4f23-852a-57ab3bf02ddc",
+          "toSocket": "curves"
+        },
+        {
+          "id": "b4ee5c3b-a411-421f-90d7-34ffa36a2ff8.out->42942ddc-e694-43b9-8bf0-c888ad7d68f8.spacing",
+          "fromNode": "b4ee5c3b-a411-421f-90d7-34ffa36a2ff8",
+          "fromSocket": "out",
+          "toNode": "42942ddc-e694-43b9-8bf0-c888ad7d68f8",
+          "toSocket": "spacing"
+        },
+        {
+          "id": "48c32b99-53ab-460c-ac33-1a594ddb03ad.out->476aadad-22c5-4710-a045-8fc1f13cbe6d.b",
+          "fromNode": "48c32b99-53ab-460c-ac33-1a594ddb03ad",
+          "fromSocket": "out",
+          "toNode": "476aadad-22c5-4710-a045-8fc1f13cbe6d",
+          "toSocket": "b"
+        },
+        {
+          "id": "042ae5b7-1547-45b6-adfe-d5ca9d282cfb.list->a36edeb1-7dd7-4755-8b8c-73706d7156ca.rotY",
+          "fromNode": "042ae5b7-1547-45b6-adfe-d5ca9d282cfb",
+          "fromSocket": "list",
+          "toNode": "a36edeb1-7dd7-4755-8b8c-73706d7156ca",
+          "toSocket": "rotY"
+        },
+        {
+          "id": "14ac3b56-a9a8-4c2b-9f7e-8a6abaa48691.material->1bb15978-d9ae-4f23-852a-57ab3bf02ddc.material",
+          "fromNode": "14ac3b56-a9a8-4c2b-9f7e-8a6abaa48691",
+          "fromSocket": "material",
+          "toNode": "1bb15978-d9ae-4f23-852a-57ab3bf02ddc",
+          "toSocket": "material"
+        },
+        {
+          "id": "14ac3b56-a9a8-4c2b-9f7e-8a6abaa48691.material->b6ce00ad-0093-45d8-835f-9ca163a1fcab.material",
+          "fromNode": "14ac3b56-a9a8-4c2b-9f7e-8a6abaa48691",
+          "fromSocket": "material",
+          "toNode": "b6ce00ad-0093-45d8-835f-9ca163a1fcab",
+          "toSocket": "material"
+        },
+        {
+          "id": "1bfa978f-30b1-483f-9290-a6e5db184baf.curve->77e2be81-a3e7-4825-9c17-13d14ebaa5d4.curve",
+          "fromNode": "1bfa978f-30b1-483f-9290-a6e5db184baf",
+          "fromSocket": "curve",
+          "toNode": "77e2be81-a3e7-4825-9c17-13d14ebaa5d4",
+          "toSocket": "curve"
+        },
+        {
+          "id": "77e2be81-a3e7-4825-9c17-13d14ebaa5d4.points->1af2c0f8-f25a-45f0-b84b-9954af4a2bbf.points",
+          "fromNode": "77e2be81-a3e7-4825-9c17-13d14ebaa5d4",
+          "fromSocket": "points",
+          "toNode": "1af2c0f8-f25a-45f0-b84b-9954af4a2bbf",
+          "toSocket": "points"
+        },
+        {
+          "id": "1af2c0f8-f25a-45f0-b84b-9954af4a2bbf.points->1de97349-4b82-4917-bf4f-1a4d4ce752a6.points",
+          "fromNode": "1af2c0f8-f25a-45f0-b84b-9954af4a2bbf",
+          "fromSocket": "points",
+          "toNode": "1de97349-4b82-4917-bf4f-1a4d4ce752a6",
+          "toSocket": "points"
+        },
+        {
+          "id": "80dd5988-d456-4bcb-adf7-224ec2b8101c.out->9105263b-bf36-4df2-9a6a-9ace1daa9ae7.a",
+          "fromNode": "80dd5988-d456-4bcb-adf7-224ec2b8101c",
+          "fromSocket": "out",
+          "toNode": "9105263b-bf36-4df2-9a6a-9ace1daa9ae7",
+          "toSocket": "a"
+        },
+        {
+          "id": "1de97349-4b82-4917-bf4f-1a4d4ce752a6.curve->b6ce00ad-0093-45d8-835f-9ca163a1fcab.curve",
+          "fromNode": "1de97349-4b82-4917-bf4f-1a4d4ce752a6",
+          "fromSocket": "curve",
+          "toNode": "b6ce00ad-0093-45d8-835f-9ca163a1fcab",
+          "toSocket": "curve"
+        },
+        {
+          "id": "9105263b-bf36-4df2-9a6a-9ace1daa9ae7.out->1af2c0f8-f25a-45f0-b84b-9954af4a2bbf.subdivisions",
+          "fromNode": "9105263b-bf36-4df2-9a6a-9ace1daa9ae7",
+          "fromSocket": "out",
+          "toNode": "1af2c0f8-f25a-45f0-b84b-9954af4a2bbf",
+          "toSocket": "subdivisions"
+        }
+      ],
+      "keyframes": {},
+      "markers": [],
+      "exposedParams": [
+        {
+          "nodeId": "80dd5988-d456-4bcb-adf7-224ec2b8101c",
+          "paramId": "value",
+          "label": "cercles"
+        },
+        {
+          "nodeId": "b4ee5c3b-a411-421f-90d7-34ffa36a2ff8",
+          "paramId": "value",
+          "label": "espacement"
+        },
+        {
+          "nodeId": "48c32b99-53ab-460c-ac33-1a594ddb03ad",
+          "paramId": "value",
+          "label": "Etapes"
+        }
+      ]
+    },
+    {
+      "nodes": [
+        {
+          "id": "6fc375e1-9238-4366-849c-53be4b1f4cd8",
+          "type": "curve/primitive",
+          "position": {
+            "x": 538,
+            "y": 258
+          },
+          "params": {
+            "primitiveType": "line",
+            "radius": 15.475,
+            "height": 5.8,
+            "turns": 8.125,
+            "sag": 0.138,
+            "visible": 1,
+            "location": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "rotation": {
+              "x": 1.5707963267948972,
+              "y": 0.8941074627128195,
+              "z": -8.864552459510893e-17
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            }
+          }
+        },
+        {
+          "id": "a1a944c4-24c5-4e9e-b40e-e554b6b07582",
+          "type": "curve/subdivide",
+          "position": {
+            "x": 1192,
+            "y": 261
+          },
+          "params": {
+            "subdivisions": 2,
+            "closed": false,
+            "type": "catmull",
+            "tension": 0.262
+          }
+        },
+        {
+          "id": "afde0d05-e3ee-4387-b1e2-e9e7a73992f8",
+          "type": "curve/to_points",
+          "position": {
+            "x": 873,
+            "y": 257
+          },
+          "params": {
+            "maxPoints": 2
+          }
+        },
+        {
+          "id": "e5be671d-0522-4d92-94ad-71f1d28dc32c",
+          "type": "curve/from_points",
+          "position": {
+            "x": 1452,
+            "y": 252
+          },
+          "params": {
+            "type": "catmull",
+            "closed": false,
+            "tension": 0.5,
+            "sag": 0.2,
+            "pointsList": [
+              {
+                "x": -2,
+                "y": 0,
+                "z": 0
+              },
+              {
+                "x": -0.5,
+                "y": 1.5,
+                "z": 0
+              },
+              {
+                "x": 0.5,
+                "y": -1.5,
+                "z": 0
+              },
+              {
+                "x": 2,
+                "y": 0,
+                "z": 0
+              }
+            ],
+            "visible": 1,
+            "location": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "rotation": {
+              "x": 1.5586640471852344,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            }
+          }
+        },
+        {
+          "id": "117bb0d0-14b4-4262-9807-caa6f894c721",
+          "type": "curve/to_mesh",
+          "position": {
+            "x": 1908,
+            "y": 262
+          },
+          "params": {
+            "visible": 1,
+            "location": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "thickness": 0.15,
+            "startProgress": 0,
+            "endProgress": 1,
+            "tubularSegments": 64,
+            "radialSegments": 12,
+            "closed": false,
+            "caps": false,
+            "color": 3718648,
+            "emissive": 0,
+            "emissiveIntensity": 1,
+            "shadeless": false,
+            "roughness": 0.4,
+            "metalness": 0.1,
+            "wireframe": false,
+            "opacity": 1,
+            "surfaceColor": 3718648,
+            "surfaceEmissive": 0,
+            "surfaceEmissiveIntensity": 1,
+            "surfaceShadeless": false,
+            "surfaceRoughness": 0.4,
+            "surfaceMetalness": 0.1,
+            "surfaceWireframe": false,
+            "surfaceOpacity": 1,
+            "uvScaleX": 1,
+            "uvScaleY": 1,
+            "uvOffsetX": 0,
+            "uvOffsetY": 0,
+            "profile": [
+              {
+                "x": 0,
+                "y": 0.1
+              },
+              {
+                "x": 0.35,
+                "y": 0.9
+              },
+              {
+                "x": 1,
+                "y": 0.2
+              }
+            ],
+            "pointsList": [
+              {
+                "x": -2,
+                "y": 0,
+                "z": 0
+              },
+              {
+                "x": -0.5,
+                "y": 1.5,
+                "z": 0
+              },
+              {
+                "x": 0.5,
+                "y": -1.5,
+                "z": 0
+              },
+              {
+                "x": 2,
+                "y": 0,
+                "z": 0
+              }
+            ],
+            "doubleSided": true,
+            "surface": false,
+            "surfaceMode": "extrude",
+            "depth": 0.2,
+            "surfaceSegments": 64,
+            "surfaceRings": 8,
+            "surfaceIterations": 60,
+            "showCurve": 1
+          }
+        }
+      ],
+      "connections": [
+        {
+          "id": "6fc375e1-9238-4366-849c-53be4b1f4cd8.curve->afde0d05-e3ee-4387-b1e2-e9e7a73992f8.curve",
+          "fromNode": "6fc375e1-9238-4366-849c-53be4b1f4cd8",
+          "fromSocket": "curve",
+          "toNode": "afde0d05-e3ee-4387-b1e2-e9e7a73992f8",
+          "toSocket": "curve"
+        },
+        {
+          "id": "afde0d05-e3ee-4387-b1e2-e9e7a73992f8.points->a1a944c4-24c5-4e9e-b40e-e554b6b07582.points",
+          "fromNode": "afde0d05-e3ee-4387-b1e2-e9e7a73992f8",
+          "fromSocket": "points",
+          "toNode": "a1a944c4-24c5-4e9e-b40e-e554b6b07582",
+          "toSocket": "points"
+        },
+        {
+          "id": "e5be671d-0522-4d92-94ad-71f1d28dc32c.curve->117bb0d0-14b4-4262-9807-caa6f894c721.curve",
+          "fromNode": "e5be671d-0522-4d92-94ad-71f1d28dc32c",
+          "fromSocket": "curve",
+          "toNode": "117bb0d0-14b4-4262-9807-caa6f894c721",
+          "toSocket": "curve"
+        },
+        {
+          "id": "a1a944c4-24c5-4e9e-b40e-e554b6b07582.points->e5be671d-0522-4d92-94ad-71f1d28dc32c.points",
+          "fromNode": "a1a944c4-24c5-4e9e-b40e-e554b6b07582",
+          "fromSocket": "points",
+          "toNode": "e5be671d-0522-4d92-94ad-71f1d28dc32c",
+          "toSocket": "points"
+        }
+      ],
+      "keyframes": {},
+      "markers": [],
+      "exposedParams": []
+    },
+    {
+      "nodes": [],
+      "connections": [],
+      "keyframes": {},
+      "markers": [],
+      "exposedParams": []
+    },
+    {
+      "nodes": [],
+      "connections": [],
+      "keyframes": {},
+      "markers": [],
+      "exposedParams": []
+    },
+    {
+      "nodes": [],
+      "connections": [],
+      "keyframes": {},
+      "markers": [],
+      "exposedParams": []
+    },
+    {
+      "nodes": [],
+      "connections": [],
+      "keyframes": {},
+      "markers": [],
+      "exposedParams": []
+    }
+  ],
+  "activeCanvas": 0
+}

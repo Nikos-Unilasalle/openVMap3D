@@ -1,0 +1,51 @@
+{
+  "nodes": [
+    {
+      "id": "target",
+      "type": "object/sphere",
+      "position": { "x": -700, "y": 40 },
+      "params": { "scale": { "x": 3, "y": 3, "z": 3 }, "color": 3684408 }
+    },
+    {
+      "id": "ray",
+      "type": "physics/raycast",
+      "position": { "x": -440, "y": 40 },
+      "params": { "origin": { "x": 0, "y": 6, "z": 0 }, "direction": { "x": 0, "y": -1, "z": 0 }, "maxDistance": 100 }
+    },
+    {
+      "id": "marker",
+      "type": "object/sphere",
+      "position": { "x": -440, "y": 240 },
+      "params": { "scale": { "x": 0.15, "y": 0.15, "z": 0.15 }, "color": 16442133, "shadeless": 1 }
+    },
+    {
+      "id": "place",
+      "type": "structure/geometry-transform",
+      "position": { "x": -180, "y": 240 },
+      "params": { "mode": "absolute" }
+    }
+  ],
+  "connections": [
+    {
+      "id": "target.geometry->ray.geometry",
+      "fromNode": "target",
+      "fromSocket": "geometry",
+      "toNode": "ray",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "marker.geometry->place.geometry",
+      "fromNode": "marker",
+      "fromSocket": "geometry",
+      "toNode": "place",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "ray.point->place.location",
+      "fromNode": "ray",
+      "fromSocket": "point",
+      "toNode": "place",
+      "toSocket": "location"
+    }
+  ]
+}

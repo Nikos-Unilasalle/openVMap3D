@@ -1,0 +1,11 @@
+{
+  "nodes": [
+    {
+      "id": "helix",
+      "type": "curve/primitive",
+      "position": { "x": -300, "y": 40 },
+      "params": { "primitiveType": "helix", "radius": 1.5, "height": 3, "turns": 4 }
+    }
+  ],
+  "connections": []
+}

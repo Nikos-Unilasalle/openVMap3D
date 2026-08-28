@@ -1,0 +1,38 @@
+{
+  "nodes": [
+    {
+      "id": "mouse",
+      "type": "io/mouse",
+      "position": { "x": -440, "y": -140 },
+      "params": { "target": "Ground", "height": 0, "smoothing": 0.25 }
+    },
+    {
+      "id": "marker",
+      "type": "object/sphere",
+      "position": { "x": -440, "y": 40 },
+      "params": { "scale": { "x": 0.3, "y": 0.3, "z": 0.3 }, "color": 16442133, "shadeless": 1 }
+    },
+    {
+      "id": "place",
+      "type": "structure/geometry-transform",
+      "position": { "x": -180, "y": 40 },
+      "params": { "mode": "absolute" }
+    }
+  ],
+  "connections": [
+    {
+      "id": "marker.geometry->place.geometry",
+      "fromNode": "marker",
+      "fromSocket": "geometry",
+      "toNode": "place",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "mouse.point->place.location",
+      "fromNode": "mouse",
+      "fromSocket": "point",
+      "toNode": "place",
+      "toSocket": "location"
+    }
+  ]
+}

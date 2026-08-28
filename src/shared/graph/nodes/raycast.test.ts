@@ -236,10 +236,10 @@ describe("VOLUME_SCATTER_NODE", () => {
 });
 
 
-describe.skipIf(!existsSync("demos/demo_raycast.tsuji"))("demo_raycast.tsuji", () => {
+describe.skipIf(!existsSync("public/demos/demo_raycast.tsuji"))("demo_raycast.tsuji", () => {
   it("loads and evaluates the ray-burst demo graph", () => {
     initBvhRaycast();
-    const text = readFileSync("demos/demo_raycast.tsuji", "utf8");
+    const text = readFileSync("public/demos/demo_raycast.tsuji", "utf8");
     const graph = deserializeGraph(text, DEFAULT_REGISTRY);
 
     const burstNode = graph.nodes.find((n) => n.type === "physics/ray-burst");
@@ -266,7 +266,7 @@ describe.skipIf(!existsSync("demos/demo_raycast.tsuji"))("demo_raycast.tsuji", (
 
   it("markers land exactly on the ray endpoints (positions list not overridden by posX/Y/Z defaults)", () => {
     initBvhRaycast();
-    const text = readFileSync("demos/demo_raycast.tsuji", "utf8");
+    const text = readFileSync("public/demos/demo_raycast.tsuji", "utf8");
     const graph = deserializeGraph(text, DEFAULT_REGISTRY);
     const results = evaluateGraph(graph, DEFAULT_REGISTRY, { time: 0.5, step: 1, nodeId: "demo2" } as never);
 

@@ -10,6 +10,7 @@ import { emptyProject, Project } from "../shared/graph/types";
 import { closeOutputWindow, listMonitors, onOutputClosed, openOutputWindow } from "../shared/ipc";
 import logoUrl from "../assets/logo.png";
 import { ShortcutsModal } from "./ShortcutsModal";
+import { DemosMenu } from "./DemosMenu";
 import "./top-bar.css";
 
 export interface TopBarProps {
@@ -324,6 +325,15 @@ export const TopBar: React.FC<TopBarProps> = ({
           </svg>
           {isOutputOpen ? "Close Output" : "Output"}
         </button>
+
+        {/* DEMOS — small categorized graphs teaching one node/combination each */}
+        <DemosMenu
+          onLoadDemo={(demoProject, filename) => {
+            onLoadProject(demoProject, filename);
+            showToast(`"${filename}" chargé !`);
+          }}
+          onError={(message) => showToast(message, true)}
+        />
 
         {/* EXPORT VIDEO — frame-by-frame render of the whole timeline to MP4/WebM */}
         {onExportVideo && (
