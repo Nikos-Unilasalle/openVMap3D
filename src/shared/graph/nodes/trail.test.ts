@@ -185,3 +185,37 @@ describe("SQUASH_STRETCH_NODE", () => {
     expect(top.y).toBeCloseTo(0.5 / Math.sqrt(1.5), 3);
   });
 });
+
+describe("TRAIL_NODE through a transform wrapper", () => {
+  /** What Geometry Transform / Set Instance Transform / Squash & Stretch all hand down a wire. */
+  const wrapped = (x: number, y: number, z: number) => {
+    const group = new THREE.Group();
+    const wrapper = new THREE.Group();
+    wrapper.matrixAutoUpdate = false;
+    wrapper.matrix.setPosition(x, y, z);
+    wrapper.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1)));
+    group.add(wrapper);
+    return group;
+  };
+
+  it("samples the wrapped payload, not the identity wrapper", () => {
+    // Regression: the node read setFromMatrixPosition(object.matrixWorld) off
+    // the root, which for every one of those nodes is a Group parked at the
+    // origin — so the trail recorded (0,0,0) forever and drew nothing.
+    const ctx = wired("trail-wrapper");
+    const first = TRAIL_NODE.evaluate({ geometry: wrapped(1, 2, 3), time: 0 }, {}, ctx).points as THREE.Vector3[];
+    expect([first[0].x, first[0].y, first[0].z]).toEqual([1, 2, 3]);
+
+    const second = TRAIL_NODE.evaluate({ geometry: wrapped(4, 2, 3), time: 0.1 }, {}, ctx).points as THREE.Vector3[];
+    expect(second).toHaveLength(2);
+    expect(second.map((p) => p.x)).toEqual([1, 4]);
+  });
+
+  it("still reads a bare mesh's own matrix", () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    mesh.matrixAutoUpdate = false;
+    mesh.matrix.setPosition(0, 5, 0);
+    const points = TRAIL_NODE.evaluate({ geometry: mesh, time: 0 }, {}, wired("trail-bare")).points as THREE.Vector3[];
+    expect(points[0].y).toBe(5);
+  });
+});

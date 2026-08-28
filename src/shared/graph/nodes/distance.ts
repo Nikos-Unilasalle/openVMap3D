@@ -1,52 +1,12 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
 import { toBoolean } from "../sockets";
-
-/**
- * World matrix computed by walking the parent chain and multiplying local
- * matrices, instead of reading the cached `matrixWorld`.
- *
- * three only refreshes `matrixWorld` when `matrixWorldNeedsUpdate` is set, and
- * the instancing nodes (Array, Set Instance Transform, …) write `object.matrix`
- * directly on wrapper Groups with `matrixAutoUpdate = false` without raising
- * that flag. The renderer papers over it — `scene.updateMatrixWorld(true)`
- * forces the whole tree — but during graph evaluation, which runs *before* that
- * pass, every cached `matrixWorld` is stale (identity for a freshly built
- * wrapper). Reading it there made every instance report position (0,0,0), so
- * the nearest one was always index 0. Recomputing from local matrices is exact
- * and cheap for the shallow hierarchies these nodes build.
- */
-function worldMatrixOf(obj: THREE.Object3D): THREE.Matrix4 {
-  const chain: THREE.Object3D[] = [];
-  for (let cur: THREE.Object3D | null = obj; cur; cur = cur.parent) chain.push(cur);
-
-  const world = new THREE.Matrix4();
-  for (let i = chain.length - 1; i >= 0; i--) {
-    const node = chain[i];
-    if (node.matrixAutoUpdate) node.updateMatrix();
-    world.multiply(node.matrix);
-  }
-  return world;
-}
+import { objectWorldPosition } from "../objectPosition";
 
 function extractPosition(val: unknown, fallback: THREE.Vector3): THREE.Vector3 {
   if (val instanceof THREE.Vector3) return val.clone();
   if (val instanceof THREE.Matrix4) return new THREE.Vector3().setFromMatrixPosition(val);
-  if (val instanceof THREE.Object3D) {
-    const world = worldMatrixOf(val);
-
-    // An instance is usually a transform wrapper around the real payload —
-    // descend to the first leaf so the position is the object's, not the
-    // (often identity) wrapper's.
-    let target: THREE.Object3D = val;
-    while (target instanceof THREE.Group && target.children.length > 0) {
-      target = target.children[0];
-      if (target.matrixAutoUpdate) target.updateMatrix();
-      world.multiply(target.matrix);
-    }
-
-    return new THREE.Vector3().setFromMatrixPosition(world);
-  }
+  if (val instanceof THREE.Object3D) return objectWorldPosition(val);
   if (val && typeof val === "object" && "position" in val && (val as any).position instanceof THREE.Vector3) {
     return ((val as any).position as THREE.Vector3).clone();
   }

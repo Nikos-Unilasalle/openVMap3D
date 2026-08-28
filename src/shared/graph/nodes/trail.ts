@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
 import { createNodeCache } from "../nodeCaches";
+import { objectWorldPosition } from "../objectPosition";
 import { clockInput, numberInput } from "./object";
 
 interface TrailSample {
@@ -69,8 +70,13 @@ export const TRAIL_NODE: NodeDefinition = {
 
     if (!object) return { points: [] };
 
-    object.updateWorldMatrix(true, false, true);
-    const pos = new THREE.Vector3().setFromMatrixPosition(object.matrixWorld);
+    // Not `setFromMatrixPosition(object.matrixWorld)`: what arrives on the
+    // wire is usually a wrapper Group sitting at the origin whose child
+    // carries the pose (Geometry Transform, Set Instance Transform, Squash &
+    // Stretch all return one), and matrixWorld is stale mid-evaluation
+    // anyway. Both traps are what objectWorldPosition exists for — without
+    // it the trail sampled (0,0,0) every frame and drew nothing at all.
+    const pos = objectWorldPosition(object);
 
     // Time went backward (scrub / export restart): start the trail afresh.
     // The threshold is deliberately loose — the editor and output panes both
