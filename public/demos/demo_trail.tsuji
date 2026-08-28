@@ -1,0 +1,955 @@
+{
+  "canvases": [
+    {
+      "nodes": [
+        {
+          "id": "setup_0",
+          "type": "object/plane",
+          "position": {
+            "x": 2286,
+            "y": 110
+          },
+          "params": {
+            "visible": 1,
+            "location": {
+              "x": 0,
+              "y": -0.5,
+              "z": 0
+            },
+            "rotation": {
+              "x": 1.5707963267948966,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 10,
+              "y": 10,
+              "z": 1
+            },
+            "texturePath": "",
+            "normalMapPath": "",
+            "roughnessMapPath": "",
+            "uvScaleX": 1,
+            "uvScaleY": 1,
+            "uvOffsetX": 0,
+            "uvOffsetY": 0,
+            "color": 16777215,
+            "emissive": 0,
+            "emissiveIntensity": 1,
+            "shadeless": 0,
+            "roughness": 0.1,
+            "metalness": 0.1,
+            "wireframe": 0,
+            "opacity": 1,
+            "transmission": 0,
+            "thickness": 0.5
+          }
+        },
+        {
+          "id": "setup_1",
+          "type": "texture/procedural",
+          "position": {
+            "x": 2062,
+            "y": 173
+          },
+          "params": {
+            "type": "checker",
+            "colorA": 16777215,
+            "colorB": 2236962,
+            "scale": 8,
+            "seed": 1,
+            "octaves": 3,
+            "resolution": 256,
+            "uvScaleX": 1,
+            "uvScaleY": 1,
+            "uvOffsetX": 0,
+            "uvOffsetY": 0
+          }
+        },
+        {
+          "id": "setup_2",
+          "type": "light/point",
+          "position": {
+            "x": 2544,
+            "y": 143
+          },
+          "params": {
+            "location": {
+              "x": 0,
+              "y": 2.185514752224622,
+              "z": -4.5179526088705275
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "color": 16768110,
+            "intensity": 50,
+            "distance": 15,
+            "decay": 2,
+            "castShadow": 1
+          }
+        },
+        {
+          "id": "setup_3",
+          "type": "light/point",
+          "position": {
+            "x": 2730,
+            "y": 137
+          },
+          "params": {
+            "location": {
+              "x": 0,
+              "y": 2.185514752224622,
+              "z": 4.487400919453167
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "color": 440020,
+            "intensity": 50,
+            "distance": 15,
+            "decay": 2,
+            "castShadow": 1
+          }
+        },
+        {
+          "id": "setup_4",
+          "type": "render",
+          "position": {
+            "x": 2297,
+            "y": 343
+          },
+          "params": {
+            "frameCount": 120,
+            "fps": 30,
+            "motionBlur": 0,
+            "resolutionPreset": "16:9 (1920x1080)",
+            "width": 1920,
+            "height": 1080,
+            "holdout": false
+          }
+        },
+        {
+          "id": "setup_5",
+          "type": "lighting/environment",
+          "position": {
+            "x": 2027,
+            "y": 356
+          },
+          "params": {
+            "color": 4147542,
+            "intensity": 1,
+            "background": 1,
+            "blurriness": 0,
+            "filePath": "",
+            "backgroundImagePath": "",
+            "backgroundFit": "cover",
+            "backgroundScale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "backgroundOffset": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "backgroundRotation": 0,
+            "ambientIntensity": 0,
+            "sunIntensity": 0
+          }
+        },
+        {
+          "id": "setup_6",
+          "type": "light/point",
+          "position": {
+            "x": 2547,
+            "y": 339
+          },
+          "params": {
+            "location": {
+              "x": 3.583607412619263,
+              "y": 2.185514752224622,
+              "z": -0.48624947478730096
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "color": 16777215,
+            "intensity": 50,
+            "distance": 15,
+            "decay": 2,
+            "castShadow": 1
+          }
+        },
+        {
+          "id": "spin",
+          "type": "transform/orbit",
+          "position": {
+            "x": -1643,
+            "y": 142
+          },
+          "params": {
+            "radius": 2.125,
+            "speed": 40,
+            "height": 1.125,
+            "tilt": 0.24434609527920614
+          }
+        },
+        {
+          "id": "planet",
+          "type": "object/sphere",
+          "position": {
+            "x": -1194,
+            "y": 47
+          },
+          "params": {
+            "scale": {
+              "x": 1.1,
+              "y": 1.1,
+              "z": 1.1
+            },
+            "color": 9133302,
+            "roughness": 0.3,
+            "metalness": 0.4
+          }
+        },
+        {
+          "id": "moon",
+          "type": "object/sphere",
+          "position": {
+            "x": -1192,
+            "y": 275
+          },
+          "params": {
+            "color": 15485081,
+            "roughness": 0.25,
+            "metalness": 0.45,
+            "location": {
+              "x": 0,
+              "y": 1.575,
+              "z": 0
+            },
+            "scale": {
+              "x": 0.6,
+              "y": 0.6,
+              "z": 0.6
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0.017453292519943295,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "attach",
+          "type": "transform/parent",
+          "position": {
+            "x": -806,
+            "y": 196
+          },
+          "params": {}
+        },
+        {
+          "id": "place",
+          "type": "structure/geometry-transform",
+          "position": {
+            "x": -206,
+            "y": 265
+          },
+          "params": {
+            "rotZ": 0,
+            "scaleY": 1
+          }
+        },
+        {
+          "id": "b4d71093-1702-48f9-a76c-fbf24bf41cc6",
+          "type": "time",
+          "position": {
+            "x": -1904,
+            "y": 293
+          },
+          "params": {}
+        },
+        {
+          "id": "0199ae1a-9bae-4ba5-ab8d-eb3b17a00749",
+          "type": "transform/orbit",
+          "position": {
+            "x": -849,
+            "y": 457
+          },
+          "params": {
+            "radius": 1.05,
+            "speed": 100,
+            "height": -0.65,
+            "tilt": 0.6632251157578453,
+            "faceTarget": 1
+          }
+        },
+        {
+          "id": "c585d986-2165-4a00-bf9b-385be09f80ad",
+          "type": "matrix/math",
+          "position": {
+            "x": -495,
+            "y": 374
+          },
+          "params": {
+            "op": "mix",
+            "factor": 2.613
+          }
+        },
+        {
+          "id": "92ea47a4-4bea-4912-8482-bdb4651e2265",
+          "type": "structure/trail",
+          "position": {
+            "x": 58,
+            "y": 29
+          },
+          "params": {
+            "time": 15.95,
+            "history": 5100,
+            "segments": 2000
+          }
+        },
+        {
+          "id": "efe0b07e-2d37-4beb-a66a-ec88ebe6c644",
+          "type": "curve/from_points",
+          "position": {
+            "x": 58,
+            "y": 184
+          },
+          "params": {
+            "type": "catmull",
+            "closed": false,
+            "tension": 0.5,
+            "sag": 0,
+            "pointsList": [
+              {
+                "x": -2,
+                "y": 0,
+                "z": 0
+              },
+              {
+                "x": -0.5,
+                "y": 1.5,
+                "z": 0
+              },
+              {
+                "x": 0.5,
+                "y": -1.5,
+                "z": 0
+              },
+              {
+                "x": 2,
+                "y": 0,
+                "z": 0
+              }
+            ],
+            "visible": 1,
+            "location": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            }
+          }
+        },
+        {
+          "id": "0d7cd0ab-722a-4de5-965d-6d4f95766af9",
+          "type": "structure/trail",
+          "position": {
+            "x": 58,
+            "y": 384
+          },
+          "params": {
+            "time": 15.95,
+            "history": 1500,
+            "segments": 20000
+          }
+        },
+        {
+          "id": "2109ae0f-f96a-4901-b947-c350ffdead7c",
+          "type": "curve/from_points",
+          "position": {
+            "x": 60,
+            "y": 532
+          },
+          "params": {
+            "type": "catmull",
+            "closed": false,
+            "tension": 0.5,
+            "sag": 0,
+            "pointsList": [
+              {
+                "x": -2,
+                "y": 0,
+                "z": 0
+              },
+              {
+                "x": -0.5,
+                "y": 1.5,
+                "z": 0
+              },
+              {
+                "x": 0.5,
+                "y": -1.5,
+                "z": 0
+              },
+              {
+                "x": 2,
+                "y": 0,
+                "z": 0
+              }
+            ],
+            "visible": 1,
+            "location": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            }
+          }
+        },
+        {
+          "id": "f844c6fe-69f9-4047-b8f7-011c67acf6d6",
+          "type": "curve/to_mesh",
+          "position": {
+            "x": 326,
+            "y": 398
+          },
+          "params": {
+            "visible": 1,
+            "location": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "thickness": 0.04,
+            "startProgress": 0,
+            "endProgress": 1,
+            "tubularSegments": 1500,
+            "radialSegments": 12,
+            "closed": false,
+            "caps": 0,
+            "color": 15381256,
+            "emissive": 15381256,
+            "emissiveIntensity": 1,
+            "shadeless": false,
+            "roughness": 0.4,
+            "metalness": 0.1,
+            "wireframe": false,
+            "opacity": 1,
+            "surfaceColor": 3718648,
+            "surfaceEmissive": 0,
+            "surfaceEmissiveIntensity": 1,
+            "surfaceShadeless": false,
+            "surfaceRoughness": 0.4,
+            "surfaceMetalness": 0.1,
+            "surfaceWireframe": false,
+            "surfaceOpacity": 1,
+            "uvScaleX": 1,
+            "uvScaleY": 1,
+            "uvOffsetX": 0,
+            "uvOffsetY": 0,
+            "profile": [
+              {
+                "x": 0,
+                "y": 0.1
+              },
+              {
+                "x": 0,
+                "y": 0.9948039504716981
+              },
+              {
+                "x": 1,
+                "y": 0.2
+              }
+            ],
+            "pointsList": [
+              {
+                "x": -2,
+                "y": 0,
+                "z": 0
+              },
+              {
+                "x": -0.5,
+                "y": 1.5,
+                "z": 0
+              },
+              {
+                "x": 0.5,
+                "y": -1.5,
+                "z": 0
+              },
+              {
+                "x": 2,
+                "y": 0,
+                "z": 0
+              }
+            ],
+            "doubleSided": true,
+            "surface": false,
+            "surfaceMode": "extrude",
+            "depth": 0.2,
+            "surfaceSegments": 64,
+            "surfaceRings": 8,
+            "surfaceIterations": 60,
+            "showCurve": 1
+          }
+        },
+        {
+          "id": "f8a930ba-6168-4f96-8e0a-36b8efbfb2c3",
+          "type": "curve/to_mesh",
+          "position": {
+            "x": 333,
+            "y": 56
+          },
+          "params": {
+            "visible": 1,
+            "location": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "thickness": 0.02,
+            "startProgress": 0,
+            "endProgress": 1,
+            "tubularSegments": 1500,
+            "radialSegments": 12,
+            "closed": false,
+            "caps": false,
+            "color": 15485081,
+            "emissive": 15485081,
+            "emissiveIntensity": 1,
+            "shadeless": false,
+            "roughness": 0.4,
+            "metalness": 0.1,
+            "wireframe": false,
+            "opacity": 1,
+            "surfaceColor": 3718648,
+            "surfaceEmissive": 0,
+            "surfaceEmissiveIntensity": 1,
+            "surfaceShadeless": false,
+            "surfaceRoughness": 0.4,
+            "surfaceMetalness": 0.1,
+            "surfaceWireframe": false,
+            "surfaceOpacity": 1,
+            "uvScaleX": 1,
+            "uvScaleY": 1,
+            "uvOffsetX": 0,
+            "uvOffsetY": 0,
+            "profile": [
+              {
+                "x": 0,
+                "y": 0.1
+              },
+              {
+                "x": 0,
+                "y": 0.9948039504716981
+              },
+              {
+                "x": 1,
+                "y": 0.2
+              }
+            ],
+            "pointsList": [
+              {
+                "x": -2,
+                "y": 0,
+                "z": 0
+              },
+              {
+                "x": -0.5,
+                "y": 1.5,
+                "z": 0
+              },
+              {
+                "x": 0.5,
+                "y": -1.5,
+                "z": 0
+              },
+              {
+                "x": 2,
+                "y": 0,
+                "z": 0
+              }
+            ],
+            "doubleSided": true,
+            "surface": false,
+            "surfaceMode": "extrude",
+            "depth": 0.2,
+            "surfaceSegments": 64,
+            "surfaceRings": 8,
+            "surfaceIterations": 60,
+            "showCurve": 1
+          }
+        },
+        {
+          "id": "01b52481-032d-4308-863e-6b40f463021a",
+          "type": "value/math",
+          "position": {
+            "x": -1442,
+            "y": 464
+          },
+          "params": {
+            "op": "multiply",
+            "a": 0,
+            "b": 1.575
+          }
+        },
+        {
+          "id": "a1b767e3-0663-49e2-b288-af4a4957a715",
+          "type": "matrix/decompose",
+          "position": {
+            "x": -931,
+            "y": 661
+          },
+          "params": {}
+        },
+        {
+          "id": "d83a5bb3-207e-4279-943a-c784b2fe3af8",
+          "type": "transform",
+          "position": {
+            "x": -306,
+            "y": 593
+          },
+          "params": {
+            "location": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            }
+          }
+        },
+        {
+          "id": "316d3bd0-5805-4f3e-b136-dd9d5c277b89",
+          "type": "vector/decompose",
+          "position": {
+            "x": -710,
+            "y": 654
+          },
+          "params": {}
+        },
+        {
+          "id": "3808836e-91a7-476f-832e-499b9519fc58",
+          "type": "vector/compose",
+          "position": {
+            "x": -490,
+            "y": 668
+          },
+          "params": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "useX": true,
+            "useY": true,
+            "useZ": true
+          }
+        },
+        {
+          "id": "1610b24b-c2f8-4faa-9b7e-92eb401ba9fa",
+          "type": "animation/oscillator",
+          "position": {
+            "x": -711,
+            "y": 769
+          },
+          "params": {
+            "type": "sine",
+            "frequency": 1,
+            "phase": 0,
+            "amplitude": 1,
+            "offset": 0,
+            "curve": "linear",
+            "curveStrength": 1
+          }
+        }
+      ],
+      "connections": [
+        {
+          "id": "setup_c0",
+          "fromNode": "setup_1",
+          "fromSocket": "texture",
+          "toNode": "setup_0",
+          "toSocket": "texture"
+        },
+        {
+          "id": "setup_c1",
+          "fromNode": "setup_5",
+          "fromSocket": "environment",
+          "toNode": "setup_4",
+          "toSocket": "environment"
+        },
+        {
+          "id": "spin.matrix->planet.matrix",
+          "fromNode": "spin",
+          "fromSocket": "matrix",
+          "toNode": "planet",
+          "toSocket": "matrix"
+        },
+        {
+          "id": "moon.geometry->place.geometry",
+          "fromNode": "moon",
+          "fromSocket": "geometry",
+          "toNode": "place",
+          "toSocket": "geometry"
+        },
+        {
+          "id": "b4d71093-1702-48f9-a76c-fbf24bf41cc6.seconds->spin.time",
+          "fromNode": "b4d71093-1702-48f9-a76c-fbf24bf41cc6",
+          "fromSocket": "seconds",
+          "toNode": "spin",
+          "toSocket": "time"
+        },
+        {
+          "id": "planet.matrix->attach.child",
+          "fromNode": "planet",
+          "fromSocket": "matrix",
+          "toNode": "attach",
+          "toSocket": "child"
+        },
+        {
+          "id": "moon.matrix->attach.parent",
+          "fromNode": "moon",
+          "fromSocket": "matrix",
+          "toNode": "attach",
+          "toSocket": "parent"
+        },
+        {
+          "id": "attach.matrix->c585d986-2165-4a00-bf9b-385be09f80ad.a",
+          "fromNode": "attach",
+          "fromSocket": "matrix",
+          "toNode": "c585d986-2165-4a00-bf9b-385be09f80ad",
+          "toSocket": "a"
+        },
+        {
+          "id": "0199ae1a-9bae-4ba5-ab8d-eb3b17a00749.matrix->c585d986-2165-4a00-bf9b-385be09f80ad.b",
+          "fromNode": "0199ae1a-9bae-4ba5-ab8d-eb3b17a00749",
+          "fromSocket": "matrix",
+          "toNode": "c585d986-2165-4a00-bf9b-385be09f80ad",
+          "toSocket": "b"
+        },
+        {
+          "id": "spin.matrix->0199ae1a-9bae-4ba5-ab8d-eb3b17a00749.target",
+          "fromNode": "spin",
+          "fromSocket": "matrix",
+          "toNode": "0199ae1a-9bae-4ba5-ab8d-eb3b17a00749",
+          "toSocket": "target"
+        },
+        {
+          "id": "92ea47a4-4bea-4912-8482-bdb4651e2265.points->efe0b07e-2d37-4beb-a66a-ec88ebe6c644.points",
+          "fromNode": "92ea47a4-4bea-4912-8482-bdb4651e2265",
+          "fromSocket": "points",
+          "toNode": "efe0b07e-2d37-4beb-a66a-ec88ebe6c644",
+          "toSocket": "points"
+        },
+        {
+          "id": "planet.geometry->92ea47a4-4bea-4912-8482-bdb4651e2265.geometry",
+          "fromNode": "planet",
+          "fromSocket": "geometry",
+          "toNode": "92ea47a4-4bea-4912-8482-bdb4651e2265",
+          "toSocket": "geometry"
+        },
+        {
+          "id": "place.geometry->0d7cd0ab-722a-4de5-965d-6d4f95766af9.geometry",
+          "fromNode": "place",
+          "fromSocket": "geometry",
+          "toNode": "0d7cd0ab-722a-4de5-965d-6d4f95766af9",
+          "toSocket": "geometry"
+        },
+        {
+          "id": "0d7cd0ab-722a-4de5-965d-6d4f95766af9.points->2109ae0f-f96a-4901-b947-c350ffdead7c.points",
+          "fromNode": "0d7cd0ab-722a-4de5-965d-6d4f95766af9",
+          "fromSocket": "points",
+          "toNode": "2109ae0f-f96a-4901-b947-c350ffdead7c",
+          "toSocket": "points"
+        },
+        {
+          "id": "2109ae0f-f96a-4901-b947-c350ffdead7c.curve->f844c6fe-69f9-4047-b8f7-011c67acf6d6.curve",
+          "fromNode": "2109ae0f-f96a-4901-b947-c350ffdead7c",
+          "fromSocket": "curve",
+          "toNode": "f844c6fe-69f9-4047-b8f7-011c67acf6d6",
+          "toSocket": "curve"
+        },
+        {
+          "id": "efe0b07e-2d37-4beb-a66a-ec88ebe6c644.curve->f8a930ba-6168-4f96-8e0a-36b8efbfb2c3.curve",
+          "fromNode": "efe0b07e-2d37-4beb-a66a-ec88ebe6c644",
+          "fromSocket": "curve",
+          "toNode": "f8a930ba-6168-4f96-8e0a-36b8efbfb2c3",
+          "toSocket": "curve"
+        },
+        {
+          "id": "b4d71093-1702-48f9-a76c-fbf24bf41cc6.seconds->01b52481-032d-4308-863e-6b40f463021a.a",
+          "fromNode": "b4d71093-1702-48f9-a76c-fbf24bf41cc6",
+          "fromSocket": "seconds",
+          "toNode": "01b52481-032d-4308-863e-6b40f463021a",
+          "toSocket": "a"
+        },
+        {
+          "id": "01b52481-032d-4308-863e-6b40f463021a.out->0199ae1a-9bae-4ba5-ab8d-eb3b17a00749.time",
+          "fromNode": "01b52481-032d-4308-863e-6b40f463021a",
+          "fromSocket": "out",
+          "toNode": "0199ae1a-9bae-4ba5-ab8d-eb3b17a00749",
+          "toSocket": "time"
+        },
+        {
+          "id": "c585d986-2165-4a00-bf9b-385be09f80ad.out->a1b767e3-0663-49e2-b288-af4a4957a715.matrix",
+          "fromNode": "c585d986-2165-4a00-bf9b-385be09f80ad",
+          "fromSocket": "out",
+          "toNode": "a1b767e3-0663-49e2-b288-af4a4957a715",
+          "toSocket": "matrix"
+        },
+        {
+          "id": "a1b767e3-0663-49e2-b288-af4a4957a715.location->316d3bd0-5805-4f3e-b136-dd9d5c277b89.vector",
+          "fromNode": "a1b767e3-0663-49e2-b288-af4a4957a715",
+          "fromSocket": "location",
+          "toNode": "316d3bd0-5805-4f3e-b136-dd9d5c277b89",
+          "toSocket": "vector"
+        },
+        {
+          "id": "3808836e-91a7-476f-832e-499b9519fc58.out->d83a5bb3-207e-4279-943a-c784b2fe3af8.location",
+          "fromNode": "3808836e-91a7-476f-832e-499b9519fc58",
+          "fromSocket": "out",
+          "toNode": "d83a5bb3-207e-4279-943a-c784b2fe3af8",
+          "toSocket": "location"
+        },
+        {
+          "id": "316d3bd0-5805-4f3e-b136-dd9d5c277b89.x->3808836e-91a7-476f-832e-499b9519fc58.x",
+          "fromNode": "316d3bd0-5805-4f3e-b136-dd9d5c277b89",
+          "fromSocket": "x",
+          "toNode": "3808836e-91a7-476f-832e-499b9519fc58",
+          "toSocket": "x"
+        },
+        {
+          "id": "316d3bd0-5805-4f3e-b136-dd9d5c277b89.z->3808836e-91a7-476f-832e-499b9519fc58.z",
+          "fromNode": "316d3bd0-5805-4f3e-b136-dd9d5c277b89",
+          "fromSocket": "z",
+          "toNode": "3808836e-91a7-476f-832e-499b9519fc58",
+          "toSocket": "z"
+        },
+        {
+          "id": "1610b24b-c2f8-4faa-9b7e-92eb401ba9fa.out->3808836e-91a7-476f-832e-499b9519fc58.y",
+          "fromNode": "1610b24b-c2f8-4faa-9b7e-92eb401ba9fa",
+          "fromSocket": "out",
+          "toNode": "3808836e-91a7-476f-832e-499b9519fc58",
+          "toSocket": "y"
+        },
+        {
+          "id": "d83a5bb3-207e-4279-943a-c784b2fe3af8.matrix->place.matrix",
+          "fromNode": "d83a5bb3-207e-4279-943a-c784b2fe3af8",
+          "fromSocket": "matrix",
+          "toNode": "place",
+          "toSocket": "matrix"
+        }
+      ],
+      "keyframes": {},
+      "markers": [],
+      "exposedParams": []
+    },
+    {
+      "nodes": [],
+      "connections": [],
+      "keyframes": {},
+      "markers": [],
+      "exposedParams": []
+    },
+    {
+      "nodes": [],
+      "connections": [],
+      "keyframes": {},
+      "markers": [],
+      "exposedParams": []
+    },
+    {
+      "nodes": [],
+      "connections": [],
+      "keyframes": {},
+      "markers": [],
+      "exposedParams": []
+    },
+    {
+      "nodes": [],
+      "connections": [],
+      "keyframes": {},
+      "markers": [],
+      "exposedParams": []
+    },
+    {
+      "nodes": [],
+      "connections": [],
+      "keyframes": {},
+      "markers": [],
+      "exposedParams": []
+    }
+  ],
+  "activeCanvas": 0
+}

@@ -110,6 +110,11 @@ export const DEMO_CATALOG: DemoCategory[] = [
     title: "Time & Animation",
     demos: [
       {
+        file: "demo_trail.tsuji",
+        label: "Orbit Trails",
+        description: "Planet and moon each leaving a tube along their path.",
+      },
+      {
         file: "demo_math_spring.tsuji",
         label: "Spring",
         description: "A square wave damped into overshoot and settle.",
