@@ -1,12 +1,21 @@
-import { NodeDefinition } from "../types";
+import { NodeDefinition, EasingType } from "../types";
 import { toBoolean } from "../sockets";
 import { createNodeCache } from "../nodeCaches";
+import { computeSegmentEasing } from "../evaluate";
+import { EASE_OPTIONS } from "./motion";
 
 const WAVEFORMS = ["sine", "saw", "square", "triangle"];
 
 /**
  * Oscillator node — generates a periodic waveform (sine, saw, square, triangle) over time.
  * Replaces OpenVMap's hardcoded animation types (strobe, colour-slide, pan, rotation-spin, scale-pingpong).
+ *
+ * Curve reshapes the pacing *within* each cycle before the waveform is
+ * evaluated — same easing engine the timeline's keyframes use — so a saw or
+ * triangle can ease in/out of its ramp instead of moving at a constant rate,
+ * and a sine can linger at its extremes instead of always moving fastest
+ * through the middle. "linear" is a no-op: identical output to before Curve
+ * existed, so every prior project keeps behaving exactly the same.
  */
 export const OSCILLATOR_NODE: NodeDefinition = {
   type: "animation/oscillator",
@@ -19,13 +28,23 @@ export const OSCILLATOR_NODE: NodeDefinition = {
     { id: "offset", label: "Offset", type: "value" },
   ],
   outputs: [{ id: "out", label: "Out", type: "value" }],
-  defaultParams: { type: "sine", frequency: 1, phase: 0, amplitude: 1, offset: 0 },
+  defaultParams: {
+    type: "sine",
+    frequency: 1,
+    phase: 0,
+    amplitude: 1,
+    offset: 0,
+    curve: "linear",
+    curveStrength: 1,
+  },
   paramFields: [
     { id: "type", label: "Waveform", kind: "select", options: WAVEFORMS },
     { id: "frequency", label: "Frequency (Hz)", kind: "number" },
     { id: "phase", label: "Phase (0..1)", kind: "number" },
     { id: "amplitude", label: "Amplitude", kind: "number" },
     { id: "offset", label: "Offset", kind: "number" },
+    { id: "curve", label: "Curve", kind: "select", options: EASE_OPTIONS },
+    { id: "curveStrength", label: "Curve Strength", kind: "number", step: 0.05 },
   ],
   evaluate: (inputs, params, ctx) => {
     const type = String(params.type || "sine");
@@ -33,26 +52,29 @@ export const OSCILLATOR_NODE: NodeDefinition = {
     const phase = inputs.phase !== undefined ? Number(inputs.phase) || 0 : Number(params.phase) || 0;
     const amp = inputs.amplitude !== undefined ? Number(inputs.amplitude) || 0 : Number(params.amplitude) || 1;
     const offset = inputs.offset !== undefined ? Number(inputs.offset) || 0 : Number(params.offset) || 0;
+    const curve = String(params.curve || "linear") as EasingType;
+    const curveStrength = Number.isFinite(Number(params.curveStrength)) ? Number(params.curveStrength) : 1;
 
     const t = ctx.time * freq + phase;
     const normT = ((t % 1) + 1) % 1; // normalized time 0..1
+    const curvedT = curve === "linear" ? normT : computeSegmentEasing(normT, curve, curveStrength);
 
     let wave = 0;
     switch (type) {
       case "sine":
-        wave = Math.sin(t * Math.PI * 2);
+        wave = Math.sin(curvedT * Math.PI * 2);
         break;
       case "saw":
-        wave = normT * 2 - 1;
+        wave = curvedT * 2 - 1;
         break;
       case "square":
-        wave = normT < 0.5 ? 1 : -1;
+        wave = curvedT < 0.5 ? 1 : -1;
         break;
       case "triangle":
-        wave = Math.abs(normT * 4 - 2) - 1;
+        wave = Math.abs(curvedT * 4 - 2) - 1;
         break;
       default:
-        wave = Math.sin(t * Math.PI * 2);
+        wave = Math.sin(curvedT * Math.PI * 2);
     }
 
     return { out: wave * amp + offset };

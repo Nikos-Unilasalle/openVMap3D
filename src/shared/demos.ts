@@ -49,6 +49,11 @@ export const DEMO_CATALOG: DemoCategory[] = [
         label: "Oscillator Bob",
         description: "Oscillator drives a back-and-forth bob.",
       },
+      {
+        file: "demo_squash_stretch_bounce.tsuji",
+        label: "Squash & Stretch",
+        description: "A bobbing ball squashes and stretches with its own velocity.",
+      },
     ],
   },
   {

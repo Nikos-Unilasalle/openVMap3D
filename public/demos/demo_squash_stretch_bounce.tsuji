@@ -1,0 +1,77 @@
+{
+  "nodes": [
+    {
+      "id": "ball",
+      "type": "object/sphere",
+      "position": { "x": 100, "y": 40 },
+      "params": { "color": 4886754, "scale": { "x": 0.6, "y": 0.6, "z": 0.6 } }
+    },
+    {
+      "id": "bounce",
+      "type": "animation/oscillator",
+      "position": { "x": -700, "y": -180 },
+      "params": { "type": "sine", "frequency": 0.8, "amplitude": 1.5 }
+    },
+    {
+      "id": "vecY",
+      "type": "vector/compose",
+      "position": { "x": -440, "y": -180 },
+      "params": {}
+    },
+    {
+      "id": "mat",
+      "type": "transform",
+      "position": { "x": -180, "y": -180 },
+      "params": {}
+    },
+    {
+      "id": "time",
+      "type": "time",
+      "position": { "x": -440, "y": 40 },
+      "params": {}
+    },
+    {
+      "id": "squash",
+      "type": "modifier/squash-stretch",
+      "position": { "x": 380, "y": 40 },
+      "params": { "intensity": 0.8, "maxSpeed": 3, "smoothing": 0.3, "bounciness": 0.6 }
+    }
+  ],
+  "connections": [
+    {
+      "id": "bounce.out->vecY.y",
+      "fromNode": "bounce",
+      "fromSocket": "out",
+      "toNode": "vecY",
+      "toSocket": "y"
+    },
+    {
+      "id": "vecY.out->mat.location",
+      "fromNode": "vecY",
+      "fromSocket": "out",
+      "toNode": "mat",
+      "toSocket": "location"
+    },
+    {
+      "id": "mat.matrix->ball.matrix",
+      "fromNode": "mat",
+      "fromSocket": "matrix",
+      "toNode": "ball",
+      "toSocket": "matrix"
+    },
+    {
+      "id": "ball.geometry->squash.geometry",
+      "fromNode": "ball",
+      "fromSocket": "geometry",
+      "toNode": "squash",
+      "toSocket": "geometry"
+    },
+    {
+      "id": "time.seconds->squash.time",
+      "fromNode": "time",
+      "fromSocket": "seconds",
+      "toNode": "squash",
+      "toSocket": "time"
+    }
+  ]
+}

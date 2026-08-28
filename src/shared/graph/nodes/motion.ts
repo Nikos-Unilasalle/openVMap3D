@@ -9,7 +9,7 @@ function clamp01(n: number): number {
 }
 
 /** The easings a node can offer as a plain dropdown — bezier needs control points. */
-const EASE_OPTIONS = ["smooth", "linear", "hold", "expo", "back", "bounce", "elastic"];
+export const EASE_OPTIONS = ["smooth", "linear", "hold", "expo", "back", "bounce", "elastic"];
 
 /**
  * How many items a cascade covers, taken from whatever is wired into `source`:
