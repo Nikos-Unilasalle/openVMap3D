@@ -126,6 +126,31 @@ describe("initialPosition", () => {
     expect(initialPosition(3, emitter)).toEqual([1, 2, 3]);
   });
 
+  test("strides across the whole cloud when there are more seed points than texels", () => {
+    // Regression: a cloud bigger than the simulation's Count used to map
+    // texels to seeds 0..capacity-1 and drop the tail. PLY exports store
+    // vertices in traversal order, so the dropped tail is a contiguous
+    // region of the model — the particle cloud came out cropped, reading as
+    // a smaller cloud than the point cloud it was seeded from.
+    const seedPositions = new Float32Array(30); // 10 seed points
+    for (let i = 0; i < 10; i++) seedPositions[i * 3] = i;
+    const emitter: EmitterConfig = {
+      position: new THREE.Vector3(),
+      velocity: new THREE.Vector3(),
+      spawnRate: 200,
+      seedPositions,
+      diameter: 0.25,
+      randomSpawnPick: false,
+      emit: true,
+    };
+
+    // Capacity 4 over 10 points: every 2nd or 3rd point, spanning the cloud.
+    const xs = [0, 1, 2, 3].map((i) => initialPosition(i, emitter, 4)[0]);
+    expect(xs).toEqual([0, 2, 5, 7]);
+    // Never past the last point, whatever the rounding.
+    expect(initialPosition(3, emitter, 4)[0]).toBeLessThan(10);
+  });
+
   test("falls back to the emitter's own position when there's no seed set (a plain point emitter, not From Points)", () => {
     const emitter: EmitterConfig = {
       position: new THREE.Vector3(10, 20, 30),

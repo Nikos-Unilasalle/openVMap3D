@@ -189,7 +189,16 @@ const POSITION_SHADER = /* glsl */ `
         // Random picks a fresh point per respawn by hashing the texel against
         // the simulation clock. time is the sim's own fixed-step clock, not
         // wall time, so a scrub or a re-export replays the identical sequence.
-        float seedIdx = mod(idx, seedCount);
+        // More seed points than texels to hold them: walk the cloud in even
+        // strides instead of a plain modulo, which would bind texels to seeds
+        // 0..capacity-1 and simply drop the rest. PLY and scanner exports
+        // store vertices in traversal order, so that tail is a contiguous
+        // *region* of the model — the particle cloud came out visibly
+        // cropped, reading as a smaller cloud than its source.
+        float capacity = resolution.x * resolution.y;
+        float seedIdx = seedCount > capacity
+          ? min(floor(idx * (seedCount / capacity)), seedCount - 1.0)
+          : mod(idx, seedCount);
         if (seedRandomPick > 0.5) {
           float h = fract(sin(idx * 12.9898 + floor(time * 60.0) * 78.233) * 43758.5453);
           seedIdx = floor(h * seedCount);
@@ -609,11 +618,18 @@ export function initialAge(index: number, capacity: number, lifetimeGuess: numbe
  * a burst-spawned Point Emitter (From Points) shows its actual cloud shape
  * from frame 0, not a pile at the origin.
  */
-export function initialPosition(index: number, emitter: EmitterConfig): [number, number, number] {
+export function initialPosition(index: number, emitter: EmitterConfig, capacity?: number): [number, number, number] {
   const seedPositions = emitter.seedPositions;
   const seedCount = seedPositions ? Math.floor(seedPositions.length / 3) : 0;
   if (seedCount > 0 && seedPositions) {
-    const seedIdx = index % seedCount;
+    // Same even-stride rule the spawn shader uses once the cloud outgrows
+    // the texture — the burst texture is frame 0 of the very same
+    // population, so picking differently here would show one cloud on the
+    // first frame and another from the second on.
+    const seedIdx =
+      capacity !== undefined && seedCount > capacity
+        ? Math.min(Math.floor(index * (seedCount / capacity)), seedCount - 1)
+        : index % seedCount;
     return [seedPositions[seedIdx * 3], seedPositions[seedIdx * 3 + 1], seedPositions[seedIdx * 3 + 2]];
   }
   return [emitter.position.x, emitter.position.y, emitter.position.z];
@@ -633,7 +649,7 @@ function buildBurstTextures(gpuCompute: GPUComputationRenderer, size: number, em
   const positionData = position.image.data as Float32Array;
   const capacity = size * size;
   for (let i = 0; i < capacity; i++) {
-    const [x, y, z] = initialPosition(i, emitter);
+    const [x, y, z] = initialPosition(i, emitter, capacity);
     positionData[i * 4] = x;
     positionData[i * 4 + 1] = y;
     positionData[i * 4 + 2] = z;
@@ -656,7 +672,7 @@ function initialPositionTexture(
   for (let i = 0; i < capacity; i++) {
     data[i * 4 + 3] = initialAge(i, capacity, lifetimeGuess, burstSpawn, spawnNow);
     if (burstSpawn && spawnNow) {
-      const [x, y, z] = initialPosition(i, emitter);
+      const [x, y, z] = initialPosition(i, emitter, capacity);
       data[i * 4] = x;
       data[i * 4 + 1] = y;
       data[i * 4 + 2] = z;
