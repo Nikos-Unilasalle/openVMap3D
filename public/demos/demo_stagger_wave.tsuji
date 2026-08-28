@@ -155,11 +155,11 @@
       "toSocket": "source"
     },
     {
-      "id": "rise.progress->spin.list",
+      "id": "rise.progress->spin.a",
       "fromNode": "rise",
       "fromSocket": "progress",
       "toNode": "spin",
-      "toSocket": "list"
+      "toSocket": "a"
     },
     {
       "id": "grid.geometry->xform.geometry",
