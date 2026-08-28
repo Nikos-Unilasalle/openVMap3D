@@ -57,7 +57,7 @@ export const DEMO_CATALOG: DemoCategory[] = [
       {
         file: "demo_modifier_lattice.tsuji",
         label: "Lattice",
-        description: "A cage twisting and bulging a sphere.",
+        description: "A cage twisting a box, driven by an oscillator.",
       },
       {
         file: "demo_modifier_clipping.tsuji",

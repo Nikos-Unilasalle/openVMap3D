@@ -151,11 +151,21 @@ def _():
 
 @demo("modifier_lattice")
 def _():
+    # Reworked by hand in the app, then ported back here — a box reads the
+    # twist far better than a sphere (its edges show the shear), and driving
+    # `twist` from an oscillator makes the deformation legible without
+    # touching a parameter.
     n = [
-        node("ball", "object/sphere", -1000, 120, location=v3(0, 1.1, 0), scale=v3(1.2, 1.2, 1.2), color=BLUE, roughness=0.2, metalness=0.45),
-        node("cage", "modifier/lattice", -660, 120, location=v3(0, 1.1, 0), sizeX=2.6, sizeY=2.6, sizeZ=2.6, twist=55, bulge=0.45, strength=1, showCage=True),
+        node("box", "object/box", -1114, 133, location=v3(0, 1.025, 0), scale=v3(1, 1, 1), color=0xFFFFFF, roughness=0.4, metalness=0.1),
+        node("swing", "animation/oscillator", -1113, 336, type="sine", frequency=1, phase=0, amplitude=49.125, offset=0),
+        node("cage", "modifier/lattice", -660, 120, location=v3(0, 1.1, 0), scale=v3(1, 0.7, 1),
+             sizeX=2.6, sizeY=2.6, sizeZ=2.6, twist=-46, bulge=0.45, strength=1, showCage=True, pointsList=[]),
     ]
-    return n, [wire("ball", "geometry", "cage", "geometry")]
+    c = [
+        wire("box", "geometry", "cage", "geometry"),
+        wire("swing", "out", "cage", "twist"),
+    ]
+    return n, c
 
 
 @demo("modifier_clipping")
