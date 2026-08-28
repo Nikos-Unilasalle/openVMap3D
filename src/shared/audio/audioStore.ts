@@ -1,5 +1,5 @@
 /**
- * Web Audio API manager for OpenVMap3D — manages AudioContext, media element players,
+ * Web Audio API manager for Tsuji — manages AudioContext, media element players,
  * FFT spectrum analysers, synth oscillators, filters, and microphone streams.
  */
 

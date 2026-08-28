@@ -78,7 +78,7 @@ export const CATEGORY_LABEL: Record<NodeCategory, string> = {
 };
 
 /**
- * Extends OpenVMap's existing panel-tone convention to the catalog.
+ * Extends Tsuji's existing panel-tone convention to the catalog.
  */
 export const CATEGORY_COLOR: Record<NodeCategory, string> = {
   calibration: "#94a3b8",

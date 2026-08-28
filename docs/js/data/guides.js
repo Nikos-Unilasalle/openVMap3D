@@ -1,5 +1,5 @@
 /**
- * Base de données enrichie des guides pédagogiques d'OpenVMap3D
+ * Base de données enrichie des guides pédagogiques de Tsuji
  */
 export const GUIDES_DATABASE = [
   {
@@ -10,12 +10,12 @@ export const GUIDES_DATABASE = [
     level: "Débutant",
     icon: "rocket",
     content: {
-      lead: "Bienvenue dans OpenVMap3D. Ce guide vous accompagne pas-à-pas pour créer votre première scène 3D animée en moins de 5 minutes.",
+      lead: "Bienvenue dans Tsuji. Ce guide vous accompagne pas-à-pas pour créer votre première scène 3D animée en moins de 5 minutes.",
       sections: [
         {
           title: "1. Le Moteur Réactif (DAG)",
           type: "text",
-          body: "Dans OpenVMap3D, tout est piloté par un graphe réactif (Directed Acyclic Graph). Chaque propriété d'un objet (taille, couleur, position) se calcule en direct à 60 images par seconde en fonction des nodes connectées."
+          body: "Dans Tsuji, tout est piloté par un graphe réactif (Directed Acyclic Graph). Chaque propriété d'un objet (taille, couleur, position) se calcule en direct à 60 images par seconde en fonction des nodes connectées."
         },
         {
           title: "2. Tutoriel Pas-à-Pas : Animer un Cube 3D",
@@ -50,10 +50,10 @@ export const GUIDES_DATABASE = [
           bodyTip: "Pour donner un aspect néon à vos formes 3D, ajoutez la node 'Bloom Effect' de la catégorie Post-Traitement 2D et reliez-la avant le rendu final."
         },
         {
-          title: "Aperçu de l'Interface OpenVMap3D",
+          title: "Aperçu de l'Interface Tsuji",
           type: "image",
           src: "img/videomap.jpg",
-          caption: "Capture d'écran réelle de l'interface OpenVMap3D : Éditeur de Graphe de Nodes à gauche et Canva 3D en direct à droite."
+          caption: "Capture d'écran réelle de l'interface Tsuji : Éditeur de Graphe de Nodes à gauche et Canva 3D en direct à droite."
         }
       ]
     }
@@ -103,7 +103,7 @@ export const GUIDES_DATABASE = [
         {
           title: "Vue du Canva 3D de Calibration",
           type: "image",
-          src: "img/openvmap.jpg",
+          src: "img/tsuji.jpg",
           caption: "Repères de calage physiques projetés en direct sur les volumes 3D de l'installation."
         }
       ]
@@ -117,7 +117,7 @@ export const GUIDES_DATABASE = [
     level: "Tous Niveaux",
     icon: "film",
     content: {
-      lead: "OpenVMap3D permet d'animer chaque axe (X, Y, Z) individuellement tout en maintenant la réactivité du graphe.",
+      lead: "Tsuji permet d'animer chaque axe (X, Y, Z) individuellement tout en maintenant la réactivité du graphe.",
       sections: [
         {
           title: "Les Raccourcis Timeline à Retenir",

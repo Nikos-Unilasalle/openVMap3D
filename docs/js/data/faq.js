@@ -1,5 +1,5 @@
 /**
- * Base de connaissances pour l'assistant interactif de dépannage / diagnostic d'OpenVMap3D
+ * Base de connaissances pour l'assistant interactif de dépannage / diagnostic de Tsuji
  */
 export const DIAGNOSTICS_DATABASE = [
   {
@@ -7,7 +7,7 @@ export const DIAGNOSTICS_DATABASE = [
     symptom: "Mes keyframes ne s'animent pas ou le paramètre reste figé",
     category: "Animation & Graphe",
     cause: "Priorité absolue des câbles (Wires Over Keyframes)",
-    explanation: "Dans OpenVMap3D, si une entrée est connectée par un câble (wire), la valeur du câble écrase systématiquement les keyframes enregistrées sur ce champ.",
+    explanation: "Dans Tsuji, si une entrée est connectée par un câble (wire), la valeur du câble écrase systématiquement les keyframes enregistrées sur ce champ.",
     steps: [
       "Vérifiez si une node (ex: Map Range, Oscillator) est branchée sur l'entrée de votre paramètre.",
       "Si vous souhaitez utiliser vos keyframes manuelles, faites un clic droit sur la prise d'entrée (socket) et sélectionnez 'Disconnect'.",
@@ -34,7 +34,7 @@ export const DIAGNOSTICS_DATABASE = [
     explanation: "L'API WebAudio nécessite une autorisation d'accès au microphone système.",
     steps: [
       "Vérifiez si l'entrée 'Active' de la node Microphone Input est bien réglée sur 1.",
-      "Accédez aux paramètres du système de votre OS pour vous assurer qu'OpenVMap3D dispose de la permission d'accès au microphone.",
+      "Accédez aux paramètres du système de votre OS pour vous assurer que Tsuji dispose de la permission d'accès au microphone.",
       "Incrémentez la valeur 'Gain' de la node Microphone Input si le volume de votre carte son est faible."
     ]
   },

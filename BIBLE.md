@@ -1,4 +1,4 @@
-# OpenVMap3D — Bible
+# Tsuji — Bible
 
 Working title. Rename freely — nothing below depends on the name.
 

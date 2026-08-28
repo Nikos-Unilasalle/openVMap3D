@@ -1,7 +1,7 @@
 import { NODES_DATABASE, NODE_CATEGORIES, SOCKET_TYPES } from "../data/nodes.js";
 
 /**
- * Catalogue Interactif des Nodes d'OpenVMap3D
+ * Catalogue Interactif des Nodes de Tsuji
  */
 export function initNodeCatalog(containerId) {
   const container = document.getElementById(containerId);

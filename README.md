@@ -1,10 +1,10 @@
-# OpenVMap (Tsuji Studio)
+# Tsuji
 
 Moteur de Studio 3D et Node Graph Temps Réel pour le Vidéo-Mapping, la Data-Visualisation, l'Animation Paramétrique et les Arts Numériques.
 
 Disponible directement en ligne sur le Web et en application Desktop haute performance (Tauri 2, React 19, Three.js, Vite 7, TypeScript).
 
-* **Version en ligne (Web App)** : [https://nikos-unilasalle.github.io/openVMap3D/](https://nikos-unilasalle.github.io/openVMap3D/)
+* **Version en ligne (Web App)** : [https://nikos-unilasalle.github.io/tsuji/](https://nikos-unilasalle.github.io/tsuji/)
 * **Version Desktop** : macOS, Windows, Linux via Tauri v2.
 
 ---
@@ -43,9 +43,9 @@ Disponible directement en ligne sur le Web et en application Desktop haute perfo
 
 ## Présentation du Logiciel
 
-OpenVMap est un environnement de création nodale temps réel dédié à la scénographie numérique, au vidéo-mapping architectural, à la data-visualisation 3D et aux installations interactives.
+Tsuji est un environnement de création nodale temps réel dédié à la scénographie numérique, au vidéo-mapping architectural, à la data-visualisation 3D et aux installations interactives.
 
-Accessible instantanément depuis un navigateur web moderne ou compilé en application desktop native avec Tauri v2, OpenVMap combine la puissance de rendu Three.js avec la réactivité d'un graphe de flux de données acyclique (DAG). Chaque élément visuel, transformation spatiale, comportement physique, modulation sonore et passe de post-traitement est piloté de manière déclarative par les interconnexions de nœuds.
+Accessible instantanément depuis un navigateur web moderne ou compilé en application desktop native avec Tauri v2, Tsuji combine la puissance de rendu Three.js avec la réactivité d'un graphe de flux de données acyclique (DAG). Chaque élément visuel, transformation spatiale, comportement physique, modulation sonore et passe de post-traitement est piloté de manière déclarative par les interconnexions de nœuds.
 
 ---
 
@@ -63,7 +63,7 @@ Accessible instantanément depuis un navigateur web moderne ou compilé en appli
 
 ## Architecture et Moteur d'Évaluation
 
-Le graphe d'OpenVMap fonctionne selon un pipeline d'évaluation trié topologiquement et exécuté à chaque rafraîchissement d'image (60 FPS) :
+Le graphe de Tsuji fonctionne selon un pipeline d'évaluation trié topologiquement et exécuté à chaque rafraîchissement d'image (60 FPS) :
 
 1. **Résolution des Dépendances** : Le graphe trie les nœuds de la source vers les puits. Les cycles sont détectés et traités sans bloquer l'exécution.
 2. **Propagations et Fallbacks** : Si une prise d'entrée n'est pas connectée, la valeur provient du paramètre local du nœud ou de sa valeur par défaut.
@@ -298,7 +298,7 @@ Les prises de connexion (sockets) sont identifiées par des codes couleur normal
 
 ## Moteur d'Animation Paramétrique et Studio 3D
 
-OpenVMap intègre un studio complet avec timeline et gizmos interactifs :
+Tsuji intègre un studio complet avec timeline et gizmos interactifs :
 
 - **Timeline & Keyframing** : Pressez la touche `K` sur n'importe quel paramètre pour créer une image-clé.
 - **Gizmos 3D** : Manipulez la position (`T`), la rotation (`R`) ou l'échelle (`S`) directement dans la vue 3D.
@@ -327,8 +327,8 @@ OpenVMap intègre un studio complet avec timeline et gizmos interactifs :
 
 ### 1. Cloner le dépôt
 ```bash
-git clone https://github.com/Nikos-Unilasalle/openVMap3D.git
-cd openVMap3D
+git clone https://github.com/Nikos-Unilasalle/tsuji.git
+cd tsuji
 ```
 
 ### 2. Installer les dépendances

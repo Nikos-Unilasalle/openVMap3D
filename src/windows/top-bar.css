@@ -1,5 +1,5 @@
 /*
- * TopBar toolbar styling matching OpenVMap 3D visual identity:
+ * TopBar toolbar styling matching Tsuji visual identity:
  * Dark grey (var(--chrome-surface), var(--chrome-surface-raised)), sharp borders (var(--chrome-border)), glowing accent hovers:
  * Load (cyan #38bdf8), Save (emerald #22c55e), Save As (purple #a855f7), Inc Save (pink #ec4899)
  */
@@ -111,7 +111,7 @@
   transform: translateY(-1px);
 }
 
-/* Specific glowing accent colors for buttons matching OpenVMap palette */
+/* Specific glowing accent colors for buttons matching Tsuji palette */
 .top-bar-button-new:hover {
   border-color: #f59e0b;
   color: #fbbf24;

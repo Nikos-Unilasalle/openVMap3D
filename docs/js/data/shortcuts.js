@@ -1,5 +1,5 @@
 /**
- * Matrice des raccourcis clavier d'OpenVMap3D
+ * Matrice des raccourcis clavier de Tsuji
  */
 export const SHORTCUTS_DATABASE = [
   {

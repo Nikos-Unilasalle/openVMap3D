@@ -1,5 +1,5 @@
 /**
- * Base de données exhaustive des 60+ nodes d'OpenVMap3D
+ * Base de données exhaustive des 60+ nodes de Tsuji
  */
 export const NODE_CATEGORIES = {
   structure: { label: "Structure & Géométrie", color: "#10B981", icon: "cube" },
@@ -109,7 +109,7 @@ export const NODES_DATABASE = [
     category: "structure",
     summary: "Génère du texte 3D extrudé vectoriel à partir de polices typographiques.",
     inputs: [
-      { id: "text", label: "Text", type: "value", default: '"OpenVMap3D"' },
+      { id: "text", label: "Text", type: "value", default: '"Tsuji"' },
       { id: "depth", label: "Extrude Depth", type: "value", default: "0.2" },
       { id: "size", label: "Font Size", type: "value", default: "1.0" },
       { id: "color", label: "Color", type: "color", default: "#38bdf8" }

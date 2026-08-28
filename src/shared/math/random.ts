@@ -1,5 +1,5 @@
 /**
- * Deterministic Seeded Pseudo-Random Number Generator (PRNG) library for OpenVMap3D.
+ * Deterministic Seeded Pseudo-Random Number Generator (PRNG) library for Tsuji.
  * Supports Mulberry32, Gaussian (Box-Muller), 1D Noise, and Exponential distributions.
  */
 

@@ -1,4 +1,4 @@
-# Writing a node for OpenVMap3D
+# Writing a node for Tsuji
 
 This is a step-by-step guide for adding ONE node type to the graph engine.
 Follow it exactly. Do not improvise file locations or the shape of

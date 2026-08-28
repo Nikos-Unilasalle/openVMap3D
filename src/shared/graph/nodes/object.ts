@@ -968,7 +968,7 @@ export const OBJECT_TEXT_NODE: NodeDefinition = {
   ],
   outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: {
-    text: "OpenVMap3D",
+    text: "Tsuji",
     fontPreset: "Helvetiker",
     fontSize: 64,
     depth: 0.1,
@@ -1009,7 +1009,7 @@ export const OBJECT_TEXT_NODE: NodeDefinition = {
     const textState = textMesh(ctx.nodeId);
     const mesh = textState.mesh;
 
-    const textStr = inputs.text !== undefined ? String(inputs.text) : String(params.text ?? "OpenVMap3D");
+    const textStr = inputs.text !== undefined ? String(inputs.text) : String(params.text ?? "Tsuji");
     const fontSize = Math.max(8, inputs.fontSize !== undefined ? Number(inputs.fontSize) || 64 : Number(params.fontSize) || 64);
     const depth = Math.max(0.001, inputs.depth !== undefined ? Number(inputs.depth) : Number(params.depth) ?? 0.1);
     // A custom font loaded via the file field wins; otherwise the Font menu.

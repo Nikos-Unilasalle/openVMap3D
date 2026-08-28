@@ -5,7 +5,7 @@ import { initKeyboardViz } from "./components/keyboardViz.js";
 import { GUIDES_DATABASE } from "./data/guides.js";
 
 /**
- * Application principale du Wiki OpenVMap3D
+ * Application principale du Wiki Tsuji
  */
 document.addEventListener("DOMContentLoaded", () => {
   initNavigation();

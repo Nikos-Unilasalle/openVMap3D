@@ -32,7 +32,7 @@ let browserChannel: BroadcastChannel | null = null;
 function getBrowserChannel(): BroadcastChannel | null {
   if (typeof window === "undefined" || isTauri()) return null;
   if (!browserChannel) {
-    browserChannel = new BroadcastChannel("openvmap_ipc");
+    browserChannel = new BroadcastChannel("tsuji_ipc");
   }
   return browserChannel;
 }
@@ -56,7 +56,7 @@ export async function listMonitors(): Promise<MonitorInfo[]> {
 export async function openOutputWindow(monitor: MonitorInfo, fullscreen: boolean): Promise<void> {
   if (!isTauri()) {
     const url = window.location.origin + window.location.pathname + "#/output";
-    window.open(url, "openVmapOutput", "width=1280,height=720,resizable=yes");
+    window.open(url, "tsujiOutput", "width=1280,height=720,resizable=yes");
     return;
   }
   await invoke("open_output_window", {

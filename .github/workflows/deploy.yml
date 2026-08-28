@@ -1,4 +1,4 @@
-name: Deploy openVmap to GitHub Pages
+name: Deploy Tsuji to GitHub Pages
 
 on:
   push:
