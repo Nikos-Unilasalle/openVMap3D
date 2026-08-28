@@ -131,8 +131,8 @@ export const DEMO_CATALOG: DemoCategory[] = [
       },
       {
         file: "demo_math_random.tsuji",
-        label: "Random Matrices",
-        description: "A random transform per instance of an array.",
+        label: "Random Field",
+        description: "A random list driving each tower's height and colour.",
       },
       {
         file: "demo_list_instance_color.tsuji",

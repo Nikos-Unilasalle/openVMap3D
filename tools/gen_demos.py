@@ -400,16 +400,33 @@ def _():
 
 @demo("math_random")
 def _():
+    # A random *list*, not transform/random-matrix: that node yields a single
+    # matrix, and Set Instance Transform reads `matrices` positionally, so
+    # with index -1 only instance 0 ever moved and the rest sat at identity.
+    # One value per instance is what per-instance randomness actually needs.
     n = [
-        node("box", "object/box", -1240, 320, scale=v3(0.45, 0.45, 0.45), color=MID, roughness=0.2, metalness=0.45),
-        node("row", "structure/array", -1000, 320, mode="linear", axis="X", count=9, spacing=0.75),
-        node("mat", "transform/random-matrix", -1000, 80, seed=6, posRange=0.9, rotRange=180, scaleMin=0.6, scaleMax=1.5),
-        node("place", "structure/instance-transform", -700, 260, mode="relative", pivot="individual", index=-1),
+        node("box", "object/box", -1320, 300, scale=v3(0.62, 1, 0.62), color=0xFFFFFF, roughness=0.3, metalness=0.35),
+        node("grid", "structure/array", -1080, 300, mode="grid", plane="XZ", gridCols=7, gridRows=7, spacingX=0.85, spacingY=0.85, centerGrid=True),
+        node("heights", "list/random-list", -1080, 60, count=49, seed=12, algorithm="noise", min=0.15, max=2.4),
+        # The gradient node reads any value list, not just distances — so the
+        # same list that sets each tower's height also picks its colour.
+        node("tint", "list/distance-gradient", -800, 60, radius=2.4, power=1),
+        # Scaling Y happens about each box's centre, so a tower of height h
+        # would sink h/2 under the floor. Lift each by half its own height
+        # (the box is 1 unit tall and already resting on the plane).
+        node("lift", "list/math", -800, 240, op="multiply", b=0.5, factor=1, offset=-0.5),
+        node("place", "structure/instance-transform", -540, 300, mode="relative", pivot="individual", index=-1),
+        node("paint", "structure/instance-color", -280, 300, index=-1),
     ]
     c = [
-        wire("box", "geometry", "row", "geometry"),
-        wire("row", "geometry", "place", "geometry"),
-        wire("mat", "matrix", "place", "matrices"),
+        wire("box", "geometry", "grid", "geometry"),
+        wire("grid", "geometry", "place", "geometry"),
+        wire("heights", "list", "place", "scaleY"),
+        wire("heights", "list", "lift", "a"),
+        wire("lift", "list", "place", "posY"),
+        wire("heights", "list", "tint", "distances"),
+        wire("place", "geometry", "paint", "geometry"),
+        wire("tint", "list", "paint", "colors"),
     ]
     return n, c
 

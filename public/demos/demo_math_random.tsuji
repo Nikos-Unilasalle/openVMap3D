@@ -207,59 +207,99 @@
           "id": "box",
           "type": "object/box",
           "position": {
-            "x": -1240,
-            "y": 320
+            "x": -1320,
+            "y": 300
           },
           "params": {
             "scale": {
-              "x": 0.45,
-              "y": 0.45,
-              "z": 0.45
+              "x": 0.62,
+              "y": 1,
+              "z": 0.62
             },
-            "color": 9133302,
-            "roughness": 0.2,
-            "metalness": 0.45
+            "color": 16777215,
+            "roughness": 0.3,
+            "metalness": 0.35
           }
         },
         {
-          "id": "row",
+          "id": "grid",
           "type": "structure/array",
           "position": {
-            "x": -1000,
-            "y": 320
+            "x": -1080,
+            "y": 300
           },
           "params": {
-            "mode": "linear",
-            "axis": "X",
-            "count": 9,
-            "spacing": 0.75
+            "mode": "grid",
+            "plane": "XZ",
+            "gridCols": 7,
+            "gridRows": 7,
+            "spacingX": 0.85,
+            "spacingY": 0.85,
+            "centerGrid": true
           }
         },
         {
-          "id": "mat",
-          "type": "transform/random-matrix",
+          "id": "heights",
+          "type": "list/random-list",
           "position": {
-            "x": -1000,
-            "y": 80
+            "x": -1080,
+            "y": 60
           },
           "params": {
-            "seed": 6,
-            "posRange": 0.9,
-            "rotRange": 180,
-            "scaleMin": 0.6,
-            "scaleMax": 1.5
+            "count": 49,
+            "seed": 12,
+            "algorithm": "noise",
+            "min": 0.15,
+            "max": 2.4
+          }
+        },
+        {
+          "id": "tint",
+          "type": "list/distance-gradient",
+          "position": {
+            "x": -800,
+            "y": 60
+          },
+          "params": {
+            "radius": 2.4,
+            "power": 1
+          }
+        },
+        {
+          "id": "lift",
+          "type": "list/math",
+          "position": {
+            "x": -800,
+            "y": 240
+          },
+          "params": {
+            "op": "multiply",
+            "b": 0.5,
+            "factor": 1,
+            "offset": -0.5
           }
         },
         {
           "id": "place",
           "type": "structure/instance-transform",
           "position": {
-            "x": -700,
-            "y": 260
+            "x": -540,
+            "y": 300
           },
           "params": {
             "mode": "relative",
             "pivot": "individual",
+            "index": -1
+          }
+        },
+        {
+          "id": "paint",
+          "type": "structure/instance-color",
+          "position": {
+            "x": -280,
+            "y": 300
+          },
+          "params": {
             "index": -1
           }
         }
@@ -280,25 +320,60 @@
           "toSocket": "environment"
         },
         {
-          "id": "box.geometry->row.geometry",
+          "id": "box.geometry->grid.geometry",
           "fromNode": "box",
           "fromSocket": "geometry",
-          "toNode": "row",
+          "toNode": "grid",
           "toSocket": "geometry"
         },
         {
-          "id": "row.geometry->place.geometry",
-          "fromNode": "row",
+          "id": "grid.geometry->place.geometry",
+          "fromNode": "grid",
           "fromSocket": "geometry",
           "toNode": "place",
           "toSocket": "geometry"
         },
         {
-          "id": "mat.matrix->place.matrices",
-          "fromNode": "mat",
-          "fromSocket": "matrix",
+          "id": "heights.list->place.scaleY",
+          "fromNode": "heights",
+          "fromSocket": "list",
           "toNode": "place",
-          "toSocket": "matrices"
+          "toSocket": "scaleY"
+        },
+        {
+          "id": "heights.list->lift.a",
+          "fromNode": "heights",
+          "fromSocket": "list",
+          "toNode": "lift",
+          "toSocket": "a"
+        },
+        {
+          "id": "lift.list->place.posY",
+          "fromNode": "lift",
+          "fromSocket": "list",
+          "toNode": "place",
+          "toSocket": "posY"
+        },
+        {
+          "id": "heights.list->tint.distances",
+          "fromNode": "heights",
+          "fromSocket": "list",
+          "toNode": "tint",
+          "toSocket": "distances"
+        },
+        {
+          "id": "place.geometry->paint.geometry",
+          "fromNode": "place",
+          "fromSocket": "geometry",
+          "toNode": "paint",
+          "toSocket": "geometry"
+        },
+        {
+          "id": "tint.list->paint.colors",
+          "fromNode": "tint",
+          "fromSocket": "list",
+          "toNode": "paint",
+          "toSocket": "colors"
         }
       ],
       "keyframes": {},
