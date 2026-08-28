@@ -1117,6 +1117,25 @@ def _():
     return n, [], {"light/point": {"intensity": 6}}
 
 
+@demo("object_raccoon")
+def _():
+    # The Raccoon is a primitive, so it instances like any other: no loader,
+    # no file path, and Array clones it exactly as it would a Box.
+    n = [
+        node("racc", "object/raccoon", -1180, 220, scale=v3(1.5, 1.5, 1.5), color=0xC9D3DE, roughness=0.55, metalness=0.15),
+        node("ring", "structure/array", -900, 220, mode="circular", radius=1.9, count=6,
+             plane="XZ", totalAngle=360, orient=True),
+        node("palette", "list/color-palette", -900, 440, count=6),
+        node("paint", "structure/instance-color", -600, 300, index=-1),
+    ]
+    c = [
+        wire("racc", "geometry", "ring", "geometry"),
+        wire("ring", "geometry", "paint", "geometry"),
+        wire("palette", "list", "paint", "colors"),
+    ]
+    return n, c
+
+
 def main(only=None):
     names = [only] if only else list(DEMOS_SPEC)
     for name in names:

@@ -25,6 +25,11 @@ export const DEMO_CATALOG: DemoCategory[] = [
     title: "Objects",
     demos: [
       {
+        file: "demo_object_raccoon.tsuji",
+        label: "Raccoon",
+        description: "The built-in raccoon primitive, arrayed and tinted.",
+      },
+      {
         file: "demo_text_toolkit.tsuji",
         label: "Text Toolkit",
         description: "Trim, case, replace and length on one string.",
