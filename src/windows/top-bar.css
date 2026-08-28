@@ -17,7 +17,11 @@
   font-family: inherit;
   font-size: 12px;
   user-select: none;
-  z-index: 10;
+  /* Above the viewport/graph-editor split handle (timeline-bar-container,
+     z-index 20) — that handle used to win the stacking fight and swallow
+     the visibility of anything dropped down from a top-bar button, e.g.
+     the Demos menu. */
+  z-index: 30;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
 }
 
