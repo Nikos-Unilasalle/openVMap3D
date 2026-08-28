@@ -3,35 +3,243 @@
     {
       "nodes": [
         {
-          "id": "cube",
-          "type": "object/box",
+          "id": "setup_0",
+          "type": "object/plane",
           "position": {
-            "x": -1907,
-            "y": 290
+            "x": 599,
+            "y": 160
           },
           "params": {
-            "scale": {
-              "x": 0.7,
-              "y": 0.7,
-              "z": 0.7
+            "visible": 1,
+            "location": {
+              "x": 0,
+              "y": -0.5,
+              "z": 0
             },
-            "color": 2765122
+            "rotation": {
+              "x": 1.5707963267948966,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 10,
+              "y": 10,
+              "z": 1
+            },
+            "texturePath": "",
+            "normalMapPath": "",
+            "roughnessMapPath": "",
+            "uvScaleX": 1,
+            "uvScaleY": 1,
+            "uvOffsetX": 0,
+            "uvOffsetY": 0,
+            "color": 16777215,
+            "emissive": 0,
+            "emissiveIntensity": 1,
+            "shadeless": 0,
+            "roughness": 0.1,
+            "metalness": 0.1,
+            "wireframe": 0,
+            "opacity": 1,
+            "transmission": 0,
+            "thickness": 0.5
+          }
+        },
+        {
+          "id": "setup_1",
+          "type": "texture/procedural",
+          "position": {
+            "x": 375,
+            "y": 223
+          },
+          "params": {
+            "type": "checker",
+            "colorA": 16777215,
+            "colorB": 2236962,
+            "scale": 8,
+            "seed": 1,
+            "octaves": 3,
+            "resolution": 256,
+            "uvScaleX": 1,
+            "uvScaleY": 1,
+            "uvOffsetX": 0,
+            "uvOffsetY": 0
+          }
+        },
+        {
+          "id": "setup_2",
+          "type": "light/point",
+          "position": {
+            "x": 857,
+            "y": 193
+          },
+          "params": {
+            "location": {
+              "x": 0,
+              "y": 2.185514752224622,
+              "z": -4.5179526088705275
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "color": 16768110,
+            "intensity": 50,
+            "distance": 15,
+            "decay": 2,
+            "castShadow": 1
+          }
+        },
+        {
+          "id": "setup_3",
+          "type": "light/point",
+          "position": {
+            "x": 1043,
+            "y": 187
+          },
+          "params": {
+            "location": {
+              "x": 0,
+              "y": 2.185514752224622,
+              "z": 4.487400919453167
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "color": 440020,
+            "intensity": 50,
+            "distance": 15,
+            "decay": 2,
+            "castShadow": 1
+          }
+        },
+        {
+          "id": "setup_4",
+          "type": "render",
+          "position": {
+            "x": 610,
+            "y": 393
+          },
+          "params": {
+            "frameCount": 120,
+            "fps": 30,
+            "motionBlur": 0,
+            "resolutionPreset": "16:9 (1920x1080)",
+            "width": 1920,
+            "height": 1080,
+            "holdout": false
+          }
+        },
+        {
+          "id": "setup_5",
+          "type": "lighting/environment",
+          "position": {
+            "x": 340,
+            "y": 406
+          },
+          "params": {
+            "color": 4147542,
+            "intensity": 1,
+            "background": 1,
+            "blurriness": 0,
+            "filePath": "",
+            "backgroundImagePath": "",
+            "backgroundFit": "cover",
+            "backgroundScale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "backgroundOffset": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "backgroundRotation": 0,
+            "ambientIntensity": 0,
+            "sunIntensity": 0
+          }
+        },
+        {
+          "id": "setup_6",
+          "type": "light/point",
+          "position": {
+            "x": 860,
+            "y": 389
+          },
+          "params": {
+            "location": {
+              "x": 3.583607412619263,
+              "y": 2.185514752224622,
+              "z": -0.48624947478730096
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "color": 16777215,
+            "intensity": 50,
+            "distance": 15,
+            "decay": 2,
+            "castShadow": 1
+          }
+        },
+        {
+          "id": "box",
+          "type": "object/box",
+          "position": {
+            "x": -1500,
+            "y": 300
+          },
+          "params": {
+            "location": {
+              "x": 0,
+              "y": 0.3,
+              "z": 0
+            },
+            "scale": {
+              "x": 0.6,
+              "y": 0.6,
+              "z": 0.6
+            },
+            "color": 16777215,
+            "roughness": 0.25,
+            "metalness": 0.4
           }
         },
         {
           "id": "grid",
           "type": "structure/array",
           "position": {
-            "x": -1624,
-            "y": 269
+            "x": -1260,
+            "y": 300
           },
           "params": {
             "mode": "grid",
             "plane": "XZ",
-            "gridCols": 14,
-            "gridRows": 14,
-            "spacingX": 1,
-            "spacingY": 1,
+            "gridCols": 12,
+            "gridRows": 12,
+            "spacingX": 0.72,
+            "spacingY": 0.72,
             "centerGrid": true
           }
         },
@@ -39,8 +247,8 @@
           "id": "mouse",
           "type": "io/mouse",
           "position": {
-            "x": -1498,
-            "y": -18
+            "x": -1500,
+            "y": 60
           },
           "params": {
             "target": "Ground",
@@ -49,11 +257,11 @@
           }
         },
         {
-          "id": "dist",
+          "id": "dists",
           "type": "math/distances",
           "position": {
-            "x": -1117,
-            "y": 66
+            "x": -1020,
+            "y": 120
           },
           "params": {}
         },
@@ -61,36 +269,36 @@
           "id": "bump",
           "type": "list/map-range",
           "position": {
-            "x": -686,
-            "y": 175
+            "x": -760,
+            "y": 60
           },
           "params": {
             "inMin": 0,
-            "inMax": 4,
-            "outMin": 3,
-            "outMax": 0.975,
+            "inMax": 2.6,
+            "outMin": 1.1,
+            "outMax": 0,
             "clamp": 1,
-            "power": 1
+            "power": 1.4
           }
         },
         {
           "id": "glow",
           "type": "list/distance-gradient",
           "position": {
-            "x": -641,
-            "y": -114
+            "x": -760,
+            "y": 300
           },
           "params": {
-            "radius": 4,
-            "power": 1.6
+            "radius": 2.6,
+            "power": 1.4
           }
         },
         {
-          "id": "xform",
+          "id": "place",
           "type": "structure/instance-transform",
           "position": {
-            "x": -452,
-            "y": 249
+            "x": -480,
+            "y": 180
           },
           "params": {
             "mode": "relative",
@@ -99,11 +307,11 @@
           }
         },
         {
-          "id": "tint",
+          "id": "paint",
           "type": "structure/instance-color",
           "position": {
-            "x": -45,
-            "y": -125
+            "x": -220,
+            "y": 180
           },
           "params": {
             "index": -1
@@ -112,66 +320,80 @@
       ],
       "connections": [
         {
-          "id": "cube.geometry->grid.geometry",
-          "fromNode": "cube",
+          "id": "setup_c0",
+          "fromNode": "setup_1",
+          "fromSocket": "texture",
+          "toNode": "setup_0",
+          "toSocket": "texture"
+        },
+        {
+          "id": "setup_c1",
+          "fromNode": "setup_5",
+          "fromSocket": "environment",
+          "toNode": "setup_4",
+          "toSocket": "environment"
+        },
+        {
+          "id": "box.geometry->grid.geometry",
+          "fromNode": "box",
           "fromSocket": "geometry",
           "toNode": "grid",
           "toSocket": "geometry"
         },
         {
-          "id": "grid.geometry->dist.instances",
+          "id": "grid.geometry->dists.instances",
           "fromNode": "grid",
           "fromSocket": "geometry",
-          "toNode": "dist",
+          "toNode": "dists",
           "toSocket": "instances"
         },
         {
-          "id": "mouse.point->dist.target",
+          "id": "mouse.point->dists.target",
           "fromNode": "mouse",
           "fromSocket": "point",
-          "toNode": "dist",
+          "toNode": "dists",
           "toSocket": "target"
         },
         {
-          "id": "dist.distances->bump.list",
-          "fromNode": "dist",
+          "id": "dists.distances->bump.list",
+          "fromNode": "dists",
           "fromSocket": "distances",
           "toNode": "bump",
           "toSocket": "list"
         },
         {
-          "id": "dist.distances->glow.distances",
-          "fromNode": "dist",
+          "id": "dists.distances->glow.distances",
+          "fromNode": "dists",
           "fromSocket": "distances",
           "toNode": "glow",
           "toSocket": "distances"
         },
         {
-          "id": "grid.geometry->xform.geometry",
+          "id": "grid.geometry->place.geometry",
           "fromNode": "grid",
           "fromSocket": "geometry",
-          "toNode": "xform",
+          "toNode": "place",
           "toSocket": "geometry"
         },
         {
-          "id": "bump.list->xform.posY",
+          "id": "bump.list->place.posY",
           "fromNode": "bump",
           "fromSocket": "list",
-          "toNode": "xform",
+          "toNode": "place",
           "toSocket": "posY"
         },
         {
-          "id": "xform.geometry->tint.geometry",
-          "fromNode": "xform",
+          "id": "place.geometry->paint.geometry",
+          "fromNode": "place",
           "fromSocket": "geometry",
-          "toNode": "tint",
+          "toNode": "paint",
           "toSocket": "geometry"
         },
         {
-          "id": "glow.list->tint.colors",
+          "id": "glow.list->paint.colors",
           "fromNode": "glow",
           "fromSocket": "list",
-          "toNode": "tint",
+          "toNode": "paint",
           "toSocket": "colors"
         }
       ],

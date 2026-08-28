@@ -747,6 +747,199 @@ def _():
     return n, c
 
 
+# ============================================================================
+# The originals, rebuilt on the shared setup.
+#
+# They predate setup.tsuji and each sat on an empty grey void, which made the
+# menu read as two unrelated collections. Same lessons, same small node
+# counts — just staged on the floor, under the lights, on the blue -> pink
+# ramp, and rethought where the original was thin.
+# ============================================================================
+
+@demo("transform_basics")
+def _():
+    n = [
+        node("box", "object/box", -1000, 160, scale=v3(1, 1, 1), color=BLUE, roughness=0.25, metalness=0.35),
+        # One node showing all three channels at once: moved off centre,
+        # turned off-axis, and scaled unevenly.
+        node("place", "structure/geometry-transform", -700, 160, mode="relative",
+             posX=0.9, posY=0.6, rotY=35, rotZ=12, scaleX=1.4, scaleY=1.4, scaleZ=1.4),
+    ]
+    return n, [wire("box", "geometry", "place", "geometry")]
+
+
+@demo("structure_array")
+def _():
+    n = [
+        node("box", "object/box", -1000, 160, location=v3(0, 0.3, 0), scale=v3(0.5, 0.5, 0.5), color=BLUE, roughness=0.25, metalness=0.4),
+        node("grid", "structure/array", -700, 160, mode="grid", plane="XZ",
+             gridCols=6, gridRows=6, spacingX=0.95, spacingY=0.95, centerGrid=True),
+    ]
+    return n, [wire("box", "geometry", "grid", "geometry")]
+
+
+@demo("time_spin")
+def _():
+    n = [
+        node("clock", "time", -1240, 60),
+        node("degrees", "value/math", -1000, 60, op="multiply", b=45),
+        node("box", "object/box", -1240, 300, location=v3(0, 1, 0), scale=v3(1.2, 1.2, 1.2), color=MID, roughness=0.2, metalness=0.4),
+        node("spin", "structure/geometry-transform", -700, 180, mode="relative"),
+    ]
+    c = [
+        wire("clock", "seconds", "degrees", "a"),
+        wire("box", "geometry", "spin", "geometry"),
+        wire("degrees", "out", "spin", "rotY"),
+    ]
+    return n, c
+
+
+@demo("time_oscillator_bob")
+def _():
+    n = [
+        node("bob", "animation/oscillator", -1080, 60, type="sine", frequency=0.5, amplitude=0.7, offset=1.1),
+        node("ball", "object/sphere", -1080, 300, scale=v3(0.7, 0.7, 0.7), color=PINK, roughness=0.2, metalness=0.4),
+        node("lift", "structure/geometry-transform", -740, 180, mode="relative"),
+    ]
+    c = [
+        wire("ball", "geometry", "lift", "geometry"),
+        wire("bob", "out", "lift", "posY"),
+    ]
+    return n, c
+
+
+@demo("list_instance_color")
+def _():
+    n = [
+        node("box", "object/box", -1240, 300, location=v3(0, 0.35, 0), scale=v3(0.55, 0.7, 0.55), color=0xFFFFFF, roughness=0.25, metalness=0.4),
+        node("grid", "structure/array", -1000, 300, mode="grid", plane="XZ",
+             gridCols=8, gridRows=8, spacingX=0.8, spacingY=0.8, centerGrid=True),
+        node("palette", "list/color-palette", -1000, 60, count=64),
+        node("paint", "structure/instance-color", -680, 200, index=-1),
+    ]
+    c = [
+        wire("box", "geometry", "grid", "geometry"),
+        wire("grid", "geometry", "paint", "geometry"),
+        wire("palette", "list", "paint", "colors"),
+    ]
+    return n, c
+
+
+@demo("curve_primitive")
+def _():
+    n = [
+        # visible 0: the node draws its own thin preview line, which would
+        # double up on the tube built from the same curve.
+        node("shape", "curve/primitive", -1000, 160, primitiveType="helix",
+             radius=1.4, height=2.4, turns=4, location=v3(0, 0.4, 0), visible=0),
+        node("tube", "curve/to_mesh", -700, 160, thickness=0.09, color=BLUE,
+             emissive=BLUE, emissiveIntensity=0.25, roughness=0.2, metalness=0.45, showCurve=0),
+    ]
+    return n, [wire("shape", "curve", "tube", "curve")]
+
+
+@demo("physics_raycast")
+def _():
+    n = [
+        node("target", "object/sphere", -1320, 300, location=v3(0, 1.3, 0), scale=v3(1.5, 1.5, 1.5), color=0x223040, roughness=0.45, metalness=0.25),
+        # The ray's origin slides, so the hit point visibly travels over the
+        # surface instead of sitting still on a static diagram.
+        # Amplitude stays inside the sphere's radius (0.5 x scale 1.5 = 0.75):
+        # a ray that misses reports point (0,0,0), which would fling the
+        # marker to the origin every time the sweep ran wide.
+        node("sweep", "animation/oscillator", -1320, 60, type="sine", frequency=0.3, amplitude=0.55, offset=0),
+        node("origin", "vector/compose", -1080, 60, y=4, z=0),
+        node("ray", "physics/raycast", -820, 180, direction=v3(0, -1, 0), maxDistance=100),
+        node("marker", "object/sphere", -820, 420, scale=v3(0.34, 0.34, 0.34), color=PINK, emissive=PINK, emissiveIntensity=0.9, shadeless=1),
+        node("place", "structure/geometry-transform", -520, 320, mode="absolute"),
+    ]
+    c = [
+        wire("sweep", "out", "origin", "x"),
+        wire("origin", "out", "ray", "origin"),
+        wire("target", "geometry", "ray", "geometry"),
+        wire("marker", "geometry", "place", "geometry"),
+        wire("ray", "point", "place", "location"),
+    ]
+    return n, c
+
+
+@demo("io_mouse_pointer")
+def _():
+    n = [
+        node("mouse", "io/mouse", -1080, 60, target="Ground", height=0, smoothing=0.25),
+        node("marker", "object/sphere", -1080, 300, scale=v3(0.32, 0.32, 0.32), color=CYAN, emissive=CYAN, emissiveIntensity=0.6, shadeless=1),
+        node("place", "structure/geometry-transform", -740, 180, mode="absolute"),
+    ]
+    c = [
+        wire("marker", "geometry", "place", "geometry"),
+        wire("mouse", "point", "place", "location"),
+    ]
+    return n, c
+
+
+@demo("mouse_halo")
+def _():
+    n = [
+        node("box", "object/box", -1500, 300, location=v3(0, 0.3, 0), scale=v3(0.6, 0.6, 0.6), color=0xFFFFFF, roughness=0.25, metalness=0.4),
+        node("grid", "structure/array", -1260, 300, mode="grid", plane="XZ",
+             gridCols=12, gridRows=12, spacingX=0.72, spacingY=0.72, centerGrid=True),
+        node("mouse", "io/mouse", -1500, 60, target="Ground", height=0, smoothing=0.15),
+        node("dists", "math/distances", -1020, 120),
+        node("bump", "list/map-range", -760, 60, inMin=0, inMax=2.6, outMin=1.1, outMax=0, clamp=1, power=1.4),
+        node("glow", "list/distance-gradient", -760, 300, radius=2.6, power=1.4),
+        node("place", "structure/instance-transform", -480, 180, mode="relative", pivot="individual", index=-1),
+        node("paint", "structure/instance-color", -220, 180, index=-1),
+    ]
+    c = [
+        wire("box", "geometry", "grid", "geometry"),
+        wire("grid", "geometry", "dists", "instances"),
+        wire("mouse", "point", "dists", "target"),
+        wire("dists", "distances", "bump", "list"),
+        wire("dists", "distances", "glow", "distances"),
+        wire("grid", "geometry", "place", "geometry"),
+        wire("bump", "list", "place", "posY"),
+        wire("place", "geometry", "paint", "geometry"),
+        wire("glow", "list", "paint", "colors"),
+    ]
+    return n, c
+
+
+@demo("lighting_environment")
+def _():
+    # Repurposed: the setup already carries an Environment node, so a second
+    # one would just fight it for the scene. What is worth showing instead is
+    # what an environment is *for* — three spheres reading it back through
+    # different roughness and metalness.
+    n = [
+        # A roughness sweep at near-constant metalness, not a mirror-to-matte
+        # one: the environment here is a flat colour, so a true mirror just
+        # reflects an even field and reads as a black ball. Spread highlights
+        # are what actually shows the surface responding.
+        # y = -0.05 rests each sphere on the floor (radius 0.5 x scale 0.9,
+        # plane at -0.5).
+        node("sharp", "object/sphere", -1120, 40, location=v3(-1.7, -0.05, 0), scale=v3(0.9, 0.9, 0.9), color=0xFFFFFF, roughness=0.12, metalness=0.9),
+        node("satin", "object/sphere", -1120, 240, location=v3(0, -0.05, 0), scale=v3(0.9, 0.9, 0.9), color=0xFFFFFF, roughness=0.38, metalness=0.9),
+        node("matte", "object/sphere", -1120, 440, location=v3(1.7, -0.05, 0), scale=v3(0.9, 0.9, 0.9), color=0xFFFFFF, roughness=0.8, metalness=0.85),
+        node("row", "structure/merge", -780, 240),
+    ]
+    c = [wire(s, "geometry", "row", f"in{i}") for i, s in enumerate(["sharp", "satin", "matte"])]
+    return n, c
+
+
+@demo("postprocess_bloom")
+def _():
+    n = [
+        node("ring", "object/disc", -1080, 240, location=v3(0, 1.2, 0), radius=1.1, innerRadius=0.75, depth=0.18,
+             color=CYAN, emissive=CYAN, emissiveIntensity=2.4, shadeless=1),
+        # threshold above 1, not the usual 0.3: the setup's white checker
+        # floor sits near full luminance and its lit hotspots go past it, so
+        # anything lower blooms the whole scene and loses the ring it is meant
+        # to show. Only the ring, emissive at 2.4, crosses 1.5.
+        node("glow", "postprocess/bloom", -1080, 40, strength=0.7, radius=0.35, threshold=1.5),
+    ]
+    return n, [wire("glow", "effect", RENDER, "postprocess")]
+
+
 def main(only=None):
     names = [only] if only else list(DEMOS_SPEC)
     for name in names:
