@@ -6,6 +6,7 @@ import { DEFAULT_REGISTRY } from "./nodes/index";
 import { evaluateGraph } from "./evaluate";
 import { initBvhRaycast } from "../three/bvh";
 import { Connection, Graph, NodeDefinition } from "./types";
+import { DEMO_CATALOG } from "../demos";
 
 // Lives under public/ (not a top-level demos/ folder) so Vite ships these
 // files verbatim into dist and the in-app Demos menu can fetch() them at
@@ -73,6 +74,29 @@ function assertSocketsExist(raw: string, file: string): void {
     }
   }
 }
+
+describe("demo catalog", () => {
+  const onDisk = new Set(readdirSync(DEMO_DIR).filter((f) => f.endsWith(".tsuji")));
+  const listed = DEMO_CATALOG.flatMap((c) => c.demos.map((d) => d.file));
+
+  // A catalog entry naming a file that isn't there fails at runtime as
+  // "not valid JSON", not as a 404: the dev server and the built app both
+  // answer an unknown path with index.html, so the menu item just breaks
+  // with a baffling message. Cheaper to catch here.
+  it.each(listed)("%s exists in public/demos", (file) => {
+    expect(onDisk).toContain(file);
+  });
+
+  it("lists every demo file", () => {
+    // setup.tsuji is the shared base copied into each demo, not a demo.
+    const unlisted = [...onDisk].filter((f) => f !== "setup.tsuji" && !listed.includes(f));
+    expect(unlisted, "demo files missing from DEMO_CATALOG").toEqual([]);
+  });
+
+  it("has no duplicate entries", () => {
+    expect(listed).toEqual([...new Set(listed)]);
+  });
+});
 
 describe("demo .tsuji files", () => {
   const files = readdirSync(DEMO_DIR).filter((f) => f.endsWith(".tsuji"));

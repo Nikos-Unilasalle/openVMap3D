@@ -22,6 +22,51 @@ export interface DemoCategory {
 
 export const DEMO_CATALOG: DemoCategory[] = [
   {
+    title: "Objects",
+    demos: [
+      {
+        file: "demo_object_primitives.tsuji",
+        label: "Primitives",
+        description: "Cylinder, cone and disc merged into one object.",
+      },
+      {
+        file: "demo_object_text.tsuji",
+        label: "3D Text",
+        description: "Text nodes composing the string a Text object renders.",
+      },
+      {
+        file: "demo_object_empty_lookat.tsuji",
+        label: "Empty & Look At",
+        description: "A cone aiming at an orbiting Empty.",
+      },
+    ],
+  },
+  {
+    title: "Modifiers",
+    demos: [
+      {
+        file: "demo_modifier_boolean.tsuji",
+        label: "Boolean",
+        description: "A sphere subtracted from a box.",
+      },
+      {
+        file: "demo_modifier_subdivide_shade.tsuji",
+        label: "Subdivide & Shade",
+        description: "Catmull-Clark subdivision then auto-smooth shading.",
+      },
+      {
+        file: "demo_modifier_lattice.tsuji",
+        label: "Lattice",
+        description: "A cage twisting and bulging a sphere.",
+      },
+      {
+        file: "demo_modifier_clipping.tsuji",
+        label: "Clip Box",
+        description: "A sphere cut down to a box volume.",
+      },
+    ],
+  },
+  {
     title: "Transform & Structure",
     demos: [
       {
@@ -39,6 +84,21 @@ export const DEMO_CATALOG: DemoCategory[] = [
   {
     title: "Time & Animation",
     demos: [
+      {
+        file: "demo_time_remap.tsuji",
+        label: "Time Remap",
+        description: "A looping remap of the clock driving rotation.",
+      },
+      {
+        file: "demo_math_wiggle.tsuji",
+        label: "Wiggle",
+        description: "Layered noise on position, rotation and scale.",
+      },
+      {
+        file: "demo_trail_squash.tsuji",
+        label: "Squash & Stretch",
+        description: "An orbiting ball deformed by its own speed.",
+      },
       {
         file: "demo_time_spin.tsuji",
         label: "Continuous Spin",
@@ -60,6 +120,26 @@ export const DEMO_CATALOG: DemoCategory[] = [
     title: "List & Instancing",
     demos: [
       {
+        file: "demo_list_basics.tsuji",
+        label: "List Basics",
+        description: "Generate, slice, length and get-item on one list.",
+      },
+      {
+        file: "demo_list_vectors.tsuji",
+        label: "Vector Lists",
+        description: "Combine three number lists into vectors and back.",
+      },
+      {
+        file: "demo_instancing_tools.tsuji",
+        label: "Instancing Tools",
+        description: "Get one instance, and read every instance position.",
+      },
+      {
+        file: "demo_math_random.tsuji",
+        label: "Random Matrices",
+        description: "A random transform per instance of an array.",
+      },
+      {
         file: "demo_list_instance_color.tsuji",
         label: "Color Palette per Instance",
         description: "Array + Color Palette List -> Set Instance Color.",
@@ -69,6 +149,21 @@ export const DEMO_CATALOG: DemoCategory[] = [
   {
     title: "Curves",
     demos: [
+      {
+        file: "demo_curve_follow_path.tsuji",
+        label: "Follow Path",
+        description: "A cone riding along a helix.",
+      },
+      {
+        file: "demo_curve_deform.tsuji",
+        label: "Curve Deform",
+        description: "A cylinder bent along a wave curve.",
+      },
+      {
+        file: "demo_curve_array.tsuji",
+        label: "Curve Array",
+        description: "One circle repeated into a stack of lines.",
+      },
       {
         file: "demo_curve_primitive.tsuji",
         label: "Curve Primitive",
@@ -80,6 +175,11 @@ export const DEMO_CATALOG: DemoCategory[] = [
     title: "Physics",
     demos: [
       {
+        file: "demo_physics_scatter.tsuji",
+        label: "Surface Scatter",
+        description: "Sample points on a mesh, spawn objects on them.",
+      },
+      {
         file: "demo_physics_raycast.tsuji",
         label: "Raycast Hit Marker",
         description: "Raycast a sphere, place a marker at the hit point.",
@@ -89,6 +189,21 @@ export const DEMO_CATALOG: DemoCategory[] = [
   {
     title: "Lighting & Post-Processing",
     demos: [
+      {
+        file: "demo_lighting_lights.tsuji",
+        label: "Light Types",
+        description: "Ambient, directional, spot and an orbiting point light.",
+      },
+      {
+        file: "demo_post_stylize.tsuji",
+        label: "Stylize Chain",
+        description: "Vignette, RGB shift, grain and colour grading chained.",
+      },
+      {
+        file: "demo_post_outline.tsuji",
+        label: "Outline",
+        description: "An outline pass tracing one object's edges.",
+      },
       {
         file: "demo_lighting_environment.tsuji",
         label: "Environment Lighting",
@@ -105,6 +220,26 @@ export const DEMO_CATALOG: DemoCategory[] = [
     title: "I/O",
     demos: [
       {
+        file: "demo_logic_keyboard.tsuji",
+        label: "Keyboard & Logic",
+        description: "Space toggles a gate, swapping which object shows.",
+      },
+      {
+        file: "demo_logic_compare.tsuji",
+        label: "Compare & Envelope",
+        description: "A rising edge firing an envelope and a pulse.",
+      },
+      {
+        file: "demo_hud_text.tsuji",
+        label: "HUD Text",
+        description: "The clock formatted into a 2D overlay label.",
+      },
+      {
+        file: "demo_sound_reactive.tsuji",
+        label: "Sound Spectrum",
+        description: "Mic spectrum driving a bar graph (enable the mic).",
+      },
+      {
         file: "demo_io_mouse_pointer.tsuji",
         label: "Mouse Pointer",
         description: "Mouse node's 3D point placing a marker.",
@@ -113,6 +248,86 @@ export const DEMO_CATALOG: DemoCategory[] = [
         file: "demo_mouse_halo.tsuji",
         label: "Mouse Proximity Halo",
         description: "Distances -> gradient color + height bump around the pointer.",
+      },
+    ],
+  },
+  {
+    title: "Dataviz",
+    demos: [
+      {
+        file: "demo_chart_bar.tsuji",
+        label: "Bar Chart",
+        description: "Random values as bars, with a matching axis.",
+      },
+      {
+        file: "demo_chart_pie.tsuji",
+        label: "Pie Chart",
+        description: "A donut chart coloured from a palette.",
+      },
+      {
+        file: "demo_chart_scatter.tsuji",
+        label: "Scatter Plot",
+        description: "Three number lists as a 3D point scatter.",
+      },
+      {
+        file: "demo_chart_line.tsuji",
+        label: "Line Graph",
+        description: "A smoothed line graph with points.",
+      },
+      {
+        file: "demo_points_roundtrip.tsuji",
+        label: "Mesh to Points",
+        description: "A mesh turned into points, wiggled, and rebuilt.",
+      },
+    ],
+  },
+  {
+    title: "Particles",
+    demos: [
+      {
+        file: "demo_particles_basic.tsuji",
+        label: "Particles",
+        description: "Emitter, simulation and point rendering.",
+      },
+      {
+        file: "demo_particles_surface.tsuji",
+        label: "Surface Emitter",
+        description: "Particles off a mesh, pulled by a vortex, hitting a ground.",
+      },
+      {
+        file: "demo_particles_trails.tsuji",
+        label: "Trails & Web",
+        description: "Particle history as trails, plus nearby-point links.",
+      },
+    ],
+  },
+  {
+    title: "Textures",
+    demos: [
+      {
+        file: "demo_texture_procedural.tsuji",
+        label: "Procedural Textures",
+        description: "Two patterns mixed, transformed, and used as a normal map.",
+      },
+      {
+        file: "demo_texture_to_geometry.tsuji",
+        label: "Texture to Geometry",
+        description: "A texture's pixels spawning objects.",
+      },
+    ],
+  },
+  {
+    title: "Math & Color",
+    demos: [
+      {
+        file: "demo_math_ramp_color.tsuji",
+        label: "Value to Colour",
+        description: "An oscillator remapped and clamped into a colour mix.",
+      },
+      {
+        file: "demo_math_proximity.tsuji",
+        label: "Proximity",
+        description: "A moving probe colouring the grid cells nearest it.",
       },
     ],
   },

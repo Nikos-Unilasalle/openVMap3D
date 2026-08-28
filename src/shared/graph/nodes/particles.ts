@@ -620,6 +620,10 @@ const spriteTextureCache = new Map<string, THREE.Texture>();
 function getSpriteTexture(key: string): THREE.Texture | null {
   const path = SPRITE_PATHS[key];
   if (!path) return null;
+  // TextureLoader reaches for document.createElementNS — same DOM guard the
+  // texture nodes carry, so evaluating a particle graph headlessly (a test,
+  // the demo check) degrades to an untextured point rather than throwing.
+  if (typeof document === "undefined") return null;
   const existing = spriteTextureCache.get(key);
   if (existing) return existing;
   const texture = new THREE.TextureLoader().load(path);

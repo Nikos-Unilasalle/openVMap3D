@@ -1,0 +1,436 @@
+{
+  "canvases": [
+    {
+      "nodes": [
+        {
+          "id": "setup_0",
+          "type": "object/plane",
+          "position": {
+            "x": 599,
+            "y": 160
+          },
+          "params": {
+            "visible": 1,
+            "location": {
+              "x": 0,
+              "y": -0.5,
+              "z": 0
+            },
+            "rotation": {
+              "x": 1.5707963267948966,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 10,
+              "y": 10,
+              "z": 1
+            },
+            "texturePath": "",
+            "normalMapPath": "",
+            "roughnessMapPath": "",
+            "uvScaleX": 1,
+            "uvScaleY": 1,
+            "uvOffsetX": 0,
+            "uvOffsetY": 0,
+            "color": 16777215,
+            "emissive": 0,
+            "emissiveIntensity": 1,
+            "shadeless": 0,
+            "roughness": 0.1,
+            "metalness": 0.1,
+            "wireframe": 0,
+            "opacity": 1,
+            "transmission": 0,
+            "thickness": 0.5
+          }
+        },
+        {
+          "id": "setup_1",
+          "type": "texture/procedural",
+          "position": {
+            "x": 375,
+            "y": 223
+          },
+          "params": {
+            "type": "checker",
+            "colorA": 16777215,
+            "colorB": 2236962,
+            "scale": 8,
+            "seed": 1,
+            "octaves": 3,
+            "resolution": 256,
+            "uvScaleX": 1,
+            "uvScaleY": 1,
+            "uvOffsetX": 0,
+            "uvOffsetY": 0
+          }
+        },
+        {
+          "id": "setup_2",
+          "type": "light/point",
+          "position": {
+            "x": 857,
+            "y": 193
+          },
+          "params": {
+            "location": {
+              "x": 0,
+              "y": 2.185514752224622,
+              "z": -4.5179526088705275
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "color": 16768110,
+            "intensity": 50,
+            "distance": 15,
+            "decay": 2,
+            "castShadow": 1
+          }
+        },
+        {
+          "id": "setup_3",
+          "type": "light/point",
+          "position": {
+            "x": 1043,
+            "y": 187
+          },
+          "params": {
+            "location": {
+              "x": 0,
+              "y": 2.185514752224622,
+              "z": 4.487400919453167
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "color": 440020,
+            "intensity": 50,
+            "distance": 15,
+            "decay": 2,
+            "castShadow": 1
+          }
+        },
+        {
+          "id": "setup_4",
+          "type": "render",
+          "position": {
+            "x": 610,
+            "y": 393
+          },
+          "params": {
+            "frameCount": 120,
+            "fps": 30,
+            "motionBlur": 0,
+            "resolutionPreset": "16:9 (1920x1080)",
+            "width": 1920,
+            "height": 1080,
+            "holdout": false
+          }
+        },
+        {
+          "id": "setup_5",
+          "type": "lighting/environment",
+          "position": {
+            "x": 340,
+            "y": 406
+          },
+          "params": {
+            "color": 4147542,
+            "intensity": 1,
+            "background": 1,
+            "blurriness": 0,
+            "filePath": "",
+            "backgroundImagePath": "",
+            "backgroundFit": "cover",
+            "backgroundScale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "backgroundOffset": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "backgroundRotation": 0,
+            "ambientIntensity": 0,
+            "sunIntensity": 0
+          }
+        },
+        {
+          "id": "setup_6",
+          "type": "light/point",
+          "position": {
+            "x": 860,
+            "y": 389
+          },
+          "params": {
+            "location": {
+              "x": 3.583607412619263,
+              "y": 2.185514752224622,
+              "z": -0.48624947478730096
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "color": 16777215,
+            "intensity": 50,
+            "distance": 15,
+            "decay": 2,
+            "castShadow": 1
+          }
+        },
+        {
+          "id": "box",
+          "type": "object/box",
+          "position": {
+            "x": -1300,
+            "y": 320
+          },
+          "params": {
+            "scale": {
+              "x": 0.4,
+              "y": 0.4,
+              "z": 0.4
+            },
+            "color": 3718648,
+            "roughness": 0.25,
+            "metalness": 0.4
+          }
+        },
+        {
+          "id": "grid",
+          "type": "structure/array",
+          "position": {
+            "x": -1060,
+            "y": 320
+          },
+          "params": {
+            "mode": "grid",
+            "plane": "XZ",
+            "gridCols": 7,
+            "gridRows": 7,
+            "spacingX": 0.8,
+            "spacingY": 0.8,
+            "centerGrid": true
+          }
+        },
+        {
+          "id": "orbit",
+          "type": "transform/orbit",
+          "position": {
+            "x": -1300,
+            "y": 60
+          },
+          "params": {
+            "radius": 2.2,
+            "speed": 50,
+            "height": 1.4
+          }
+        },
+        {
+          "id": "probe",
+          "type": "object/sphere",
+          "position": {
+            "x": -1060,
+            "y": 60
+          },
+          "params": {
+            "scale": {
+              "x": 0.35,
+              "y": 0.35,
+              "z": 0.35
+            },
+            "color": 15485081,
+            "emissive": 15485081,
+            "emissiveIntensity": 0.6
+          }
+        },
+        {
+          "id": "near",
+          "type": "object/proximity",
+          "position": {
+            "x": -760,
+            "y": 180
+          },
+          "params": {
+            "ignoreSelf": true
+          }
+        },
+        {
+          "id": "dists",
+          "type": "math/distances",
+          "position": {
+            "x": -760,
+            "y": 420
+          },
+          "params": {}
+        },
+        {
+          "id": "glow",
+          "type": "list/distance-gradient",
+          "position": {
+            "x": -520,
+            "y": 420
+          },
+          "params": {
+            "radius": 2.4,
+            "power": 1.5
+          }
+        },
+        {
+          "id": "tint",
+          "type": "structure/instance-color",
+          "position": {
+            "x": -280,
+            "y": 320
+          },
+          "params": {
+            "index": -1
+          }
+        }
+      ],
+      "connections": [
+        {
+          "id": "setup_c0",
+          "fromNode": "setup_1",
+          "fromSocket": "texture",
+          "toNode": "setup_0",
+          "toSocket": "texture"
+        },
+        {
+          "id": "setup_c1",
+          "fromNode": "setup_5",
+          "fromSocket": "environment",
+          "toNode": "setup_4",
+          "toSocket": "environment"
+        },
+        {
+          "id": "box.geometry->grid.geometry",
+          "fromNode": "box",
+          "fromSocket": "geometry",
+          "toNode": "grid",
+          "toSocket": "geometry"
+        },
+        {
+          "id": "orbit.matrix->probe.matrix",
+          "fromNode": "orbit",
+          "fromSocket": "matrix",
+          "toNode": "probe",
+          "toSocket": "matrix"
+        },
+        {
+          "id": "probe.geometry->near.target",
+          "fromNode": "probe",
+          "fromSocket": "geometry",
+          "toNode": "near",
+          "toSocket": "target"
+        },
+        {
+          "id": "grid.geometry->near.candidates",
+          "fromNode": "grid",
+          "fromSocket": "geometry",
+          "toNode": "near",
+          "toSocket": "candidates"
+        },
+        {
+          "id": "grid.geometry->dists.instances",
+          "fromNode": "grid",
+          "fromSocket": "geometry",
+          "toNode": "dists",
+          "toSocket": "instances"
+        },
+        {
+          "id": "probe.geometry->dists.target",
+          "fromNode": "probe",
+          "fromSocket": "geometry",
+          "toNode": "dists",
+          "toSocket": "target"
+        },
+        {
+          "id": "dists.distances->glow.distances",
+          "fromNode": "dists",
+          "fromSocket": "distances",
+          "toNode": "glow",
+          "toSocket": "distances"
+        },
+        {
+          "id": "grid.geometry->tint.geometry",
+          "fromNode": "grid",
+          "fromSocket": "geometry",
+          "toNode": "tint",
+          "toSocket": "geometry"
+        },
+        {
+          "id": "glow.list->tint.colors",
+          "fromNode": "glow",
+          "fromSocket": "list",
+          "toNode": "tint",
+          "toSocket": "colors"
+        }
+      ],
+      "keyframes": {},
+      "markers": [],
+      "exposedParams": []
+    },
+    {
+      "nodes": [],
+      "connections": [],
+      "keyframes": {},
+      "markers": [],
+      "exposedParams": []
+    },
+    {
+      "nodes": [],
+      "connections": [],
+      "keyframes": {},
+      "markers": [],
+      "exposedParams": []
+    },
+    {
+      "nodes": [],
+      "connections": [],
+      "keyframes": {},
+      "markers": [],
+      "exposedParams": []
+    },
+    {
+      "nodes": [],
+      "connections": [],
+      "keyframes": {},
+      "markers": [],
+      "exposedParams": []
+    },
+    {
+      "nodes": [],
+      "connections": [],
+      "keyframes": {},
+      "markers": [],
+      "exposedParams": []
+    }
+  ],
+  "activeCanvas": 0
+}
