@@ -11,6 +11,7 @@ import { closeOutputWindow, listMonitors, onOutputClosed, openOutputWindow } fro
 import logoUrl from "../assets/logo.png";
 import { ShortcutsModal } from "./ShortcutsModal";
 import { DemosMenu } from "./DemosMenu";
+import { ShareMenu } from "./ShareMenu";
 import "./top-bar.css";
 
 export interface TopBarProps {
@@ -252,6 +253,15 @@ export const TopBar: React.FC<TopBarProps> = ({
           </svg>
           Incremental Save
         </button>
+
+        {/* DEMOS — small categorized graphs teaching one node/combination each */}
+        <DemosMenu
+          onLoadDemo={(demoProject, filename) => {
+            onLoadProject(demoProject, filename);
+            showToast(`"${filename}" chargé !`);
+          }}
+          onError={(message) => showToast(message, true)}
+        />
       </div>
 
       {/* Center section: Undo & Redo */}
@@ -275,7 +285,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         </button>
       </div>
 
-      {/* Right area: Toast + Output + Filename */}
+      {/* Right area: Toast + Timeline + Shortcuts + Filename + Share */}
       <div className="top-bar-right">
         {toastMessage && (
           <div className={`top-bar-toast${toastError ? " top-bar-toast-error" : ""}`}>
@@ -312,45 +322,6 @@ export const TopBar: React.FC<TopBarProps> = ({
           Shortcuts
         </button>
 
-        {/* OUTPUT — fullscreen window on the second monitor */}
-        <button
-          className={`top-bar-button top-bar-button-output${isOutputOpen ? " top-bar-button-output-active" : ""}`}
-          onClick={handleToggleOutput}
-          title={isOutputOpen ? "Fermer la fenêtre de sortie" : "Ouvrir la sortie plein écran (deuxième écran)"}
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="2" y="3" width="20" height="14" rx="2" />
-            <line x1="8" y1="21" x2="16" y2="21" />
-            <line x1="12" y1="17" x2="12" y2="21" />
-          </svg>
-          {isOutputOpen ? "Close Output" : "Output"}
-        </button>
-
-        {/* EXPORT VIDEO — frame-by-frame render of the whole timeline to MP4/WebM */}
-        {onExportVideo && (
-          <button
-            className="top-bar-button top-bar-button-export"
-            onClick={onExportVideo}
-            disabled={isExporting}
-            title="Export timeline to video (MP4 if the webview supports it, otherwise WebM)"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polygon points="23 7 16 12 23 17 23 7" />
-              <rect x="1" y="5" width="15" height="14" rx="2" />
-            </svg>
-            {isExporting ? `Export… ${Math.round(exportProgress * 100)}%` : "Export Video"}
-          </button>
-        )}
-
-        {/* DEMOS — small categorized graphs teaching one node/combination each */}
-        <DemosMenu
-          onLoadDemo={(demoProject, filename) => {
-            onLoadProject(demoProject, filename);
-            showToast(`"${filename}" chargé !`);
-          }}
-          onError={(message) => showToast(message, true)}
-        />
-
         {isEditingFilename ? (
           <input
             className="top-bar-filename-edit-input"
@@ -375,6 +346,15 @@ export const TopBar: React.FC<TopBarProps> = ({
             📄 {currentFilename}
           </div>
         )}
+
+        {/* SHARE — the two ways a graph leaves the app, grouped */}
+        <ShareMenu
+          isOutputOpen={isOutputOpen}
+          onToggleOutput={handleToggleOutput}
+          onExportVideo={onExportVideo}
+          isExporting={isExporting}
+          exportProgress={exportProgress}
+        />
       </div>
 
       <ShortcutsModal isOpen={isShortcutsOpen} onClose={() => setIsShortcutsOpen(false)} />

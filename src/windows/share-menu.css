@@ -1,0 +1,67 @@
+.share-menu-root {
+  position: relative;
+  display: flex;
+}
+
+.top-bar-button-share:hover {
+  border-color: #6366f1;
+  color: #818cf8;
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.25);
+}
+
+.top-bar-button-share:hover svg {
+  color: #818cf8;
+}
+
+.share-menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 250px;
+  background: var(--chrome-surface-raised);
+  border: 1px solid var(--chrome-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  padding: 6px;
+  z-index: 50;
+}
+
+.share-menu-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 7px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--chrome-text);
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.share-menu-item:hover:not(:disabled) {
+  background: rgba(99, 102, 241, 0.14);
+}
+
+.share-menu-item.is-active .share-menu-item-label {
+  color: #818cf8;
+}
+
+.share-menu-item:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.share-menu-item-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.share-menu-item-desc {
+  font-size: 10.5px;
+  color: var(--chrome-text-muted);
+}
