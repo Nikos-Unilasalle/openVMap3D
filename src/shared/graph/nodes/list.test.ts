@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { DISTANCE_GRADIENT_LIST_NODE, GET_LIST_ITEM_NODE, RANDOM_SAMPLE_LIST_NODE } from "./list";
+import { DISTANCE_GRADIENT_LIST_NODE, GET_LIST_ITEM_NODE, LIST_MAP_RANGE_NODE, RANDOM_SAMPLE_LIST_NODE } from "./list";
 import { CURVE_FROM_POINTS_NODE } from "./curve";
 import { EvalContext } from "../types";
 
@@ -96,6 +96,42 @@ describe("DISTANCE_GRADIENT_LIST_NODE", () => {
 
   it("returns an empty list when given no distances", () => {
     const res = DISTANCE_GRADIENT_LIST_NODE.evaluate({ distances: [] }, DISTANCE_GRADIENT_LIST_NODE.defaultParams, CTX);
+    expect((res.list as unknown[]).length).toBe(0);
+  });
+});
+
+describe("LIST_MAP_RANGE_NODE", () => {
+  it("remaps a fixed input span to a fixed output span, clamped", () => {
+    const res = LIST_MAP_RANGE_NODE.evaluate(
+      { list: [-5, 0, 2.5, 5, 50] },
+      { ...LIST_MAP_RANGE_NODE.defaultParams, inMin: 0, inMax: 5, outMin: 1, outMax: 3 },
+      CTX,
+    );
+    expect(res.list).toEqual([1, 1, 2, 3, 3]);
+  });
+
+  it("does not refit to the data — same fixed span regardless of which items are present", () => {
+    const params = { ...LIST_MAP_RANGE_NODE.defaultParams, inMin: 0, inMax: 10, outMin: 0, outMax: 1 };
+    const a = LIST_MAP_RANGE_NODE.evaluate({ list: [2] }, params, CTX).list as number[];
+    const b = LIST_MAP_RANGE_NODE.evaluate({ list: [2, 9] }, params, CTX).list as number[];
+    expect(a[0]).toBeCloseTo(0.2);
+    expect(b[0]).toBeCloseTo(0.2);
+  });
+
+  it("power reshapes the falloff without changing the endpoints", () => {
+    const res = LIST_MAP_RANGE_NODE.evaluate(
+      { list: [0, 5, 10] },
+      { ...LIST_MAP_RANGE_NODE.defaultParams, inMin: 0, inMax: 10, outMin: 0, outMax: 1, power: 2 },
+      CTX,
+    );
+    const [lo, mid, hi] = res.list as number[];
+    expect(lo).toBeCloseTo(0);
+    expect(hi).toBeCloseTo(1);
+    expect(mid).toBeCloseTo(0.25); // 0.5^2
+  });
+
+  it("returns an empty list when given no input", () => {
+    const res = LIST_MAP_RANGE_NODE.evaluate({ list: [] }, LIST_MAP_RANGE_NODE.defaultParams, CTX);
     expect((res.list as unknown[]).length).toBe(0);
   });
 });

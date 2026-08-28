@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
 import { ColorRamp, DEFAULT_COLOR_RAMP, sampleColorRamp } from "../colorRamp";
+import { toBoolean } from "../sockets";
 
 /** Get List Item node — retrieves an element from a list at the specified index, with dynamic typing supporting any element type (Geometry, Vector, Matrix, Color, Value, Text). */
 export const GET_LIST_ITEM_NODE: NodeDefinition = {
@@ -371,6 +372,65 @@ export const COLOR_PALETTE_LIST_NODE: NodeDefinition = {
     }
 
     return { list };
+  },
+};
+
+/**
+ * List Map Range node — the list counterpart of Map Range (valueMath.ts):
+ * remaps every item from a *chosen* input range to a chosen output range,
+ * rather than List Math's `remap_01`, which normalizes to the list's own
+ * min/max and refits every frame as the data changes. A distances list needs
+ * the fixed version — "0 to radius" has to mean the same span every frame, or
+ * a halo driven by it would compress and stretch as the mouse moved closer to
+ * or further from the grid's edge.
+ *
+ * Deliberately generic: the output range is just numbers, so the same node
+ * drives a scale factor, a height offset, a rotation in degrees, an opacity
+ * multiplier — whatever channel the remapped list ends up wired into.
+ */
+export const LIST_MAP_RANGE_NODE: NodeDefinition = {
+  type: "list/map-range",
+  label: "List Map Range",
+  category: "list",
+  inputs: [
+    { id: "list", label: "List", type: "list" },
+    { id: "inMin", label: "In Min", type: "value" },
+    { id: "inMax", label: "In Max", type: "value" },
+    { id: "outMin", label: "Out Min", type: "value" },
+    { id: "outMax", label: "Out Max", type: "value" },
+  ],
+  outputs: [{ id: "list", label: "List", type: "list" }],
+  defaultParams: { inMin: 0, inMax: 1, outMin: 0, outMax: 1, clamp: 1, power: 1 },
+  paramFields: [
+    { id: "inMin", label: "In Min", kind: "number", step: 0.1 },
+    { id: "inMax", label: "In Max", kind: "number", step: 0.1 },
+    { id: "outMin", label: "Out Min", kind: "number", step: 0.1 },
+    { id: "outMax", label: "Out Max", kind: "number", step: 0.1 },
+    { id: "clamp", label: "Clamp", kind: "boolean" },
+    // Shapes the falloff between the two ends without needing a second node:
+    // <1 spreads the transition wider, >1 holds outMin longer then snaps.
+    { id: "power", label: "Power", kind: "number", step: 0.1 },
+  ],
+  evaluate: (inputs, params) => {
+    const list = toNumericList(inputs.list);
+    if (list.length === 0) return { list: [] };
+
+    const inMin = inputs.inMin !== undefined ? Number(inputs.inMin) || 0 : Number(params.inMin) || 0;
+    const inMax = inputs.inMax !== undefined ? Number(inputs.inMax) || 0 : Number(params.inMax) || 0;
+    const outMin = inputs.outMin !== undefined ? Number(inputs.outMin) || 0 : Number(params.outMin) || 0;
+    const outMax = inputs.outMax !== undefined ? Number(inputs.outMax) || 0 : Number(params.outMax) || 0;
+    const doClamp = inputs.clamp !== undefined ? toBoolean(inputs.clamp) : Boolean(params.clamp);
+    const power = Number(params.power) || 1;
+    const span = inMax - inMin;
+
+    const result = list.map((n) => {
+      let t = span === 0 ? 0 : (n - inMin) / span;
+      if (doClamp) t = Math.min(1, Math.max(0, t));
+      if (power !== 1) t = Math.pow(Math.max(0, t), power);
+      return outMin + t * (outMax - outMin);
+    });
+
+    return { list: result };
   },
 };
 
