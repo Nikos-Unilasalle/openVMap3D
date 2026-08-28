@@ -207,7 +207,11 @@ describe("evaluateGraph", () => {
       const result = evaluateGraph(rehydrated, DEFAULT_REGISTRY, CTX);
       expect(result.size).toBeGreaterThan(0);
     }
-  });
+    // Explicit timeout: this evaluates *every* demo, so it gets slower with
+    // each one added — it crossed vitest's 5s default at ~60 demos and
+    // started failing at random depending on machine load, which reads as a
+    // real regression rather than the test simply outgrowing its budget.
+  }, 30_000);
 });
 
 describe("the visible socket", () => {
