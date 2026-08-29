@@ -110,3 +110,57 @@ describe("formatSize", () => {
     expect(formatSize(NaN)).toBe("");
   });
 });
+
+/**
+ * The asset names Tauri's bundler actually produced for v0.1.0, copied from
+ * the release rather than guessed. The fixtures above were written before any
+ * build existed; these pin the matcher against the real toolchain, so a
+ * change in Tauri's naming shows up here instead of as an empty Download menu.
+ */
+const REAL_v0_1_0: Release = {
+  tag_name: "v0.1.0",
+  html_url: "https://github.com/Nikos-Unilasalle/tsuji/releases/tag/v0.1.0",
+  assets: [
+    { name: "Tsuji-0.1.0-1.x86_64.rpm", browser_download_url: "u/rpm", size: 8451592 },
+    { name: "Tsuji_0.1.0_amd64.AppImage", browser_download_url: "u/appimage", size: 85846520 },
+    { name: "Tsuji_0.1.0_amd64.deb", browser_download_url: "u/deb", size: 8450932 },
+    { name: "Tsuji_0.1.0_universal.dmg", browser_download_url: "u/dmg", size: 14761460 },
+    { name: "Tsuji_0.1.0_x64-setup.exe", browser_download_url: "u/exe", size: 6248129 },
+    { name: "Tsuji_0.1.0_x64_en-US.msi", browser_download_url: "u/msi", size: 7348224 },
+    { name: "Tsuji_universal.app.tar.gz", browser_download_url: "u/updater", size: 14530607 },
+  ],
+};
+
+describe("the real v0.1.0 release", () => {
+  it("offers every installer and nothing else", () => {
+    expect(assetsFor("mac", REAL_v0_1_0).map((a) => a.name)).toEqual(["Tsuji_0.1.0_universal.dmg"]);
+    expect(assetsFor("windows", REAL_v0_1_0).map((a) => a.name)).toEqual([
+      "Tsuji_0.1.0_x64_en-US.msi",
+      "Tsuji_0.1.0_x64-setup.exe",
+    ]);
+    // The .rpm uses dashes where the others use underscores — matching is by
+    // extension precisely so that kind of difference cannot break it.
+    expect(assetsFor("linux", REAL_v0_1_0).map((a) => a.name)).toEqual([
+      "Tsuji_0.1.0_amd64.AppImage",
+      "Tsuji_0.1.0_amd64.deb",
+      "Tsuji-0.1.0-1.x86_64.rpm",
+    ]);
+  });
+
+  it("leaves no asset unaccounted for", () => {
+    const offered = (["mac", "windows", "linux"] as const).flatMap((p) =>
+      assetsFor(p, REAL_v0_1_0).map((a) => a.name),
+    );
+    const skipped = REAL_v0_1_0.assets.map((a) => a.name).filter((n) => !offered.includes(n));
+    // Exactly one file is withheld, and it is the updater bundle.
+    expect(skipped).toEqual(["Tsuji_universal.app.tar.gz"]);
+  });
+
+  it("labels each real file readably", () => {
+    expect(describeAsset("Tsuji_0.1.0_universal.dmg")).toBe("dmg · universal");
+    expect(describeAsset("Tsuji_0.1.0_x64_en-US.msi")).toBe("msi · x64");
+    expect(describeAsset("Tsuji_0.1.0_x64-setup.exe")).toBe("exe · x64");
+    expect(describeAsset("Tsuji_0.1.0_amd64.AppImage")).toBe("AppImage · amd64");
+    expect(describeAsset("Tsuji-0.1.0-1.x86_64.rpm")).toBe("rpm · x86_64");
+  });
+});
