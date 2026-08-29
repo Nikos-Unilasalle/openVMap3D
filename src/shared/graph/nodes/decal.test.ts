@@ -264,6 +264,42 @@ describe("DECAL_NODE", () => {
     expect(material.transparent).toBe(true);
   });
 
+  it("stays opaque for a hard-cutout sticker texture — fully transparent surround, no antialiasing", () => {
+    // A typical decal PNG: solid artwork (alpha 255) on a fully transparent
+    // background (alpha 0), no soft edges — most real decal art looks like
+    // this. alphaTest already punches a clean hole for the alpha=0 pixels,
+    // so this needs no blending and should stay opaque (visible through glass).
+    const data = new Uint8Array([
+      255, 0, 0, 255, 0, 255, 0, 0,
+      0, 0, 255, 255, 255, 255, 0, 0,
+    ]);
+    const texture = new THREE.DataTexture(data, 2, 2);
+    texture.needsUpdate = true;
+    const res = DECAL_NODE.evaluate(
+      { geometry: wall(), texture },
+      DECAL_NODE.defaultParams,
+      { ...CTX, nodeId: "decal-hard-cutout" },
+    );
+    const material = meshesOf(res.geometry as THREE.Object3D)[0].material as THREE.MeshStandardMaterial;
+    expect(material.transparent).toBe(false);
+  });
+
+  it("blends for a texture with genuinely antialiased/soft alpha edges", () => {
+    const data = new Uint8Array([
+      255, 0, 0, 255, 0, 255, 0, 128,
+      0, 0, 255, 255, 255, 255, 0, 0,
+    ]);
+    const texture = new THREE.DataTexture(data, 2, 2);
+    texture.needsUpdate = true;
+    const res = DECAL_NODE.evaluate(
+      { geometry: wall(), texture },
+      DECAL_NODE.defaultParams,
+      { ...CTX, nodeId: "decal-soft-cutout" },
+    );
+    const material = meshesOf(res.geometry as THREE.Object3D)[0].material as THREE.MeshStandardMaterial;
+    expect(material.transparent).toBe(true);
+  });
+
   it("releases its projected geometry when the node is deleted", () => {
     const ctx = { ...CTX, nodeId: "decal-deleted" };
     const first = DECAL_NODE.evaluate(

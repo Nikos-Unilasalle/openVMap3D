@@ -3,7 +3,7 @@ import { DecalGeometry } from "three/examples/jsm/geometries/DecalGeometry.js";
 import { NodeDefinition } from "../types";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { asVector3 } from "./transform";
-import { asColor, textureHasAlpha } from "./object";
+import { asColor } from "./object";
 
 /**
  * Decal — a texture projected onto whatever surface is already there, the way
@@ -46,6 +46,69 @@ function getDefaultTexture(): THREE.Texture | null {
     defaultTexture.colorSpace = THREE.SRGBColorSpace;
   }
   return defaultTexture;
+}
+
+/**
+ * Whether a decal's texture has real antialiased/soft edges, needing alpha
+ * *blending* rather than the alphaTest cutout alone. Unlike object.ts's own
+ * `textureHasAlpha` (any pixel below full alpha counts, background included)
+ * this only counts alpha strictly between 0 and 255 — a decal's fully
+ * transparent surround (the overwhelming majority of most decal art) is
+ * exactly what alphaTest already punches a clean hole for, so counting it
+ * here would make nearly every decal PNG "need blending" and permanently
+ * exclude it from three.js's transmission buffer, i.e. invisible behind any
+ * glass/transmission material regardless of how opaque it actually looks.
+ */
+const softAlphaCache = new WeakMap<THREE.Texture, boolean>();
+
+function textureHasSoftAlpha(tex: THREE.Texture): boolean {
+  const cached = softAlphaCache.get(tex);
+  if (cached !== undefined) return cached;
+
+  let soft = false;
+  const img = tex.image as unknown;
+  try {
+    if (img && typeof img === "object" && "data" in img) {
+      const data = (img as { data: ArrayLike<number> }).data;
+      if (data && typeof data.length === "number") {
+        for (let i = 3; i < data.length; i += 4) {
+          if (data[i] > 0 && data[i] < 255) {
+            soft = true;
+            break;
+          }
+        }
+      }
+    } else if (typeof document !== "undefined" && img) {
+      const el = img as {
+        width?: number;
+        height?: number;
+        getContext?: (type: string, opts?: object) => { getImageData: (x: number, y: number, w: number, h: number) => { data: ArrayLike<number> } } | null;
+      };
+      const w = el.width || 0;
+      const h = el.height || 0;
+      if (w > 0 && h > 0) {
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        if (ctx) {
+          ctx.drawImage(img as CanvasImageSource, 0, 0);
+          const data = ctx.getImageData(0, 0, w, h).data;
+          for (let i = 3; i < data.length; i += 4) {
+            if (data[i] > 0 && data[i] < 255) {
+              soft = true;
+              break;
+            }
+          }
+        }
+      }
+    }
+  } catch {
+    soft = false;
+  }
+
+  softAlphaCache.set(tex, soft);
+  return soft;
 }
 
 interface DecalState {
@@ -268,7 +331,7 @@ export const DECAL_NODE: NodeDefinition = {
     // (see object.ts's textureHasAlpha): stay opaque, punched out by
     // alphaTest alone, unless a soft-alpha texture or a fade below full
     // opacity genuinely needs blending.
-    material.transparent = material.opacity < 0.999 || (material.map ? textureHasAlpha(material.map) : false);
+    material.transparent = material.opacity < 0.999 || (material.map ? textureHasSoftAlpha(material.map) : false);
 
     return { geometry: group, matrix: new THREE.Matrix4() };
   },
