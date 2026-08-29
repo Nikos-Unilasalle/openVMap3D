@@ -1068,6 +1068,42 @@ def _():
     return n, c
 
 
+@demo("modifier_extrude_tree")
+def _():
+    # A tube's top ring extruded over and over, tilting and tapering each
+    # pass, becomes a tree in one node: Extrude Mesh's Passes re-extrudes the
+    # same selection, the per-pass Rotation bends the cap, Scale tapers it and
+    # Random % jitters every pass off a seeded PRNG. The Face Selection node
+    # picks the top cap and hands its `selection` list straight to Extrude,
+    # which is what really drives the grow — swap that node for another
+    # formula or a different geometry and the whole tree follows.
+    #
+    # Threshold is in the cylinder's OWN LOCAL space, where it spans
+    # -0.5..+0.5 — NOT the world y the Location/Scale params put it at. 0.49
+    # is therefore "the top cap", and the node's Location y=0.6 / Scale y=1.2
+    # do not enter into it. (Picking a world-space number here selects
+    # nothing at all and the tree silently stays a bare tube.)
+    #
+    # The geometry runs tube -> sel -> grow rather than the tube feeding both:
+    # `geometry` is an owning input on each, so branching it would hand the
+    # same object to two owners and leave the raw tube drawn over the tree.
+    n = [
+        node("tube", "object/cylinder", -1100, 200, location=v3(0, 0.6, 0), scale=v3(0.7, 1.2, 0.7),
+             color=0x8B5CF6, roughness=0.4, metalness=0.2),
+        node("sel", "modifier/face-selection", -900, 200, selectMode="height", axis="y", threshold=0.49),
+        node("grow", "modifier/extrude", -640, 200,
+             passes=8, distance=0.32,
+             rotation=v3(0.12, 0, 0.07), scale=0.94, location=v3(0, 0, 0),
+             random=0.3, seed=6),
+    ]
+    c = [
+        wire("tube", "geometry", "sel", "geometry"),
+        wire("sel", "selection", "grow", "selection"),
+        wire("sel", "geometry", "grow", "geometry"),
+    ]
+    return n, c
+
+
 # text_toolkit: retired — its ground (Trim, Case, Length) is now covered by
 # the hand-authored object_text demo above, which chains Random and Concat
 # in too.

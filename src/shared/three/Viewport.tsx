@@ -10,6 +10,7 @@ import { asVector3 } from "../graph/nodes/transform";
 import { resetAllParticleSimulations } from "../graph/particleRuntime";
 import { resolveCurveEditTarget } from "../graph/curveLookup";
 import { resolveSceneRoots } from "../graph/sceneRoots";
+import { findFirstMesh } from "../graph/meshRequired";
 import { insertCurvePointAfter, removeCurvePoint } from "../graph/curvePoints";
 import { GizmoTarget, resolveGizmoTarget } from "../graph/transformLookup";
 import { PIVOT_TRANSFORM_NODE } from "../graph/nodes/transform";
@@ -26,6 +27,8 @@ import {
 import { POINTS_SELECTION_NODE } from "../graph/nodes/pointsSelection";
 import { applyWeldedPointMoves, EDIT_MESH_POINTS_NODE } from "../graph/nodes/editMeshPoints";
 import { POINTS_INFLUENCE_NODE, POINTS_INFLUENCE_DISCRETE_LEVELS, PointsInfluenceMode } from "../graph/nodes/pointsInfluence";
+import { FACE_SELECTION_NODE } from "../graph/nodes/meshEdit";
+import { createFaceSelectionHandles } from "./faceSelectionHandles";
 import { createPostProcessChain } from "./postProcessChain";
 import { computeGizmoWriteback, TransformGizmoMode, TransformPatch } from "./gizmoWriteback";
 
@@ -883,6 +886,29 @@ export function Viewport({
     let pointsSelectionNodeId: string | null = null;
     let selectedPointsSelectionIndices = new Set<number>();
 
+    // Face Selection editing — Shift+left-click selects the face under the
+    // cursor on the mesh feeding the selected Face Selection node, Shift+right
+    // deselects it; the selected faces are drawn green by faceSelectionHandles.
+    // The picked indices live in the node's `selectedFaces` param (same
+    // save/undo-friendly convention as Points Selection's `selectedIndices`).
+    const faceSelectionHandles = createFaceSelectionHandles();
+    let faceSelectionNodeId: string | null = null;
+    let faceSelectionSourceNodeId: string | null = null;
+    let selectedFacesSet = new Set<number>();
+    /**
+     * Whether the node is in interactive mode, tracked locally as well as in
+     * the param so the first click switches the highlight over immediately —
+     * the param only comes back a frame later, through React.
+     */
+    let faceSelectionInteractive = false;
+    /**
+     * The `selectedFaces` param as this viewport last saw it. Re-seeding the
+     * working set whenever the param differs is what lets an undo (or the
+     * operator clearing the field) actually take effect: without it the stale
+     * local set would silently re-commit itself on the very next click.
+     */
+    let lastCommittedFaceKey = "";
+
     // Points Influence editing — same generic point-cloud handles again, this
     // time colored as a heatmap of a graded 0-1 influence instead of a
     // binary selected/unselected. Three gestures write into the same
@@ -996,6 +1022,11 @@ export function Viewport({
       editorUiScene.add(sliceProxy);
       editorUiScene.add(clipBoxProxy);
       editorUiScene.add(decalProxy);
+      // The face-selection highlight lives in the *main* scene (not the
+      // editor overlay, which clears depth and would show every selected face
+      // through the object) so it is occluded like the surface it sits on.
+      // Empty when no Face Selection node is selected, so it never renders.
+      scene.add(faceSelectionHandles.group);
     }
     // Refreshed every tick() — the 'objectChange' listener needs the
     // *current* base matrix for an "offset" target (see below), and this is
@@ -1380,6 +1411,21 @@ export function Viewport({
       }
     }
 
+    function commitFaceSelection() {
+      if (faceSelectionNodeId && onTransformChangeRef.current) {
+        const faces = Array.from(selectedFacesSet).sort((a, b) => a - b);
+        // Remember what we just wrote, so the graph update this triggers is
+        // recognised as our own and doesn't re-seed the working set from
+        // under the operator mid-edit (see lastCommittedFaceKey).
+        lastCommittedFaceKey = faces.join(",");
+        faceSelectionInteractive = true;
+        onTransformChangeRef.current(faceSelectionNodeId, {
+          selectedFaces: faces,
+          interactive: true,
+        });
+      }
+    }
+
     function commitPointsInfluence() {
       if (pointsInfluenceNodeId && onTransformChangeRef.current) {
         onTransformChangeRef.current(pointsInfluenceNodeId, { influences: Object.fromEntries(pointsInfluenceMap) });
@@ -1579,6 +1625,50 @@ export function Viewport({
       raycaster.params.Line = { threshold: 0.3 };
       raycaster.params.Points = { threshold: 0.3 };
 
+      // Face Selection editing: Shift+left selects the face under the cursor,
+      // Shift+right deselects it — but only when the hit lands on the mesh
+      // feeding the selected Face Selection node (so a click on the extruded
+      // tree sitting on that mesh is still just a normal object click).
+      if (!outputMode && faceSelectionNodeId && e.shiftKey && (e.button === 0 || e.button === 2)) {
+        // Same walk as the object-picking raycast below: an ancestor being
+        // hidden has to disqualify the hit even when the tagged node itself
+        // is visible, so the whole chain is checked rather than stopping at
+        // the first nodeId. (The green overlay carries no nodeId at all, so
+        // it can never steal the click meant for the face under it.)
+        const hit = raycaster
+          ? raycaster.intersectObjects(scene.children, true).find((i) => {
+              let curr: THREE.Object3D | null = i.object;
+              let taggedNode = false;
+              while (curr) {
+                if (curr.visible === false) return false;
+                if (curr.userData?.nodeId) taggedNode = true;
+                curr = curr.parent;
+              }
+              return taggedNode;
+            })
+          : undefined;
+        if (hit && faceSelectionSourceNodeId && typeof hit.faceIndex === "number") {
+          let hitNodeId: string | null = null;
+          let curr: THREE.Object3D | null = hit.object;
+          while (curr) {
+            if (curr.userData?.nodeId) {
+              hitNodeId = curr.userData.nodeId;
+              break;
+            }
+            curr = curr.parent;
+          }
+          if (hitNodeId === faceSelectionSourceNodeId) {
+            // faceIndex is the triangle number, matching the selection's own
+            // per-face order on the source geometry.
+            const face = hit.faceIndex;
+            if (e.button === 0) selectedFacesSet.add(face);
+            else selectedFacesSet.delete(face);
+            commitFaceSelection();
+            return;
+          }
+        }
+      }
+
       // Curve control points win over whatever is behind them — a handle sits
       // on (or inside) the very mesh it shapes, so a raycast against the scene
       // would swallow every click meant for one. tick() does the actual gizmo
@@ -1669,10 +1759,19 @@ export function Viewport({
       onSelectNodeRef.current(hitNodeId);
     }
 
+    let removeContextMenu: (() => void) | null = null;
+
     if (!outputMode) {
       renderer.domElement.addEventListener("pointerdown", onCanvasPointerDown, { capture: true });
       window.addEventListener("pointermove", onCanvasPointerMove);
       window.addEventListener("pointerup", onCanvasPointerUp);
+      // Face Selection deselects on Shift+right-click — a browser context
+      // menu popping over the canvas would swallow that gesture.
+      const onCanvasContextMenu = (e: MouseEvent) => {
+        if (faceSelectionNodeId) e.preventDefault();
+      };
+      renderer.domElement.addEventListener("contextmenu", onCanvasContextMenu);
+      removeContextMenu = () => renderer.domElement.removeEventListener("contextmenu", onCanvasContextMenu);
     }
 
     const motionBlurEffect = createMotionBlur(host.clientWidth || 1, host.clientHeight || 1);
@@ -2378,6 +2477,65 @@ export function Viewport({
         pointsInfluenceMap.clear();
       }
 
+      // Face Selection editing — the green highlight follows the selected
+      // Face Selection node's source geometry. The local pick set is seeded
+      // once per node from its current *effective* selection (the formula
+      // result before the first click), then becomes the operator's own
+      // working set, committed to the node's `selectedFaces` param.
+      const faceSelNode = !outputMode
+        ? graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current && n.type === FACE_SELECTION_NODE.type)
+        : undefined;
+      if (faceSelNode) {
+        // The working set comes from the node's own stored `selectedFaces`
+        // param, NOT from its evaluated `selection` output — same convention
+        // as Points Selection's selectedIndices above, and for the same
+        // reason: the evaluated output of a fresh node is the *formula*
+        // result, which under the default "all" mode is every face, so
+        // seeding from it would make the operator's first Shift+click hand
+        // Extrude the entire mesh instead of the one face they clicked.
+        const paramFaces = Array.isArray(faceSelNode.params.selectedFaces) ? (faceSelNode.params.selectedFaces as number[]) : [];
+        const paramKey = paramFaces.join(",");
+        if (faceSelectionNodeId !== faceSelNode.id || paramKey !== lastCommittedFaceKey) {
+          faceSelectionNodeId = faceSelNode.id;
+          selectedFacesSet = new Set<number>(paramFaces);
+          lastCommittedFaceKey = paramKey;
+          faceSelectionInteractive = faceSelNode.params.interactive === true;
+        }
+        faceSelectionSourceNodeId =
+          graphRef.current.connections.find((c) => c.toNode === faceSelNode.id && c.toSocket === "geometry")?.fromNode ?? null;
+
+        // What the green overlay shows is whatever is actually driving the
+        // node's output: the operator's picks once interactive, otherwise a
+        // live preview of the formula, so "Select: normal / Threshold" can be
+        // dialled in visually before any clicking. Reading the picks from the
+        // local set (rather than the evaluated result) keeps the highlight in
+        // step with the click that just happened instead of a frame behind.
+        let highlight: Set<number>;
+        if (faceSelectionInteractive) {
+          highlight = selectedFacesSet;
+        } else {
+          const rawSel = Array.isArray(results.get(faceSelNode.id)?.selection)
+            ? (results.get(faceSelNode.id)!.selection as unknown[])
+            : [];
+          highlight = new Set<number>();
+          rawSel.forEach((v, i) => {
+            if (Boolean(v)) highlight.add(i);
+          });
+        }
+
+        const srcObj = results.get(faceSelNode.id)?.geometry;
+        const srcMesh = srcObj instanceof THREE.Object3D ? findFirstMesh(srcObj) : null;
+        if (srcMesh) srcMesh.updateMatrixWorld(true);
+        faceSelectionHandles.sync(srcMesh, highlight);
+      } else if (faceSelectionNodeId !== null || faceSelectionHandles.count() > 0) {
+        faceSelectionHandles.clear();
+        faceSelectionNodeId = null;
+        faceSelectionSourceNodeId = null;
+        faceSelectionInteractive = false;
+        lastCommittedFaceKey = "";
+        selectedFacesSet.clear();
+      }
+
       // Pivot Transform's single draggable pivot marker — see the comment by
       // pivotHandle's declaration for why it can't ride the normal gizmo.
       const selectedNodeForPivot = graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current);
@@ -2830,6 +2988,7 @@ export function Viewport({
         renderer.domElement.removeEventListener("pointerdown", onCanvasPointerDown, { capture: true });
         window.removeEventListener("pointermove", onCanvasPointerMove);
         window.removeEventListener("pointerup", onCanvasPointerUp);
+        removeContextMenu?.();
         controls.removeEventListener("start", handleOrbitStart);
         controls.removeEventListener("change", emitCameraPose);
         window.removeEventListener("keydown", onSnapKeyDown);

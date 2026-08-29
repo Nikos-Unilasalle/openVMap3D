@@ -55,6 +55,11 @@ export const DEMO_CATALOG: DemoCategory[] = [
         description: "Faces pushed out, and a shell opened then flipped.",
       },
       {
+        file: "demo_modifier_extrude_tree.tsuji",
+        label: "Extrude Tree",
+        description: "A tube's top ring extruded over and over, tilting and tapering — a tree from one node.",
+      },
+      {
         file: "demo_modifier_boolean.tsuji",
         label: "Boolean",
         description: "A sphere subtracted from a box.",

@@ -19,6 +19,9 @@ export interface TransformPatch {
   pivot?: THREE.Vector3;
   /** Points Selection's picked indices — written directly by its viewport click/marquee handling, not through computeGizmoWriteback. */
   selectedIndices?: number[];
+  /** Face Selection's picked face indices + the flip to interactive mode — written directly by its viewport click handling. */
+  selectedFaces?: number[];
+  interactive?: boolean;
   /** Points Influence's sparse index -> 0-1 map — written directly by its viewport brush/discrete handling, not through computeGizmoWriteback. */
   influences?: Record<number, number>;
   /** Points Influence's Discrete-mode armed level — written by its viewport HUD buttons. */

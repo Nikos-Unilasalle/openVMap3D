@@ -85,7 +85,7 @@ import { CURVE_SHAPE_KEY_NODE, MESH_SHAPE_KEY_NODE } from "./shapeKey";
 import { LATTICE_DEFORM_NODE } from "./lattice";
 import { BOOLEAN_NODE } from "./boolean";
 import { SUBDIVIDE_NODE } from "./subdivide";
-import { EXTRUDE_MESH_NODE, DELETE_GEOMETRY_NODE } from "./meshEdit";
+import { EXTRUDE_MESH_NODE, DELETE_GEOMETRY_NODE, FACE_SELECTION_NODE } from "./meshEdit";
 import { SHADE_NODE } from "./shade";
 import { VISUAL_SLICE_NODE, CLIP_BOX_NODE } from "./visualSlice";
 import { WIGGLE_NODE, WIGGLE_NUMBER_NODE, WIGGLE_VECTOR_NODE } from "./wiggle";
@@ -277,6 +277,7 @@ export const STARTER_NODES = [
   SUBDIVIDE_NODE,
   EXTRUDE_MESH_NODE,
   DELETE_GEOMETRY_NODE,
+  FACE_SELECTION_NODE,
   SHADE_NODE,
   VISUAL_SLICE_NODE,
   CLIP_BOX_NODE,

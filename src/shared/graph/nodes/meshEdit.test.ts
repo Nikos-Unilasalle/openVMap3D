@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { EvalContext } from "../types";
-import { DELETE_GEOMETRY_NODE, EXTRUDE_MESH_NODE, selectFaces } from "./meshEdit";
+import { DELETE_GEOMETRY_NODE, EXTRUDE_MESH_NODE, FACE_SELECTION_NODE, selectFaces } from "./meshEdit";
 
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "mesh-edit-test" };
 
@@ -117,50 +117,187 @@ describe("EXTRUDE_MESH_NODE", () => {
     expect(res.geometry).toBeNull();
   });
 
-  it("Points + Influence overrides the formula selection: only the painted half extrudes, scaled by its own influence", () => {
+  it("a wired Face Selection overrides the formula fields", () => {
     const plane = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
-    const posAttr = plane.geometry.attributes.position;
-    const points: THREE.Vector3[] = [];
-    const influence: number[] = [];
-    for (let i = 0; i < posAttr.count; i++) {
-      const p = new THREE.Vector3().fromBufferAttribute(posAttr, i);
-      points.push(p);
-      influence.push(p.y >= 0 ? 1 : 0); // top half fully painted, bottom untouched
-    }
+    // The Face Selection node picks the upper half of the plane's two faces.
+    const faceSel = FACE_SELECTION_NODE.evaluate(
+      { geometry: plane },
+      { ...FACE_SELECTION_NODE.defaultParams, selectMode: "height", axis: "y", threshold: 0, invert: false },
+      CTX,
+    );
+    const selection = faceSel.selection as boolean[];
+    expect(selection.filter(Boolean).length).toBe(1); // 1 of 2 triangles
 
     const res = EXTRUDE_MESH_NODE.evaluate(
-      { geometry: plane, distance: 0.25, points, influence },
-      // A formula that would select nothing on its own (impossible dot
-      // product) — proving Points/Influence, not this, drove the result.
+      { geometry: plane, distance: 0.25, selection },
+      // A formula that would select nothing if the selection were ignored.
       { ...EXTRUDE_MESH_NODE.defaultParams, selectMode: "normal", axis: "y", threshold: 10 },
       CTX,
     );
     const mesh = res.geometry as THREE.Mesh;
     mesh.geometry.computeBoundingBox();
-    const box3 = mesh.geometry.boundingBox!;
-    expect(box3.max.z).toBeCloseTo(0.25, 4);
-    expect(box3.min.z).toBeCloseTo(0, 4);
+    expect(mesh.geometry.boundingBox!.max.z).toBeCloseTo(0.25, 4);
+    expect(mesh.geometry.boundingBox!.min.z).toBeCloseTo(0, 4);
   });
 
-  it("a fractional influence extrudes a vertex proportionally, not by the full flat distance", () => {
-    const plane = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
-    const posAttr = plane.geometry.attributes.position;
-    const points: THREE.Vector3[] = [];
-    const influence: number[] = [];
-    for (let i = 0; i < posAttr.count; i++) {
-      const p = new THREE.Vector3().fromBufferAttribute(posAttr, i);
-      points.push(p);
-      influence.push(p.y >= 0 ? 0.5 : 0);
-    }
-
+  it("a mismatched-length selection falls back to the formula instead of misaligning", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
     const res = EXTRUDE_MESH_NODE.evaluate(
-      { geometry: plane, distance: 1, points, influence },
-      EXTRUDE_MESH_NODE.defaultParams,
+      { geometry: box, distance: 0.5, selection: [true] }, // 12 faces, not 1
+      { ...EXTRUDE_MESH_NODE.defaultParams, selectMode: "normal", axis: "y", threshold: 0.9 },
       CTX,
     );
     const mesh = res.geometry as THREE.Mesh;
     mesh.geometry.computeBoundingBox();
-    expect(mesh.geometry.boundingBox!.max.z).toBeCloseTo(0.5, 4);
+    expect(mesh.geometry.boundingBox!.max.y).toBeCloseTo(1.0, 4); // formula selected the top
+  });
+
+  it("a wired Transform matrix drives the per-pass transform, overriding the direct fields", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    // Per-pass matrix: translate +0.4 in Z, rotate 0.5 rad about X.
+    const matrix = new THREE.Matrix4().compose(
+      new THREE.Vector3(0, 0, 0.4),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(0.5, 0, 0)),
+      new THREE.Vector3(1, 1, 1),
+    );
+    const res = EXTRUDE_MESH_NODE.evaluate(
+      { geometry: box, distance: 0.5, passes: 3, transform: matrix, scale: 5 }, // scale: 5 must be ignored
+      { ...EXTRUDE_MESH_NODE.defaultParams, selectMode: "normal", axis: "y", threshold: 0.9 },
+      { ...CTX, nodeId: "extrude-matrix" },
+    );
+    const mesh = res.geometry as THREE.Mesh;
+    mesh.geometry.computeBoundingBox();
+    const box3 = mesh.geometry.boundingBox!;
+    // The tip drifts +Z every pass (translation + bend): well past the base's ±0.5.
+    expect(box3.max.z).toBeGreaterThan(1.2);
+    // Rotation about X never changes X, and scale 5 was overridden by the
+    // matrix's (1,1,1) — had it applied, the tip would balloon past 2.5.
+    expect(box3.max.x).toBeLessThanOrEqual(0.6);
+    expect(box3.min.x).toBeGreaterThanOrEqual(-0.6);
+  });
+
+  it("the extruded mesh inherits the source material, live across cache hits", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const material = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+    box.material = material;
+    const ctx = { ...CTX, nodeId: "extrude-material" };
+    const params = { ...EXTRUDE_MESH_NODE.defaultParams, selectMode: "normal", axis: "y", threshold: 0.9 };
+
+    const first = EXTRUDE_MESH_NODE.evaluate({ geometry: box, distance: 0.5 }, params, ctx);
+    const mesh = first.geometry as THREE.Mesh;
+    expect(mesh.material).toBe(material); // shared reference, not a clone
+
+    // The source swaps to a *new* material instance (another Material node).
+    // The topology cache hits, but the output must still pick the new
+    // material up — the inheritance has to be live, not baked at build time.
+    const replacement = new THREE.MeshStandardMaterial({ color: 0x0000ff });
+    box.material = replacement;
+    const second = EXTRUDE_MESH_NODE.evaluate({ geometry: box, distance: 0.5 }, params, ctx);
+    const mesh2 = second.geometry as THREE.Mesh;
+    expect(mesh2).toBe(mesh); // cache hit, same mesh object
+    expect(mesh2.material).toBe(replacement);
+  });
+});
+
+describe("EXTRUDE_MESH_NODE — grow passes", () => {
+  // Extruding the top faces of a unit box repeatedly: each pass raises the cap
+  // by `distance` (the cap's averaged normal is exactly +Y — the side faces
+  // aren't selected, so they don't drag the corners sideways).
+  function growBox(params: Record<string, unknown>, nodeId = "grow-box"): THREE.Mesh {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const res = EXTRUDE_MESH_NODE.evaluate(
+      { geometry: box, distance: 0.5 },
+      { ...EXTRUDE_MESH_NODE.defaultParams, selectMode: "normal", axis: "y", threshold: 0.9, ...params },
+      { ...CTX, nodeId },
+    );
+    return res.geometry as THREE.Mesh;
+  }
+
+  /** Centroid of the vertices near the mesh's highest point — the grown tip. */
+  function topCentroid(mesh: THREE.Mesh): THREE.Vector3 {
+    mesh.geometry.computeBoundingBox();
+    const pos = mesh.geometry.attributes.position as THREE.BufferAttribute;
+    const maxY = mesh.geometry.boundingBox!.max.y;
+    let cx = 0;
+    let cz = 0;
+    let count = 0;
+    for (let i = 0; i < pos.count; i++) {
+      if (pos.getY(i) > maxY - 0.1) {
+        cx += pos.getX(i);
+        cz += pos.getZ(i);
+        count++;
+      }
+    }
+    return new THREE.Vector3(cx / count, maxY, cz / count);
+  }
+
+  it("each pass raises the cap by exactly one distance (3 passes on a box top)", () => {
+    const mesh = growBox({ passes: 3 });
+    mesh.geometry.computeBoundingBox();
+    expect(mesh.geometry.boundingBox!.max.y).toBeCloseTo(0.5 + 3 * 0.5, 3);
+    expect(mesh.geometry.boundingBox!.min.y).toBeCloseTo(-0.5, 3);
+  });
+
+  it("passes 0 passes the geometry through unchanged", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const originalTris = faceCountOf(box);
+    const res = EXTRUDE_MESH_NODE.evaluate(
+      { geometry: box, distance: 0.5 },
+      { ...EXTRUDE_MESH_NODE.defaultParams, passes: 0 },
+      CTX,
+    );
+    expect(faceCountOf(res.geometry as THREE.Mesh)).toBe(originalTris);
+  });
+
+  it("per-pass scale tapers the tip toward its top while the base keeps its width", () => {
+    const mesh = growBox({ passes: 3, scale: 0.5 });
+    mesh.geometry.computeBoundingBox();
+    // Base stays a unit box.
+    expect(mesh.geometry.boundingBox!.max.x).toBeCloseTo(0.5, 3);
+    // The tip shrank by 0.5 per pass: 0.5 × 0.5³ = 0.0625 half-width.
+    const tip = topCentroid(mesh);
+    const pos = mesh.geometry.attributes.position as THREE.BufferAttribute;
+    let maxTipX = 0;
+    for (let i = 0; i < pos.count; i++) {
+      if (pos.getY(i) > tip.y - 0.1) maxTipX = Math.max(maxTipX, Math.abs(pos.getX(i)));
+    }
+    expect(maxTipX).toBeCloseTo(0.5 * 0.5 ** 3, 3);
+  });
+
+  it("per-pass rotation bends the tip off-axis, accumulating every pass", () => {
+    // Rotate the cap 0.5 rad about X after every pass: the tip walks +Z.
+    const mesh = growBox({ passes: 3, rotation: new THREE.Vector3(0.5, 0, 0) });
+    const tip = topCentroid(mesh);
+    expect(tip.y).toBeGreaterThan(1.5); // still grows upward overall
+    expect(tip.z).toBeGreaterThan(0.4); // but bends toward +Z
+    expect(Math.abs(tip.x)).toBeLessThan(0.2); // no x-bend
+  });
+
+  it("a fixed seed always grows the same shape, a different seed a different one", () => {
+    const params = { passes: 3, rotation: new THREE.Vector3(0.2, 0.1, 0), random: 0.5, seed: 42 };
+    const a = growBox(params, "grow-seed-a");
+    const b = growBox(params, "grow-seed-b");
+    const c = growBox({ ...params, seed: 7 }, "grow-seed-c");
+
+    const positions = (m: THREE.Mesh) => Array.from(m.geometry.attributes.position.array as Float32Array);
+    expect(positions(a)).toEqual(positions(b));
+    expect(positions(a)).not.toEqual(positions(c));
+  });
+
+  it("grows the top ring of a tube into a taller, bending shape (the tree case)", () => {
+    // A cylinder standing on the plane: its top ring faces all have centroid
+    // y above the threshold, so 'height' selects exactly the growing cap.
+    const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 1, 12));
+    const res = EXTRUDE_MESH_NODE.evaluate(
+      { geometry: tube, distance: 0.3 },
+      { ...EXTRUDE_MESH_NODE.defaultParams, passes: 5, selectMode: "height", axis: "y", threshold: 0.4, rotation: new THREE.Vector3(0, 0, 0.15), scale: 0.96 },
+      { ...CTX, nodeId: "grow-tree" },
+    );
+    const mesh = res.geometry as THREE.Mesh;
+    mesh.geometry.computeBoundingBox();
+    // Cylinder top at y≈0.5 grows by 5×0.3 → well past 1.5.
+    expect(mesh.geometry.boundingBox!.max.y).toBeGreaterThan(1.5);
+    expect(faceCountOf(mesh)).toBeGreaterThan(faceCountOf(tube));
   });
 });
 
@@ -210,5 +347,121 @@ describe("DELETE_GEOMETRY_NODE", () => {
   it("returns null when nothing is wired in", () => {
     const res = DELETE_GEOMETRY_NODE.evaluate({}, DELETE_GEOMETRY_NODE.defaultParams, CTX);
     expect(res.geometry).toBeNull();
+  });
+});
+
+describe("FACE_SELECTION_NODE", () => {
+  it("selects the top-facing triangles of a box and reports them as a boolean list, face indices and a count", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const res = FACE_SELECTION_NODE.evaluate(
+      { geometry: box },
+      { ...FACE_SELECTION_NODE.defaultParams, selectMode: "normal", axis: "y", threshold: 0.9 },
+      CTX,
+    );
+    const selection = res.selection as boolean[];
+    expect(selection.length).toBe(12); // one boolean per triangle, in index order
+    expect(res.count).toBe(2); // a unit box's +Y face
+    expect(res.faces).toEqual([4, 5]); // BoxGeometry's +Y face is triangles 4-5
+    expect(selection.filter(Boolean)).toHaveLength(2);
+  });
+
+  it("invert flips every face", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const normal = FACE_SELECTION_NODE.evaluate(
+      { geometry: box },
+      { ...FACE_SELECTION_NODE.defaultParams, selectMode: "normal", axis: "y", threshold: 0.9 },
+      CTX,
+    ).selection as boolean[];
+    const inverted = FACE_SELECTION_NODE.evaluate(
+      { geometry: box },
+      { ...FACE_SELECTION_NODE.defaultParams, selectMode: "normal", axis: "y", threshold: 0.9, invert: true },
+      CTX,
+    ).selection as boolean[];
+    for (let i = 0; i < normal.length; i++) expect(inverted[i]).toBe(!normal[i]);
+  });
+
+  it("a wired threshold overrides the param", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const none = FACE_SELECTION_NODE.evaluate(
+      { geometry: box, threshold: 10 },
+      { ...FACE_SELECTION_NODE.defaultParams, selectMode: "height", axis: "y", threshold: 0 },
+      CTX,
+    );
+    expect(none.count).toBe(0);
+  });
+
+  it("returns empty lists when nothing is wired in", () => {
+    const res = FACE_SELECTION_NODE.evaluate({}, FACE_SELECTION_NODE.defaultParams, CTX);
+    expect(res.selection).toEqual([]);
+    expect(res.count).toBe(0);
+  });
+
+  it("interactive picks (Shift+clicked faces) win over the formula once the operator has edited", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    // Formula would select the +Y face (triangles 4,5); the interactive set
+    // is something completely different.
+    const res = FACE_SELECTION_NODE.evaluate(
+      { geometry: box },
+      {
+        ...FACE_SELECTION_NODE.defaultParams,
+        selectMode: "normal",
+        axis: "y",
+        threshold: 0.9,
+        interactive: true,
+        selectedFaces: [2, 7],
+      },
+      CTX,
+    );
+    const selection = res.selection as boolean[];
+    expect(selection.length).toBe(12);
+    expect(selection.filter(Boolean)).toHaveLength(2);
+    expect(selection[2]).toBe(true);
+    expect(selection[7]).toBe(true);
+    expect(selection[4]).toBe(false); // the formula's choice, ignored now
+    expect(res.faces).toEqual([2, 7]);
+    expect(res.count).toBe(2);
+  });
+
+  it("passes the source geometry through so the picked-on mesh keeps rendering", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const res = FACE_SELECTION_NODE.evaluate({ geometry: box }, FACE_SELECTION_NODE.defaultParams, CTX);
+    expect(res.geometry).toBe(box);
+  });
+
+  it("the first Shift+click selects exactly that one face, not the whole mesh", () => {
+    // The viewport seeds its working set from the stored `selectedFaces`
+    // param (empty on a fresh node), never from the evaluated `selection`
+    // output — which under the default "all" mode is every face. Seeding
+    // from the output made one click extrude the entire object; this pins
+    // the param that makes the click behave.
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    expect(FACE_SELECTION_NODE.defaultParams.selectedFaces).toEqual([]);
+    expect(FACE_SELECTION_NODE.defaultParams.interactive).toBe(false);
+
+    // A fresh node previews the formula — "all" — so the operator can see
+    // what Extrude would do before touching anything.
+    const preview = FACE_SELECTION_NODE.evaluate({ geometry: box }, FACE_SELECTION_NODE.defaultParams, { ...CTX, nodeId: "fresh" });
+    expect((preview.faces as number[]).length).toBe(12);
+
+    // Viewport's first Shift+click: working set starts from the stored param
+    // (empty), adds the clicked face, and commits interactive: true.
+    const afterOneClick = FACE_SELECTION_NODE.evaluate(
+      { geometry: box },
+      { ...FACE_SELECTION_NODE.defaultParams, interactive: true, selectedFaces: [3] },
+      { ...CTX, nodeId: "fresh" },
+    );
+    expect(afterOneClick.faces).toEqual([3]);
+    expect(afterOneClick.count).toBe(1);
+  });
+
+  it("ticking Interactive with nothing picked yet selects nothing, rather than falling back to the formula", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const res = FACE_SELECTION_NODE.evaluate(
+      { geometry: box },
+      { ...FACE_SELECTION_NODE.defaultParams, selectMode: "all", interactive: true, selectedFaces: [] },
+      CTX,
+    );
+    expect(res.count).toBe(0);
+    expect((res.selection as boolean[]).some(Boolean)).toBe(false);
   });
 });
