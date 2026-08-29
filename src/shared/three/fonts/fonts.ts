@@ -11,6 +11,9 @@ import pacifico from "./pacifico.json";
 import poppins from "./poppins.json";
 import quicksand from "./quicksand.json";
 import raleway from "./raleway.json";
+import doto from "./doto.json";
+import novaMono from "./nova-mono.json";
+import workbench from "./workbench.json";
 
 const loader = new FontLoader();
 
@@ -28,6 +31,9 @@ export const BUILTIN_FONTS: Record<string, Font> = {
   Poppins: loader.parse(poppins as never),
   Quicksand: loader.parse(quicksand as never),
   Raleway: loader.parse(raleway as never),
+  Doto: loader.parse(doto as never),
+  "Nova Mono": loader.parse(novaMono as never),
+  Workbench: loader.parse(workbench as never),
 };
 
 export const FONT_NAMES = Object.keys(BUILTIN_FONTS);

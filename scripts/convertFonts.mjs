@@ -22,6 +22,9 @@ const FONTS = [
   { ttf: "/tmp/ttf/Poppins-Regular.ttf", out: "poppins.json", name: "Poppins" },
   { ttf: "/tmp/ttf/Quicksand.ttf", out: "quicksand.json", name: "Quicksand" },
   { ttf: "/tmp/ttf/Raleway.ttf", out: "raleway.json", name: "Raleway" },
+  { ttf: "/tmp/ttf/Doto-Regular.ttf", out: "doto.json", name: "Doto" },
+  { ttf: "/tmp/ttf/NovaMono-Regular.ttf", out: "nova-mono.json", name: "Nova Mono" },
+  { ttf: "/tmp/ttf/Workbench-Regular.ttf", out: "workbench.json", name: "Workbench" },
 ];
 
 const round = (n) => Math.round(n * 100) / 100;
