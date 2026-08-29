@@ -169,8 +169,17 @@ export const DECAL_NODE: NodeDefinition = {
 
     // DecalGeometry reads each target's matrixWorld, and during evaluation
     // those are whatever the last frame left — stale for anything that moved
-    // this frame. Recomputing costs nothing next to re-clipping the geometry.
-    target.updateWorldMatrix(true, true);
+    // this frame. `updateWorldMatrix(true, true)` (no third argument) only
+    // recomputes a matrixWorld whose own `matrixWorldNeedsUpdate` flag is
+    // set — never true for a mesh with matrixAutoUpdate off that writes
+    // `.matrix` directly (every primitive here), so it was silently a
+    // no-op: the target's matrixWorld stayed whatever the last *forced*
+    // update elsewhere in the graph happened to leave it, which is why a
+    // moving/rotating target only *sometimes* landed on stale data — an
+    // intermittent flicker, not a constant one. `updateMatrixWorld(true)`
+    // from the root forces every descendant regardless of its own dirty
+    // flag; see pointsGeometry.ts/shade.ts/lattice.ts for the same fix.
+    target.updateMatrixWorld(true);
 
     const targets = collectDecalTargets(target);
 

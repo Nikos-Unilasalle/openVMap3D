@@ -272,4 +272,33 @@ describe("DECAL_NODE", () => {
     const decalMesh = meshesOf(res.geometry as THREE.Object3D)[0];
     expect(decalMesh.renderOrder).toBeGreaterThan(target.renderOrder);
   });
+
+  it("follows a target that moves via a directly-written matrix, the way every primitive here poses itself", () => {
+    // Every primitive node (Sphere, Box, ...) sets `matrixAutoUpdate = false`
+    // and writes `.matrix` directly rather than through position/rotation/
+    // scale — three.js then never raises `matrixWorldNeedsUpdate` on it, so
+    // a plain `updateWorldMatrix(true, true)` (no third `force` argument) is
+    // a no-op and the target's cached matrixWorld stays wherever it was
+    // last *forced* to, however long ago. A ball rolling across the floor
+    // moves this way every frame — this is the ball, not the wall demo.
+    const ctx = { ...CTX, nodeId: "decal-moving-target" };
+    const target = new THREE.Mesh(new THREE.PlaneGeometry(10, 10, 8, 8), new THREE.MeshStandardMaterial());
+    target.matrixAutoUpdate = false;
+    target.matrix.identity();
+
+    const first = DECAL_NODE.evaluate({ geometry: target, matrix: new THREE.Matrix4() }, DECAL_NODE.defaultParams, ctx);
+    expect(meshesOf(first.geometry as THREE.Object3D)).toHaveLength(1);
+
+    // The target moves far enough that a decal still centered on its old
+    // spot would completely miss it — and the projector moves right along
+    // with it, so a real miss here can only mean the target's matrixWorld
+    // never updated.
+    target.matrix.copy(new THREE.Matrix4().makeTranslation(20, 0, 0));
+    const second = DECAL_NODE.evaluate(
+      { geometry: target, matrix: new THREE.Matrix4().makeTranslation(20, 0, 0) },
+      DECAL_NODE.defaultParams,
+      ctx,
+    );
+    expect(meshesOf(second.geometry as THREE.Object3D)).toHaveLength(1);
+  });
 });
