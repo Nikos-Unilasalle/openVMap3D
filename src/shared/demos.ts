@@ -200,6 +200,11 @@ export const DEMO_CATALOG: DemoCategory[] = [
     title: "Physics",
     demos: [
       {
+        file: "demo_physics_rolling.tsuji",
+        label: "Rolling Cube",
+        description: "A square prism tumbling as it rolls — rotation coupled to its bob.",
+      },
+      {
         file: "demo_physics_scatter.tsuji",
         label: "Surface Scatter",
         description: "Sample points on a mesh, spawn objects on them.",
@@ -278,6 +283,11 @@ export const DEMO_CATALOG: DemoCategory[] = [
         file: "demo_io_mouse_pointer.tsuji",
         label: "Mouse Pointer",
         description: "Mouse node's 3D point placing a marker.",
+      },
+      {
+        file: "demo_mouse_disc.tsuji",
+        label: "Mouse Disc",
+        description: "A disc gliding over the ground at y=0, with a checker cube rolling after it (Mouse -> Rolling) and a bloom pass.",
       },
       {
         file: "demo_mouse_halo.tsuji",

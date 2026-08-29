@@ -1,0 +1,554 @@
+{
+  "canvases": [
+    {
+      "nodes": [
+        {
+          "id": "setup_0",
+          "type": "object/plane",
+          "position": {
+            "x": 599,
+            "y": 160
+          },
+          "params": {
+            "visible": 1,
+            "location": {
+              "x": 0,
+              "y": -0.5,
+              "z": 0
+            },
+            "rotation": {
+              "x": 1.5707963267948966,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 10,
+              "y": 10,
+              "z": 1
+            },
+            "texturePath": "",
+            "normalMapPath": "",
+            "roughnessMapPath": "",
+            "uvScaleX": 1,
+            "uvScaleY": 1,
+            "uvOffsetX": 0,
+            "uvOffsetY": 0,
+            "color": 16777215,
+            "emissive": 0,
+            "emissiveIntensity": 1,
+            "shadeless": 0,
+            "roughness": 0.1,
+            "metalness": 0.1,
+            "wireframe": 0,
+            "opacity": 1,
+            "transmission": 0,
+            "thickness": 0.5
+          }
+        },
+        {
+          "id": "setup_1",
+          "type": "texture/procedural",
+          "position": {
+            "x": 293,
+            "y": 225
+          },
+          "params": {
+            "type": "gradient",
+            "colorA": 16777215,
+            "colorB": 2236962,
+            "scale": 8,
+            "seed": 1,
+            "octaves": 3,
+            "resolution": 256,
+            "uvScaleX": 1,
+            "uvScaleY": 1,
+            "uvOffsetX": 0,
+            "uvOffsetY": 0
+          }
+        },
+        {
+          "id": "setup_2",
+          "type": "light/point",
+          "position": {
+            "x": 857,
+            "y": 193
+          },
+          "params": {
+            "location": {
+              "x": 0,
+              "y": 2.185514752224622,
+              "z": -4.5179526088705275
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "color": 16768110,
+            "intensity": 50,
+            "distance": 15,
+            "decay": 2,
+            "castShadow": 1
+          }
+        },
+        {
+          "id": "setup_3",
+          "type": "light/point",
+          "position": {
+            "x": 1043,
+            "y": 187
+          },
+          "params": {
+            "location": {
+              "x": 0,
+              "y": 2.185514752224622,
+              "z": 4.487400919453167
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "color": 440020,
+            "intensity": 50,
+            "distance": 15,
+            "decay": 2,
+            "castShadow": 1
+          }
+        },
+        {
+          "id": "setup_4",
+          "type": "render",
+          "position": {
+            "x": 610,
+            "y": 393
+          },
+          "params": {
+            "frameCount": 120,
+            "fps": 30,
+            "motionBlur": 0.163,
+            "resolutionPreset": "16:9 (1920x1080)",
+            "width": 1920,
+            "height": 1080,
+            "holdout": false
+          }
+        },
+        {
+          "id": "setup_5",
+          "type": "lighting/environment",
+          "position": {
+            "x": 340,
+            "y": 406
+          },
+          "params": {
+            "color": 4147542,
+            "intensity": 1,
+            "background": 1,
+            "blurriness": 0,
+            "filePath": "",
+            "backgroundImagePath": "",
+            "backgroundFit": "cover",
+            "backgroundScale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "backgroundOffset": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "backgroundRotation": 0,
+            "ambientIntensity": 0,
+            "sunIntensity": 0
+          }
+        },
+        {
+          "id": "setup_6",
+          "type": "light/point",
+          "position": {
+            "x": 860,
+            "y": 389
+          },
+          "params": {
+            "location": {
+              "x": 3.583607412619263,
+              "y": 2.185514752224622,
+              "z": -0.48624947478730096
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "color": 16777215,
+            "intensity": 50,
+            "distance": 15,
+            "decay": 2,
+            "castShadow": 1
+          }
+        },
+        {
+          "id": "mouse",
+          "type": "io/mouse",
+          "position": {
+            "x": -1310,
+            "y": 61
+          },
+          "params": {
+            "target": "Ground",
+            "height": 0,
+            "smoothing": 0.2
+          }
+        },
+        {
+          "id": "matrix",
+          "type": "transform",
+          "position": {
+            "x": -948,
+            "y": 116
+          },
+          "params": {
+            "rotation": {
+              "x": -1.5708,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "disc",
+          "type": "object/disc",
+          "position": {
+            "x": -509,
+            "y": 116
+          },
+          "params": {
+            "radius": 1.225,
+            "innerRadius": 0.838,
+            "depth": 0.08,
+            "color": 440020,
+            "emissive": 440020,
+            "emissiveIntensity": 0.3,
+            "roughness": 0.2,
+            "metalness": 0.45
+          }
+        },
+        {
+          "id": "004e053f-61ac-43eb-9b8a-fef36e4aa3ee",
+          "type": "object/box",
+          "position": {
+            "x": -190,
+            "y": 420
+          },
+          "params": {
+            "visible": 1,
+            "location": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "texturePath": "",
+            "normalMapPath": "",
+            "roughnessMapPath": "",
+            "uvScaleX": 1,
+            "uvScaleY": 1,
+            "uvOffsetX": 0,
+            "uvOffsetY": 0,
+            "color": 16777215,
+            "emissive": 0,
+            "emissiveIntensity": 1,
+            "shadeless": 0,
+            "roughness": 0.4,
+            "metalness": 0.1,
+            "wireframe": 0,
+            "opacity": 1,
+            "transmission": 0,
+            "thickness": 0.5
+          }
+        },
+        {
+          "id": "766f8105-a604-48b0-9437-2c7b29a51c96",
+          "type": "transform",
+          "position": {
+            "x": -507,
+            "y": 473
+          },
+          "params": {
+            "location": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            }
+          }
+        },
+        {
+          "id": "b8fe0d79-1498-486c-a265-434eb782e255",
+          "type": "physics/rolling",
+          "position": {
+            "x": -896,
+            "y": 591
+          },
+          "params": {
+            "shape": "square",
+            "size": 1,
+            "axis": {
+              "x": 0,
+              "y": 1,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "3efb9926-dfea-4f0d-8b67-3ca0cbc6e71b",
+          "type": "vector/decompose",
+          "position": {
+            "x": -952,
+            "y": 353
+          },
+          "params": {}
+        },
+        {
+          "id": "409f84af-affe-4b25-be10-356d67563aad",
+          "type": "vector/compose",
+          "position": {
+            "x": -761,
+            "y": 359
+          },
+          "params": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "useX": true,
+            "useY": true,
+            "useZ": true
+          }
+        },
+        {
+          "id": "ecaeb6a8-875c-499b-8e2c-52026558b4f0",
+          "type": "vector/decompose",
+          "position": {
+            "x": -950,
+            "y": 235
+          },
+          "params": {}
+        },
+        {
+          "id": "e7a9dd9a-8650-4b2b-892c-243338f269da",
+          "type": "texture/procedural",
+          "position": {
+            "x": -181,
+            "y": 310
+          },
+          "params": {
+            "type": "checker",
+            "colorA": 16777215,
+            "colorB": 2236962,
+            "scale": 8,
+            "seed": 1,
+            "octaves": 3,
+            "resolution": 256,
+            "uvScaleX": 1,
+            "uvScaleY": 1,
+            "uvOffsetX": 0,
+            "uvOffsetY": 0
+          }
+        },
+        {
+          "id": "d7ebe08b-65bf-49aa-8656-78409045b894",
+          "type": "postprocess/bloom",
+          "position": {
+            "x": 344,
+            "y": 631
+          },
+          "params": {
+            "strength": 0.05,
+            "radius": 0.2,
+            "threshold": 0.876
+          }
+        }
+      ],
+      "connections": [
+        {
+          "id": "setup_c0",
+          "fromNode": "setup_1",
+          "fromSocket": "texture",
+          "toNode": "setup_0",
+          "toSocket": "texture"
+        },
+        {
+          "id": "setup_c1",
+          "fromNode": "setup_5",
+          "fromSocket": "environment",
+          "toNode": "setup_4",
+          "toSocket": "environment"
+        },
+        {
+          "id": "mouse.point->matrix.location",
+          "fromNode": "mouse",
+          "fromSocket": "point",
+          "toNode": "matrix",
+          "toSocket": "location"
+        },
+        {
+          "id": "matrix.matrix->disc.matrix",
+          "fromNode": "matrix",
+          "fromSocket": "matrix",
+          "toNode": "disc",
+          "toSocket": "matrix"
+        },
+        {
+          "id": "766f8105-a604-48b0-9437-2c7b29a51c96.matrix->004e053f-61ac-43eb-9b8a-fef36e4aa3ee.matrix",
+          "fromNode": "766f8105-a604-48b0-9437-2c7b29a51c96",
+          "fromSocket": "matrix",
+          "toNode": "004e053f-61ac-43eb-9b8a-fef36e4aa3ee",
+          "toSocket": "matrix"
+        },
+        {
+          "id": "mouse.point->b8fe0d79-1498-486c-a265-434eb782e255.position",
+          "fromNode": "mouse",
+          "fromSocket": "point",
+          "toNode": "b8fe0d79-1498-486c-a265-434eb782e255",
+          "toSocket": "position"
+        },
+        {
+          "id": "b8fe0d79-1498-486c-a265-434eb782e255.rotation->766f8105-a604-48b0-9437-2c7b29a51c96.rotation",
+          "fromNode": "b8fe0d79-1498-486c-a265-434eb782e255",
+          "fromSocket": "rotation",
+          "toNode": "766f8105-a604-48b0-9437-2c7b29a51c96",
+          "toSocket": "rotation"
+        },
+        {
+          "id": "b8fe0d79-1498-486c-a265-434eb782e255.position->3efb9926-dfea-4f0d-8b67-3ca0cbc6e71b.vector",
+          "fromNode": "b8fe0d79-1498-486c-a265-434eb782e255",
+          "fromSocket": "position",
+          "toNode": "3efb9926-dfea-4f0d-8b67-3ca0cbc6e71b",
+          "toSocket": "vector"
+        },
+        {
+          "id": "409f84af-affe-4b25-be10-356d67563aad.out->766f8105-a604-48b0-9437-2c7b29a51c96.location",
+          "fromNode": "409f84af-affe-4b25-be10-356d67563aad",
+          "fromSocket": "out",
+          "toNode": "766f8105-a604-48b0-9437-2c7b29a51c96",
+          "toSocket": "location"
+        },
+        {
+          "id": "3efb9926-dfea-4f0d-8b67-3ca0cbc6e71b.y->409f84af-affe-4b25-be10-356d67563aad.y",
+          "fromNode": "3efb9926-dfea-4f0d-8b67-3ca0cbc6e71b",
+          "fromSocket": "y",
+          "toNode": "409f84af-affe-4b25-be10-356d67563aad",
+          "toSocket": "y"
+        },
+        {
+          "id": "mouse.point->ecaeb6a8-875c-499b-8e2c-52026558b4f0.vector",
+          "fromNode": "mouse",
+          "fromSocket": "point",
+          "toNode": "ecaeb6a8-875c-499b-8e2c-52026558b4f0",
+          "toSocket": "vector"
+        },
+        {
+          "id": "ecaeb6a8-875c-499b-8e2c-52026558b4f0.x->409f84af-affe-4b25-be10-356d67563aad.x",
+          "fromNode": "ecaeb6a8-875c-499b-8e2c-52026558b4f0",
+          "fromSocket": "x",
+          "toNode": "409f84af-affe-4b25-be10-356d67563aad",
+          "toSocket": "x"
+        },
+        {
+          "id": "ecaeb6a8-875c-499b-8e2c-52026558b4f0.z->409f84af-affe-4b25-be10-356d67563aad.z",
+          "fromNode": "ecaeb6a8-875c-499b-8e2c-52026558b4f0",
+          "fromSocket": "z",
+          "toNode": "409f84af-affe-4b25-be10-356d67563aad",
+          "toSocket": "z"
+        },
+        {
+          "id": "e7a9dd9a-8650-4b2b-892c-243338f269da.texture->004e053f-61ac-43eb-9b8a-fef36e4aa3ee.texture",
+          "fromNode": "e7a9dd9a-8650-4b2b-892c-243338f269da",
+          "fromSocket": "texture",
+          "toNode": "004e053f-61ac-43eb-9b8a-fef36e4aa3ee",
+          "toSocket": "texture"
+        },
+        {
+          "id": "d7ebe08b-65bf-49aa-8656-78409045b894.effect->setup_4.postprocess",
+          "fromNode": "d7ebe08b-65bf-49aa-8656-78409045b894",
+          "fromSocket": "effect",
+          "toNode": "setup_4",
+          "toSocket": "postprocess"
+        }
+      ],
+      "keyframes": {},
+      "markers": [],
+      "exposedParams": []
+    },
+    {
+      "nodes": [],
+      "connections": [],
+      "keyframes": {},
+      "markers": [],
+      "exposedParams": []
+    },
+    {
+      "nodes": [],
+      "connections": [],
+      "keyframes": {},
+      "markers": [],
+      "exposedParams": []
+    },
+    {
+      "nodes": [],
+      "connections": [],
+      "keyframes": {},
+      "markers": [],
+      "exposedParams": []
+    },
+    {
+      "nodes": [],
+      "connections": [],
+      "keyframes": {},
+      "markers": [],
+      "exposedParams": []
+    },
+    {
+      "nodes": [],
+      "connections": [],
+      "keyframes": {},
+      "markers": [],
+      "exposedParams": []
+    }
+  ],
+  "activeCanvas": 0
+}

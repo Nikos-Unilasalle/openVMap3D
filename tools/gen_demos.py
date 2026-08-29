@@ -541,6 +541,31 @@ def _():
     return n, c
 
 
+@demo("physics_rolling")
+def _():
+    # A square prism tumbling as it rolls: the Rolling node turns a horizontal
+    # drag into a rotation AND a bob — the cube's centre rises to its
+    # circumradius at the diagonal and settles back onto each face, so it
+    # visibly rolls instead of grinding along one side. A triangle wave gives
+    # constant speed; when it turns around, the cube un-rolls back.
+    n = [
+        node("swing", "animation/oscillator", -1180, 60, type="triangle", frequency=0.12, amplitude=3, offset=0),
+        node("move", "vector/compose", -940, 60, y=1),
+        # size is the square's *side* — no radius to work out by hand.
+        node("roll", "physics/rolling", -680, 60, shape="square", size=2),
+        node("matrix", "transform", -420, 60),
+        node("cube", "object/box", -160, 60, scale=v3(2, 2, 2), color=BLUE, roughness=0.2, metalness=0.4),
+    ]
+    c = [
+        wire("swing", "out", "move", "x"),
+        wire("move", "out", "roll", "position"),
+        wire("roll", "position", "matrix", "location"),
+        wire("roll", "rotation", "matrix", "rotation"),
+        wire("matrix", "matrix", "cube", "matrix"),
+    ]
+    return n, c
+
+
 # ------------------------------------------------------------- Lights
 
 @demo("lighting_lights")
@@ -896,6 +921,12 @@ def _():
         wire("glow", "list", "paint", "colors"),
     ]
     return n, c
+
+
+# mouse_disc: hand-authored in the app, not generated — the original generated
+# version grew into a fuller graph (a checker cube rolling after the disc via
+# physics/rolling, a bloom pass) and re-running the generator would overwrite
+# it. Same arrangement as object_text, squash_stretch_bounce and demo_trail.
 
 
 @demo("lighting_environment")
