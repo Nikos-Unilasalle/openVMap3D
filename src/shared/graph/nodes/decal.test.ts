@@ -241,6 +241,29 @@ describe("DECAL_NODE", () => {
     expect(material.depthWrite).toBe(false);
   });
 
+  it("stays opaque at full opacity with no soft-alpha texture, or it vanishes behind glass", () => {
+    // three.js's transmission buffer (what a glass/transmission material
+    // refracts) only renders opaque objects — anything with
+    // `material.transparent = true` is skipped from it entirely. A decal
+    // used to set that flag unconditionally, so it never showed up through
+    // glass even fully opaque. Headless has no texture loaded (getDefaultTexture
+    // degrades to null — see the "falls back to no map" test), so this is
+    // exactly the plain, no-soft-alpha, full-opacity case.
+    const res = DECAL_NODE.evaluate({ geometry: wall() }, DECAL_NODE.defaultParams, { ...CTX, nodeId: "decal-opaque" });
+    const material = meshesOf(res.geometry as THREE.Object3D)[0].material as THREE.MeshStandardMaterial;
+    expect(material.transparent).toBe(false);
+  });
+
+  it("still blends when faded below full opacity", () => {
+    const res = DECAL_NODE.evaluate(
+      { geometry: wall() },
+      { ...DECAL_NODE.defaultParams, opacity: 0.5 },
+      { ...CTX, nodeId: "decal-faded" },
+    );
+    const material = meshesOf(res.geometry as THREE.Object3D)[0].material as THREE.MeshStandardMaterial;
+    expect(material.transparent).toBe(true);
+  });
+
   it("releases its projected geometry when the node is deleted", () => {
     const ctx = { ...CTX, nodeId: "decal-deleted" };
     const first = DECAL_NODE.evaluate(

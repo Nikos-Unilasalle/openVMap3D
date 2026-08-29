@@ -3,7 +3,7 @@ import { DecalGeometry } from "three/examples/jsm/geometries/DecalGeometry.js";
 import { NodeDefinition } from "../types";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { asVector3 } from "./transform";
-import { asColor } from "./object";
+import { asColor, textureHasAlpha } from "./object";
 
 /**
  * Decal — a texture projected onto whatever surface is already there, the way
@@ -67,7 +67,6 @@ function getState(nodeId: string): DecalState {
     group.matrixAutoUpdate = false;
     group.userData.nodeId = nodeId;
     const material = new THREE.MeshStandardMaterial({
-      transparent: true,
       depthTest: true,
       // The decal is a copy of the surface it lies on, at the same depth.
       // Without an offset the two fight for every pixel; without depthWrite
@@ -262,6 +261,14 @@ export const DECAL_NODE: NodeDefinition = {
     // A decal texture is mostly empty space; without a cutoff its transparent
     // corners still write a transparent quad over whatever is behind them.
     material.alphaTest = Math.max(0, Number(params.alphaCutoff) ?? 0.01);
+    // `transparent: true` unconditionally used to push every decal into
+    // three.js's transparent pass — which the transmission buffer behind a
+    // glass/transmission material skips entirely, so decals never showed up
+    // through glass. Same rule COMMON_PRIMITIVE materials already follow
+    // (see object.ts's textureHasAlpha): stay opaque, punched out by
+    // alphaTest alone, unless a soft-alpha texture or a fade below full
+    // opacity genuinely needs blending.
+    material.transparent = material.opacity < 0.999 || (material.map ? textureHasAlpha(material.map) : false);
 
     return { geometry: group, matrix: new THREE.Matrix4() };
   },
