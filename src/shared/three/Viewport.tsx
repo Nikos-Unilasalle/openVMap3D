@@ -1765,11 +1765,18 @@ export function Viewport({
       renderer.domElement.addEventListener("pointerdown", onCanvasPointerDown, { capture: true });
       window.addEventListener("pointermove", onCanvasPointerMove);
       window.addEventListener("pointerup", onCanvasPointerUp);
-      // Face Selection deselects on Shift+right-click — a browser context
-      // menu popping over the canvas would swallow that gesture.
-      const onCanvasContextMenu = (e: MouseEvent) => {
-        if (faceSelectionNodeId) e.preventDefault();
-      };
+      // No browser context menu over the 3D view, ever. OrbitControls already
+      // suppresses it — but only while `controls.enabled` is true, and tick()
+      // turns that off whenever a Camera node drives the view. Every such gap
+      // used to reach Chrome's canvas menu ("Save image as…"), which is fatal
+      // to Face Selection's Shift+right-click deselect: once the native menu
+      // opens the browser swallows the pointerup that gesture is read from,
+      // so the menu appears *and* the face stays selected. Gating this on a
+      // Face Selection node being active reopened the same gap one frame at a
+      // time (faceSelectionNodeId is only assigned inside tick()), so it is
+      // unconditional — right-click in a viewport is a camera/edit gesture,
+      // never a request to save the canvas as a PNG.
+      const onCanvasContextMenu = (e: MouseEvent) => e.preventDefault();
       renderer.domElement.addEventListener("contextmenu", onCanvasContextMenu);
       removeContextMenu = () => renderer.domElement.removeEventListener("contextmenu", onCanvasContextMenu);
     }
