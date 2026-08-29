@@ -223,6 +223,12 @@ export const DECAL_NODE: NodeDefinition = {
         decal.userData.nodeId = ctx.nodeId;
         decal.castShadow = false;
         decal.receiveShadow = true;
+        // Same depth as its target, so opaque distance-sort can flip which
+        // one draws first frame to frame — fine while depthWrite is off and
+        // the target draws last, but flickers the moment the target moves
+        // and occasionally wins the sort instead. renderOrder pins the
+        // decal after its target regardless of distance.
+        decal.renderOrder = mesh.renderOrder + 1;
         // DecalGeometry emits world-space vertices, so the mesh carrying them
         // must add no transform of its own.
         decal.matrixAutoUpdate = false;

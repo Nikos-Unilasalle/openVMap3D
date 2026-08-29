@@ -265,4 +265,11 @@ describe("DECAL_NODE", () => {
     const material = meshesOf(res.geometry as THREE.Object3D)[0].material as THREE.MeshStandardMaterial;
     expect(material.map).toBeNull();
   });
+
+  it("draws after its target regardless of camera-distance sort, or a moving target flickers", () => {
+    const target = wall();
+    const res = DECAL_NODE.evaluate({ geometry: target }, DECAL_NODE.defaultParams, { ...CTX, nodeId: "decal-order" });
+    const decalMesh = meshesOf(res.geometry as THREE.Object3D)[0];
+    expect(decalMesh.renderOrder).toBeGreaterThan(target.renderOrder);
+  });
 });
