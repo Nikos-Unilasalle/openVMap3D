@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { EvalContext } from "../types";
-import { OBJECT_TEXT_NODE } from "./object";
+import { OBJECT_DISC_NODE, OBJECT_TEXT_NODE } from "./object";
 import { BUILTIN_FONTS, FONT_NAMES } from "../../three/fonts/fonts";
 import helvetikerData from "../../three/fonts/helvetikerData.json";
 
@@ -48,5 +48,62 @@ describe("OBJECT_TEXT_NODE font", () => {
     // A new font object must trigger a re-extrude (new geometry instance).
     expect(g2).not.toBe(g1);
     expect(g2.attributes.position.count).toBeGreaterThan(0);
+  });
+});
+
+describe("scalar angle sockets take degrees when wired", () => {
+  // The panel edits these in degrees and stores radians (degrees: true, see
+  // ParamPanel's toStoredUnit). A wired Value node carries a plain unitless
+  // number, so reading it raw meant "36" typed by hand and "36" arriving on a
+  // wire were different angles — 36° versus 36 radians.
+  const disc = (inputs: Record<string, unknown>, params: Record<string, unknown> = {}) =>
+    OBJECT_DISC_NODE.evaluate(
+      inputs,
+      { ...OBJECT_DISC_NODE.defaultParams, ...params },
+      { ...CTX, nodeId: `disc-${JSON.stringify(inputs)}-${JSON.stringify(params)}` },
+    );
+
+  function arcSpanX(res: Record<string, unknown>): number {
+    const mesh = res.geometry as THREE.Mesh;
+    mesh.geometry.computeBoundingBox();
+    const box = mesh.geometry.boundingBox!;
+    return box.max.x - box.min.x;
+  }
+
+  it("a wired 90 on Arc Angle is a quarter turn, the same as typing 90", () => {
+    const wired = disc({ arcAngle: 90 });
+    const typed = disc({}, { arcAngle: Math.PI / 2 });
+    expect(arcSpanX(wired)).toBeCloseTo(arcSpanX(typed), 5);
+  });
+
+  it("a wired 180 on Start Angle matches typing 180, not 180 radians", () => {
+    const wired = disc({ startAngle: 180, arcAngle: 90 });
+    const typed = disc({}, { startAngle: Math.PI, arcAngle: Math.PI / 2 });
+    const asRadians = disc({}, { startAngle: 180, arcAngle: Math.PI / 2 });
+    const w = arcSpanX(wired);
+    expect(w).toBeCloseTo(arcSpanX(typed), 5);
+    // 180 rad wraps to a different part of the circle — proof the raw value
+    // is not simply being passed through.
+    expect(Math.abs(w - arcSpanX(asRadians))).toBeGreaterThan(1e-3);
+  });
+
+  it("leaves the stored param alone — an unwired disc still reads radians", () => {
+    // Both span the full diameter in X, so compare the half that a 0..π arc
+    // actually drops: its lower half.
+    const minY = (res: Record<string, unknown>) => {
+      const mesh = res.geometry as THREE.Mesh;
+      mesh.geometry.computeBoundingBox();
+      return mesh.geometry.boundingBox!.min.y;
+    };
+    const full = disc({}, { arcAngle: Math.PI * 2 });
+    const half = disc({}, { arcAngle: Math.PI });
+    expect(minY(full)).toBeLessThan(-0.1);
+    expect(minY(half)).toBeCloseTo(0, 3);
+  });
+
+  it("a wired 360 fills the circle, where a wired 6.28 would be a hair of one", () => {
+    const wired = disc({ arcAngle: 360 });
+    const typed = disc({}, { arcAngle: Math.PI * 2 });
+    expect(arcSpanX(wired)).toBeCloseTo(arcSpanX(typed), 5);
   });
 });

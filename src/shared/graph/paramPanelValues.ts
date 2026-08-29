@@ -35,6 +35,31 @@ import { Graph, NodeDefinition, NodeInstance } from "./types";
  * this to say so rather than leaving the operator to discover it by typing
  * into a field that silently springs back.
  */
+const DEG_TO_RAD = Math.PI / 180;
+
+/**
+ * Whether a socket is a scalar angle — a `value` input whose param is stored
+ * in radians but labelled and edited in degrees (`degrees: true`).
+ *
+ * These are the sockets that read a wire as degrees (degreesInput in
+ * nodes/object.ts), so the panel has to undo that to get back to the stored
+ * unit everything else here is in. Vector `rotation` sockets are deliberately
+ * excluded: they carry radians between nodes and never went through the
+ * degrees conversion. See graph/angleUnits.test.ts, which pins both sets.
+ */
+function isDegreeScalarSocket(def: NodeDefinition, instance: NodeInstance, socketId: string): boolean {
+  if (!def.inputs?.some((input) => input.id === socketId && input.type === "value")) return false;
+  const fields = [...(def.paramFields ?? [])];
+  try {
+    const dynamic = def.dynamicParamFields?.(instance);
+    if (dynamic) fields.push(...dynamic);
+  } catch {
+    // A builder that needs more than this instance contributes nothing; the
+    // static fields already cover every degrees-marked scalar today.
+  }
+  return fields.some((field) => field.id === socketId && (field as { degrees?: boolean }).degrees === true);
+}
+
 export function connectedSocketIds(graph: Graph, nodeId: string): Set<string> {
   const connected = new Set<string>();
   for (const connection of graph.connections) {
@@ -76,7 +101,14 @@ export function paramPanelValues(
     // keyframed/param fallback the panel should still trust rather than show
     // nothing or a wrong static value for a socket that is ostensibly driven.
     if (socketId in evaluatedInputs && evaluatedInputs[socketId] !== undefined) {
-      merged[socketId] = evaluatedInputs[socketId];
+      const value = evaluatedInputs[socketId];
+      // Everything in `merged` is in STORED units, because the panel converts
+      // on the way out (toDisplayUnit). A scalar angle wire is in degrees
+      // (see degreesInput in nodes/object.ts — it matches the "(°)" label the
+      // operator reads), so it has to come back to radians here or the
+      // panel's own conversion applies a second time and a wired 36° reads
+      // as 2063.
+      merged[socketId] = isDegreeScalarSocket(def, instance, socketId) ? Number(value) * DEG_TO_RAD : value;
     }
   }
 

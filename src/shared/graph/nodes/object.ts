@@ -13,6 +13,36 @@ export function numberInput(input: unknown, param: unknown, fallback: number): n
   return Number.isFinite(n) ? n : fallback;
 }
 
+const DEG_TO_RAD = Math.PI / 180;
+
+/**
+ * A scalar angle socket, in the unit the panel already claims.
+ *
+ * Angle params marked `degrees: true` are *stored* in radians and only
+ * converted for display (ParamPanel's toDisplayUnit/toStoredUnit), which is
+ * right for the stored number but wrong for a wired one: a Value node
+ * carries a plain unitless number, so `numberInput` handed the raw 36
+ * straight through as 36 *radians* while the field beside it said "Arc
+ * Angle (°)". Driving an angle from the graph therefore meant silently
+ * working in a different unit than typing the same number by hand.
+ *
+ * So the wired value is read as degrees — matching the label — while the
+ * param keeps its stored radians.
+ *
+ * This is deliberately only for `value`-typed angle sockets. Vector
+ * `rotation` sockets stay radians: those are fed by other nodes' rotation
+ * *outputs* (Rolling, Decompose Matrix, Wiggle), so the unit has to survive
+ * a round trip through a wire rather than match a text field.
+ */
+export function degreesInput(input: unknown, param: unknown, fallbackRadians: number): number {
+  if (input !== undefined) {
+    const n = Number(input);
+    if (Number.isFinite(n)) return n * DEG_TO_RAD;
+  }
+  const stored = Number(param);
+  return Number.isFinite(stored) ? stored : fallbackRadians;
+}
+
 /**
  * The time a time-driven node should run on.
  *
@@ -813,8 +843,9 @@ export const OBJECT_DISC_NODE: NodeDefinition = {
 
     const radius = Math.max(0.001, numberInput(inputs.radius, params.radius, 0.5));
     const innerRadius = Math.max(0, Math.min(radius - 0.0001, numberInput(inputs.innerRadius, params.innerRadius, 0)));
-    const startAngle = numberInput(inputs.startAngle, params.startAngle, 0);
-    const arcAngle = Math.max(0, Math.min(Math.PI * 2, numberInput(inputs.arcAngle, params.arcAngle, Math.PI * 2)));
+    // Wired in degrees, stored in radians — see degreesInput.
+    const startAngle = degreesInput(inputs.startAngle, params.startAngle, 0);
+    const arcAngle = Math.max(0, Math.min(Math.PI * 2, degreesInput(inputs.arcAngle, params.arcAngle, Math.PI * 2)));
     const depth = Math.max(0, numberInput(inputs.depth, params.depth, 0));
 
     const key = `${radius}_${innerRadius}_${startAngle}_${arcAngle}_${depth}`;

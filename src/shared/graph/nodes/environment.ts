@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
-import { asColor, numberInput } from "./object";
+import { asColor, degreesInput, numberInput } from "./object";
 import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import { createNodeCache } from "../nodeCaches";
@@ -256,7 +256,8 @@ export const ENVIRONMENT_NODE: NodeDefinition = {
       params.backgroundFit === "contain" || params.backgroundFit === "stretch" ? params.backgroundFit : "cover";
     const backgroundScale = asVector(inputs.backgroundScale, asVector(params.backgroundScale, new THREE.Vector3(1, 1, 1)));
     const backgroundOffset = asVector(inputs.backgroundOffset, asVector(params.backgroundOffset, new THREE.Vector3(0, 0, 0)));
-    const backgroundRotation = numberInput(inputs.backgroundRotation, params.backgroundRotation, 0);
+    // Wired in degrees, stored in radians (three's texture.rotation) — see degreesInput.
+    const backgroundRotation = degreesInput(inputs.backgroundRotation, params.backgroundRotation, 0);
 
     const envData: EnvironmentData = {
       color,

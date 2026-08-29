@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { describe, expect, test } from "vitest";
 import { EvalResult } from "./evaluate";
 import { DEFAULT_REGISTRY } from "./nodes";
-import { OBJECT_EMPTY_NODE } from "./nodes/object";
+import { OBJECT_DISC_NODE, OBJECT_EMPTY_NODE } from "./nodes/object";
 import { connectedSocketIds, paramPanelValues } from "./paramPanelValues";
 import { Graph, NodeInstance } from "./types";
 
@@ -164,5 +164,46 @@ describe("connectedSocketIds", () => {
     const graph: Graph = { nodes: [node("a", "canvas/goto")], connections: [] };
 
     expect(connectedSocketIds(graph, "a")).toEqual(new Set());
+  });
+});
+
+describe("paramPanelValues — scalar angle sockets", () => {
+  // The panel converts on the way out (toDisplayUnit: radians -> degrees), so
+  // everything paramPanelValues hands it must be in stored units. A scalar
+  // angle wire is in degrees (degreesInput), so it has to be converted back
+  // here — without it the panel converted a second time and a wired 36 read
+  // as 2063.
+  function discWired(wired: number) {
+    const instance: NodeInstance = { id: "disc1", type: OBJECT_DISC_NODE.type, params: {}, position: { x: 0, y: 0 } };
+    const source = node("v1", "value/constant");
+    const graph: Graph = {
+      nodes: [instance, source],
+      connections: [{ id: "c", fromNode: "v1", fromSocket: "out", toNode: "disc1", toSocket: "arcAngle" }],
+    };
+    const results: EvalResult = new Map([["disc1", { __evaluatedInputs: { arcAngle: wired } }]]);
+    return paramPanelValues(graph, instance, OBJECT_DISC_NODE, results);
+  }
+
+  test("a wired 36 is stored as 36 degrees' worth of radians, so the panel shows 36", () => {
+    const values = discWired(36);
+    expect(values.arcAngle as number).toBeCloseTo((36 * Math.PI) / 180, 6);
+  });
+
+  test("a wired 360 reads back as a full turn", () => {
+    expect(discWired(360).arcAngle as number).toBeCloseTo(Math.PI * 2, 6);
+  });
+
+  test("a vector rotation socket is left in radians — it carries a rotation between nodes", () => {
+    const instance: NodeInstance = { id: "t1", type: "transform", params: {}, position: { x: 0, y: 0 } };
+    const source = node("r1", "physics/rolling");
+    const graph: Graph = {
+      nodes: [instance, source],
+      connections: [{ id: "c", fromNode: "r1", fromSocket: "rotation", toNode: "t1", toSocket: "rotation" }],
+    };
+    const rot = new THREE.Vector3(Math.PI / 2, 0, 0);
+    const results: EvalResult = new Map([["t1", { __evaluatedInputs: { rotation: rot } }]]);
+    const def = DEFAULT_REGISTRY.get("transform")!;
+    const values = paramPanelValues(graph, instance, def, results);
+    expect(values.rotation).toBe(rot);
   });
 });
