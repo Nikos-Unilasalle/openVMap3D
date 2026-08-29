@@ -10,6 +10,7 @@ import {
   TEXT_SPLIT_NODE,
   TEXT_SUBSTRING_NODE,
   TEXT_TRIM_NODE,
+  TEXT_RANDOM_NODE,
 } from "./text";
 
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "test" };
@@ -102,5 +103,41 @@ describe("Text manipulation nodes", () => {
         CTX
       )
     ).toEqual({ value: 1 });
+  });
+
+  it("TEXT_TRIM_NODE trims only the requested side", () => {
+    expect(TEXT_TRIM_NODE.evaluate({ text: "  pad  " }, { mode: "start" }, CTX)).toEqual({ text: "pad  " });
+    expect(TEXT_TRIM_NODE.evaluate({ text: "  pad  " }, { mode: "end" }, CTX)).toEqual({ text: "  pad" });
+    expect(TEXT_TRIM_NODE.evaluate({ text: "  pad  " }, { mode: "both" }, CTX)).toEqual({ text: "pad" });
+  });
+});
+
+describe("TEXT_RANDOM_NODE", () => {
+  it("is deterministic for a given seed", () => {
+    const a = TEXT_RANDOM_NODE.evaluate({ seed: 7, length: 5 }, { mode: "words" }, CTX);
+    const b = TEXT_RANDOM_NODE.evaluate({ seed: 7, length: 5 }, { mode: "words" }, CTX);
+    expect(a).toEqual(b);
+  });
+
+  it("changes output when the seed changes", () => {
+    const a = TEXT_RANDOM_NODE.evaluate({ seed: 1, length: 6 }, { mode: "letters" }, CTX).text;
+    const b = TEXT_RANDOM_NODE.evaluate({ seed: 2, length: 6 }, { mode: "letters" }, CTX).text;
+    expect(a).not.toBe(b);
+  });
+
+  it("word mode joins `length` on-theme words with spaces", () => {
+    const res = TEXT_RANDOM_NODE.evaluate({ seed: 3, length: 4 }, { mode: "words" }, CTX);
+    expect(String(res.text).split(" ")).toHaveLength(4);
+  });
+
+  it("character modes respect their charset", () => {
+    const digits = TEXT_RANDOM_NODE.evaluate({ seed: 5, length: 12 }, { mode: "digits" }, CTX).text as string;
+    expect(digits).toMatch(/^[0-9]{12}$/);
+
+    const letters = TEXT_RANDOM_NODE.evaluate({ seed: 5, length: 12 }, { mode: "letters" }, CTX).text as string;
+    expect(letters).toMatch(/^[a-z]{12}$/);
+
+    const alnum = TEXT_RANDOM_NODE.evaluate({ seed: 5, length: 12 }, { mode: "alphanumeric" }, CTX).text as string;
+    expect(alnum).toMatch(/^[a-z0-9]{12}$/);
   });
 });

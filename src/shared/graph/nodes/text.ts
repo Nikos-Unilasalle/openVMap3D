@@ -1,4 +1,5 @@
 import { NodeDefinition } from "../types";
+import { createPRNG } from "../../math/random";
 
 /** Text Constant node — outputs a fixed text string. */
 export const TEXT_CONSTANT_NODE: NodeDefinition = {
@@ -174,10 +175,17 @@ export const TEXT_TRIM_NODE: NodeDefinition = {
   category: "text",
   inputs: [{ id: "text", label: "Text", type: "text" }],
   outputs: [{ id: "text", label: "Text", type: "text" }],
-  defaultParams: { text: "" },
-  paramFields: [{ id: "text", label: "Text", kind: "text" }],
+  defaultParams: { text: "", mode: "both" },
+  paramFields: [
+    { id: "text", label: "Text", kind: "text" },
+    { id: "mode", label: "Mode", kind: "select", options: ["both", "start", "end"] },
+  ],
   evaluate: (inputs, params) => {
     const str = inputs.text !== undefined ? String(inputs.text) : String(params.text ?? "");
+    const mode = String(params.mode || "both");
+
+    if (mode === "start") return { text: str.trimStart() };
+    if (mode === "end") return { text: str.trimEnd() };
     return { text: str.trim() };
   },
 };
@@ -227,5 +235,58 @@ export const TEXT_COMPARE_NODE: NodeDefinition = {
     }
 
     return { value: match ? 1 : 0 };
+  },
+};
+
+const RANDOM_TEXT_CHARSETS: Record<string, string> = {
+  letters: "abcdefghijklmnopqrstuvwxyz",
+  alphanumeric: "abcdefghijklmnopqrstuvwxyz0123456789",
+  digits: "0123456789",
+};
+
+/** A small, on-theme word bank — placeholder text that reads as "graph node" rather than "lorem ipsum". */
+const RANDOM_TEXT_WORDS = [
+  "node", "graph", "curve", "vertex", "vector", "matrix", "surface", "light",
+  "pulse", "orbit", "stream", "signal", "array", "particle", "texture",
+  "trail", "wave", "field", "mesh", "spline", "prism", "socket", "render",
+  "cascade", "drift", "flux", "spiral", "shard", "beacon", "lattice",
+];
+
+/** Random Text node — a seeded, reproducible random string: words for placeholder labels, or raw characters for ids/codes. */
+export const TEXT_RANDOM_NODE: NodeDefinition = {
+  type: "text/random",
+  label: "Random Text",
+  category: "text",
+  inputs: [
+    { id: "seed", label: "Seed", type: "value" },
+    { id: "length", label: "Length", type: "value" },
+  ],
+  outputs: [{ id: "text", label: "Text", type: "text" }],
+  defaultParams: { seed: 0, length: 3, mode: "words" },
+  paramFields: [
+    { id: "mode", label: "Mode", kind: "select", options: ["words", "letters", "alphanumeric", "digits"] },
+    { id: "length", label: "Length (words or characters)", kind: "number", step: 1 },
+    { id: "seed", label: "Seed", kind: "number", step: 1 },
+  ],
+  evaluate: (inputs, params) => {
+    const seed = inputs.seed !== undefined ? Number(inputs.seed) : Number(params.seed) || 0;
+    const length = Math.max(1, Math.floor(inputs.length !== undefined ? Number(inputs.length) : Number(params.length) || 1));
+    const mode = String(params.mode || "words");
+    const rng = createPRNG(seed);
+
+    if (mode === "words") {
+      const words: string[] = [];
+      for (let i = 0; i < length; i++) {
+        words.push(RANDOM_TEXT_WORDS[Math.floor(rng() * RANDOM_TEXT_WORDS.length)]);
+      }
+      return { text: words.join(" ") };
+    }
+
+    const charset = RANDOM_TEXT_CHARSETS[mode] ?? RANDOM_TEXT_CHARSETS.letters;
+    let out = "";
+    for (let i = 0; i < length; i++) {
+      out += charset[Math.floor(rng() * charset.length)];
+    }
+    return { text: out };
   },
 };
