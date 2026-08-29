@@ -36,7 +36,7 @@ export const WIGGLE_NODE: NodeDefinition = {
   outputs: [
     { id: "value", label: "Value", type: "value" },
     { id: "vector", label: "Vector", type: "vector" },
-    { id: "rotation", label: "Rotation (°)", type: "vector" },
+    { id: "rotation", label: "Rotation", type: "vector" },
     { id: "scale", label: "Scale", type: "vector" },
     { id: "matrix", label: "Matrix", type: "matrix" },
   ],
@@ -120,6 +120,9 @@ export const WIGGLE_NODE: NodeDefinition = {
     );
 
     // 8. Transform Matrix Wiggle
+    // Rot Amp is in degrees (see its param field); a rotation only becomes an
+    // angle once it is in radians, which is what both the matrix below and
+    // the `rotation` output need.
     const eulerRad = new THREE.Euler(
       (rotVal.x * Math.PI) / 180,
       (rotVal.y * Math.PI) / 180,
@@ -135,7 +138,13 @@ export const WIGGLE_NODE: NodeDefinition = {
     return {
       value: scalarVal,
       vector: vectorVal,
-      rotation: rotVal,
+      // Radians, NOT the degrees Rot Amp is authored in. A `rotation` vector
+      // socket is a rotation being handed between nodes, and every consumer
+      // of one (composeTransform via resolveRotationVector) reads radians —
+      // matching Decompose Matrix and Rolling, which both emit a quaternion's
+      // Euler. Emitting degrees here made Wiggle -> Transform.Rotation spin
+      // about 57x too far.
+      rotation: new THREE.Vector3(eulerRad.x, eulerRad.y, eulerRad.z),
       scale: scaleVal,
       matrix: finalMat,
     };

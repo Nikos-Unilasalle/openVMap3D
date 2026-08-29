@@ -1304,7 +1304,7 @@ export const SAMPLE_CURVE_NODE: NodeDefinition = {
     { id: "position", label: "Position", type: "vector" },
     { id: "tangent", label: "Tangent", type: "vector" },
     { id: "matrix", label: "Matrix", type: "matrix" },
-    { id: "rotation", label: "Rotation (°)", type: "vector" },
+    { id: "rotation", label: "Rotation", type: "vector" },
   ],
   defaultParams: {
     progress: 0.0,
@@ -1358,13 +1358,11 @@ export const SAMPLE_CURVE_NODE: NodeDefinition = {
       tangent.transformDirection(curvePose).normalize();
     }
 
-    // Extract Euler angles in degrees
+    // Radians, the unit every `rotation` vector socket carries — this feeds a
+    // Transform's Rotation directly, and composeTransform reads radians.
+    // Emitting degrees made a sampled curve pose spin about 57x too far.
     const euler = new THREE.Euler().setFromRotationMatrix(matrix);
-    const rotation = new THREE.Vector3(
-      (euler.x * 180) / Math.PI,
-      (euler.y * 180) / Math.PI,
-      (euler.z * 180) / Math.PI
-    );
+    const rotation = new THREE.Vector3(euler.x, euler.y, euler.z);
 
     return {
       position,

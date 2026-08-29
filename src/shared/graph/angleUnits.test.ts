@@ -105,6 +105,25 @@ describe("angle units", () => {
     expect([...new Set(vectors)].sort()).toEqual(RADIAN_VECTOR_SOCKETS);
   });
 
+  it("every rotation vector OUTPUT is in radians, so it can drive a rotation input", () => {
+    // The other half of the vector convention. A `rotation` output exists to
+    // be wired into a `rotation` input, and every consumer of one reads
+    // radians (composeTransform via resolveRotationVector). Wiggle and Curve
+    // Sample used to emit degrees — labelled "(°)" and everything — so
+    // wiring either into a Transform spun it about 57x too far.
+    //
+    // A cheap smoke check on the label only — the behaviour is pinned in
+    // nodes/angleParams.test.ts, which asserts each node's `rotation` output
+    // agrees with the Euler of its own `matrix` output (57x apart if degrees
+    // ever creep back in).
+    for (const def of STARTER_NODES) {
+      for (const out of def.outputs ?? []) {
+        if (out.type !== "vector" || !/rot/i.test(out.id)) continue;
+        expect(out.label, `${def.type}.${out.id} is labelled as degrees`).not.toContain("°");
+      }
+    }
+  });
+
   it("degree-stored params are never marked degrees: true", () => {
     for (const [type, paramId] of DEGREE_STORED_PARAMS) {
       const def = DEFAULT_REGISTRY.get(type);

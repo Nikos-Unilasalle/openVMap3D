@@ -64,10 +64,12 @@ describe("angle params stored in degrees", () => {
     expect(flat.distanceTo(leaned)).toBeGreaterThan(0.5);
   });
 
-  it("animation/wiggle: Rot Amp is degrees, so 180 can swing a half turn", () => {
-    // The rotation output is the amplitude times noise in [-1, 1], so a large
-    // amplitude has to produce a large angle. Read as radians it would be
-    // capped at a few degrees no matter what was typed.
+  it("animation/wiggle: Rot Amp is degrees, so 180 swings a large angle", () => {
+    // The output is amplitude x noise in [-1, 1], reported in radians, so an
+    // amplitude of 180 DEGREES approaches +/-pi. Were the param marked
+    // degrees: true, the panel would store 180 as 3.14 and the same noise
+    // would come out under 0.06 rad — two orders apart, so a threshold of 1
+    // rad separates them cleanly.
     let maxAbs = 0;
     for (let step = 0; step < 60; step++) {
       const res = WIGGLE_NODE.evaluate(
@@ -78,6 +80,47 @@ describe("angle params stored in degrees", () => {
       const rot = res.rotation as THREE.Vector3;
       maxAbs = Math.max(maxAbs, Math.abs(rot.x), Math.abs(rot.y), Math.abs(rot.z));
     }
-    expect(maxAbs).toBeGreaterThan(20);
+    expect(maxAbs).toBeGreaterThan(1);
+  });
+});
+
+/**
+ * A `rotation` vector OUTPUT exists to be wired into a `rotation` input, and
+ * every consumer of one reads radians (composeTransform via
+ * resolveRotationVector). Wiggle and Curve Sample used to emit degrees, so
+ * wiring either into a Transform spun it about 57x too far.
+ *
+ * Each is checked against the node's OWN matrix output rather than a
+ * hand-computed angle: the two describe the same pose, so they have to agree
+ * whatever the noise or curve happens to produce that frame.
+ */
+describe("rotation vector outputs are radians", () => {
+  function eulerOfMatrix(m: THREE.Matrix4): THREE.Vector3 {
+    const q = new THREE.Quaternion();
+    m.decompose(new THREE.Vector3(), q, new THREE.Vector3());
+    const e = new THREE.Euler().setFromQuaternion(q, "YXZ");
+    return new THREE.Vector3(e.x, e.y, e.z);
+  }
+
+  it("animation/wiggle: the rotation output matches the Euler of its own matrix", () => {
+    let checked = 0;
+    for (let step = 1; step < 40; step++) {
+      const res = WIGGLE_NODE.evaluate(
+        {},
+        { ...WIGGLE_NODE.defaultParams, rotationAmplitude: new THREE.Vector3(120, 120, 120) },
+        { ...CTX, nodeId: "w-out", time: step * 0.31, step },
+      );
+      const rot = res.rotation as THREE.Vector3;
+      const fromMatrix = eulerOfMatrix(res.matrix as THREE.Matrix4);
+      // Skip frames near a gimbal edge, where two Eulers describe one pose.
+      if (Math.abs(Math.abs(fromMatrix.y) - Math.PI / 2) < 0.05) continue;
+      expect(rot.x).toBeCloseTo(fromMatrix.x, 4);
+      expect(rot.y).toBeCloseTo(fromMatrix.y, 4);
+      expect(rot.z).toBeCloseTo(fromMatrix.z, 4);
+      // A 120° amplitude in degrees would run past 2 rad on most frames.
+      expect(Math.max(Math.abs(rot.x), Math.abs(rot.y), Math.abs(rot.z))).toBeLessThan(Math.PI * 2);
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(10);
   });
 });
