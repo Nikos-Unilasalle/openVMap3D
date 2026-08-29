@@ -102,6 +102,7 @@ import { ORBIT_NODE, STAGGER_NODE, TIME_REMAP_NODE } from "./motion";
 import { TRAIL_NODE } from "./trail";
 import { SQUASH_STRETCH_NODE } from "./squash";
 import { VELOCITY_NODE } from "./velocity";
+import { ROLLING_NODE } from "./rolling";
 import { SPRING_NODE, SPRING_VECTOR_NODE } from "./spring";
 import { MESH_TO_POINTS_NODE, POINTS_TO_MESH_NODE } from "./pointsGeometry";
 import { POINTS_SELECTION_NODE } from "./pointsSelection";
@@ -302,6 +303,7 @@ export const STARTER_NODES = [
   TRAIL_NODE,
   SQUASH_STRETCH_NODE,
   VELOCITY_NODE,
+  ROLLING_NODE,
   SPRING_NODE,
   SPRING_VECTOR_NODE,
   MESH_TO_POINTS_NODE,
