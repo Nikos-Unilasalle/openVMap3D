@@ -120,3 +120,136 @@ describe("BOOLEAN_NODE", () => {
     expect(mesh.geometry.groups.length).toBeGreaterThan(0);
   });
 });
+
+/**
+ * A Group of meshes is what Array / Merge / an imported model hand down a
+ * `geometry` wire — the shape Boolean used to see only the first mesh of.
+ */
+function groupOf(...meshes: THREE.Mesh[]): THREE.Group {
+  const group = new THREE.Group();
+  meshes.forEach((m) => group.add(m));
+  group.updateMatrixWorld(true);
+  return group;
+}
+
+/** How far the result actually reaches along X — the cheapest proof a distant part took part. */
+function boundsX(mesh: THREE.Mesh): { min: number; max: number } {
+  mesh.geometry.computeBoundingBox();
+  const box = mesh.geometry.boundingBox!;
+  return { min: box.min.x, max: box.max.x };
+}
+
+describe("BOOLEAN_NODE — multi-mesh inputs (Array, Merge, imported models)", () => {
+  it("cuts with every mesh of the Boolean Shape, not just the first", () => {
+    // Three separate cutters spread along X. Only the first overlaps the bar
+    // near x=0; if the other two were dropped the bar would keep its full
+    // span, which is exactly what an Array wired into Boolean Shape used to do.
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(12, 1, 1), new THREE.MeshStandardMaterial());
+    bar.matrixAutoUpdate = false;
+    bar.matrix.identity();
+    bar.updateMatrixWorld(true);
+
+    const cutters = groupOf(boxAt(-5.9), boxAt(0), boxAt(5.9));
+    const res = BOOLEAN_NODE.evaluate(
+      { geometry: bar, boolean: cutters, operation: "subtract" },
+      BOOLEAN_NODE.defaultParams,
+      { ...CTX, nodeId: "bool-multi-b" },
+    );
+    const mesh = res.geometry as THREE.Mesh;
+    const { min, max } = boundsX(mesh);
+    // The far cutters straddle both ends (±5.9 ± 0.5), so a bar that really
+    // met all three is bitten in at each end rather than reaching ±6.
+    expect(min).toBeGreaterThan(-6);
+    expect(max).toBeLessThan(6);
+  });
+
+  it("subtracts from every mesh of the target, not just the first", () => {
+    const targets = groupOf(boxAt(0), boxAt(4));
+    // One tall cutter crossing both boxes.
+    const cutter = new THREE.Mesh(new THREE.BoxGeometry(10, 0.4, 2), new THREE.MeshStandardMaterial());
+    cutter.matrixAutoUpdate = false;
+    cutter.matrix.makeTranslation(2, 0, 0);
+    cutter.updateMatrixWorld(true);
+
+    const res = BOOLEAN_NODE.evaluate(
+      { geometry: targets, boolean: cutter, operation: "subtract" },
+      BOOLEAN_NODE.defaultParams,
+      { ...CTX, nodeId: "bool-multi-a" },
+    );
+    const mesh = res.geometry as THREE.Mesh;
+    // Both boxes survive in the result — dropping the second would end the
+    // geometry near x=0.5 instead of reaching the far box at x=4.
+    expect(boundsX(mesh).max).toBeGreaterThan(3);
+  });
+
+  it("intersects against the union of the parts, so disjoint cutters do not cancel out", () => {
+    // Folding the parts one after another (A ∩ B1 ∩ B2) is empty whenever the
+    // cutters are disjoint, which is every Array. The parts have to combine
+    // into one shape first.
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(12, 1, 1), new THREE.MeshStandardMaterial());
+    bar.matrixAutoUpdate = false;
+    bar.matrix.identity();
+    bar.updateMatrixWorld(true);
+
+    const cutters = groupOf(boxAt(-3), boxAt(3));
+    const res = BOOLEAN_NODE.evaluate(
+      { geometry: bar, boolean: cutters, operation: "intersect" },
+      BOOLEAN_NODE.defaultParams,
+      { ...CTX, nodeId: "bool-multi-int" },
+    );
+    const mesh = res.geometry as THREE.Mesh;
+    expect(mesh.geometry.attributes.position.count).toBeGreaterThan(0);
+    // Both cut-outs survive: the result spans from the left box to the right.
+    const { min, max } = boundsX(mesh);
+    expect(min).toBeLessThan(-2);
+    expect(max).toBeGreaterThan(2);
+  });
+
+  it("merges parts that carry different attribute sets rather than refusing them", () => {
+    // A hand-built part with no uv next to a primitive that has one — the
+    // mismatch mergeGeometries would otherwise reject outright.
+    const plain = new THREE.BoxGeometry(1, 1, 1);
+    plain.deleteAttribute("uv");
+    const bare = new THREE.Mesh(plain, new THREE.MeshStandardMaterial());
+    bare.matrixAutoUpdate = false;
+    bare.matrix.makeTranslation(0, 0, 0);
+    bare.updateMatrixWorld(true);
+
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(12, 1, 1), new THREE.MeshStandardMaterial());
+    bar.matrixAutoUpdate = false;
+    bar.matrix.identity();
+    bar.updateMatrixWorld(true);
+
+    const res = BOOLEAN_NODE.evaluate(
+      { geometry: bar, boolean: groupOf(bare, boxAt(5.9)), operation: "subtract" },
+      BOOLEAN_NODE.defaultParams,
+      { ...CTX, nodeId: "bool-multi-attrs" },
+    );
+    const mesh = res.geometry as THREE.Mesh;
+    expect(mesh.geometry.attributes.position.count).toBeGreaterThan(0);
+    expect(boundsX(mesh).max).toBeLessThan(6);
+  });
+
+  it("re-runs the CSG when one instance deep in a multi-mesh input moves", () => {
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(12, 1, 1), new THREE.MeshStandardMaterial());
+    bar.matrixAutoUpdate = false;
+    bar.matrix.identity();
+    bar.updateMatrixWorld(true);
+
+    const far = boxAt(5.9);
+    const cutters = groupOf(boxAt(0), far);
+    const ctx = { ...CTX, nodeId: "bool-multi-sig" };
+    const first = BOOLEAN_NODE.evaluate({ geometry: bar, boolean: cutters, operation: "subtract" }, BOOLEAN_NODE.defaultParams, ctx);
+    const firstMax = boundsX(first.geometry as THREE.Mesh).max;
+
+    // Move only the second cutter off the bar's end — the signature has to
+    // notice a mesh that is not the first one.
+    far.matrix.makeTranslation(20, 0, 0);
+    far.updateMatrixWorld(true);
+    cutters.updateMatrixWorld(true);
+    const second = BOOLEAN_NODE.evaluate({ geometry: bar, boolean: cutters, operation: "subtract" }, BOOLEAN_NODE.defaultParams, ctx);
+    const secondMax = boundsX(second.geometry as THREE.Mesh).max;
+
+    expect(secondMax).toBeGreaterThan(firstMax);
+  });
+});

@@ -25,6 +25,24 @@ import { isFatLine, isRealMesh } from "../three/objectKinds";
  */
 const warned = new Set<string>();
 
+/**
+ * *Every* real Mesh in an object tree, in traversal order — for the nodes
+ * that must act on a whole multi-part object rather than one piece of it.
+ *
+ * `findFirstMesh` is the right call for a node that reads a single surface,
+ * but a node combining shapes has to see all of them: Array/Merge/an imported
+ * model hand down a Group of many meshes, and taking only the first silently
+ * drops the rest (a Boolean fed an Array cut one instance and ignored the
+ * other N-1, with nothing to say why).
+ */
+export function collectMeshes(root: THREE.Object3D): THREE.Mesh[] {
+  const found: THREE.Mesh[] = [];
+  root.traverse((child) => {
+    if (isRealMesh(child) && child.geometry?.attributes.position) found.push(child);
+  });
+  return found;
+}
+
 /** The first *real* Mesh anywhere in an object tree — what a vertex-level node actually operates on. Fat lines are excluded, see isFatLine. */
 export function findFirstMesh(root: THREE.Object3D): THREE.Mesh | null {
   if (isRealMesh(root)) return root;
