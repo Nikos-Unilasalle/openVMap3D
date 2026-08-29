@@ -4,6 +4,7 @@ import {
   describeAsset,
   detectPlatform,
   formatSize,
+  LAUNCH_NOTES,
   orderedPlatforms,
   Release,
 } from "./downloads";
@@ -162,5 +163,36 @@ describe("the real v0.1.0 release", () => {
     expect(describeAsset("Tsuji_0.1.0_x64-setup.exe")).toBe("exe · x64");
     expect(describeAsset("Tsuji_0.1.0_amd64.AppImage")).toBe("AppImage · amd64");
     expect(describeAsset("Tsuji-0.1.0-1.x86_64.rpm")).toBe("rpm · x86_64");
+  });
+});
+
+describe("LAUNCH_NOTES", () => {
+  it("gives macOS the exact command that unblocks the app", () => {
+    // Verified by hand on a real 0.1.0 .dmg: without clearing the quarantine
+    // flag macOS reports the app as damaged, which reads as a corrupt
+    // download rather than a signing policy — so the command is not a tip,
+    // it is the difference between a working download and a dead one.
+    expect(LAUNCH_NOTES.mac.command).toBe("xattr -cr /Applications/Tsuji.app");
+  });
+
+  it("matches the bundle's real capitalisation, for case-sensitive volumes", () => {
+    // A default macOS volume is case-insensitive, so a lowercase path also
+    // works there — but only this spelling works on a case-sensitive one.
+    expect(LAUNCH_NOTES.mac.command).toContain("Tsuji.app");
+  });
+
+  it("tells Windows users what SmartScreen will ask, with no command to run", () => {
+    expect(LAUNCH_NOTES.windows.command).toBeUndefined();
+    expect(LAUNCH_NOTES.windows.text).toMatch(/SmartScreen/);
+  });
+
+  it("covers the AppImage executable bit, which a browser download drops", () => {
+    expect(LAUNCH_NOTES.linux.command).toBe("chmod +x Tsuji_*.AppImage");
+  });
+
+  it("has a note for every platform, so none is left unexplained", () => {
+    for (const p of ["mac", "windows", "linux"] as const) {
+      expect(LAUNCH_NOTES[p].text.length).toBeGreaterThan(0);
+    }
   });
 });

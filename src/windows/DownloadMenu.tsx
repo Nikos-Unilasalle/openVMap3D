@@ -5,6 +5,7 @@ import {
   detectPlatform,
   formatSize,
   LATEST_RELEASE_API_URL,
+  LAUNCH_NOTES,
   orderedPlatforms,
   PLATFORM_LABELS,
   Release,
@@ -32,7 +33,21 @@ export const DownloadMenu: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [state, setState] = useState<LoadState>("idle");
   const [release, setRelease] = useState<Release | null>(null);
+  const [copied, setCopied] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+
+  const copyCommand = useCallback((command: string) => {
+    // Clipboard access can be refused (insecure origin, denied permission),
+    // and the command is on screen either way — so a failure just leaves the
+    // label alone rather than raising anything.
+    void navigator.clipboard?.writeText(command).then(
+      () => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1500);
+      },
+      () => {},
+    );
+  }, []);
 
   const platform = detectPlatform(
     typeof navigator === "undefined" ? "" : navigator.userAgent,
@@ -91,7 +106,7 @@ export const DownloadMenu: React.FC = () => {
       <button
         className={`top-bar-button top-bar-button-download${isOpen ? " top-bar-button-output-active" : ""}`}
         onClick={() => setIsOpen((v) => !v)}
-        title="Télécharger l'application de bureau"
+        title="Download the desktop app"
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -104,13 +119,13 @@ export const DownloadMenu: React.FC = () => {
       {isOpen && (
         <div className="download-menu-panel" role="menu">
           <div className="download-menu-header">
-            Application de bureau
+            Desktop app
             {state === "ready" && release?.tag_name && (
               <span className="download-menu-version">{release.tag_name}</span>
             )}
           </div>
 
-          {state === "loading" && <div className="download-menu-note">Recherche de la dernière version…</div>}
+          {state === "loading" && <div className="download-menu-note">Looking for the latest release…</div>}
 
           {state === "ready" && hasAnyAsset &&
             platforms.map((p) => {
@@ -120,7 +135,7 @@ export const DownloadMenu: React.FC = () => {
                 <div className="download-menu-group" key={p}>
                   <div className="download-menu-group-label">
                     {PLATFORM_LABELS[p]}
-                    {p === platform && <span className="download-menu-badge">votre système</span>}
+                    {p === platform && <span className="download-menu-badge">your system</span>}
                   </div>
                   {assets.map((asset) => (
                     <a
@@ -144,8 +159,8 @@ export const DownloadMenu: React.FC = () => {
           {(state === "error" || (state === "ready" && !hasAnyAsset)) && (
             <div className="download-menu-note">
               {state === "error"
-                ? "Impossible de joindre GitHub pour l'instant."
-                : "Aucun binaire publié pour le moment."}
+                ? "Could not reach GitHub right now."
+                : "No binaries published yet."}
             </div>
           )}
 
@@ -156,13 +171,24 @@ export const DownloadMenu: React.FC = () => {
             rel="noreferrer noopener"
             onClick={() => setIsOpen(false)}
           >
-            <span className="download-menu-item-label">Toutes les versions sur GitHub ↗</span>
-            <span className="download-menu-item-desc">Notes de version et fichiers précédents</span>
+            <span className="download-menu-item-label">All releases on GitHub ↗</span>
+            <span className="download-menu-item-desc">Release notes and earlier builds</span>
           </a>
 
-          {state === "ready" && hasAnyAsset && (
+          {state === "ready" && hasAnyAsset && platform && (
             <div className="download-menu-note download-menu-note-quiet">
-              Binaires non signés : macOS et Windows demanderont une confirmation au premier lancement.
+              {LAUNCH_NOTES[platform].text}
+              {LAUNCH_NOTES[platform].command && (
+                <button
+                  type="button"
+                  className="download-menu-command"
+                  title="Copy to clipboard"
+                  onClick={() => copyCommand(LAUNCH_NOTES[platform].command!)}
+                >
+                  <code>{LAUNCH_NOTES[platform].command}</code>
+                  <span className="download-menu-command-hint">{copied ? "copied" : "copy"}</span>
+                </button>
+              )}
             </div>
           )}
         </div>

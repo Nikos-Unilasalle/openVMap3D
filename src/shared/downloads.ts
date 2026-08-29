@@ -121,6 +121,42 @@ export function describeAsset(name: string): string {
   return format;
 }
 
+/**
+ * What stands between downloading a build and running it.
+ *
+ * None of this is optional advice: the builds are unsigned, and every
+ * platform blocks an unsigned download in its own way. On macOS it is not
+ * even a prompt — Gatekeeper quarantines the bundle and reports it as
+ * damaged, which reads like a corrupt file rather than a policy, so the
+ * command to clear the flag has to be shown or the download is simply dead.
+ *
+ * Only the visitor's own platform note is rendered; a macOS terminal command
+ * shown to a Windows user is noise.
+ */
+export interface LaunchNote {
+  /** The situation, in one sentence. */
+  text: string;
+  /** A command to run, when the fix is one. */
+  command?: string;
+}
+
+export const LAUNCH_NOTES: Record<Platform, LaunchNote> = {
+  mac: {
+    text: "Unsigned build: macOS quarantines it and reports it as damaged. Drag Tsuji to Applications, then clear the flag once:",
+    // Capitalised to match the bundle's own name. A default macOS volume is
+    // case-insensitive so either spelling works, but a case-sensitive one
+    // only accepts this.
+    command: "xattr -cr /Applications/Tsuji.app",
+  },
+  windows: {
+    text: "Unsigned build: SmartScreen will warn on first launch. Choose “More info”, then “Run anyway”.",
+  },
+  linux: {
+    text: "An AppImage arrives without the executable bit. Set it once, then run the file:",
+    command: "chmod +x Tsuji_*.AppImage",
+  },
+};
+
 /** Human file size for the menu rows. */
 export function formatSize(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "";

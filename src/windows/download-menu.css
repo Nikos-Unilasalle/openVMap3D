@@ -117,3 +117,45 @@
   padding-top: 2px;
   opacity: 0.75;
 }
+
+/* The first-launch command — a button so it can be copied, styled as the
+   terminal line it is rather than as another menu action. */
+.download-menu-command {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 5px 7px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--chrome-border);
+  border-radius: 5px;
+  color: var(--chrome-text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s ease;
+}
+
+.download-menu-command:hover {
+  border-color: #22c55e;
+}
+
+.download-menu-command code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  color: #4ade80;
+  /* Wraps rather than truncating: a half-shown command is unreadable, and
+     copying is not the only way it gets used — plenty of people retype it or
+     want to see what they are about to run before they run it. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.download-menu-command-hint {
+  flex: none;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--chrome-text-muted);
+}
