@@ -155,6 +155,60 @@ describe("DECAL_NODE", () => {
     expect(decal.matrix.equals(new THREE.Matrix4())).toBe(true);
   });
 
+  it("a wired matrix drives the projector's rotation, not just its position", () => {
+    // Regression: the matrix input used to feed only setFromMatrixPosition
+    // into the projector, leaving rotation on the static (identity-default)
+    // param no matter what was wired — so wiring an object's own transform
+    // into Decal followed it through translation only. A rotated object
+    // would leave its decal's clipping box facing the old direction, sliding
+    // off the surface as soon as the object turned.
+    const cube = () => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(4, 4, 4));
+      m.updateMatrixWorld(true);
+      return m;
+    };
+    const facingZ = new THREE.Matrix4().makeTranslation(0, 0, 2);
+    const facingX = new THREE.Matrix4().compose(
+      new THREE.Vector3(0, 0, 2),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI / 2, 0)),
+      new THREE.Vector3(1, 1, 1),
+    );
+
+    const resA = DECAL_NODE.evaluate({ geometry: cube(), matrix: facingZ }, DECAL_NODE.defaultParams, { ...CTX, nodeId: "decal-rot-a" });
+    const resB = DECAL_NODE.evaluate({ geometry: cube(), matrix: facingX }, DECAL_NODE.defaultParams, { ...CTX, nodeId: "decal-rot-b" });
+
+    const meshA = meshesOf(resA.geometry as THREE.Object3D)[0];
+    const meshB = meshesOf(resB.geometry as THREE.Object3D)[0];
+    expect(meshA).toBeTruthy();
+    expect(meshB).toBeTruthy();
+
+    // Two different clipping orientations must land on different patches of
+    // the cube's faces — identical vertex data would mean the rotation
+    // wired in was never actually applied.
+    const a = meshA.geometry.getAttribute("position").array;
+    const b = meshB.geometry.getAttribute("position").array;
+    const identical = a.length === b.length && Array.from(a).every((v, i) => Math.abs(v - b[i]) < 1e-6);
+    expect(identical).toBe(false);
+  });
+
+  it("a wired matrix's scale drives the projector size", () => {
+    const cube = () => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(10, 10, 10));
+      m.updateMatrixWorld(true);
+      return m;
+    };
+    const small = new THREE.Matrix4().compose(new THREE.Vector3(0, 0, 5), new THREE.Quaternion(), new THREE.Vector3(0.2, 0.2, 0.2));
+    const big = new THREE.Matrix4().compose(new THREE.Vector3(0, 0, 5), new THREE.Quaternion(), new THREE.Vector3(3, 3, 3));
+
+    const resSmall = DECAL_NODE.evaluate({ geometry: cube(), matrix: small }, DECAL_NODE.defaultParams, { ...CTX, nodeId: "decal-scale-small" });
+    const resBig = DECAL_NODE.evaluate({ geometry: cube(), matrix: big }, DECAL_NODE.defaultParams, { ...CTX, nodeId: "decal-scale-big" });
+
+    const sizeOf = (obj: THREE.Object3D) => new THREE.Box3().setFromObject(obj).getSize(new THREE.Vector3());
+    const sizeSmall = sizeOf(resSmall.geometry as THREE.Object3D);
+    const sizeBig = sizeOf(resBig.geometry as THREE.Object3D);
+    expect(sizeBig.x).toBeGreaterThan(sizeSmall.x * 2);
+  });
+
   it("takes a zero-sized projector without collapsing to nothing usable", () => {
     expect(() =>
       DECAL_NODE.evaluate(

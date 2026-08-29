@@ -173,12 +173,28 @@ export const DECAL_NODE: NodeDefinition = {
     target.updateWorldMatrix(true, true);
 
     const targets = collectDecalTargets(target);
-    const position = asVector3(inputs.matrix instanceof THREE.Matrix4 ? null : params.location, new THREE.Vector3());
+
+    // A wired matrix drives the projector's full pose, not just its position
+    // — the projector has to move, turn and scale with whatever it's parented
+    // to (typically the same transform driving the target object itself), or
+    // the decal drifts and skews the moment that object rotates or scales.
+    // Only extracting position here used to leave rotation/scale glued to the
+    // static params no matter what was wired.
+    let position: THREE.Vector3;
+    let rotationVec: THREE.Vector3;
+    let size: THREE.Vector3;
     if (inputs.matrix instanceof THREE.Matrix4) {
-      position.setFromMatrixPosition(inputs.matrix);
+      const quat = new THREE.Quaternion();
+      position = new THREE.Vector3();
+      size = new THREE.Vector3();
+      inputs.matrix.decompose(position, quat, size);
+      const euler = new THREE.Euler().setFromQuaternion(quat);
+      rotationVec = new THREE.Vector3(euler.x, euler.y, euler.z);
+    } else {
+      position = asVector3(params.location, new THREE.Vector3());
+      rotationVec = asVector3(params.rotation, new THREE.Vector3());
+      size = asVector3(params.scale, DEFAULT_SIZE);
     }
-    const rotationVec = asVector3(params.rotation, new THREE.Vector3());
-    const size = asVector3(params.scale, DEFAULT_SIZE);
     // A zero on any axis collapses the projector to a plane and the decal to
     // nothing, with no hint as to why.
     size.set(Math.max(1e-4, size.x), Math.max(1e-4, size.y), Math.max(1e-4, size.z));
