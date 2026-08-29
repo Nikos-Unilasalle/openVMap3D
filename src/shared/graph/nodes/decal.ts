@@ -24,6 +24,30 @@ import { asColor } from "./object";
 
 const DEFAULT_SIZE = new THREE.Vector3(1, 1, 1);
 
+/**
+ * The image a Decal projects when nothing is wired into its Texture input —
+ * so the node shows something the moment it is dropped, the same reasoning
+ * Particle Render's sprite presets follow (see particles.ts's
+ * SPRITE_PATHS/getSpriteTexture). A static public/ asset, not a baked-in
+ * primitive like Raccoon's geometry: a decal's whole point is projecting an
+ * *arbitrary* texture, and this is only ever the placeholder before the user
+ * wires or picks their own.
+ */
+const DEFAULT_TEXTURE_PATH = "/img/decal_default.png";
+let defaultTexture: THREE.Texture | null = null;
+
+function getDefaultTexture(): THREE.Texture | null {
+  // TextureLoader reaches for document.createElementNS — same DOM guard the
+  // other texture loaders carry, so evaluating headlessly (a test, the demo
+  // check) degrades to an untextured decal rather than throwing.
+  if (typeof document === "undefined") return null;
+  if (!defaultTexture) {
+    defaultTexture = new THREE.TextureLoader().load(DEFAULT_TEXTURE_PATH);
+    defaultTexture.colorSpace = THREE.SRGBColorSpace;
+  }
+  return defaultTexture;
+}
+
 interface DecalState {
   group: THREE.Group;
   material: THREE.MeshStandardMaterial;
@@ -191,10 +215,13 @@ export const DECAL_NODE: NodeDefinition = {
     }
 
     const material = state.material;
-    const texture = inputs.texture instanceof THREE.Texture && inputs.texture.image ? inputs.texture : null;
+    const wiredTexture = inputs.texture instanceof THREE.Texture && inputs.texture.image ? inputs.texture : null;
+    const texture = wiredTexture ?? getDefaultTexture();
     if (material.map !== texture) {
       material.map = texture;
-      if (texture) texture.colorSpace = THREE.SRGBColorSpace;
+      // Only the wired-in case needs its color space set here — the default
+      // texture's is set once, at load, in getDefaultTexture.
+      if (wiredTexture) wiredTexture.colorSpace = THREE.SRGBColorSpace;
       material.needsUpdate = true;
     }
     material.color.copy(asColor(inputs.color, asColor(params.color, new THREE.Color(0xffffff))));

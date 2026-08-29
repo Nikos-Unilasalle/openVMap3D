@@ -202,4 +202,13 @@ describe("DECAL_NODE", () => {
     ).geometry;
     expect(second).not.toBe(first);
   });
+
+  it("falls back to no map at all when headless, rather than throwing", () => {
+    // Vitest's default environment is "node" — no document, same as the
+    // sprite-preset guard in particles.ts. Confirms the default-texture path
+    // degrades instead of crashing the demo/test suite.
+    const res = DECAL_NODE.evaluate({ geometry: wall() }, DECAL_NODE.defaultParams, { ...CTX, nodeId: "decal-headless" });
+    const material = meshesOf(res.geometry as THREE.Object3D)[0].material as THREE.MeshStandardMaterial;
+    expect(material.map).toBeNull();
+  });
 });
