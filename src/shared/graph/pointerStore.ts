@@ -31,6 +31,28 @@ let clientX = 0;
 let clientY = 0;
 let seen = false;
 
+/** Mouse buttons (PointerEvent.button: 0 left, 1 middle, 2 right) currently held down over a registered viewport. */
+const pressedButtons = new Set<number>();
+
+/**
+ * How many times each button has gone down/up, ever. A Click node's evaluate
+ * only samples state once a frame — a click quick enough to press and
+ * release between two frames would otherwise flip `pressedButtons` on and
+ * back off with nothing ever reading `true` in between, silently eating the
+ * click. Comparing counts instead of the live boolean means a node catches
+ * the edge even when it never observes the button actually being down.
+ */
+const downCounts = new Map<number, number>();
+const upCounts = new Map<number, number>();
+
+function bump(counts: Map<number, number>, button: number): void {
+  counts.set(button, (counts.get(button) ?? 0) + 1);
+}
+
+function isOverAnyViewport(target: EventTarget | null): boolean {
+  return target instanceof Node && viewports.some((v) => v.element.contains(target));
+}
+
 if (typeof window !== "undefined") {
   window.addEventListener(
     "pointermove",
@@ -41,6 +63,26 @@ if (typeof window !== "undefined") {
     },
     { passive: true },
   );
+
+  // Click nodes read graph-relevant clicks only — the toolbar, the node
+  // palette and the param panel all sit in the same window and must not
+  // fire graph logic just because a user pressed Save.
+  window.addEventListener("pointerdown", (e) => {
+    if (isOverAnyViewport(e.target)) {
+      pressedButtons.add(e.button);
+      bump(downCounts, e.button);
+    }
+  });
+  window.addEventListener("pointerup", (e) => {
+    if (pressedButtons.delete(e.button)) bump(upCounts, e.button);
+  });
+  // A button released outside the window (dragged off, alt-tabbed) never
+  // gets its pointerup — without this a Click node's isDown could get stuck
+  // on `true` forever.
+  window.addEventListener("blur", () => {
+    for (const button of pressedButtons) bump(upCounts, button);
+    pressedButtons.clear();
+  });
 }
 
 /** Registers a viewport as a pointer target. Returns the unregister function. */
@@ -104,4 +146,34 @@ export function simulatePointerMove(x: number, y: number): void {
   clientX = x;
   clientY = y;
   seen = true;
+}
+
+/** Whether the given mouse button is currently held down over a registered viewport. */
+export function isPointerButtonDown(button: number): boolean {
+  return pressedButtons.has(button);
+}
+
+/** How many times this button has gone down / up, ever — see the `downCounts` doc above. */
+export function pointerButtonEdgeCounts(button: number): { down: number; up: number } {
+  return { down: downCounts.get(button) ?? 0, up: upCounts.get(button) ?? 0 };
+}
+
+/** Test seam — sets/clears a mouse button without a real pointer event or a registered viewport. */
+export function simulatePointerButton(button: number, down: boolean): void {
+  if (down) {
+    if (!pressedButtons.has(button)) bump(downCounts, button);
+    pressedButtons.add(button);
+  } else {
+    if (pressedButtons.delete(button)) bump(upCounts, button);
+  }
+}
+
+/**
+ * Test seam — a full press-then-release that never sets `pressedButtons` at
+ * all, the same shape a click faster than one animation frame produces in
+ * the real listeners above.
+ */
+export function simulatePointerClick(button: number): void {
+  bump(downCounts, button);
+  bump(upCounts, button);
 }
