@@ -1,0 +1,119 @@
+.download-menu-root {
+  position: relative;
+  display: flex;
+}
+
+.top-bar-button-download:hover {
+  border-color: #22c55e;
+  color: #4ade80;
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.25);
+}
+
+.top-bar-button-download:hover svg {
+  color: #4ade80;
+}
+
+.download-menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 270px;
+  background: var(--chrome-surface-raised);
+  border: 1px solid var(--chrome-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  padding: 6px;
+  z-index: 50;
+}
+
+.download-menu-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--chrome-text);
+}
+
+.download-menu-version {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #4ade80;
+}
+
+.download-menu-group + .download-menu-group {
+  margin-top: 2px;
+}
+
+.download-menu-group-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--chrome-text-muted);
+}
+
+.download-menu-badge {
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.16);
+  color: #4ade80;
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+.download-menu-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 7px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--chrome-text);
+  text-align: left;
+  font-family: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.download-menu-item:hover {
+  background: rgba(34, 197, 94, 0.14);
+}
+
+.download-menu-item-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.download-menu-item-desc {
+  font-size: 10.5px;
+  color: var(--chrome-text-muted);
+}
+
+.download-menu-fallback {
+  margin-top: 4px;
+  border-top: 1px solid var(--chrome-border);
+  border-radius: 0 0 6px 6px;
+  padding-top: 8px;
+}
+
+.download-menu-note {
+  padding: 8px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--chrome-text-muted);
+}
+
+.download-menu-note-quiet {
+  padding-top: 2px;
+  opacity: 0.75;
+}

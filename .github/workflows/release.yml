@@ -1,0 +1,104 @@
+name: Build desktop binaries
+
+# Cutting a release is a deliberate act, so this runs on a version tag rather
+# than on every push to main: desktop builds take tens of minutes across three
+# runners (macOS minutes bill at 10x), and `deploy.yml` already ships the web
+# app on every merge. To release:
+#
+#     npm version <patch|minor|major>   # keeps package.json in step
+#     git push origin main --follow-tags
+#
+# The release is created as a DRAFT. Nothing is public until it is published
+# from the Releases page, which is also the moment the app's Download menu
+# starts offering the files (it reads /releases/latest, and drafts are absent
+# from that).
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    permissions:
+      # tauri-action creates the release and uploads the installers to it.
+      contents: write
+    strategy:
+      # One platform failing should not throw away the other two builds — a
+      # partial draft can still be completed by re-running the failed leg.
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            # One .dmg that runs on both Apple Silicon and Intel, rather than
+            # asking the visitor which Mac they have.
+            args: "--target universal-apple-darwin"
+            rust-targets: "aarch64-apple-darwin,x86_64-apple-darwin"
+          - platform: ubuntu-22.04
+            # Not ubuntu-latest on purpose: the glibc a .deb/.AppImage is built
+            # against sets the OLDEST distro it will run on, so building on the
+            # newest runner quietly drops support for everything older.
+            args: ""
+            rust-targets: ""
+          - platform: windows-latest
+            args: ""
+            rust-targets: ""
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        # Tauri v2 renders through webkit2gtk-4.1 (v1 used 4.0), and patchelf
+        # is what the AppImage bundler uses to rewrite the interpreter path.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev \
+            libssl-dev \
+            build-essential \
+            file
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The same gate deploy.yml uses. tauri-action runs the config's
+      # beforeBuildCommand (`npm run build`, which is tsc + vite), but that
+      # only type-checks — without this a green build could still ship a
+      # release whose behaviour is broken.
+      - name: Test
+        run: npm test
+
+      - name: Build and draft the release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Tsuji ${{ github.ref_name }}"
+          releaseBody: "Desktop builds for macOS, Windows and Linux. These are unsigned, so macOS Gatekeeper and Windows SmartScreen will ask for confirmation on first launch."
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

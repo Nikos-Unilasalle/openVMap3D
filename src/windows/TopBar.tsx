@@ -12,6 +12,7 @@ import logoUrl from "../assets/logo.png";
 import { ShortcutsModal } from "./ShortcutsModal";
 import { DemosMenu } from "./DemosMenu";
 import { ShareMenu } from "./ShareMenu";
+import { DownloadMenu } from "./DownloadMenu";
 import "./top-bar.css";
 
 export interface TopBarProps {
@@ -285,7 +286,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         </button>
       </div>
 
-      {/* Right area: Toast + Timeline + Shortcuts + Filename + Share */}
+      {/* Right area: Toast + Timeline + Shortcuts + Filename + Download + Share */}
       <div className="top-bar-right">
         {toastMessage && (
           <div className={`top-bar-toast${toastError ? " top-bar-toast-error" : ""}`}>
@@ -346,6 +347,9 @@ export const TopBar: React.FC<TopBarProps> = ({
             📄 {currentFilename}
           </div>
         )}
+
+        {/* DOWNLOAD — the desktop builds, for visitors on the web version */}
+        <DownloadMenu />
 
         {/* SHARE — the two ways a graph leaves the app, grouped */}
         <ShareMenu
