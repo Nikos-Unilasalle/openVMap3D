@@ -61,6 +61,12 @@ describe("VALUE_MATH_NODE", () => {
     expect(result).toBe(0);
     expect(Number.isFinite(result)).toBe(true);
   });
+
+  test("abs ignores B — a wire into it keeps working, just unused", () => {
+    const params = { ...VALUE_MATH_NODE.defaultParams, op: "abs" };
+    expect(VALUE_MATH_NODE.evaluate({ a: -4.5, b: 99 }, params, CTX).out).toBe(4.5);
+    expect(VALUE_MATH_NODE.evaluate({ a: 3, b: 99 }, params, CTX).out).toBe(3);
+  });
 });
 
 describe("CLAMP_NODE", () => {

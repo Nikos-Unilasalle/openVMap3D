@@ -278,7 +278,11 @@ export const TEXT_RANDOM_NODE: NodeDefinition = {
   ],
   evaluate: (inputs, params) => {
     const seed = inputs.seed !== undefined ? Number(inputs.seed) : Number(params.seed) || 0;
-    const length = Math.max(1, Math.floor(inputs.length !== undefined ? Number(inputs.length) : Number(params.length) || 1));
+    // Not `Number(params.length) || 1`: that treats an explicit 0 the same
+    // as "unset" and silently produces one word/char anyway. length=0 has to
+    // mean "nothing", the same as every loop bound elsewhere in the graph.
+    const rawLength = inputs.length !== undefined ? Number(inputs.length) : Number(params.length);
+    const length = Math.max(0, Math.floor(Number.isFinite(rawLength) ? rawLength : 3));
     const mode = String(params.mode || "words");
     const rng = createPRNG(seed);
 

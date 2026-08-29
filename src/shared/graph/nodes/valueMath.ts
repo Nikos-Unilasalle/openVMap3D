@@ -14,6 +14,10 @@ const OPS: Record<string, (a: number, b: number) => number> = {
     return ((a % abs) + abs) % abs;
   },
   power: Math.pow,
+  // Unary, like every other op here it still takes (a, b) — b is just
+  // unused, so a wire into B keeps working (silently ignored) rather than
+  // needing its own single-input node.
+  abs: (a) => Math.abs(a),
 };
 
 /** One node, an `op` param picks the operation — matches Blender's Math node rather than a node per operator. */

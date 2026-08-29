@@ -148,4 +148,11 @@ describe("TEXT_RANDOM_NODE", () => {
     const alnum = TEXT_RANDOM_NODE.evaluate({ seed: 5, length: 12 }, { mode: "alphanumeric" }, CTX).text as string;
     expect(alnum).toMatch(/^[a-z0-9]{12}$/);
   });
+
+  it("outputs nothing when length is 0, wired or as a param", () => {
+    // Regression: `Number(params.length) || 1` treated an explicit 0 the
+    // same as unset and produced one word/character anyway.
+    expect(TEXT_RANDOM_NODE.evaluate({ seed: 1, length: 0 }, { mode: "words" }, CTX)).toEqual({ text: "" });
+    expect(TEXT_RANDOM_NODE.evaluate({ seed: 1 }, { mode: "letters", length: 0 }, CTX)).toEqual({ text: "" });
+  });
 });
