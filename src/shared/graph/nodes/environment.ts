@@ -257,7 +257,7 @@ export const ENVIRONMENT_NODE: NodeDefinition = {
     const backgroundScale = asVector(inputs.backgroundScale, asVector(params.backgroundScale, new THREE.Vector3(1, 1, 1)));
     const backgroundOffset = asVector(inputs.backgroundOffset, asVector(params.backgroundOffset, new THREE.Vector3(0, 0, 0)));
     // Wired in degrees, stored in radians (three's texture.rotation) — see degreesInput.
-    const backgroundRotation = degreesInput(inputs.backgroundRotation, params.backgroundRotation, 0);
+    const backgroundRotation = degreesInput(inputs, params, "backgroundRotation", ctx, 0);
 
     const envData: EnvironmentData = {
       color,

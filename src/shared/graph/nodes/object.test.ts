@@ -56,12 +56,27 @@ describe("scalar angle sockets take degrees when wired", () => {
   // ParamPanel's toStoredUnit). A wired Value node carries a plain unitless
   // number, so reading it raw meant "36" typed by hand and "36" arriving on a
   // wire were different angles — 36° versus 36 radians.
-  const disc = (inputs: Record<string, unknown>, params: Record<string, unknown> = {}) =>
-    OBJECT_DISC_NODE.evaluate(
-      inputs,
-      { ...OBJECT_DISC_NODE.defaultParams, ...params },
-      { ...CTX, nodeId: `disc-${JSON.stringify(inputs)}-${JSON.stringify(params)}` },
+  // The evaluator fills EVERY socket, wired or not — an unconnected one from
+  // the node's own params — so a test that only sets `inputs` is not modelling
+  // a wire at all. connectedInputs is what actually says "driven", and it is
+  // what the degrees conversion keys off.
+  const disc = (
+    inputs: Record<string, unknown>,
+    params: Record<string, unknown> = {},
+    connected: string[] = Object.keys(inputs),
+  ) => {
+    const merged = { ...OBJECT_DISC_NODE.defaultParams, ...params };
+    return OBJECT_DISC_NODE.evaluate(
+      // Mirror the evaluator: unconnected sockets arrive holding the param.
+      { ...merged, ...inputs },
+      merged,
+      {
+        ...CTX,
+        nodeId: `disc-${JSON.stringify(inputs)}-${JSON.stringify(params)}-${connected.join()}`,
+        connectedInputs: new Set(connected),
+      },
     );
+  };
 
   function arcSpanX(res: Record<string, unknown>): number {
     const mesh = res.geometry as THREE.Mesh;
@@ -99,6 +114,13 @@ describe("scalar angle sockets take degrees when wired", () => {
     const half = disc({}, { arcAngle: Math.PI });
     expect(minY(full)).toBeLessThan(-0.1);
     expect(minY(half)).toBeCloseTo(0, 3);
+
+    // The regression this guards: converting the *unwired* socket too, which
+    // is filled from the param, applied the panel's degrees->radians a second
+    // time. A freshly dropped Disc then needed ~10300 in Arc Angle to reach
+    // half a circle.
+    const fresh = disc({}, {});
+    expect(minY(fresh)).toBeLessThan(-0.1);
   });
 
   it("a wired 360 fills the circle, where a wired 6.28 would be a hair of one", () => {

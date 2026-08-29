@@ -33,13 +33,28 @@ const DEG_TO_RAD = Math.PI / 180;
  * `rotation` sockets stay radians: those are fed by other nodes' rotation
  * *outputs* (Rolling, Decompose Matrix, Wiggle), so the unit has to survive
  * a round trip through a wire rather than match a text field.
+ *
+ * It takes the whole `inputs`/`params`/`ctx` triple rather than one value on
+ * purpose: the conversion may ONLY happen for a socket a wire actually
+ * reaches. The evaluator fills every unconnected socket from the node's own
+ * params (see evaluate.ts), so `inputs[key] !== undefined` is true either way
+ * — reading it as "is this driven" converts the panel's own stored radians a
+ * second time, and the field needs ~10300 to mean 180°. `connectedInputs` is
+ * the only reliable test, and hiding it in here means a call site cannot get
+ * it wrong.
  */
-export function degreesInput(input: unknown, param: unknown, fallbackRadians: number): number {
-  if (input !== undefined) {
-    const n = Number(input);
-    if (Number.isFinite(n)) return n * DEG_TO_RAD;
+export function degreesInput(
+  inputs: Record<string, unknown>,
+  params: Record<string, unknown>,
+  key: string,
+  ctx: { connectedInputs?: ReadonlySet<string> },
+  fallbackRadians: number,
+): number {
+  if (ctx.connectedInputs?.has(key)) {
+    const wired = Number(inputs[key]);
+    if (Number.isFinite(wired)) return wired * DEG_TO_RAD;
   }
-  const stored = Number(param);
+  const stored = Number(params[key]);
   return Number.isFinite(stored) ? stored : fallbackRadians;
 }
 
@@ -844,8 +859,8 @@ export const OBJECT_DISC_NODE: NodeDefinition = {
     const radius = Math.max(0.001, numberInput(inputs.radius, params.radius, 0.5));
     const innerRadius = Math.max(0, Math.min(radius - 0.0001, numberInput(inputs.innerRadius, params.innerRadius, 0)));
     // Wired in degrees, stored in radians — see degreesInput.
-    const startAngle = degreesInput(inputs.startAngle, params.startAngle, 0);
-    const arcAngle = Math.max(0, Math.min(Math.PI * 2, degreesInput(inputs.arcAngle, params.arcAngle, Math.PI * 2)));
+    const startAngle = degreesInput(inputs, params, "startAngle", ctx, 0);
+    const arcAngle = Math.max(0, Math.min(Math.PI * 2, degreesInput(inputs, params, "arcAngle", ctx, Math.PI * 2)));
     const depth = Math.max(0, numberInput(inputs.depth, params.depth, 0));
 
     const key = `${radius}_${innerRadius}_${startAngle}_${arcAngle}_${depth}`;

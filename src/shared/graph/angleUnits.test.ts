@@ -1,45 +1,53 @@
 import { describe, expect, it } from "vitest";
-import { STARTER_NODES } from "./nodes";
+import { DEFAULT_REGISTRY, STARTER_NODES } from "./nodes";
 import { NodeDefinition, ParamFieldDef } from "./types";
 
 /**
- * The unit convention for angle sockets, pinned so it can't drift.
+ * The unit conventions for angle params, pinned so they can't drift.
  *
- * A param marked `degrees: true` is stored in radians and only converted for
- * the panel (ParamPanel's toDisplayUnit/toStoredUnit). That split is invisible
- * until the same param is *also* a socket: a Value node carries a plain
- * unitless number, so a raw read makes "36" typed by hand and "36" arriving on
- * a wire two different angles.
+ * There are two ways a node can store an angle, and both are legitimate:
  *
- * The rule:
+ *  1. **Stored in radians**, marked `degrees: true` so the panel converts on
+ *     the way in and out (ParamPanel's toDisplayUnit/toStoredUnit). Right
+ *     when the value goes straight into three.js — a Euler, a
+ *     texture.rotation, a RingGeometry arc.
+ *
+ *  2. **Stored in degrees**, with no flag at all. Right when everything that
+ *     touches the param already speaks degrees: the node converts once in
+ *     evaluate (`* DEG`, `rotate(Xdeg)`), and — for the HUD nodes — the
+ *     viewport's rotate handle writes degrees straight back into it.
+ *
+ * What breaks is mixing them. Marking a degrees-stored param `degrees: true`
+ * makes the panel the only writer that converts, so a typed 90 lands as
+ * 1.5708 and is then read as 1.5708 degrees: the field says one thing and the
+ * render does another (hub rotation, orbit phase/tilt and wiggle's Rot Amp
+ * all had exactly this).
+ *
+ * Convention 1 has a second edge, because a param marked `degrees: true` may
+ * also be a socket, and a Value node carries a plain unitless number:
  *
  *  - `value`-typed angle sockets read the wire as DEGREES, matching the label
- *    beside them (see degreesInput in nodes/object.ts). They are driven by
- *    Value/Math/Oscillator nodes, which have no unit of their own.
+ *    beside them (degreesInput in nodes/object.ts). Reading raw made "36"
+ *    typed and "36" wired two different angles.
  *
  *  - `vector` rotation sockets stay RADIANS. Those are fed by other nodes'
- *    rotation *outputs* (Rolling, Decompose Matrix, Wiggle), so the unit has
- *    to survive a round trip through a wire rather than match a text field.
- *    Reading them as degrees would break every rotation chain in the graph.
+ *    rotation *outputs* (Rolling, Decompose Matrix), so the unit has to
+ *    survive a round trip through a wire rather than match a text field.
  *
- * This test fails when a new degrees-marked socket appears, so whoever adds it
- * has to place it in one bucket or the other rather than inheriting whichever
- * behaviour the raw read happens to give.
+ * These lists fail the suite when a new angle appears on either side, so
+ * whoever adds it has to choose a convention rather than inherit whichever
+ * behaviour a raw read happens to give.
  */
 
-/** value-typed angle sockets — must go through degreesInput. */
+/** Convention 1, scalar: radians-stored, wired in degrees — must use degreesInput. */
 const DEGREE_SCALAR_SOCKETS = [
-  "hub/image.rotation",
-  "hub/text.rotation",
   "lighting/environment.backgroundRotation",
   "object/disc.arcAngle",
   "object/disc.startAngle",
-  "transform/orbit.phase",
 ].sort();
 
-/** vector rotation sockets — stay radians, they carry rotations between nodes. */
+/** Convention 1, vector: radians-stored and radians on the wire — they carry rotations between nodes. */
 const RADIAN_VECTOR_SOCKETS = [
-  "animation/wiggle.rotationAmplitude",
   "calibration/camera.rotation",
   "modifier/clip-box.rotation",
   "modifier/extrude.rotation",
@@ -48,6 +56,19 @@ const RADIAN_VECTOR_SOCKETS = [
   "transform/matrix-transform.rotation",
   "transform/pivot.rotation",
 ].sort();
+
+/**
+ * Convention 2: angle params stored in degrees. Marking any of these
+ * `degrees: true` re-breaks the panel against its own node, so they are
+ * pinned as explicitly unflagged.
+ */
+const DEGREE_STORED_PARAMS: [string, string][] = [
+  ["hub/image", "rotation"],
+  ["hub/text", "rotation"],
+  ["transform/orbit", "phase"],
+  ["transform/orbit", "tilt"],
+  ["animation/wiggle", "rotationAmplitude"],
+];
 
 function degreeFieldIds(def: NodeDefinition): Set<string> {
   const fields: ParamFieldDef[] = [...(def.paramFields ?? [])];
@@ -66,7 +87,7 @@ function degreeFieldIds(def: NodeDefinition): Set<string> {
   return new Set(fields.filter((f) => (f as { degrees?: boolean }).degrees).map((f) => f.id));
 }
 
-describe("angle socket units", () => {
+describe("angle units", () => {
   it("every degrees-marked socket is classified as scalar-degrees or vector-radians", () => {
     const scalars: string[] = [];
     const vectors: string[] = [];
@@ -82,5 +103,13 @@ describe("angle socket units", () => {
     }
     expect([...new Set(scalars)].sort()).toEqual(DEGREE_SCALAR_SOCKETS);
     expect([...new Set(vectors)].sort()).toEqual(RADIAN_VECTOR_SOCKETS);
+  });
+
+  it("degree-stored params are never marked degrees: true", () => {
+    for (const [type, paramId] of DEGREE_STORED_PARAMS) {
+      const def = DEFAULT_REGISTRY.get(type);
+      expect(def, `${type} is missing from the registry`).toBeDefined();
+      expect(degreeFieldIds(def!).has(paramId), `${type}.${paramId} must stay unflagged — it is stored in degrees`).toBe(false);
+    }
   });
 });

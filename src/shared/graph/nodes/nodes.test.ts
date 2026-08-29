@@ -704,7 +704,13 @@ describe("PRIMITIVES & MATERIAL PROPERTIES (DISC, SHADELESS)", () => {
     const resHole = OBJECT_DISC_NODE.evaluate({ innerRadius: 0.2 }, OBJECT_DISC_NODE.defaultParams, { ...CTX, nodeId: "disc-ring" });
     expect((resHole.geometry as THREE.Mesh).geometry.type).toBe("RingGeometry");
 
-    const resArc = OBJECT_DISC_NODE.evaluate({ arcAngle: Math.PI }, OBJECT_DISC_NODE.defaultParams, { ...CTX, nodeId: "disc-arc" });
+    // Arc Angle is stored in radians and only converted for a *wired* socket
+    // (degreesInput), so a half-circle set by hand is the param, not an input.
+    const resArc = OBJECT_DISC_NODE.evaluate(
+      {},
+      { ...OBJECT_DISC_NODE.defaultParams, arcAngle: Math.PI },
+      { ...CTX, nodeId: "disc-arc" },
+    );
     expect((resArc.geometry as THREE.Mesh).geometry.type).toBe("RingGeometry");
   });
 

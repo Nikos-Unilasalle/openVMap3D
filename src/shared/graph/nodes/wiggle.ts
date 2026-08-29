@@ -57,7 +57,10 @@ export const WIGGLE_NODE: NodeDefinition = {
     { id: "speed", label: "Speed", kind: "number", step: 0.1 },
     { id: "amplitude", label: "Amplitude", kind: "number", step: 0.1 },
     { id: "amplitudeVector", label: "Vector Amp", kind: "vector" },
-    { id: "rotationAmplitude", label: "Rot Amp (°)", kind: "vector", step: 5, degrees: true },
+    // Degrees, like the (45, 45, 45) default and the `* Math.PI / 180` this
+    // gets in evaluate — not radians, so no `degrees: true` (which would have
+    // the panel store 45 as 0.785 and wiggle by half a degree).
+    { id: "rotationAmplitude", label: "Rot Amp (°)", kind: "vector", step: 5 },
     { id: "scaleAmplitude", label: "Scale Amp", kind: "vector", step: 0.05 },
     { id: "seed", label: "Seed", kind: "number", step: 1 },
     { id: "octaves", label: "Octaves", kind: "number", step: 1 },

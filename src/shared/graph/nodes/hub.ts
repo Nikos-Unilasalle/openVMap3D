@@ -303,7 +303,13 @@ export const HUB_TEXT_NODE: NodeDefinition = {
     { id: "text", label: "Text", kind: "text" },
     { id: "x", label: "Position X (px)", kind: "number", step: 0.01 },
     { id: "y", label: "Position Y (px)", kind: "number", step: 0.01 },
-    { id: "rotation", label: "Rotation (°)", kind: "number", step: 1, degrees: true },
+    // Stored in degrees, NOT radians, so no `degrees: true` here. This one
+    // has three writers that must agree — the panel, the viewport's rotate
+    // handle (Viewport.tsx's onHubChange, which writes degrees straight from
+    // atan2) and a wire — and one reader, the CSS `rotate(Xdeg)` below. All
+    // four already spoke degrees except the panel, which converted on the way
+    // in: typing 90 stored 1.5708 and rendered a 1.5° tilt.
+    { id: "rotation", label: "Rotation (°)", kind: "number", step: 1 },
     { id: "scale", label: "Scale", kind: "number", step: 0.05 },
     { id: "visible", label: "Visible", kind: "boolean" },
     { id: "fontFamily", label: "Font", kind: "select", options: FONT_FAMILIES },
@@ -533,7 +539,7 @@ export const HUB_IMAGE_NODE: NodeDefinition = {
     },
     { id: "x", label: "Position X (px)", kind: "number", step: 0.01 },
     { id: "y", label: "Position Y (px)", kind: "number", step: 0.01 },
-    { id: "rotation", label: "Rotation (°)", kind: "number", step: 1, degrees: true },
+    { id: "rotation", label: "Rotation (°)", kind: "number", step: 1 },
     { id: "scale", label: "Scale", kind: "number", step: 0.05 },
     { id: "visible", label: "Visible", kind: "boolean" },
     { id: "imageWidth", label: "Image Width (px)", kind: "number", step: 10 },

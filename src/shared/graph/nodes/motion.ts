@@ -324,10 +324,14 @@ export const ORBIT_NODE: NodeDefinition = {
   dynamicParamFields: () => [
     { id: "radius", label: "Radius", kind: "number", step: 0.1 },
     { id: "speed", label: "Speed (°/s)", kind: "number", step: 1 },
-    { id: "phase", label: "Phase (°)", kind: "number", step: 1, degrees: true },
+    // Phase and Tilt are stored in degrees, matching Speed (°/s) beside them
+    // and the `* DEG` each gets in evaluate. Marking them `degrees: true`
+    // made the panel store radians instead, so a typed 90 became 1.5708 and
+    // then 1.5708° — a quarter turn that moved the orbit by almost nothing.
+    { id: "phase", label: "Phase (°)", kind: "number", step: 1 },
     { id: "height", label: "Height (along axis)", kind: "number", step: 0.1 },
     { id: "axis", label: "Orbit Axis", kind: "select", options: ORBIT_AXES },
-    { id: "tilt", label: "Tilt (°)", kind: "number", step: 1, degrees: true },
+    { id: "tilt", label: "Tilt (°)", kind: "number", step: 1 },
     { id: "faceTarget", label: "Face Target (aim -Z at the centre)", kind: "boolean" },
   ],
   evaluate: (inputs, params, ctx) => {
