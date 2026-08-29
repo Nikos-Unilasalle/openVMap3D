@@ -364,6 +364,11 @@ export const DEMO_CATALOG: DemoCategory[] = [
         label: "Texture to Geometry",
         description: "A texture's pixels spawning objects.",
       },
+      {
+        file: "demo_texture_decal_wall.tsuji",
+        label: "Decal Wall",
+        description: "One graffiti painted across 27 separate cubes — the wall opens and the picture tears apart.",
+      },
     ],
   },
   {

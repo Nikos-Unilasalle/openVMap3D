@@ -277,6 +277,57 @@ def _():
     return n, c
 
 
+@demo("texture_decal_wall")
+def _():
+    # A decal is not a texture on a material — it is real geometry, clipped
+    # out of whatever surfaces sit inside the projector box. This demo is
+    # built to make that difference impossible to miss.
+    #
+    # The wall is not a wall: it is 27 separate cubes. One projector paints a
+    # single graffiti across all of them at once, and because the image is
+    # cut in world space rather than mapped per-object, it stays hanging
+    # where it is while the cubes move *through* it. Driving the grid spacing
+    # from an oscillator opens and closes the wall once per loop: shut, every
+    # cube carries its own slice and the picture reads whole; open, the
+    # picture tears into fragments and the outermost cubes leave the
+    # projector box entirely, coming out blank (27 cubes carry a piece shut,
+    # 15 open). A texture map could not do
+    # any of that — each cube would simply wear its own copy.
+    #
+    # No texture is wired: an unwired Decal falls back to the bundled
+    # graffiti (public/img/decal_default.png), which is exactly the kind of
+    # image this needs — recognisable enough that breaking it apart reads.
+    #
+    # Wide and low on purpose: 9x3 around y = 1.25 keeps the whole mural
+    # inside the default camera's frame — a taller wall put the row carrying
+    # most of the image off the top edge — and never dips through the setup's
+    # floor (y = 0.11 at the widest spacing, floor at -0.5). The projector is sized
+    # to the CLOSED wall, not the open one — that is what makes the outer
+    # cubes leave the picture as it spreads, rather than the image simply
+    # stretching with them.
+    n = [
+        node("cube", "object/box", -1200, 300, location=v3(0, 1.25, 0), scale=v3(0.52, 0.52, 0.52),
+             color=0xE2E4E9, roughness=0.35, metalness=0.15),
+        # 0.70 +/- 0.18 -> 0.52 (shut: cube width, so they touch exactly)
+        # .. 0.88 (open), one cycle per 120-frame loop at 30fps.
+        node("breathe", "animation/oscillator", -1200, 60, type="sine", frequency=0.25,
+             phase=0, amplitude=0.18, offset=0.70),
+        node("wall", "structure/array", -900, 180, mode="grid", plane="XY",
+             gridCols=9, gridRows=3, centerGrid=True, visible=1),
+        # `geometry` is NOT an owning input here, so the cubes keep rendering
+        # and the decal is drawn on top of them rather than replacing them.
+        node("paint", "object/decal", -600, 180, location=v3(0, 1.25, 0),
+             scale=v3(4.6, 1.9, 4), opacity=1, roughness=0.5, metalness=0),
+    ]
+    c = [
+        wire("cube", "geometry", "wall", "geometry"),
+        wire("breathe", "out", "wall", "spacingX"),
+        wire("breathe", "out", "wall", "spacingY"),
+        wire("wall", "geometry", "paint", "geometry"),
+    ]
+    return n, c
+
+
 # ------------------------------------------------------------- Dataviz
 
 @demo("chart_bar")
