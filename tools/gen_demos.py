@@ -99,22 +99,8 @@ def _():
     return n, c
 
 
-@demo("object_text")
-def _():
-    n = [
-        node("word", "text/constant", -1180, 120, text="tsuji"),
-        node("upper", "text/case", -940, 120, mode="uppercase"),
-        node("suffix", "text/constant", -1180, 300, text="3D"),
-        node("join", "text/concat", -700, 200, separator=" "),
-        node("label", "object/text", -440, 200, location=v3(-1.6, 0.3, 0), fontSize=1.1, depth=0.18, color=BLUE, emissive=BLUE, emissiveIntensity=0.35, metalness=0.4, roughness=0.2),
-    ]
-    c = [
-        wire("word", "text", "upper", "text"),
-        wire("upper", "text", "join", "textA"),
-        wire("suffix", "text", "join", "textB"),
-        wire("join", "text", "label", "text"),
-    ]
-    return n, c
+# object_text: hand-authored in the app (see public/demos/demo_object_text.tsuji),
+# not generated — same arrangement as squash_stretch_bounce and demo_trail.
 
 
 @demo("object_empty_lookat")
@@ -1051,25 +1037,9 @@ def _():
     return n, c
 
 
-@demo("text_toolkit")
-def _():
-    n = [
-        node("source", "text/constant", -1400, 60, text="  tsuji node graph  "),
-        node("clean", "text/trim", -1160, 60, start=2, end=2),
-        node("shout", "text/case", -920, 60, mode="uppercase"),
-        node("swap", "text/replace", -680, 60, search="NODE", replace="•"),
-        node("size", "text/length", -680, 300),
-        node("label", "object/text", -420, 160, location=v3(-2.6, 0.35, 0), fontSize=0.62, depth=0.14,
-             color=BLUE, emissive=BLUE, emissiveIntensity=0.3, metalness=0.4, roughness=0.2),
-    ]
-    c = [
-        wire("source", "text", "clean", "text"),
-        wire("clean", "text", "shout", "text"),
-        wire("shout", "text", "swap", "text"),
-        wire("shout", "text", "size", "text"),
-        wire("swap", "text", "label", "text"),
-    ]
-    return n, c
+# text_toolkit: retired — its ground (Trim, Case, Length) is now covered by
+# the hand-authored object_text demo above, which chains Random and Concat
+# in too.
 
 
 @demo("post_kaleidoscope")

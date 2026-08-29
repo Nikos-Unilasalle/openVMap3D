@@ -49,8 +49,8 @@
           "id": "setup_1",
           "type": "texture/procedural",
           "position": {
-            "x": 375,
-            "y": 223
+            "x": 336,
+            "y": 212
           },
           "params": {
             "type": "checker",
@@ -134,8 +134,8 @@
             "y": 393
           },
           "params": {
-            "frameCount": 120,
-            "fps": 30,
+            "frameCount": 230,
+            "fps": 60,
             "motionBlur": 0,
             "resolutionPreset": "16:9 (1920x1080)",
             "width": 1920,
@@ -207,66 +207,144 @@
           "id": "word",
           "type": "text/constant",
           "position": {
-            "x": -1180,
-            "y": 120
+            "x": -1584,
+            "y": 86
           },
           "params": {
-            "text": "tsuji"
-          }
-        },
-        {
-          "id": "upper",
-          "type": "text/case",
-          "position": {
-            "x": -940,
-            "y": 120
-          },
-          "params": {
-            "mode": "uppercase"
-          }
-        },
-        {
-          "id": "suffix",
-          "type": "text/constant",
-          "position": {
-            "x": -1180,
-            "y": 300
-          },
-          "params": {
-            "text": "3D"
-          }
-        },
-        {
-          "id": "join",
-          "type": "text/concat",
-          "position": {
-            "x": -700,
-            "y": 200
-          },
-          "params": {
-            "separator": " "
+            "text": "tsuji loves texts"
           }
         },
         {
           "id": "label",
           "type": "object/text",
           "position": {
-            "x": -440,
-            "y": 200
+            "x": -227,
+            "y": 153
           },
           "params": {
             "location": {
-              "x": -1.6,
+              "x": 1.137622065446044,
               "y": 0.3,
-              "z": 0
+              "z": 2.1855885193671747
             },
-            "fontSize": 1.1,
+            "fontSize": 62.875,
             "depth": 0.18,
-            "color": 3718648,
+            "color": 16745665,
             "emissive": 3718648,
             "emissiveIntensity": 0.35,
             "metalness": 0.4,
-            "roughness": 0.2
+            "roughness": 0.2,
+            "fontPreset": "Nova Mono"
+          }
+        },
+        {
+          "id": "af1b8f0c-d804-47b6-9383-ec5da5d957bf",
+          "type": "text/random",
+          "position": {
+            "x": -1049,
+            "y": 331
+          },
+          "params": {
+            "seed": 0,
+            "length": 3,
+            "mode": "letters"
+          }
+        },
+        {
+          "id": "6fa27d39-169f-481f-92a0-4ec0d426b535",
+          "type": "text/length",
+          "position": {
+            "x": -1583,
+            "y": 173
+          },
+          "params": {
+            "text": ""
+          }
+        },
+        {
+          "id": "2b06747b-aaf2-4ce8-b6b2-edc900869753",
+          "type": "text/trim",
+          "position": {
+            "x": -1041,
+            "y": 93
+          },
+          "params": {
+            "text": "",
+            "start": 0,
+            "end": 0
+          }
+        },
+        {
+          "id": "ef0b1685-68c4-4381-aef9-8760f2c3a7d4",
+          "type": "value/math",
+          "position": {
+            "x": -1284,
+            "y": 171
+          },
+          "params": {
+            "op": "subtract",
+            "a": 10,
+            "b": 0
+          }
+        },
+        {
+          "id": "bd4709e3-f258-4d03-8ec7-c8030e4de468",
+          "type": "time/frame",
+          "position": {
+            "x": -1839,
+            "y": 323
+          },
+          "params": {}
+        },
+        {
+          "id": "85e06b9c-6d57-4a19-9fcc-9f6e47d96dee",
+          "type": "text/concat",
+          "position": {
+            "x": -653,
+            "y": 150
+          },
+          "params": {
+            "textA": "",
+            "textB": "",
+            "separator": ""
+          }
+        },
+        {
+          "id": "594d3b6a-477c-41c0-9c09-c45284bddedc",
+          "type": "value/math",
+          "position": {
+            "x": -1287,
+            "y": 272
+          },
+          "params": {
+            "op": "subtract",
+            "a": 0,
+            "b": 0
+          }
+        },
+        {
+          "id": "8a2d2f4c-2a0e-4a10-ac75-6d8b49f5c794",
+          "type": "value/math",
+          "position": {
+            "x": -1588,
+            "y": 258
+          },
+          "params": {
+            "op": "divide",
+            "a": 0,
+            "b": 10
+          }
+        },
+        {
+          "id": "64c85994-240f-429e-8084-8b9e8a80b2d0",
+          "type": "text/case",
+          "position": {
+            "x": -457,
+            "y": 155
+          },
+          "params": {
+            "text": "",
+            "mode": "uppercase"
           }
         }
       ],
@@ -286,32 +364,102 @@
           "toSocket": "environment"
         },
         {
-          "id": "word.text->upper.text",
+          "id": "word.text->6fa27d39-169f-481f-92a0-4ec0d426b535.text",
           "fromNode": "word",
           "fromSocket": "text",
-          "toNode": "upper",
+          "toNode": "6fa27d39-169f-481f-92a0-4ec0d426b535",
           "toSocket": "text"
         },
         {
-          "id": "upper.text->join.textA",
-          "fromNode": "upper",
+          "id": "word.text->2b06747b-aaf2-4ce8-b6b2-edc900869753.text",
+          "fromNode": "word",
           "fromSocket": "text",
-          "toNode": "join",
-          "toSocket": "textA"
+          "toNode": "2b06747b-aaf2-4ce8-b6b2-edc900869753",
+          "toSocket": "text"
         },
         {
-          "id": "suffix.text->join.textB",
-          "fromNode": "suffix",
+          "id": "6fa27d39-169f-481f-92a0-4ec0d426b535.value->ef0b1685-68c4-4381-aef9-8760f2c3a7d4.a",
+          "fromNode": "6fa27d39-169f-481f-92a0-4ec0d426b535",
+          "fromSocket": "value",
+          "toNode": "ef0b1685-68c4-4381-aef9-8760f2c3a7d4",
+          "toSocket": "a"
+        },
+        {
+          "id": "af1b8f0c-d804-47b6-9383-ec5da5d957bf.text->85e06b9c-6d57-4a19-9fcc-9f6e47d96dee.textB",
+          "fromNode": "af1b8f0c-d804-47b6-9383-ec5da5d957bf",
           "fromSocket": "text",
-          "toNode": "join",
+          "toNode": "85e06b9c-6d57-4a19-9fcc-9f6e47d96dee",
           "toSocket": "textB"
         },
         {
-          "id": "join.text->label.text",
-          "fromNode": "join",
+          "id": "ef0b1685-68c4-4381-aef9-8760f2c3a7d4.out->2b06747b-aaf2-4ce8-b6b2-edc900869753.end",
+          "fromNode": "ef0b1685-68c4-4381-aef9-8760f2c3a7d4",
+          "fromSocket": "out",
+          "toNode": "2b06747b-aaf2-4ce8-b6b2-edc900869753",
+          "toSocket": "end"
+        },
+        {
+          "id": "2b06747b-aaf2-4ce8-b6b2-edc900869753.text->85e06b9c-6d57-4a19-9fcc-9f6e47d96dee.textA",
+          "fromNode": "2b06747b-aaf2-4ce8-b6b2-edc900869753",
+          "fromSocket": "text",
+          "toNode": "85e06b9c-6d57-4a19-9fcc-9f6e47d96dee",
+          "toSocket": "textA"
+        },
+        {
+          "id": "6fa27d39-169f-481f-92a0-4ec0d426b535.value->594d3b6a-477c-41c0-9c09-c45284bddedc.a",
+          "fromNode": "6fa27d39-169f-481f-92a0-4ec0d426b535",
+          "fromSocket": "value",
+          "toNode": "594d3b6a-477c-41c0-9c09-c45284bddedc",
+          "toSocket": "a"
+        },
+        {
+          "id": "bd4709e3-f258-4d03-8ec7-c8030e4de468.frame->8a2d2f4c-2a0e-4a10-ac75-6d8b49f5c794.a",
+          "fromNode": "bd4709e3-f258-4d03-8ec7-c8030e4de468",
+          "fromSocket": "frame",
+          "toNode": "8a2d2f4c-2a0e-4a10-ac75-6d8b49f5c794",
+          "toSocket": "a"
+        },
+        {
+          "id": "8a2d2f4c-2a0e-4a10-ac75-6d8b49f5c794.out->ef0b1685-68c4-4381-aef9-8760f2c3a7d4.b",
+          "fromNode": "8a2d2f4c-2a0e-4a10-ac75-6d8b49f5c794",
+          "fromSocket": "out",
+          "toNode": "ef0b1685-68c4-4381-aef9-8760f2c3a7d4",
+          "toSocket": "b"
+        },
+        {
+          "id": "8a2d2f4c-2a0e-4a10-ac75-6d8b49f5c794.out->594d3b6a-477c-41c0-9c09-c45284bddedc.b",
+          "fromNode": "8a2d2f4c-2a0e-4a10-ac75-6d8b49f5c794",
+          "fromSocket": "out",
+          "toNode": "594d3b6a-477c-41c0-9c09-c45284bddedc",
+          "toSocket": "b"
+        },
+        {
+          "id": "85e06b9c-6d57-4a19-9fcc-9f6e47d96dee.text->64c85994-240f-429e-8084-8b9e8a80b2d0.text",
+          "fromNode": "85e06b9c-6d57-4a19-9fcc-9f6e47d96dee",
+          "fromSocket": "text",
+          "toNode": "64c85994-240f-429e-8084-8b9e8a80b2d0",
+          "toSocket": "text"
+        },
+        {
+          "id": "64c85994-240f-429e-8084-8b9e8a80b2d0.text->label.text",
+          "fromNode": "64c85994-240f-429e-8084-8b9e8a80b2d0",
           "fromSocket": "text",
           "toNode": "label",
           "toSocket": "text"
+        },
+        {
+          "id": "bd4709e3-f258-4d03-8ec7-c8030e4de468.frame->af1b8f0c-d804-47b6-9383-ec5da5d957bf.seed",
+          "fromNode": "bd4709e3-f258-4d03-8ec7-c8030e4de468",
+          "fromSocket": "frame",
+          "toNode": "af1b8f0c-d804-47b6-9383-ec5da5d957bf",
+          "toSocket": "seed"
+        },
+        {
+          "id": "594d3b6a-477c-41c0-9c09-c45284bddedc.out->af1b8f0c-d804-47b6-9383-ec5da5d957bf.length",
+          "fromNode": "594d3b6a-477c-41c0-9c09-c45284bddedc",
+          "fromSocket": "out",
+          "toNode": "af1b8f0c-d804-47b6-9383-ec5da5d957bf",
+          "toSocket": "length"
         }
       ],
       "keyframes": {},

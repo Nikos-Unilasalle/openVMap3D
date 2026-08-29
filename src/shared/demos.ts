@@ -30,11 +30,6 @@ export const DEMO_CATALOG: DemoCategory[] = [
         description: "The built-in raccoon primitive, arrayed and tinted.",
       },
       {
-        file: "demo_text_toolkit.tsuji",
-        label: "Text Toolkit",
-        description: "Trim, case, replace and length on one string.",
-      },
-      {
         file: "demo_object_primitives.tsuji",
         label: "Primitives",
         description: "Cylinder, cone and disc merged into one object.",
@@ -42,7 +37,7 @@ export const DEMO_CATALOG: DemoCategory[] = [
       {
         file: "demo_object_text.tsuji",
         label: "3D Text",
-        description: "Text nodes composing the string a Text object renders.",
+        description: "A frame-driven reveal: length, trim, random and case chained onto a Text object.",
       },
       {
         file: "demo_object_empty_lookat.tsuji",
