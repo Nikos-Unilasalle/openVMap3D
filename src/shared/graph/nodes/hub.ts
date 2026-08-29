@@ -265,7 +265,7 @@ export const HUB_TEXT_NODE: NodeDefinition = {
   ],
   outputs: [{ id: "hud", label: "HUD Element", type: "any" }],
   defaultParams: {
-    text: "Hello",
+    text: "tsuji",
     trigger: 1,
     x: undefined,
     y: undefined,

@@ -430,6 +430,10 @@ describe("OBJECT PRIMITIVES", () => {
     expect(res).toBeInstanceOf(THREE.Mesh);
   });
 
+  test("text object defaults to the app's own wordmark", () => {
+    expect(OBJECT_TEXT_NODE.defaultParams.text).toBe("tsuji");
+  });
+
   test("text object evaluation", () => {
     const color = new THREE.Color(1, 0, 0);
     const res = OBJECT_TEXT_NODE.evaluate({ text: "Test Text", font: "monospace", fontSize: 96 }, { ...OBJECT_TEXT_NODE.defaultParams, color }, CTX).geometry as THREE.Mesh;

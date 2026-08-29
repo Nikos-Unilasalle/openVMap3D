@@ -6,6 +6,10 @@ import { HUB_IMAGE_NODE, HUB_TEXT_NODE } from "./hub";
 const CTX: EvalContext = { time: 0, step: 0, nodeId: "hub-test" };
 
 describe("HUB_TEXT_NODE", () => {
+  test("defaults its text to the app's own wordmark", () => {
+    expect(HUB_TEXT_NODE.defaultParams.text).toBe("tsuji");
+  });
+
   test("is visible by default (trigger fallback is 1)", () => {
     const res = HUB_TEXT_NODE.evaluate({}, HUB_TEXT_NODE.defaultParams, CTX);
     const hud = res.hud as { visible: boolean; cssOpacity: number };
