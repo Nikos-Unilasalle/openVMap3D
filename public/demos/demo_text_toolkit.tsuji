@@ -221,7 +221,10 @@
             "x": -1160,
             "y": 60
           },
-          "params": {}
+          "params": {
+            "start": 2,
+            "end": 2
+          }
         },
         {
           "id": "shout",

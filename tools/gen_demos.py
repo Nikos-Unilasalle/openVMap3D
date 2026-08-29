@@ -1055,7 +1055,7 @@ def _():
 def _():
     n = [
         node("source", "text/constant", -1400, 60, text="  tsuji node graph  "),
-        node("clean", "text/trim", -1160, 60),
+        node("clean", "text/trim", -1160, 60, start=2, end=2),
         node("shout", "text/case", -920, 60, mode="uppercase"),
         node("swap", "text/replace", -680, 60, search="NODE", replace="•"),
         node("size", "text/length", -680, 300),

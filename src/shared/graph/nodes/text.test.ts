@@ -74,9 +74,14 @@ describe("Text manipulation nodes", () => {
     expect(res).toEqual({ list: ["red", "green", "blue"] });
   });
 
-  it("TEXT_TRIM_NODE strips leading/trailing spaces", () => {
+  it("TEXT_TRIM_NODE cuts a fixed character count off each end", () => {
+    const res = TEXT_TRIM_NODE.evaluate({ text: "abcdefgh", start: 2, end: 3 }, {}, CTX);
+    expect(res).toEqual({ text: "cde" });
+  });
+
+  it("TEXT_TRIM_NODE leaves the string untouched with no start/end", () => {
     const res = TEXT_TRIM_NODE.evaluate({ text: "   space   " }, {}, CTX);
-    expect(res).toEqual({ text: "space" });
+    expect(res).toEqual({ text: "   space   " });
   });
 
   it("TEXT_COMPARE_NODE compares text (equals, contains, startsWith, endsWith)", () => {
@@ -105,10 +110,13 @@ describe("Text manipulation nodes", () => {
     ).toEqual({ value: 1 });
   });
 
-  it("TEXT_TRIM_NODE trims only the requested side", () => {
-    expect(TEXT_TRIM_NODE.evaluate({ text: "  pad  " }, { mode: "start" }, CTX)).toEqual({ text: "pad  " });
-    expect(TEXT_TRIM_NODE.evaluate({ text: "  pad  " }, { mode: "end" }, CTX)).toEqual({ text: "  pad" });
-    expect(TEXT_TRIM_NODE.evaluate({ text: "  pad  " }, { mode: "both" }, CTX)).toEqual({ text: "pad" });
+  it("TEXT_TRIM_NODE cuts only from the requested side", () => {
+    expect(TEXT_TRIM_NODE.evaluate({ text: "abcdef", start: 2, end: 0 }, {}, CTX)).toEqual({ text: "cdef" });
+    expect(TEXT_TRIM_NODE.evaluate({ text: "abcdef", start: 0, end: 2 }, {}, CTX)).toEqual({ text: "abcd" });
+  });
+
+  it("TEXT_TRIM_NODE never wraps past the start when start+end exceed the string's length", () => {
+    expect(TEXT_TRIM_NODE.evaluate({ text: "abc", start: 2, end: 5 }, {}, CTX)).toEqual({ text: "" });
   });
 });
 

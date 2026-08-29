@@ -168,25 +168,33 @@ export const TEXT_SPLIT_NODE: NodeDefinition = {
   },
 };
 
-/** Text Trim node — removes leading and trailing whitespace. */
+/** Text Trim node — cuts a fixed number of characters off each end of a string. */
 export const TEXT_TRIM_NODE: NodeDefinition = {
   type: "text/trim",
   label: "Text Trim",
   category: "text",
-  inputs: [{ id: "text", label: "Text", type: "text" }],
+  inputs: [
+    { id: "text", label: "Text", type: "text" },
+    { id: "start", label: "Start (chars)", type: "value" },
+    { id: "end", label: "End (chars)", type: "value" },
+  ],
   outputs: [{ id: "text", label: "Text", type: "text" }],
-  defaultParams: { text: "", mode: "both" },
+  defaultParams: { text: "", start: 0, end: 0 },
   paramFields: [
     { id: "text", label: "Text", kind: "text" },
-    { id: "mode", label: "Mode", kind: "select", options: ["both", "start", "end"] },
+    { id: "start", label: "Start (chars)", kind: "number", step: 1 },
+    { id: "end", label: "End (chars)", kind: "number", step: 1 },
   ],
   evaluate: (inputs, params) => {
     const str = inputs.text !== undefined ? String(inputs.text) : String(params.text ?? "");
-    const mode = String(params.mode || "both");
+    const start = Math.max(0, Math.floor(inputs.start !== undefined ? Number(inputs.start) : Number(params.start) || 0));
+    const end = Math.max(0, Math.floor(inputs.end !== undefined ? Number(inputs.end) : Number(params.end) || 0));
 
-    if (mode === "start") return { text: str.trimStart() };
-    if (mode === "end") return { text: str.trimEnd() };
-    return { text: str.trim() };
+    // start+end past the string's own length would otherwise wrap the slice
+    // end around to before its start (str.length - end going negative) and
+    // silently return everything from `start` on, instead of "".
+    const stop = Math.max(start, str.length - end);
+    return { text: str.slice(start, stop) };
   },
 };
 
