@@ -137,10 +137,8 @@
 
 .param-row label {
   color: #9aa4b2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   font-size: 12px;
+  min-width: 0;
 }
 
 .param-pin-btn {

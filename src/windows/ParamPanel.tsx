@@ -418,7 +418,7 @@ export function ParamPanel({
               <div className="param-group-body">
                 {groupFields.map((field) => {
                   const useKey = "use" + field.id.toUpperCase();
-                  const hasUseToggle = field.kind === "number" && params[useKey] !== undefined;
+                  const hasUseToggle = (field.kind === "number" || field.kind === "vector") && params[useKey] !== undefined;
                   const status = keyframesEnabled ? getKeyframeStatus(keyframes, nodeId, field.id, currentFrame) : "none";
                   const isDriven = connectedSockets?.has(field.id) ?? false;
 
@@ -442,17 +442,19 @@ export function ParamPanel({
                       key={field.id}
                       title={isDriven ? `${field.label} comes from the wire plugged into this node — unplug it to set a value here` : undefined}
                     >
-                      <label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                        {field.kind !== "button" && field.label}
+                      <label style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
                         {hasUseToggle && (
                           <input
                             type="checkbox"
                             checked={!!params[useKey]}
                             onChange={(e) => onChange(useKey, e.target.checked ? 1 : 0)}
-                            title={`Enable ${field.label} axis`}
-                            style={{ cursor: "pointer", accentColor: "#38bdf8", marginLeft: "2px" }}
+                            title={`Enable ${field.label}`}
+                            style={{ cursor: "pointer", accentColor: "#38bdf8", flex: "0 0 auto" }}
                           />
                         )}
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {field.kind !== "button" && field.label}
+                        </span>
                       </label>
                       {EXPOSABLE_KINDS.has(field.kind) && onToggleExposed && (
                         <button

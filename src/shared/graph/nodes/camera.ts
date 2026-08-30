@@ -240,14 +240,14 @@ export const CAMERA_NODE: NodeDefinition = {
     }
 
     if (inputs.matrix instanceof THREE.Matrix4) {
-      // Compose the wired matrix as a *delta* on top of the camera's own
-      // location/rotation pose — the "native" convention every object.ts
-      // primitive follows via composeNativeMatrix: the internal params are the
-      // base, and whatever is wired into `matrix` (a Compose Matrix, a Wiggle,
-      // …) is applied on top. The old code *replaced* pose.matrix outright,
-      // which is why the gizmo (and location/rotation params) went dead the
-      // moment a matrix node was connected.
-      pose.matrix = new THREE.Matrix4().multiplyMatrices(pose.matrix, inputs.matrix);
+      // Compose the wired matrix as the camera's *parent* — the "native"
+      // convention every object.ts primitive follows via composeNativeMatrix:
+      // whatever is wired into `matrix` (a Compose Matrix, a Wiggle, another
+      // object's Matrix output) acts outside the camera, and its own
+      // location/rotation params stay its local pose. The old code *replaced*
+      // pose.matrix outright, which is why the gizmo (and location/rotation
+      // params) went dead the moment a matrix node was connected.
+      pose.matrix = new THREE.Matrix4().multiplyMatrices(inputs.matrix, pose.matrix);
     }
 
     const group = getGroup(ctx.nodeId);

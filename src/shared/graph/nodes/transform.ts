@@ -73,19 +73,26 @@ export function composeTransform(location: THREE.Vector3, rotation: THREE.Vector
 }
 
 /**
- * `final = base(location/rotation/scale) × delta(wiredMatrix)` — for a node
+ * `final = parent(wiredMatrix) × local(location/rotation/scale)` — for a node
  * that owns its own initial pose (an object or light's native
  * location/rotation/scale params) but still accepts an incoming `matrix` to
- * modify that pose without cancelling it. Same composition
- * MATRIX_TRANSFORM_NODE below already does, roles reversed: there the wired
- * matrix is the base and the node's own params are the delta; here the
- * node's own params are the base and the wired matrix is the delta, applied
- * in the base's local frame.
+ * move that pose without cancelling it.
+ *
+ * Parent-first, exactly the scene-graph convention Blender and Three.js use:
+ * the wired matrix acts in the frame *outside* the object, and the object's
+ * own params stay its untouched local pose. Wiring one object's Matrix output
+ * into another's Matrix input therefore parents the second to the first, which
+ * is what the wire looks like it should do.
+ *
+ * The reverse order (`local × parent`) applies the wire *inside* the object's
+ * own rotated frame, so a child rotated -90° turns an incoming Z translation
+ * into a Y one — the wire stops behaving like a parent the moment the child
+ * has any orientation of its own.
  */
 export function composeNativeMatrix(wiredMatrix: unknown, location: unknown, rotation: unknown, scale: unknown): THREE.Matrix4 {
-  const delta = wiredMatrix instanceof THREE.Matrix4 ? wiredMatrix : new THREE.Matrix4();
-  const base = composeTransform(asVector3(location, ZERO), asVector3(rotation, ZERO), asVector3(scale, ONE));
-  return new THREE.Matrix4().multiplyMatrices(base, delta);
+  const parent = wiredMatrix instanceof THREE.Matrix4 ? wiredMatrix : new THREE.Matrix4();
+  const local = composeTransform(asVector3(location, ZERO), asVector3(rotation, ZERO), asVector3(scale, ONE));
+  return new THREE.Matrix4().multiplyMatrices(parent, local);
 }
 
 /**
@@ -107,7 +114,7 @@ export function composeNativeMatrixWithPivot(
   scale: unknown,
   pivot: unknown,
 ): THREE.Matrix4 {
-  const delta = wiredMatrix instanceof THREE.Matrix4 ? wiredMatrix : new THREE.Matrix4();
+  const parent = wiredMatrix instanceof THREE.Matrix4 ? wiredMatrix : new THREE.Matrix4();
   const loc = asVector3(location, ZERO);
   const rot = asVector3(rotation, ZERO);
   const scl = asVector3(scale, ONE);
@@ -117,8 +124,8 @@ export function composeNativeMatrixWithPivot(
   const mRotScale = composeTransform(ZERO, rot, scl);
   const mPivotLoc = new THREE.Matrix4().makeTranslation(piv.x + loc.x, piv.y + loc.y, piv.z + loc.z);
 
-  const base = new THREE.Matrix4().multiply(mPivotLoc).multiply(mRotScale).multiply(mPivotInv);
-  return new THREE.Matrix4().multiplyMatrices(base, delta);
+  const local = new THREE.Matrix4().multiply(mPivotLoc).multiply(mRotScale).multiply(mPivotInv);
+  return new THREE.Matrix4().multiplyMatrices(parent, local);
 }
 
 /**
@@ -139,16 +146,31 @@ export const TRANSFORM_NODE: NodeDefinition = {
     { id: "scale", label: "Scale", type: "vector" },
   ],
   outputs: [{ id: "matrix", label: "Matrix", type: "matrix" }],
-  defaultParams: { location: ZERO.clone(), rotation: ZERO.clone(), scale: ONE.clone() },
+  defaultParams: {
+    location: ZERO.clone(),
+    rotation: ZERO.clone(),
+    scale: ONE.clone(),
+    useLOCATION: true,
+    useROTATION: true,
+    useSCALE: true,
+  },
   paramFields: [
     { id: "location", label: "Location (fallback)", kind: "vector" },
     { id: "rotation", label: "Rotation (°, fallback)", kind: "vector", step: 1, degrees: true },
     { id: "scale", label: "Scale (fallback)", kind: "vector" },
   ],
-  evaluate: (inputs) => {
-    const location = asVector3(inputs.location, ZERO);
-    const rotation = asVector3(inputs.rotation, ZERO);
-    const scale = asVector3(inputs.scale, ONE);
+  evaluate: (inputs, params) => {
+    // A channel unchecked here is dropped entirely — even a wired input is
+    // ignored — so this node can output e.g. "rotation + scale only, no
+    // location", to parent an object's orientation to something without
+    // also dragging its position along.
+    const useLocation = params.useLOCATION !== undefined ? Boolean(params.useLOCATION) : true;
+    const useRotation = params.useROTATION !== undefined ? Boolean(params.useROTATION) : true;
+    const useScale = params.useSCALE !== undefined ? Boolean(params.useSCALE) : true;
+
+    const location = useLocation ? asVector3(inputs.location, ZERO) : ZERO.clone();
+    const rotation = useRotation ? asVector3(inputs.rotation, ZERO) : ZERO.clone();
+    const scale = useScale ? asVector3(inputs.scale, ONE) : ONE.clone();
     return { matrix: composeTransform(location, rotation, scale) };
   },
 };

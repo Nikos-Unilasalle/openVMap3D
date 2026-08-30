@@ -86,40 +86,41 @@ describe("composeNativeMatrix", () => {
     expect(position.x).toBeCloseTo(5);
   });
 
-  it("a wired delta modifies the base without cancelling it — a translation delta moves relative to the base's own local axes", () => {
-    const base = composeNativeMatrix(
-      undefined,
-      new THREE.Vector3(0, 0, 0),
-      new THREE.Vector3(0, Math.PI / 2, 0),
-      new THREE.Vector3(1, 1, 1),
-    );
-    const delta = new THREE.Matrix4().makeTranslation(1, 0, 0);
-
+  it("the wired matrix acts as a parent: its translation stays on world axes even when the object has a rotation of its own", () => {
+    // The object is turned -90° about Y — its own local X axis now points
+    // along world +Z. A parent that moves +1 on X must still move it +1 on
+    // world X: a parent is not re-expressed in its child's frame. Composing
+    // the other way round (local × parent) sends it to world -Z instead,
+    // which is the "my text's Z motion became Y motion" bug.
     const result = composeNativeMatrix(
-      delta,
+      new THREE.Matrix4().makeTranslation(1, 0, 0),
       new THREE.Vector3(0, 0, 0),
-      new THREE.Vector3(0, Math.PI / 2, 0),
+      new THREE.Vector3(0, -Math.PI / 2, 0),
       new THREE.Vector3(1, 1, 1),
     );
 
-    const { position } = decompose(result);
-    expect(position.x).toBeCloseTo(0, 5);
-    expect(position.z).toBeCloseTo(-1, 5);
-    void base;
+    const { position, quaternion } = decompose(result);
+    expect(position.x).toBeCloseTo(1, 5);
+    expect(position.y).toBeCloseTo(0, 5);
+    expect(position.z).toBeCloseTo(0, 5);
+
+    // …and the object keeps the orientation it had before it was parented.
+    const ownRotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI / 2, 0));
+    expect(quaternion.angleTo(ownRotation)).toBeCloseTo(0, 5);
   });
 
-  it("base × delta round-trips: recovering the base by inverting a known delta out of the composed result", () => {
+  it("parent × local round-trips: recovering the local pose by inverting a known parent out of the composed result", () => {
     const location = new THREE.Vector3(1, 2, 3);
     const rotation = new THREE.Vector3(0.1, 0.2, 0.3);
     const scale = new THREE.Vector3(1, 1, 1);
-    const delta = new THREE.Matrix4().makeTranslation(4, 5, 6);
+    const parent = new THREE.Matrix4().makeTranslation(4, 5, 6);
 
-    const final = composeNativeMatrix(delta, location, rotation, scale);
-    const recoveredBase = final.clone().multiply(delta.clone().invert());
+    const final = composeNativeMatrix(parent, location, rotation, scale);
+    const recoveredLocal = parent.clone().invert().multiply(final);
 
-    const expectedBase = composeTransform(location, rotation, scale);
+    const expectedLocal = composeTransform(location, rotation, scale);
     for (let i = 0; i < 16; i++) {
-      expect(recoveredBase.elements[i]).toBeCloseTo(expectedBase.elements[i], 5);
+      expect(recoveredLocal.elements[i]).toBeCloseTo(expectedLocal.elements[i], 5);
     }
   });
 
