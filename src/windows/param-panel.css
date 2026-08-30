@@ -308,7 +308,8 @@
   justify-content: center;
   gap: 6px;
   width: 100%;
-  margin: 0 0 8px;
+  /* Sits below the last param group, so the breathing room goes above it. */
+  margin: 8px 0 0;
   padding: 6px 8px;
   background: rgba(56, 189, 248, 0.1);
   border: 1px solid rgba(56, 189, 248, 0.35);
