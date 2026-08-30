@@ -31,6 +31,14 @@ interface ParamPanelProps {
    * and be overwritten on the next evaluation.
    */
   connectedSockets?: Set<string>;
+  /**
+   * Whether this node produces geometry that Freeze can snapshot. Computed by
+   * the caller, which has the node *definition* — the panel only ever sees a
+   * flat field list, so it cannot tell an object node from a maths one.
+   */
+  canFreeze?: boolean;
+  /** Fired by the Freeze button; carries FREEZE_GEOMETRY_ACTION like any other action. */
+  onFreeze?: (nodeId: string) => void;
   /** paramIds of *this* node currently pinned to the viewport HUD — for the pin button's active state. */
   exposedKeys?: Set<string>;
   onToggleExposed?: (nodeId: string, paramId: string) => void;
@@ -309,6 +317,8 @@ export function ParamPanel({
   onChange,
   onToggleKeyframe,
   onAction,
+  canFreeze,
+  onFreeze,
   connectedSockets,
   exposedKeys,
   onToggleExposed,
@@ -362,6 +372,26 @@ export function ParamPanel({
       <div className="param-panel-title" style={{ color: categoryColor }}>
         {label}
       </div>
+
+      {/* Freeze — only for a node that actually has geometry to snapshot,
+          which is why it lives here rather than as a `button` field on each
+          of the fifty-odd node definitions that would need one. */}
+      {canFreeze && onFreeze && (
+        <button
+          type="button"
+          className="param-panel-freeze"
+          title="Bake this node's current geometry into a new, static Frozen Geometry node"
+          onClick={() => onFreeze(nodeId)}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="2" x2="12" y2="22" />
+            <line x1="2" y1="12" x2="22" y2="12" />
+            <line x1="4.9" y1="4.9" x2="19.1" y2="19.1" />
+            <line x1="19.1" y1="4.9" x2="4.9" y2="19.1" />
+          </svg>
+          Freeze to mesh
+        </button>
+      )}
 
       {fields.length === 0 && <div className="param-panel-empty">No editable parameters.</div>}
 

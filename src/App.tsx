@@ -9,7 +9,7 @@ import { isTauri } from "./shared/isTauri";
 import { TOGGLE_POINTS_KEYFRAME_ACTION } from "./shared/graph/nodes/curve";
 import { RESEED_MESH_POINTS_ACTION } from "./shared/graph/nodes/editMeshPoints";
 import { extractPointsFromMesh } from "./shared/graph/nodes/pointsGeometry";
-import { OBJECT_FROZEN_NODE } from "./shared/graph/nodes/frozenGeometry";
+import { freezeObjectToGeometryData, OBJECT_FROZEN_NODE } from "./shared/graph/nodes/frozenGeometry";
 import { randomId } from "./shared/randomId";
 import { findRenderNodeId } from "./shared/graph/nodes/render";
 import { rehydrateFileNodesFromDisk } from "./shared/graph/rehydrateFiles";
@@ -1087,6 +1087,49 @@ function MainEditor() {
     [setGraphWithHistory, graph.nodes, currentFrame, onToggleKeyframe, evaluatedResults, onParamChange],
   );
 
+  /**
+   * Freeze — snapshot the selected node's current geometry into a new,
+   * standalone Frozen Geometry node.
+   *
+   * The point is to cut a long chain of expensive modifiers loose once its
+   * result is settled: the new node stores plain arrays and re-evaluates for
+   * free, and being a real single Mesh it is accepted by Edit Mesh Points,
+   * Boolean and Subdivide — none of which take a Group.
+   *
+   * It reads the node's *evaluated output* rather than re-deriving anything
+   * from the graph, the same way Reset Points from Basis does: whatever was
+   * on screen is exactly what gets frozen.
+   */
+  const onFreezeNode = useCallback(
+    (nodeId: string) => {
+      const output = evaluatedResults?.get(nodeId)?.geometry;
+      if (!(output instanceof THREE.Object3D)) {
+        console.warn("Freeze: this node has not produced any geometry yet.");
+        return;
+      }
+      const data = freezeObjectToGeometryData(output);
+      if (!data) {
+        console.warn("Freeze: nothing meshy to freeze here — a point cloud or a line has no faces to bake.");
+        return;
+      }
+      setGraphWithHistory((prevGraph) => {
+        const source = prevGraph.nodes.find((n) => n.id === nodeId);
+        const position = source ? { x: source.position.x + 260, y: source.position.y + 40 } : { x: 300, y: 180 };
+        const newNode = {
+          id: randomId(),
+          type: OBJECT_FROZEN_NODE.type,
+          // Baked in world space and left at the origin, so the frozen copy
+          // lands exactly where the original was without replaying the
+          // upstream transform chain onto it.
+          params: { ...cloneParams(OBJECT_FROZEN_NODE.defaultParams), ...data },
+          position,
+        };
+        return { ...prevGraph, nodes: [...prevGraph.nodes, newNode] };
+      }, `freeze:${nodeId}`);
+    },
+    [evaluatedResults, setGraphWithHistory],
+  );
+
   // Same functional-updater reasoning as onParamChange, but writing all
   // three fields in one setGraph call rather than three separate
   // onParamChange calls — the gizmo fires this every frame of a drag, and
@@ -1792,6 +1835,8 @@ function MainEditor() {
           onChange={onParamChange}
           onToggleKeyframe={onToggleKeyframe}
           onAction={onParamAction}
+          canFreeze={(selectedDef.outputs ?? []).some((o) => o.id === "geometry" && o.type === "geometry")}
+          onFreeze={onFreezeNode}
           connectedSockets={connectedSocketIds(graph, selectedInstance.id)}
           exposedKeys={
             new Set((graph.exposedParams ?? []).filter((e) => e.nodeId === selectedInstance.id).map((e) => e.paramId))

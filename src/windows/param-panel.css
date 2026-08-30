@@ -301,3 +301,34 @@
   border: 1px solid rgba(248, 113, 113, 0.35);
   color: #fca5a5;
 }
+
+/* Freeze — a whole-node action rather than a parameter, so it reads as a
+   band under the title instead of another row in the field list. */
+.param-panel-freeze {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 6px;
+  color: #7dd3fc;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.param-panel-freeze:hover {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: #38bdf8;
+}
+
+.param-panel-freeze svg {
+  width: 13px;
+  height: 13px;
+}

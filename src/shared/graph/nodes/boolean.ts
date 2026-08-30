@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { Brush, Evaluator, ADDITION, SUBTRACTION, INTERSECTION } from "three-bvh-csg";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { bakeMeshesToGeometry } from "../bakeGeometry";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { NodeDefinition } from "../types";
 import { clearMeshWarning, collectMeshes, warnMeshRequired } from "../meshRequired";
@@ -57,71 +57,6 @@ function hashPositions(attr: THREE.BufferAttribute | THREE.InterleavedBufferAttr
 }
 
 const OPERATIONS: Record<string, number> = { add: ADDITION, subtract: SUBTRACTION, intersect: INTERSECTION };
-
-/**
- * The attributes a CSG result actually needs. Everything else is dropped
- * before merging, because mergeGeometries requires every part to carry the
- * exact same attribute set — and the parts of one side routinely come from
- * different sources (an Array of one primitive merged with a hand-placed
- * second shape), which would otherwise refuse to merge at all.
- */
-const CSG_ATTRIBUTES = ["position", "normal", "uv"];
-
-/**
- * One side of the operation, baked into a single geometry in world space.
- *
- * A `geometry` socket carries a whole object tree, and Array / Merge / an
- * imported model all hand down a Group of many meshes. Taking only the first
- * (findFirstMesh) silently dropped the rest, so an Array wired into Boolean
- * Shape cut exactly one instance and ignored the other N-1 with nothing to
- * say why — the reported bug.
- *
- * The parts are concatenated rather than CSG-unioned first: for disjoint
- * solids (what an Array produces) a merged multi-shell geometry is a valid
- * brush, and it costs one O(n) copy instead of n CSG passes. It also keeps
- * all three operations correct, since A op (B1 ∪ B2) is what each one means
- * — including intersect, which folding the parts sequentially would get
- * wrong (A ∩ B1 ∩ B2 is empty for disjoint parts). Parts that overlap *each
- * other* leave interior faces in the brush, the same caveat that already
- * applies to any non-manifold input here.
- */
-function bakeSide(meshes: THREE.Mesh[]): THREE.BufferGeometry | null {
-  const parts: THREE.BufferGeometry[] = [];
-  for (const mesh of meshes) {
-    const geometry = mesh.geometry.clone();
-    for (const name of Object.keys(geometry.attributes)) {
-      if (!CSG_ATTRIBUTES.includes(name)) geometry.deleteAttribute(name);
-    }
-    // Morph targets don't survive a merge and mean nothing to the CSG.
-    geometry.morphAttributes = {};
-    if (!geometry.attributes.normal) geometry.computeVertexNormals();
-    if (!geometry.attributes.uv) {
-      // A missing uv on one part alone would block the merge; an empty one
-      // costs 2 floats a vertex and keeps every part's attribute set equal.
-      geometry.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(geometry.attributes.position.count * 2), 2));
-    }
-    // World space, so the shapes meet wherever they were actually placed.
-    geometry.applyMatrix4(mesh.matrixWorld);
-    parts.push(geometry);
-  }
-
-  if (parts.length === 0) return null;
-  if (parts.length === 1) return parts[0];
-
-  // mergeGeometries also requires every part to agree on being indexed;
-  // flatten them all only when they actually disagree.
-  const mixedIndexing = parts.some((p) => p.index === null);
-  const normalized = parts.map((part) => {
-    if (!mixedIndexing || !part.index) return part;
-    const flat = part.toNonIndexed();
-    disposeGeometry(part);
-    return flat;
-  });
-
-  const merged = mergeGeometries(normalized, false);
-  for (const part of normalized) disposeGeometry(part);
-  return merged;
-}
 
 /**
  * Per-evaluate memo for hashPositions. Array instances are clones that SHARE
@@ -219,8 +154,10 @@ export const BOOLEAN_NODE: NodeDefinition = {
     // side's first mesh (an Array's instances all share one anyway), so with
     // useGroups on the faces that came from object 2 still keep object 2's
     // material.
-    const geometryA = bakeSide(meshesA);
-    const geometryB = bakeSide(meshesB);
+    // Shared with Freeze — see bakeGeometry.ts for why the parts are
+    // concatenated rather than unioned.
+    const geometryA = bakeMeshesToGeometry(meshesA);
+    const geometryB = bakeMeshesToGeometry(meshesB);
     if (!geometryA || !geometryB) {
       // mergeGeometries refused the parts — hand the input back rather than
       // feed the CSG a half-built brush.

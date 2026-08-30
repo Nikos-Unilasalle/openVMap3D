@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
+import { bakeMeshesToGeometry, FrozenGeometryData, geometryToFrozenData } from "../bakeGeometry";
+import { collectMeshes } from "../meshRequired";
 import { composeNativeMatrix } from "./transform";
 import {
   applyMaterialParams,
@@ -99,3 +101,39 @@ export const OBJECT_FROZEN_NODE: NodeDefinition = {
     return primitiveOutputs(mesh);
   },
 };
+
+/** Action id the Freeze button sends up to App.tsx's onAction — see freezeObjectToGeometryData. */
+export const FREEZE_GEOMETRY_ACTION = "object/freeze-to-frozen-node";
+
+/**
+ * Whatever a node is currently drawing, flattened into the plain arrays a
+ * Frozen Geometry node stores.
+ *
+ * This is the generic counterpart of Particle Render's Bake and glTF's
+ * Explode: those read one specific node's private cache, while this takes any
+ * node's evaluated `geometry` output. What comes back has no tie to the graph
+ * that produced it, which is the point — Freeze exists to cut a long chain of
+ * expensive modifiers loose and keep only its result.
+ *
+ * Everything is baked in WORLD space and the new node is left at the origin,
+ * so the frozen copy lands exactly where the original was rather than
+ * needing the upstream transform chain replayed onto it.
+ *
+ * Returns null when there is nothing meshy to freeze — a Points cloud, a fat
+ * line, an empty group — which the caller reports rather than treating as a
+ * failure.
+ */
+export function freezeObjectToGeometryData(object: THREE.Object3D): FrozenGeometryData | null {
+  // The tree is evaluated, not rendered, so its cached matrixWorld is
+  // whatever the last frame left. Forcing from the root is the only reliable
+  // refresh here — see the same call in decal.ts for why the non-forcing
+  // variant silently does nothing on a primitive that writes `.matrix`.
+  object.updateMatrixWorld(true);
+  const meshes = collectMeshes(object);
+  if (meshes.length === 0) return null;
+  const geometry = bakeMeshesToGeometry(meshes);
+  if (!geometry) return null;
+  const data = geometryToFrozenData(geometry);
+  geometry.dispose();
+  return data;
+}
