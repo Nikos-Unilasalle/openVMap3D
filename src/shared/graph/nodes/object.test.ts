@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { EvalContext } from "../types";
-import { OBJECT_DISC_NODE, OBJECT_TEXT_NODE } from "./object";
+import { OBJECT_DISC_NODE, OBJECT_PLANE_NODE, OBJECT_TEXT_NODE } from "./object";
 import { BUILTIN_FONTS, FONT_NAMES } from "../../three/fonts/fonts";
 import helvetikerData from "../../three/fonts/helvetikerData.json";
 
@@ -127,5 +127,77 @@ describe("scalar angle sockets take degrees when wired", () => {
     const wired = disc({ arcAngle: 360 });
     const typed = disc({}, { arcAngle: Math.PI * 2 });
     expect(arcSpanX(wired)).toBeCloseTo(arcSpanX(typed), 5);
+  });
+});
+
+describe("flat primitives lie flat", () => {
+  /** The world-space direction a flat primitive's face points, from its own matrix. */
+  function faceNormal(res: Record<string, unknown>): THREE.Vector3 {
+    const mesh = res.geometry as THREE.Mesh;
+    return new THREE.Vector3(0, 0, 1)
+      .applyQuaternion(new THREE.Quaternion().setFromRotationMatrix(mesh.matrix))
+      .normalize();
+  }
+
+  it("a fresh Plane and Disc face UP, not sideways", () => {
+    // three builds every flat shape in XY facing +Z, which in a Y-up world
+    // stands a new one on its edge like a billboard. -90 degrees about X is
+    // what lays it down; +90 also lays it down but leaves the normal facing
+    // the ground, which lights it from underneath.
+    for (const [name, def] of [["plane", OBJECT_PLANE_NODE], ["disc", OBJECT_DISC_NODE]] as const) {
+      const res = def.evaluate({}, def.defaultParams, { ...CTX, nodeId: `flat-${name}` });
+      expect(faceNormal(res).y, `${name} should face up`).toBeCloseTo(1, 5);
+    }
+  });
+
+  it("Disc's flat default survives its own trailing spread", () => {
+    // Disc spreads COMMON_DEFAULT_PARAMS *last*, so a leading flat default was
+    // silently overwritten and the disc stayed upright — the shape of bug that
+    // only shows as "nothing happened".
+    const rot = OBJECT_DISC_NODE.defaultParams.rotation as THREE.Vector3;
+    expect(rot.x).toBeCloseTo(-Math.PI / 2, 6);
+  });
+});
+
+describe("Plane topology", () => {
+  it("Segments subdivides it, so Edit Mesh Points has interior vertices to grab", () => {
+    // A one-quad plane is editable in name only: four corners, nothing between.
+    for (const segments of [1, 2, 6]) {
+      const res = OBJECT_PLANE_NODE.evaluate(
+        {},
+        { ...OBJECT_PLANE_NODE.defaultParams, segments },
+        { ...CTX, nodeId: `plane-seg-${segments}` },
+      );
+      const g = (res.geometry as THREE.Mesh).geometry;
+      expect(g.getAttribute("position").count).toBe((segments + 1) ** 2);
+    }
+  });
+
+  it("defaults to a single quad, so raising Segments never re-maps existing point edits", () => {
+    // Edit Mesh Points stores pointsList by vertex index; changing the
+    // subdivision of a plane that already has edits would shuffle all of them.
+    expect(OBJECT_PLANE_NODE.defaultParams.segments).toBe(1);
+  });
+
+  it("Inner cuts a hole through it", () => {
+    const solid = OBJECT_PLANE_NODE.evaluate({}, OBJECT_PLANE_NODE.defaultParams, { ...CTX, nodeId: "plane-solid" });
+    const holed = OBJECT_PLANE_NODE.evaluate(
+      {},
+      { ...OBJECT_PLANE_NODE.defaultParams, innerRadius: 0.3 },
+      { ...CTX, nodeId: "plane-holed" },
+    );
+    expect((holed.geometry as THREE.Mesh).geometry.type).toBe("ShapeGeometry");
+    expect((holed.geometry as THREE.Mesh).geometry.getAttribute("position").count).toBeGreaterThan(
+      (solid.geometry as THREE.Mesh).geometry.getAttribute("position").count,
+    );
+  });
+
+  it("clamps Inner short of the edge, so it can never erase the whole quad", () => {
+    const res = OBJECT_PLANE_NODE.evaluate(
+      {},
+      { ...OBJECT_PLANE_NODE.defaultParams, innerRadius: 5 },
+      { ...CTX, nodeId: "plane-huge-hole" },
+    );
+    expect((res.geometry as THREE.Mesh).geometry.getAttribute("position").count).toBeGreaterThan(0);
   });
 });

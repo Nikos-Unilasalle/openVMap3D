@@ -246,7 +246,12 @@
             "emissive": 440020,
             "emissiveIntensity": 0.3,
             "roughness": 0.2,
-            "metalness": 0.45
+            "metalness": 0.45,
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
           }
         },
         {

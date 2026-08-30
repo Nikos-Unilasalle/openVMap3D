@@ -1005,7 +1005,10 @@ def _():
 @demo("postprocess_bloom")
 def _():
     n = [
-        node("ring", "object/disc", -1080, 240, location=v3(0, 1.2, 0), radius=1.1, innerRadius=0.75, depth=0.18,
+        # Same pinning as lighting_probe's backdrop: this ring faced the
+        # camera before flat primitives started lying flat by default.
+        node("ring", "object/disc", -1080, 240, location=v3(0, 1.2, 0), rotation=v3(0, 0, 0),
+             radius=1.1, innerRadius=0.75, depth=0.18,
              color=CYAN, emissive=CYAN, emissiveIntensity=2.4, shadeless=1),
         # threshold above 1, not the usual 0.3: the setup's white checker
         # floor sits near full luminance and its lit hotspots go past it, so
@@ -1191,7 +1194,10 @@ def _():
     # if you recolour a panel in the panel.
     wall = dict(shadeless=1, roughness=1, metalness=0)
     n = [
-        node("back", "object/plane", -1240, 40, location=v3(0, 1.1, -2.3), scale=v3(5, 3.2, 1), color=CYAN, **wall),
+        # rotation pinned upright: flat primitives now default to lying down
+        # (FLAT_PRIMITIVE_DEFAULT_PARAMS), and this one is a backdrop wall.
+        node("back", "object/plane", -1240, 40, location=v3(0, 1.1, -2.3), rotation=v3(0, 0, 0),
+             scale=v3(5, 3.2, 1), color=CYAN, **wall),
         node("left", "object/plane", -1240, 240, location=v3(-2.3, 1.1, 0), rotation=v3(0, 1.5708, 0), scale=v3(5, 3.2, 1), color=BLUE, **wall),
         node("right", "object/plane", -1240, 440, location=v3(2.3, 1.1, 0), rotation=v3(0, -1.5708, 0), scale=v3(5, 3.2, 1), color=PINK, **wall),
         # Above the sphere, not inside it — a probe sitting at the object's

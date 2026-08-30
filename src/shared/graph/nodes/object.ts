@@ -676,6 +676,28 @@ export const COMMON_DEFAULT_PARAMS = {
   thickness: 0.5,
 };
 
+/**
+ * Flat primitives — Plane, Disc, Polygon — lying down rather than standing up.
+ *
+ * three builds every flat shape in the XY plane facing +Z (PlaneGeometry,
+ * CircleGeometry, RingGeometry, ShapeGeometry all do), which in a Y-up world
+ * puts a new one on its edge like a billboard. That is almost never what a
+ * flat shape is for: it is a floor, a ground plate, a disc to stand things on.
+ * Every demo that used one had to type the same -90 degrees by hand.
+ *
+ * -90 degrees about X, not +90: both lay it down, but only this direction
+ * leaves the face normal pointing UP, which is what lighting and shadows
+ * read. (The materials are DoubleSide so the wrong one still *renders* —
+ * it just lights from underneath, which is why it went unnoticed.)
+ *
+ * Only new nodes are affected: a saved .tsuji stores its own rotation, so
+ * existing projects keep whatever they were authored with.
+ */
+export const FLAT_PRIMITIVE_DEFAULT_PARAMS = {
+  ...COMMON_DEFAULT_PARAMS,
+  rotation: new THREE.Vector3(-Math.PI / 2, 0, 0),
+};
+
 const meshCache = createNodeCache<THREE.Mesh>(disposeObject3D);
 
 function boxMesh(nodeId: string): THREE.Mesh {
@@ -732,22 +754,77 @@ function planeMesh(nodeId: string): THREE.Mesh {
   return mesh;
 }
 
-/** 2D Plane polygon primitive (flat z=0 quad in 3D) with texture mapping. */
+const PLANE_FIELDS = [
+  { id: "innerRadius", label: "Inner (Hole)", kind: "number" as const, step: 0.02 },
+  { id: "segments", label: "Segments (per side)", kind: "number" as const, step: 1 },
+];
+
+/**
+ * 2D Plane primitive — a unit quad in XY, laid flat by default (see
+ * FLAT_PRIMITIVE_DEFAULT_PARAMS).
+ *
+ * `Segments` exists for Edit Mesh Points. A plane used to be a single quad,
+ * so it was technically editable and practically useless: four corners and
+ * nothing in between. Raising Segments subdivides it into a grid whose
+ * interior vertices are what a point edit actually has to grab. It defaults
+ * to 1 rather than something higher because Edit Mesh Points stores its
+ * `pointsList` by vertex index — changing the subdivision of a plane that
+ * already has points edited would silently re-map every one of them.
+ *
+ * `Inner` cuts a rectangular hole, the flat-shape counterpart of Disc's
+ * Inner Radius. It is a fraction of the quad's half-extent, so it tracks
+ * Scale rather than fighting it. Holes and Segments do not combine: a hole
+ * needs a triangulated Shape, which has no grid to subdivide.
+ */
 export const OBJECT_PLANE_NODE: NodeDefinition = {
   type: "object/plane",
   label: "Plane",
   category: "object",
-  inputs: [...COMMON_PRIMITIVE_INPUTS],
+  inputs: [
+    ...COMMON_PRIMITIVE_INPUTS,
+    { id: "innerRadius", label: "Inner (Hole)", type: "value" },
+    { id: "segments", label: "Segments", type: "value" },
+  ],
   outputs: [...COMMON_PRIMITIVE_OUTPUTS],
-  defaultParams: { ...COMMON_DEFAULT_PARAMS },
-  paramFields: buildPrimitiveDynamicParamFields()(),
-  dynamicParamFields: buildPrimitiveDynamicParamFields(),
+  defaultParams: { ...FLAT_PRIMITIVE_DEFAULT_PARAMS, innerRadius: 0, segments: 1 },
+  paramFields: buildPrimitiveDynamicParamFields(PLANE_FIELDS)(),
+  dynamicParamFields: buildPrimitiveDynamicParamFields(PLANE_FIELDS),
   evaluate: (inputs, params, ctx) => {
     const mesh = planeMesh(ctx.nodeId);
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       mesh.matrixAutoUpdate = false;
       mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+    }
+
+    // The quad spans -0.5..0.5, so a hole half-width of 0.5 would leave
+    // nothing at all — hence the clamp just short of it.
+    const inner = Math.max(0, Math.min(0.499, numberInput(inputs.innerRadius, params.innerRadius, 0)));
+    const segments = Math.max(1, Math.min(200, Math.round(numberInput(inputs.segments, params.segments, 1))));
+
+    const key = `${inner}_${segments}`;
+    const cache = mesh as THREE.Mesh & { _lastPlaneKey?: string };
+    if (cache._lastPlaneKey !== key) {
+      cache._lastPlaneKey = key;
+      mesh.geometry.dispose();
+      if (inner > 0) {
+        const shape = new THREE.Shape();
+        shape.moveTo(-0.5, -0.5);
+        shape.lineTo(0.5, -0.5);
+        shape.lineTo(0.5, 0.5);
+        shape.lineTo(-0.5, 0.5);
+        shape.closePath();
+        const hole = new THREE.Path();
+        hole.moveTo(-inner, -inner);
+        hole.lineTo(-inner, inner);
+        hole.lineTo(inner, inner);
+        hole.lineTo(inner, -inner);
+        hole.closePath();
+        shape.holes.push(hole);
+        mesh.geometry = new THREE.ShapeGeometry(shape);
+      } else {
+        mesh.geometry = new THREE.PlaneGeometry(1, 1, segments, segments);
+      }
     }
 
     const matParams = extractMaterialParams(inputs, params);
@@ -832,7 +909,10 @@ export const OBJECT_DISC_NODE: NodeDefinition = {
     startAngle: 0,
     arcAngle: Math.PI * 2,
     depth: 0,
-    ...COMMON_DEFAULT_PARAMS,
+    // Spread LAST, as it always was here — which is exactly why the flat
+    // default has to be this one and not a leading spread: whatever comes
+    // last wins, and COMMON_DEFAULT_PARAMS would put the disc back upright.
+    ...FLAT_PRIMITIVE_DEFAULT_PARAMS,
   },
   paramFields: buildPrimitiveDynamicParamFields([
     { id: "radius", label: "Radius", kind: "number", step: 0.05 },
