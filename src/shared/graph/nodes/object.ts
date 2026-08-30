@@ -1001,6 +1001,126 @@ export const OBJECT_DISC_NODE: NodeDefinition = {
   },
 };
 
+function polygonMesh(nodeId: string): THREE.Mesh {
+  const existing = meshCache.get(nodeId);
+  if (existing) return existing;
+  const mesh = new THREE.Mesh(
+    new THREE.CircleGeometry(0.5, 6),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, side: THREE.DoubleSide }),
+  );
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  mesh.userData.nodeId = nodeId;
+  meshCache.set(nodeId, mesh);
+  return mesh;
+}
+
+const POLYGON_FIELDS = [
+  { id: "sides", label: "Sides", kind: "number" as const, step: 1 },
+  { id: "radius", label: "Radius", kind: "number" as const, step: 0.05 },
+  { id: "innerRadius", label: "Inner Radius (Hole)", kind: "number" as const, step: 0.05 },
+  { id: "depth", label: "Depth / Relief", kind: "number" as const, step: 0.05 },
+];
+
+/**
+ * Regular N-sided polygon — the third flat primitive, alongside Plane and
+ * Disc, and laid flat by default like both.
+ *
+ * It is deliberately the Disc's construction with `sides` where the Disc
+ * hard-codes 64 segments, because that is genuinely all a polygon is: three's
+ * CircleGeometry and RingGeometry with a low segment count ARE regular
+ * polygons, and CylinderGeometry with a low radial count IS a prism. Reusing
+ * them rather than emitting vertices by hand means the hole, the extrusion
+ * and the UVs all behave exactly as they already do on a Disc.
+ *
+ * `Radius` is the circumradius (centre to a corner), which is what those
+ * built-ins use — not the inradius, the centre-to-edge distance a
+ * "how wide is my hexagon" question usually means. Rotation is left to the
+ * node's own Rotation: spinning a triangle to sit flat-side-down is the
+ * object turning, not the shape changing.
+ *
+ * `Sides` is wireable, so an oscillator on it walks a shape from triangle
+ * through hexagon to something indistinguishable from a circle.
+ */
+export const OBJECT_POLYGON_NODE: NodeDefinition = {
+  type: "object/polygon",
+  label: "Polygon",
+  category: "object",
+  inputs: [
+    { id: "sides", label: "Sides", type: "value" },
+    { id: "radius", label: "Radius", type: "value" },
+    { id: "innerRadius", label: "Inner Radius", type: "value" },
+    { id: "depth", label: "Depth", type: "value" },
+    ...COMMON_PRIMITIVE_INPUTS,
+  ],
+  outputs: [...COMMON_PRIMITIVE_OUTPUTS],
+  defaultParams: {
+    sides: 6,
+    radius: 0.5,
+    innerRadius: 0,
+    depth: 0,
+    // Spread last, same reason as Disc: whatever comes last wins, and
+    // COMMON_DEFAULT_PARAMS would stand the polygon back up.
+    ...FLAT_PRIMITIVE_DEFAULT_PARAMS,
+  },
+  paramFields: buildPrimitiveDynamicParamFields(POLYGON_FIELDS)(),
+  dynamicParamFields: buildPrimitiveDynamicParamFields(POLYGON_FIELDS),
+  evaluate: (inputs, params, ctx) => {
+    const mesh = polygonMesh(ctx.nodeId);
+
+    if (ctx.nodeId !== ctx.liveEditNodeId) {
+      mesh.matrixAutoUpdate = false;
+      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+    }
+
+    // Below 3 there is no polygon at all — a wired Sides sweeping down to 0
+    // would otherwise hand three a degenerate geometry.
+    const sides = Math.max(3, Math.min(128, Math.round(numberInput(inputs.sides, params.sides, 6))));
+    const radius = Math.max(0.001, numberInput(inputs.radius, params.radius, 0.5));
+    const innerRadius = Math.max(0, Math.min(radius - 0.0001, numberInput(inputs.innerRadius, params.innerRadius, 0)));
+    const depth = Math.max(0, numberInput(inputs.depth, params.depth, 0));
+
+    const key = `${sides}_${radius}_${innerRadius}_${depth}`;
+    const cache = mesh as THREE.Mesh & { _lastPolygonKey?: string };
+    if (cache._lastPolygonKey !== key) {
+      cache._lastPolygonKey = key;
+      mesh.geometry.dispose();
+      if (depth === 0) {
+        mesh.geometry =
+          innerRadius === 0
+            ? new THREE.CircleGeometry(radius, sides)
+            : new THREE.RingGeometry(innerRadius, radius, sides, 1);
+      } else if (innerRadius === 0) {
+        // A prism: a cylinder with `sides` radial segments, stood up the same
+        // way the Disc stands its own.
+        const prism = new THREE.CylinderGeometry(radius, radius, depth, sides);
+        prism.rotateX(Math.PI / 2);
+        mesh.geometry = prism;
+      } else {
+        // Extruded ring. Built from explicit corner points rather than
+        // absarc, so the hole is a polygon too — an arc here would leave a
+        // round hole punched through a faceted plate.
+        const corners = (r: number) =>
+          Array.from({ length: sides }, (_, i) => {
+            const a = (i / sides) * Math.PI * 2;
+            return new THREE.Vector2(Math.cos(a) * r, Math.sin(a) * r);
+          });
+        const shape = new THREE.Shape(corners(radius));
+        shape.holes.push(new THREE.Path(corners(innerRadius).reverse()));
+        const extruded = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, curveSegments: sides });
+        extruded.translate(0, 0, -depth / 2);
+        mesh.geometry = extruded;
+      }
+    }
+
+    const matParams = extractMaterialParams(inputs, params);
+    const texParams = extractTextureParams(inputs, params, ctx.nodeId);
+    applyMaterialParams(mesh, matParams, depth > 0 ? THREE.FrontSide : THREE.DoubleSide, texParams);
+
+    return primitiveOutputs(mesh);
+  },
+};
+
 function cylinderMesh(nodeId: string): THREE.Mesh {
   const existing = meshCache.get(nodeId);
   if (existing) return existing;

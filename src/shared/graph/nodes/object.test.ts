@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { EvalContext } from "../types";
-import { OBJECT_DISC_NODE, OBJECT_PLANE_NODE, OBJECT_TEXT_NODE } from "./object";
+import { OBJECT_DISC_NODE, OBJECT_PLANE_NODE, OBJECT_POLYGON_NODE, OBJECT_TEXT_NODE } from "./object";
 import { BUILTIN_FONTS, FONT_NAMES } from "../../three/fonts/fonts";
 import helvetikerData from "../../three/fonts/helvetikerData.json";
 
@@ -199,5 +199,76 @@ describe("Plane topology", () => {
       { ...CTX, nodeId: "plane-huge-hole" },
     );
     expect((res.geometry as THREE.Mesh).geometry.getAttribute("position").count).toBeGreaterThan(0);
+  });
+});
+
+describe("OBJECT_POLYGON_NODE", () => {
+  const poly = (params: Record<string, unknown>, id: string) =>
+    OBJECT_POLYGON_NODE.evaluate({}, { ...OBJECT_POLYGON_NODE.defaultParams, ...params }, { ...CTX, nodeId: id });
+
+  /** Distinct corner directions in the XY plane — the count IS the side count. */
+  function cornerCount(res: Record<string, unknown>): number {
+    const g = (res.geometry as THREE.Mesh).geometry;
+    const pos = g.getAttribute("position");
+    const angles = new Set<string>();
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+      if (Math.hypot(x, y) < 1e-4) continue; // the fan centre has no direction
+      angles.add((Math.round((Math.atan2(y, x) * 180) / Math.PI * 100) / 100).toFixed(2));
+    }
+    return angles.size;
+  }
+
+  it("has exactly the number of corners asked for", () => {
+    for (const sides of [3, 5, 6, 8]) {
+      expect(cornerCount(poly({ sides }, `poly-${sides}`)), `${sides}-gon`).toBe(sides);
+    }
+  });
+
+  it("lies flat like the other flat primitives", () => {
+    const mesh = poly({}, "poly-flat").geometry as THREE.Mesh;
+    const n = new THREE.Vector3(0, 0, 1)
+      .applyQuaternion(new THREE.Quaternion().setFromRotationMatrix(mesh.matrix))
+      .normalize();
+    expect(n.y).toBeCloseTo(1, 5);
+  });
+
+  it("Radius is the circumradius — corners sit on it", () => {
+    const g = (poly({ sides: 6, radius: 2 }, "poly-r").geometry as THREE.Mesh).geometry;
+    const pos = g.getAttribute("position");
+    let maxR = 0;
+    for (let i = 0; i < pos.count; i++) maxR = Math.max(maxR, Math.hypot(pos.getX(i), pos.getY(i)));
+    expect(maxR).toBeCloseTo(2, 4);
+  });
+
+  it("Inner Radius punches a hole that is itself a polygon, not a circle", () => {
+    // An absarc hole would leave a round hole in a faceted plate; the corners
+    // of the hole have to match the corners of the outline.
+    const flat = poly({ sides: 5, innerRadius: 0.25 }, "poly-hole");
+    expect(cornerCount(flat)).toBe(5);
+    const extruded = poly({ sides: 5, innerRadius: 0.25, depth: 0.4 }, "poly-hole-deep");
+    const g = (extruded.geometry as THREE.Mesh).geometry;
+    const pos = g.getAttribute("position");
+    let minR = Infinity;
+    for (let i = 0; i < pos.count; i++) minR = Math.min(minR, Math.hypot(pos.getX(i), pos.getY(i)));
+    // The hole really goes through: nothing sits at the centre.
+    expect(minR).toBeGreaterThan(0.2);
+  });
+
+  it("Depth extrudes it into a prism of the same side count", () => {
+    const g = (poly({ sides: 6, depth: 0.5 }, "poly-prism").geometry as THREE.Mesh).geometry;
+    g.computeBoundingBox();
+    const box = g.boundingBox!;
+    expect(box.max.z - box.min.z).toBeCloseTo(0.5, 4);
+    // Centred on its own origin, like the Disc's extrusion.
+    expect(box.max.z).toBeCloseTo(0.25, 4);
+  });
+
+  it("never degenerates below a triangle, however low Sides is driven", () => {
+    for (const sides of [0, 1, 2, -5]) {
+      const g = (poly({ sides }, `poly-min-${sides}`).geometry as THREE.Mesh).geometry;
+      expect(g.getAttribute("position").count).toBeGreaterThan(2);
+    }
   });
 });
