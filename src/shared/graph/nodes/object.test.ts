@@ -179,17 +179,81 @@ describe("Plane topology", () => {
     expect(OBJECT_PLANE_NODE.defaultParams.segments).toBe(1);
   });
 
-  it("Inner cuts a hole through it", () => {
-    const solid = OBJECT_PLANE_NODE.evaluate({}, OBJECT_PLANE_NODE.defaultParams, { ...CTX, nodeId: "plane-solid" });
+  it("Inner cuts a hole through it — nothing is left inside the hole", () => {
+    const inner = 0.3;
     const holed = OBJECT_PLANE_NODE.evaluate(
       {},
-      { ...OBJECT_PLANE_NODE.defaultParams, innerRadius: 0.3 },
+      { ...OBJECT_PLANE_NODE.defaultParams, innerRadius: inner, segments: 4 },
       { ...CTX, nodeId: "plane-holed" },
     );
-    expect((holed.geometry as THREE.Mesh).geometry.type).toBe("ShapeGeometry");
-    expect((holed.geometry as THREE.Mesh).geometry.getAttribute("position").count).toBeGreaterThan(
-      (solid.geometry as THREE.Mesh).geometry.getAttribute("position").count,
+    const pos = (holed.geometry as THREE.Mesh).geometry.getAttribute("position");
+
+    let insideHole = 0;
+    let onHoleEdge = 0;
+    for (let i = 0; i < pos.count; i++) {
+      const x = Math.abs(pos.getX(i));
+      const y = Math.abs(pos.getY(i));
+      const within = Math.max(x, y);
+      if (within < inner - 1e-6) insideHole++;
+      if (Math.abs(within - inner) < 1e-6) onHoleEdge++;
+    }
+    expect(insideHole).toBe(0);
+    expect(onHoleEdge).toBeGreaterThan(0);
+  });
+
+  it("Inner and Segments combine — the frame around the hole still subdivides", () => {
+    // The hole used to force a triangulated Shape, which has no grid, so
+    // Segments silently did nothing the moment Inner went above 0.
+    const counts = [1, 2, 4].map((segments) => {
+      const res = OBJECT_PLANE_NODE.evaluate(
+        {},
+        { ...OBJECT_PLANE_NODE.defaultParams, innerRadius: 0.25, segments },
+        { ...CTX, nodeId: `plane-holed-seg-${segments}` },
+      );
+      return (res.geometry as THREE.Mesh).geometry.getAttribute("position").count;
+    });
+    expect(counts[1]).toBeGreaterThan(counts[0]);
+    expect(counts[2]).toBeGreaterThan(counts[1]);
+  });
+
+  it("Depth extrudes it symmetrically, so thickening never shifts it off its plane", () => {
+    const depth = 0.4;
+    const res = OBJECT_PLANE_NODE.evaluate(
+      {},
+      { ...OBJECT_PLANE_NODE.defaultParams, depth },
+      { ...CTX, nodeId: "plane-deep" },
     );
+    const geom = (res.geometry as THREE.Mesh).geometry;
+    geom.computeBoundingBox();
+    const box = geom.boundingBox!;
+    expect(box.min.z).toBeCloseTo(-depth / 2, 5);
+    expect(box.max.z).toBeCloseTo(depth / 2, 5);
+  });
+
+  it("Depth 0 stays a flat sheet", () => {
+    const res = OBJECT_PLANE_NODE.evaluate({}, OBJECT_PLANE_NODE.defaultParams, { ...CTX, nodeId: "plane-flat" });
+    const geom = (res.geometry as THREE.Mesh).geometry;
+    geom.computeBoundingBox();
+    expect(geom.boundingBox!.min.z).toBeCloseTo(0, 5);
+    expect(geom.boundingBox!.max.z).toBeCloseTo(0, 5);
+  });
+
+  it("Depth combines with Inner — an extruded frame, still hollow", () => {
+    const inner = 0.3;
+    const depth = 0.2;
+    const res = OBJECT_PLANE_NODE.evaluate(
+      {},
+      { ...OBJECT_PLANE_NODE.defaultParams, innerRadius: inner, depth },
+      { ...CTX, nodeId: "plane-deep-holed" },
+    );
+    const geom = (res.geometry as THREE.Mesh).geometry;
+    const pos = geom.getAttribute("position");
+    for (let i = 0; i < pos.count; i++) {
+      const within = Math.max(Math.abs(pos.getX(i)), Math.abs(pos.getY(i)));
+      expect(within).toBeGreaterThan(inner - 1e-6);
+    }
+    geom.computeBoundingBox();
+    expect(geom.boundingBox!.min.z).toBeCloseTo(-depth / 2, 5);
   });
 
   it("clamps Inner short of the edge, so it can never erase the whole quad", () => {

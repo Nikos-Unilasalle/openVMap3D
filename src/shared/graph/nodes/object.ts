@@ -754,9 +754,97 @@ function planeMesh(nodeId: string): THREE.Mesh {
   return mesh;
 }
 
+/**
+ * The quad's outline at half-extent `h`, as a function of `p` in [0,1)
+ * running counter-clockwise from the bottom-left corner.
+ */
+function quadPerimeterPoint(h: number, p: number): [number, number] {
+  const side = Math.min(3, Math.floor(p * 4));
+  const t = p * 4 - side;
+  switch (side) {
+    case 0: return [-h + 2 * h * t, -h];
+    case 1: return [h, -h + 2 * h * t];
+    case 2: return [h - 2 * h * t, h];
+    default: return [-h, h - 2 * h * t];
+  }
+}
+
+/**
+ * A quad with a centred rectangular hole, meshed as a subdivided frame.
+ *
+ * ShapeGeometry triangulates a holed outline in a single pass with no grid
+ * to subdivide, so building the hole that way made Segments silently do
+ * nothing. Both boundaries here are centred axis-aligned squares, so the
+ * frame between them maps cleanly onto a grid instead: walk `p` around the
+ * perimeter and `r` outward from the inner edge to the outer one, and every
+ * cell is a well-formed quad — which is what Edit Mesh Points needs to have
+ * something to grab.
+ */
+function holedQuadGeometry(inner: number, segments: number): THREE.BufferGeometry {
+  const around = 4 * segments; // `segments` cells per side
+  const stride = segments + 1;
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+
+  for (let i = 0; i <= around; i++) {
+    // The seam vertex is duplicated (i === around repeats i === 0) so its U
+    // can reach 1 instead of wrapping back to 0 and mirroring the texture
+    // across the last column of cells.
+    const p = (i % around) / around;
+    const [ix, iy] = quadPerimeterPoint(inner, p);
+    const [ox, oy] = quadPerimeterPoint(0.5, p);
+    for (let j = 0; j <= segments; j++) {
+      const r = j / segments;
+      const x = ix + (ox - ix) * r;
+      const y = iy + (oy - iy) * r;
+      positions.push(x, y, 0);
+      normals.push(0, 0, 1);
+      // Planar UVs, the same mapping PlaneGeometry gives, so a texture reads
+      // identically whether or not the plane has a hole punched in it.
+      uvs.push(x + 0.5, y + 0.5);
+    }
+  }
+
+  for (let i = 0; i < around; i++) {
+    for (let j = 0; j < segments; j++) {
+      const a = i * stride + j;
+      const b = a + stride;
+      indices.push(a, a + 1, b, a + 1, b + 1, b);
+    }
+  }
+
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geom.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+  geom.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geom.setIndex(indices);
+  return geom;
+}
+
+/** The quad outline with its rectangular hole, for the extruded (Depth > 0) case. */
+function holedQuadShape(inner: number): THREE.Shape {
+  const shape = new THREE.Shape();
+  shape.moveTo(-0.5, -0.5);
+  shape.lineTo(0.5, -0.5);
+  shape.lineTo(0.5, 0.5);
+  shape.lineTo(-0.5, 0.5);
+  shape.closePath();
+  const hole = new THREE.Path();
+  hole.moveTo(-inner, -inner);
+  hole.lineTo(-inner, inner);
+  hole.lineTo(inner, inner);
+  hole.lineTo(inner, -inner);
+  hole.closePath();
+  shape.holes.push(hole);
+  return shape;
+}
+
 const PLANE_FIELDS = [
   { id: "innerRadius", label: "Inner (Hole)", kind: "number" as const, step: 0.02 },
   { id: "segments", label: "Segments (per side)", kind: "number" as const, step: 1 },
+  { id: "depth", label: "Depth / Relief", kind: "number" as const, step: 0.05 },
 ];
 
 /**
@@ -773,8 +861,13 @@ const PLANE_FIELDS = [
  *
  * `Inner` cuts a rectangular hole, the flat-shape counterpart of Disc's
  * Inner Radius. It is a fraction of the quad's half-extent, so it tracks
- * Scale rather than fighting it. Holes and Segments do not combine: a hole
- * needs a triangulated Shape, which has no grid to subdivide.
+ * Scale rather than fighting it, and it combines with Segments: the frame
+ * left around the hole is meshed as a grid (see holedQuadGeometry).
+ *
+ * `Depth` gives the quad relief, on Disc's convention: 0 is the flat,
+ * double-sided sheet, and anything above extrudes it symmetrically about
+ * its own plane so raising Depth thickens the plane in place instead of
+ * shifting it off its position.
  */
 export const OBJECT_PLANE_NODE: NodeDefinition = {
   type: "object/plane",
@@ -784,9 +877,10 @@ export const OBJECT_PLANE_NODE: NodeDefinition = {
     ...COMMON_PRIMITIVE_INPUTS,
     { id: "innerRadius", label: "Inner (Hole)", type: "value" },
     { id: "segments", label: "Segments", type: "value" },
+    { id: "depth", label: "Depth", type: "value" },
   ],
   outputs: [...COMMON_PRIMITIVE_OUTPUTS],
-  defaultParams: { ...FLAT_PRIMITIVE_DEFAULT_PARAMS, innerRadius: 0, segments: 1 },
+  defaultParams: { ...FLAT_PRIMITIVE_DEFAULT_PARAMS, innerRadius: 0, segments: 1, depth: 0 },
   paramFields: buildPrimitiveDynamicParamFields(PLANE_FIELDS)(),
   dynamicParamFields: buildPrimitiveDynamicParamFields(PLANE_FIELDS),
   evaluate: (inputs, params, ctx) => {
@@ -801,27 +895,30 @@ export const OBJECT_PLANE_NODE: NodeDefinition = {
     // nothing at all — hence the clamp just short of it.
     const inner = Math.max(0, Math.min(0.499, numberInput(inputs.innerRadius, params.innerRadius, 0)));
     const segments = Math.max(1, Math.min(200, Math.round(numberInput(inputs.segments, params.segments, 1))));
+    const depth = Math.max(0, numberInput(inputs.depth, params.depth, 0));
 
-    const key = `${inner}_${segments}`;
+    const key = `${inner}_${segments}_${depth}`;
     const cache = mesh as THREE.Mesh & { _lastPlaneKey?: string };
     if (cache._lastPlaneKey !== key) {
       cache._lastPlaneKey = key;
       mesh.geometry.dispose();
-      if (inner > 0) {
-        const shape = new THREE.Shape();
-        shape.moveTo(-0.5, -0.5);
-        shape.lineTo(0.5, -0.5);
-        shape.lineTo(0.5, 0.5);
-        shape.lineTo(-0.5, 0.5);
-        shape.closePath();
-        const hole = new THREE.Path();
-        hole.moveTo(-inner, -inner);
-        hole.lineTo(-inner, inner);
-        hole.lineTo(inner, inner);
-        hole.lineTo(inner, -inner);
-        hole.closePath();
-        shape.holes.push(hole);
-        mesh.geometry = new THREE.ShapeGeometry(shape);
+      if (depth > 0) {
+        if (inner > 0) {
+          // A holed outline has to go through ExtrudeGeometry's
+          // triangulation, so this is the one combination Segments cannot
+          // reach — there are no straight-edge curves for it to refine.
+          const extrudeGeom = new THREE.ExtrudeGeometry(holedQuadShape(inner), {
+            depth,
+            bevelEnabled: false,
+          });
+          // Centre the slab on the plane's own position, matching Disc.
+          extrudeGeom.translate(0, 0, -depth / 2);
+          mesh.geometry = extrudeGeom;
+        } else {
+          mesh.geometry = new THREE.BoxGeometry(1, 1, depth, segments, segments, 1);
+        }
+      } else if (inner > 0) {
+        mesh.geometry = holedQuadGeometry(inner, segments);
       } else {
         mesh.geometry = new THREE.PlaneGeometry(1, 1, segments, segments);
       }
@@ -829,7 +926,10 @@ export const OBJECT_PLANE_NODE: NodeDefinition = {
 
     const matParams = extractMaterialParams(inputs, params);
     const texParams = extractTextureParams(inputs, params, ctx.nodeId);
-    applyMaterialParams(mesh, matParams, THREE.DoubleSide, texParams);
+    // A flat sheet has to be visible from behind; a solid slab has a real
+    // backface and shades better without one. Same split as Disc.
+    const defaultSide: THREE.Side = depth > 0 ? THREE.FrontSide : THREE.DoubleSide;
+    applyMaterialParams(mesh, matParams, defaultSide, texParams);
 
     return primitiveOutputs(mesh);
   },
