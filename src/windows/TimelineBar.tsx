@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { EasingType, Marker } from "../shared/graph/types";
 import { setInputZone } from "../shared/graph/inputZoneStore";
-import { EasingPopover, EASING_STRENGTH_CONFIG } from "./EasingPopover";
+import { EasingPopover, EASING_STRENGTH_CONFIG, strengthForEasing } from "./EasingPopover";
 import { WaveformPeak, clipPixelRange, loadWaveformPeaks } from "./audioWaveform";
 import "./timeline-bar.css";
 
@@ -386,8 +386,9 @@ export function TimelineBar({
 
   const handleSelectEasing = (newType: EasingType) => {
     if (!easingPopover) return;
-    setEasingPopover((prev) => (prev ? { ...prev, easeIn: newType } : null));
-    onUpdateKeyframeEasing?.(easingPopover.frame, newType, easingPopover.strength, easingPopover.easeBezier);
+    const strength = strengthForEasing(newType, easingPopover.easeIn, easingPopover.strength);
+    setEasingPopover((prev) => (prev ? { ...prev, easeIn: newType, strength: strength ?? prev.strength } : null));
+    onUpdateKeyframeEasing?.(easingPopover.frame, newType, strength, easingPopover.easeBezier);
   };
 
   const handleStrengthChange = (value: number) => {

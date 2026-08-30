@@ -12,7 +12,7 @@ import {
   parseKeyframeId,
   SelectedKeyframeKey,
 } from "./timelineUtils";
-import { EasingPopover, EASING_OPTIONS, EASING_STRENGTH_CONFIG } from "./EasingPopover";
+import { EasingPopover, EASING_OPTIONS, EASING_STRENGTH_CONFIG, strengthForEasing } from "./EasingPopover";
 import { DragNumberInput } from "./DragNumberInput";
 import { MotionGraph } from "./MotionGraph";
 import "./timeline-drawer.css";
@@ -339,8 +339,9 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
 
   const handleSelectEasing = (newType: EasingType) => {
     if (!easingPopover) return;
-    setEasingPopover((prev) => (prev ? { ...prev, easeIn: newType } : null));
-    onBatchUpdateEasing(easingPopover.targets, newType, easingPopover.strength, easingPopover.easeBezier);
+    const strength = strengthForEasing(newType, easingPopover.easeIn, easingPopover.strength);
+    setEasingPopover((prev) => (prev ? { ...prev, easeIn: newType, strength: strength ?? prev.strength } : null));
+    onBatchUpdateEasing(easingPopover.targets, newType, strength, easingPopover.easeBezier);
   };
 
   const handleStrengthChange = (value: number) => {

@@ -22,6 +22,43 @@ export const EASING_STRENGTH_CONFIG: Record<
   bezier: null,
 };
 
+/**
+ * The strength to carry when the popover switches a keyframe from `prev` to
+ * `next`.
+ *
+ * Each easing reads the number differently — expo as an exponent over 1..20,
+ * smooth/bounce/elastic as a 0..1 blend toward linear, back as an overshoot
+ * over 0..5 — so handing the old value straight to the new curve feeds it a
+ * figure that means something else. Nothing downstream clamps it either:
+ * blendToLinear extrapolates, so a smooth that inherited expo's 10 swings the
+ * segment out to -0.79 and 1.79, well past both of the keyframes it runs
+ * between.
+ *
+ * Easings that share a scale keep the tuning, so nudging smooth down to 0.3
+ * and trying it as bounce or elastic stays at 0.3. Everything else takes the
+ * incoming easing's own default, which is what picking it from the menu is
+ * asking for.
+ */
+export function strengthForEasing(
+  next: EasingType,
+  prev: EasingType,
+  current: number | undefined,
+): number | undefined {
+  const nextConfig = EASING_STRENGTH_CONFIG[next];
+  if (!nextConfig) return undefined; // linear / hold / bezier take no strength
+  const prevConfig = EASING_STRENGTH_CONFIG[prev];
+  const sameScale = prevConfig !== null && prevConfig !== undefined
+    && prevConfig.min === nextConfig.min
+    && prevConfig.max === nextConfig.max;
+  if (sameScale && current !== undefined && Number.isFinite(current)) {
+    // Clamped rather than trusted: the slider bounds the values it writes,
+    // but this also has to hold for a strength that reached the popover from
+    // a keyframe saved before those bounds were enforced.
+    return Math.max(nextConfig.min, Math.min(nextConfig.max, current));
+  }
+  return nextConfig.defaultValue;
+}
+
 export const EASING_OPTIONS: { type: EasingType; label: string; icon: React.ReactNode }[] = [
   {
     type: "smooth",
