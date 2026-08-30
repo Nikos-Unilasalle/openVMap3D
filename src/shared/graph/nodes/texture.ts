@@ -301,7 +301,7 @@ export const TEXTURE_PLANE_NODE: NodeDefinition = {
         wiredMatrix.multiply(new THREE.Matrix4().makeScale(aspect, 1.0, 1.0));
       }
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(composeNativeMatrix(wiredMatrix, params.location, params.rotation, params.scale));
+      mesh.matrix.copy(composeNativeMatrix(wiredMatrix, params.location, params.rotation, params.scale, params));
     }
 
     // Update material properties

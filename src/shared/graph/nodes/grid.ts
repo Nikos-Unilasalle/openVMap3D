@@ -70,7 +70,7 @@ export const GRID_NODE: NodeDefinition = {
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       const wiredMatrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix.clone() : new THREE.Matrix4();
       grid.matrixAutoUpdate = false;
-      grid.matrix.copy(composeNativeMatrix(wiredMatrix, params.location, params.rotation, params.scale));
+      grid.matrix.copy(composeNativeMatrix(wiredMatrix, params.location, params.rotation, params.scale, params));
     }
 
     return {

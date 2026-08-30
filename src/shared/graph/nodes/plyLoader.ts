@@ -186,7 +186,7 @@ export const OBJECT_PLY_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       state.points.matrixAutoUpdate = false;
-      state.points.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      state.points.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
     }
 
     const pointSize = Math.max(0.001, inputs.pointSize !== undefined ? Number(inputs.pointSize) : (Number(params.pointSize) || 0.02));

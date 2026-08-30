@@ -540,6 +540,23 @@ const NATIVE_TRANSFORM_PARAM_FIELDS: ParamFieldDef[] = [
   { id: "location", label: "Location", kind: "vector", group: "Transform" },
   { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true, group: "Transform" },
   { id: "scale", label: "Scale", kind: "vector", group: "Transform" },
+  // Only meaningful with something wired into Matrix; harmless otherwise,
+  // which is why they sit with the transform rather than in a mode of their
+  // own. See InheritPivot in transform.ts.
+  {
+    id: "inheritRotation",
+    label: "Inherit Rotation",
+    kind: "select",
+    options: ["parent", "self", "none"],
+    group: "Transform",
+  },
+  {
+    id: "inheritScale",
+    label: "Inherit Scale",
+    kind: "select",
+    options: ["parent", "self", "none"],
+    group: "Transform",
+  },
 ];
 
 export function buildPrimitiveDynamicParamFields(extraFields: ParamFieldDef[] = []): () => ParamFieldDef[] {
@@ -657,6 +674,10 @@ export const COMMON_DEFAULT_PARAMS = {
   location: new THREE.Vector3(0, 0, 0),
   rotation: new THREE.Vector3(0, 0, 0),
   scale: new THREE.Vector3(1, 1, 1),
+  // "parent" is plain scene-graph parenting — the behaviour before these
+  // existed, so every saved scene keeps rendering identically.
+  inheritRotation: "parent",
+  inheritScale: "parent",
   texturePath: "",
   normalMapPath: "",
   roughnessMapPath: "",
@@ -729,7 +750,7 @@ export const OBJECT_BOX_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
     }
 
     const matParams = extractMaterialParams(inputs, params);
@@ -888,7 +909,7 @@ export const OBJECT_PLANE_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
     }
 
     // The quad spans -0.5..0.5, so a hole half-width of 0.5 would leave
@@ -964,7 +985,7 @@ export const OBJECT_SPHERE_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
     }
 
     const matParams = extractMaterialParams(inputs, params);
@@ -1033,7 +1054,7 @@ export const OBJECT_DISC_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
     }
 
     const radius = Math.max(0.001, numberInput(inputs.radius, params.radius, 0.5));
@@ -1170,7 +1191,7 @@ export const OBJECT_POLYGON_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
     }
 
     // Below 3 there is no polygon at all — a wired Sides sweeping down to 0
@@ -1250,7 +1271,7 @@ export const OBJECT_CYLINDER_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
     }
 
     const matParams = extractMaterialParams(inputs, params);
@@ -1290,7 +1311,7 @@ export const OBJECT_CONE_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
     }
 
     const matParams = extractMaterialParams(inputs, params);
@@ -1361,7 +1382,7 @@ export const OBJECT_TEXT_NODE: NodeDefinition = {
     // A custom font loaded via the file field wins; otherwise the Font menu.
     const font = textState.font ?? BUILTIN_FONTS[String(params.fontPreset ?? "Helvetiker")] ?? defaultFont;
 
-    const baseMatrix = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale);
+    const baseMatrix = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params);
 
     const stateChanged =
       textState.lastText !== textStr ||
@@ -1562,7 +1583,7 @@ export const OBJECT_BAR_GRAPH_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       group.matrixAutoUpdate = false;
-      group.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      group.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
     }
 
     const rawValues = Array.isArray(inputs.values)
@@ -1773,7 +1794,7 @@ export const OBJECT_EMPTY_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       group.matrixAutoUpdate = false;
-      group.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      group.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
     }
 
     const pos = new THREE.Vector3();

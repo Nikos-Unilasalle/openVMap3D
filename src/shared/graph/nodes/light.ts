@@ -123,7 +123,7 @@ export const LIGHT_DIRECTIONAL_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       light.matrixAutoUpdate = false;
-      const mat = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale);
+      const mat = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params);
       light.matrix.copy(mat);
       mat.decompose(light.position, light.quaternion, light.scale);
     }
@@ -201,7 +201,7 @@ export const LIGHT_POINT_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       light.matrixAutoUpdate = false;
-      light.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      light.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
     }
 
     return { light };
@@ -275,7 +275,7 @@ export const LIGHT_SPOT_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       light.matrixAutoUpdate = false;
-      const mat = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale);
+      const mat = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params);
       light.matrix.copy(mat);
       mat.decompose(light.position, light.quaternion, light.scale);
     }

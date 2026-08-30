@@ -121,7 +121,7 @@ export const LINE_GRAPH_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       state.group.matrixAutoUpdate = false;
-      state.group.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      state.group.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
     }
 
     const rawValues = toNumberList(inputs.values).length > 0 ? toNumberList(inputs.values) : [0.2, 0.6, 0.4, 0.9, 0.5];
@@ -292,7 +292,7 @@ export const CHART_AXIS_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       state.group.matrixAutoUpdate = false;
-      state.group.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      state.group.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
     }
 
     const min = numberInput(inputs.min, params.min, 0);
@@ -431,7 +431,7 @@ export const PIE_CHART_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       state.group.matrixAutoUpdate = false;
-      state.group.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      state.group.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
     }
 
     const rawValues = toNumberList(inputs.values);
@@ -548,7 +548,7 @@ export const SCATTER_PLOT_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       state.group.matrixAutoUpdate = false;
-      state.group.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      state.group.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
     }
 
     const xValues = toNumberList(inputs.xValues);
@@ -717,7 +717,7 @@ export const POINT_CLOUD_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       state.points.matrixAutoUpdate = false;
-      state.points.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      state.points.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
     }
 
     const inputX = toNumberList(inputs.xValues);

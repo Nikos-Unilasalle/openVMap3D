@@ -57,7 +57,7 @@ function applySvgPose(
 ): void {
   if (ctx.nodeId !== ctx.liveEditNodeId) {
     obj.matrixAutoUpdate = false;
-    obj.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+    obj.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
   }
 }
 
@@ -257,7 +257,7 @@ export const SVG_TO_CURVES_NODE: NodeDefinition = {
     }
 
     const key = `${scale}:${normalize}:${raw.length}`;
-    const poseMatrix = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale);
+    const poseMatrix = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params);
     setCurveNodePose(ctx.nodeId, poseMatrix);
     if (state.transformed && state.lastKey === key) {
       const preview = svgPreviewGroup(state, state.transformed.map((c) => c.getPoints(128)), key);

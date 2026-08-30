@@ -742,7 +742,7 @@ export const LATTICE_DEFORM_NODE: NodeDefinition = {
 
     // Compose lattice matrix
     const wiredMatrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix.clone() : new THREE.Matrix4();
-    const latticeMatrix = composeNativeMatrix(wiredMatrix, params.location, params.rotation, params.scale);
+    const latticeMatrix = composeNativeMatrix(wiredMatrix, params.location, params.rotation, params.scale, params);
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       state.group.matrixAutoUpdate = false;

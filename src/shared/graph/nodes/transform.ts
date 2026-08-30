@@ -73,6 +73,37 @@ export function composeTransform(location: THREE.Vector3, rotation: THREE.Vector
 }
 
 /**
+ * Where a parent's rotation or scale turns and grows the child from.
+ *
+ *   "parent" — the parent's own origin, the plain scene-graph rule: growing
+ *              the parent pushes the child away from it, turning the parent
+ *              swings the child around it. Blender and Three.js parenting.
+ *   "self"   — the child's own origin. The child still follows every move of
+ *              the parent and still takes its rotation and scale *amounts*,
+ *              but applies them in place, so it grows on the spot and spins
+ *              where it stands instead of orbiting.
+ *   "none"   — not taken at all; the child keeps its own rotation or scale.
+ */
+export type InheritPivot = "parent" | "self" | "none";
+
+export interface InheritModes {
+  rotation: InheritPivot;
+  scale: InheritPivot;
+}
+
+function asInheritPivot(v: unknown): InheritPivot {
+  return v === "self" || v === "none" ? v : "parent";
+}
+
+/** The two inherit modes off a node's params, defaulting to plain parenting. */
+export function readInheritModes(params?: Record<string, unknown>): InheritModes {
+  return {
+    rotation: asInheritPivot(params?.inheritRotation),
+    scale: asInheritPivot(params?.inheritScale),
+  };
+}
+
+/**
  * `final = parent(wiredMatrix) × local(location/rotation/scale)` — for a node
  * that owns its own initial pose (an object or light's native
  * location/rotation/scale params) but still accepts an incoming `matrix` to
@@ -88,11 +119,72 @@ export function composeTransform(location: THREE.Vector3, rotation: THREE.Vector
  * own rotated frame, so a child rotated -90° turns an incoming Z translation
  * into a Y one — the wire stops behaving like a parent the moment the child
  * has any orientation of its own.
+ *
+ * `params` carries the two inherit modes (see InheritPivot). Both default to
+ * "parent", which takes the identity-fast-path below and composes exactly as
+ * the paragraph above describes — every existing scene is untouched. Moving a
+ * channel to "self" splits the parent apart and re-applies that half *after*
+ * the child's own translation, which is the whole difference: the child's
+ * position stops being swept along by the parent's rotation and scale, so it
+ * turns and grows about itself while still following the parent around.
  */
-export function composeNativeMatrix(wiredMatrix: unknown, location: unknown, rotation: unknown, scale: unknown): THREE.Matrix4 {
+export function composeNativeMatrix(
+  wiredMatrix: unknown,
+  location: unknown,
+  rotation: unknown,
+  scale: unknown,
+  params?: Record<string, unknown>,
+): THREE.Matrix4 {
   const parent = wiredMatrix instanceof THREE.Matrix4 ? wiredMatrix : new THREE.Matrix4();
-  const local = composeTransform(asVector3(location, ZERO), asVector3(rotation, ZERO), asVector3(scale, ONE));
-  return new THREE.Matrix4().multiplyMatrices(parent, local);
+  const loc = asVector3(location, ZERO);
+  const rot = asVector3(rotation, ZERO);
+  const scl = asVector3(scale, ONE);
+  const inherit = readInheritModes(params);
+
+  if (inherit.rotation === "parent" && inherit.scale === "parent") {
+    return new THREE.Matrix4().multiplyMatrices(parent, composeTransform(loc, rot, scl));
+  }
+
+  const resolvedLoc = resolveLocationVector(loc);
+  const localTranslation = new THREE.Matrix4().makeTranslation(resolvedLoc.x, resolvedLoc.y, resolvedLoc.z);
+  const localRotScale = composeTransform(ZERO, rot, scl);
+  return applyInherited(parent, localTranslation, localRotScale, inherit);
+}
+
+/**
+ * Splits the parent into position / rotation / scale and re-assembles the
+ * whole transform around the child's own translation:
+ *
+ *   parentPos × [parent-pivot halves] × childTranslation × [self-pivot halves] × childRotScale
+ *
+ * A half placed before the child's translation sweeps that translation along
+ * with it (orbit, push away); placed after, it acts where the child already
+ * stands. "none" drops the half entirely. The parent's position is always
+ * inherited — that is what following a parent means, and it is the part that
+ * was never in question.
+ */
+function applyInherited(
+  parent: THREE.Matrix4,
+  localTranslation: THREE.Matrix4,
+  localRotScale: THREE.Matrix4,
+  inherit: InheritModes,
+): THREE.Matrix4 {
+  const pPos = new THREE.Vector3();
+  const pQuat = new THREE.Quaternion();
+  const pScale = new THREE.Vector3();
+  parent.decompose(pPos, pQuat, pScale);
+
+  const parentRotation = new THREE.Matrix4().makeRotationFromQuaternion(pQuat);
+  const parentScale = new THREE.Matrix4().makeScale(pScale.x, pScale.y, pScale.z);
+
+  const out = new THREE.Matrix4().makeTranslation(pPos.x, pPos.y, pPos.z);
+  // Rotation before scale on each side, the order plain parenting already used.
+  if (inherit.rotation === "parent") out.multiply(parentRotation);
+  if (inherit.scale === "parent") out.multiply(parentScale);
+  out.multiply(localTranslation);
+  if (inherit.rotation === "self") out.multiply(parentRotation);
+  if (inherit.scale === "self") out.multiply(parentScale);
+  return out.multiply(localRotScale);
 }
 
 /**
@@ -113,6 +205,7 @@ export function composeNativeMatrixWithPivot(
   rotation: unknown,
   scale: unknown,
   pivot: unknown,
+  params?: Record<string, unknown>,
 ): THREE.Matrix4 {
   const parent = wiredMatrix instanceof THREE.Matrix4 ? wiredMatrix : new THREE.Matrix4();
   const loc = asVector3(location, ZERO);
@@ -124,8 +217,17 @@ export function composeNativeMatrixWithPivot(
   const mRotScale = composeTransform(ZERO, rot, scl);
   const mPivotLoc = new THREE.Matrix4().makeTranslation(piv.x + loc.x, piv.y + loc.y, piv.z + loc.z);
 
-  const local = new THREE.Matrix4().multiply(mPivotLoc).multiply(mRotScale).multiply(mPivotInv);
-  return new THREE.Matrix4().multiplyMatrices(parent, local);
+  const inherit = readInheritModes(params);
+  if (inherit.rotation === "parent" && inherit.scale === "parent") {
+    const local = new THREE.Matrix4().multiply(mPivotLoc).multiply(mRotScale).multiply(mPivotInv);
+    return new THREE.Matrix4().multiplyMatrices(parent, local);
+  }
+
+  // The pivot offset rides with the node's own rotation/scale rather than with
+  // its translation: it is the child's business where it turns from, and an
+  // inherited half must land outside it, not between it and the geometry.
+  const localRotScale = new THREE.Matrix4().multiply(mRotScale).multiply(mPivotInv);
+  return applyInherited(parent, mPivotLoc, localRotScale, inherit);
 }
 
 /**
@@ -410,5 +512,144 @@ export const PIVOT_TRANSFORM_NODE: NodeDefinition = {
   },
 };
 
+interface DelaySample {
+  frame: number;
+  matrix: THREE.Matrix4;
+}
 
+/**
+ * Recorded poses, keyed by node and then by evaluation session.
+ *
+ * The outer key is the node id, so `disposeNodeCaches` can drop a deleted
+ * Delay's history — a composite key would slip past it, and node ids are
+ * stable across save/undo, so an old history would come back with the node.
+ *
+ * The inner key is the session. Several viewports evaluate the same graph on
+ * their own clocks (editor pane, split preview, the offscreen export one), so
+ * one shared buffer would take a sample per pane per frame and run the delay
+ * several times too fast. Trail keeps its samples per node only, and its own
+ * comment records the interleaving that causes.
+ */
+const delayCache = createNodeCache<Map<string, DelaySample[]>>();
 
+function getDelayHistory(nodeId: string, sessionId: string): DelaySample[] {
+  let bySession = delayCache.get(nodeId);
+  if (!bySession) {
+    bySession = new Map();
+    delayCache.set(nodeId, bySession);
+  }
+  let samples = bySession.get(sessionId);
+  if (!samples) {
+    samples = [];
+    bySession.set(sessionId, samples);
+  }
+  return samples;
+}
+
+/**
+ * Blends two poses. Decomposed rather than lerped element by element:
+ * interpolating the sixteen numbers directly shears a rotating matrix instead
+ * of turning it.
+ */
+function blendMatrices(a: THREE.Matrix4, b: THREE.Matrix4, t: number): THREE.Matrix4 {
+  const pa = new THREE.Vector3();
+  const qa = new THREE.Quaternion();
+  const sa = new THREE.Vector3();
+  a.decompose(pa, qa, sa);
+  const pb = new THREE.Vector3();
+  const qb = new THREE.Quaternion();
+  const sb = new THREE.Vector3();
+  b.decompose(pb, qb, sb);
+  return new THREE.Matrix4().compose(pa.lerp(pb, t), qa.slerp(qb, t), sa.lerp(sb, t));
+}
+
+/** The recorded pose at `frame`, blending the two samples either side of it. */
+function sampleAt(samples: DelaySample[], frame: number): THREE.Matrix4 | null {
+  if (samples.length === 0) return null;
+  // Before anything recorded: the node has not been running long enough to
+  // owe a delayed pose yet, so it holds at the oldest one it has.
+  if (frame <= samples[0].frame) return samples[0].matrix.clone();
+  const last = samples[samples.length - 1];
+  if (frame >= last.frame) return last.matrix.clone();
+
+  for (let i = 0; i < samples.length - 1; i++) {
+    const s1 = samples[i];
+    const s2 = samples[i + 1];
+    if (frame >= s1.frame && frame <= s2.frame) {
+      const span = s2.frame - s1.frame;
+      if (span <= 0) return s1.matrix.clone();
+      return blendMatrices(s1.matrix, s2.matrix, (frame - s1.frame) / span);
+    }
+  }
+  return last.matrix.clone();
+}
+
+/**
+ * Matrix Delay node — hands back the pose this matrix held a number of frames
+ * ago, so one object can follow another at a lag.
+ *
+ * Wire a leader's Matrix through this into a follower's Matrix and the
+ * follower trails it; chain several with rising delays for a train. A
+ * fractional delay interpolates, which is what lets a row of followers sit at
+ * 2.5, 5 and 7.5 frames back rather than snapping to whole frames.
+ *
+ * The history is recorded as the graph plays, rather than re-evaluating the
+ * upstream chain at `frame - delay`: the upstream may itself be stateful (a
+ * Trail, a Spring, a particle sim) and re-running those at an arbitrary past
+ * time is not defined. The cost is that the delay has nothing to give until it
+ * has watched those frames go by — playing from the start and exporting both
+ * build the history in order, but dropping the playhead into the middle of a
+ * scene passes the pose through undelayed until the buffer fills.
+ */
+export const MATRIX_DELAY_NODE: NodeDefinition = {
+  type: "transform/delay",
+  label: "Matrix Delay",
+  category: "transform",
+  inputs: [
+    { id: "matrix", label: "Matrix", type: "matrix" },
+    { id: "frames", label: "Delay (frames)", type: "value" },
+  ],
+  outputs: [{ id: "matrix", label: "Matrix", type: "matrix" }],
+  defaultParams: { frames: 6 },
+  paramFields: [{ id: "frames", label: "Delay (frames)", kind: "number", step: 1 }],
+  evaluate: (inputs, params, ctx) => {
+    const incoming = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix : new THREE.Matrix4();
+    const rawFrames = inputs.frames !== undefined ? Number(inputs.frames) : Number(params.frames);
+    const frames = Math.max(0, Number.isFinite(rawFrames) ? rawFrames : 0);
+
+    // No timeline frame to index by (a headless call) — nothing to delay
+    // against, so pass the pose through rather than inventing a history.
+    const now = ctx.currentFrame;
+    if (frames === 0 || now === undefined || !Number.isFinite(now)) {
+      return { matrix: incoming.clone() };
+    }
+
+    const samples = getDelayHistory(ctx.nodeId, ctx.sessionId ?? "default");
+
+    // Scrubbing backwards leaves samples ahead of the playhead, which would
+    // otherwise be read as the "past" once it moves forward again.
+    while (samples.length > 0 && samples[samples.length - 1].frame > now) {
+      samples.pop();
+    }
+
+    const newest = samples[samples.length - 1];
+    if (!newest || newest.frame < now) {
+      // Cloned on the way in: an upstream node that reuses one Matrix4 across
+      // frames would otherwise rewrite every sample already recorded.
+      samples.push({ frame: now, matrix: incoming.clone() });
+    } else if (newest.frame === now) {
+      // The same frame evaluated again (a redraw, another pane on this
+      // session): update in place instead of stacking duplicates.
+      newest.matrix.copy(incoming);
+    }
+
+    // Bounded to the window the delay can actually reach back into, plus slack
+    // so the interpolation always has a sample on either side.
+    const keep = Math.ceil(frames) + 2;
+    if (samples.length > keep) samples.splice(0, samples.length - keep);
+
+    // Cloned on the way out for the reason primitiveOutputs clones: a
+    // downstream node mutating what it receives must not rewrite the history.
+    return { matrix: sampleAt(samples, now - frames) ?? incoming.clone() };
+  },
+};

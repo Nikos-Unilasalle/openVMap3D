@@ -248,7 +248,7 @@ export const PARTICLE_RENDER_INSTANCES_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
     }
 
     const alphaAttr = mesh.geometry.getAttribute("instanceAlpha") as THREE.InstancedBufferAttribute | undefined;

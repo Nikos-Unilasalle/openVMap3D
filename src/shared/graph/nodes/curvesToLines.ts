@@ -217,7 +217,7 @@ export const CURVES_TO_LINES_NODE: NodeDefinition = {
     material.resolution.copy(size);
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
-      line.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      line.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
     }
 
     return primitiveOutputs(line);

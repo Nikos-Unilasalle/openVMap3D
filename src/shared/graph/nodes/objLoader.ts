@@ -235,7 +235,7 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       group.matrixAutoUpdate = false;
       group.matrix.copy(
-        composeNativeMatrixWithPivot(inputs.matrix, params.location, params.rotation, params.scale, inputs.pivot),
+        composeNativeMatrixWithPivot(inputs.matrix, params.location, params.rotation, params.scale, inputs.pivot, params),
       );
     }
 

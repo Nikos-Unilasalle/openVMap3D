@@ -229,7 +229,7 @@ export const CURVE_TO_LINE_NODE: NodeDefinition = {
     // Native pose × the source curve node's pose (so the line follows the
     // curve's gizmo), keeping the geometry in the curve's local space.
     if (ctx.nodeId !== ctx.liveEditNodeId) {
-      line.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      line.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
       const curveSourceId = ctx.inputSources?.get("curve");
       const curvePose = curveSourceId ? getCurveNodePose(curveSourceId) : null;
       if (curvePose) line.matrix.multiply(curvePose);

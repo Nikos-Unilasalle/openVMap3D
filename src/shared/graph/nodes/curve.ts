@@ -253,7 +253,7 @@ function applyNativePose(
 ): void {
   if (ctx.nodeId !== ctx.liveEditNodeId) {
     obj.matrixAutoUpdate = false;
-    obj.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+    obj.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
   }
 }
 
@@ -726,7 +726,7 @@ export const CURVE_FROM_POINTS_NODE: NodeDefinition = {
     // remembering to flip Type to Linear silently did nothing; forcing
     // linear here whenever Sag is on means the knob always visibly works.
     const type = sag > 0 ? "linear" : String(params.type || "catmull");
-    const poseMatrix = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale);
+    const poseMatrix = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params);
 
     let curve: THREE.Curve<THREE.Vector3>;
     curve = buildPointsCurve(pts, type, closed, tension, sag, localDownFor(poseMatrix));
@@ -802,7 +802,7 @@ export const CURVE_PRIMITIVE_NODE: NodeDefinition = {
     // gentle drape. Coarsen the sample once segments actually go straight,
     // same way a real anchored strand only has a handful of spans.
     const steps = sag > 0 ? 20 : 64;
-    const poseMatrix = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale);
+    const poseMatrix = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params);
     const localDown = localDownFor(poseMatrix);
 
     let curve: THREE.Curve<THREE.Vector3>;
@@ -1267,7 +1267,7 @@ export const CURVE_TO_MESH_NODE: NodeDefinition = {
     // surface instead of pushing them off by a baked-in world offset.
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       group.matrixAutoUpdate = false;
-      group.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      group.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
       const curveSourceId = ctx.inputSources?.get("curve");
       const curvePose = curveSourceId ? getCurveNodePose(curveSourceId) : null;
       if (curvePose) group.matrix.multiply(curvePose);
@@ -1527,7 +1527,7 @@ export const CURVE_DEFORM_NODE: NodeDefinition = {
     // gizmo to drag and could only be placed by moving its source.
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       state.mesh.matrixAutoUpdate = false;
-      state.mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale));
+      state.mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
     }
 
     return primitiveOutputs(state.mesh);
@@ -1653,7 +1653,7 @@ export const CURVES_TO_MESH_NODE: NodeDefinition = {
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       const wiredMatrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix.clone() : new THREE.Matrix4();
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(composeNativeMatrix(wiredMatrix, params.location, params.rotation, params.scale));
+      mesh.matrix.copy(composeNativeMatrix(wiredMatrix, params.location, params.rotation, params.scale, params));
     }
 
     const matParams = extractMaterialParams(inputs, params);
