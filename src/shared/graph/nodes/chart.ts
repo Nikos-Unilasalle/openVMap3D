@@ -46,6 +46,9 @@ interface LineGraphState {
   tubeMesh: THREE.Mesh;
   pointsGroup: THREE.Group;
   pointGeometry: THREE.SphereGeometry;
+  /** Owned by the state (created once, disposed on shade-mode swap) — a fresh material every evaluate leaked the previous one, and applyMaterialParams' per-mesh signature cache silently stopped applying the user's params to the newcomer. */
+  tubeMaterial: THREE.Material;
+  tubeShadeless: boolean;
 }
 
 const lineGraphCache = createNodeCache<LineGraphState>((s) => disposeObject3D(s.group));
@@ -66,7 +69,14 @@ function lineGraphState(nodeId: string): LineGraphState {
   group.add(tubeMesh);
   group.add(pointsGroup);
 
-  const state: LineGraphState = { group, tubeMesh, pointsGroup, pointGeometry };
+  const state: LineGraphState = {
+    group,
+    tubeMesh,
+    pointsGroup,
+    pointGeometry,
+    tubeMaterial: tubeMesh.material as THREE.Material,
+    tubeShadeless: false,
+  };
   lineGraphCache.set(nodeId, state);
   return state;
 }
@@ -161,9 +171,19 @@ export const LINE_GRAPH_NODE: NodeDefinition = {
 
     if (state.tubeMesh.geometry) state.tubeMesh.geometry.dispose();
     state.tubeMesh.geometry = new THREE.TubeGeometry(curve, Math.max(8, count * 8), lineWidth / 2, 8, false);
-    state.tubeMesh.material = matParams.shadeless
-      ? new THREE.MeshBasicMaterial({ color: 0xffffff })
-      : new THREE.MeshStandardMaterial({ color: 0xffffff });
+    // The material is created once and only swapped (with a dispose of the
+    // old one) when Shadeless flips — assigning a fresh one every frame both
+    // leaked the previous material and defeated applyMaterialParams, whose
+    // per-mesh signature cache early-returned and left the brand-new material
+    // default white from the second frame on.
+    if (!state.tubeMaterial || state.tubeShadeless !== matParams.shadeless) {
+      state.tubeMaterial?.dispose();
+      state.tubeMaterial = matParams.shadeless
+        ? new THREE.MeshBasicMaterial({ color: 0xffffff })
+        : new THREE.MeshStandardMaterial({ color: 0xffffff });
+      state.tubeShadeless = matParams.shadeless;
+      state.tubeMesh.material = state.tubeMaterial;
+    }
     applyMaterialParams(state.tubeMesh, matParams, THREE.FrontSide, texParams);
 
     while (state.pointsGroup.children.length < count) {
@@ -297,7 +317,14 @@ export const CHART_AXIS_NODE: NodeDefinition = {
 
     const min = numberInput(inputs.min, params.min, 0);
     const max = Math.max(min + 1e-6, numberInput(inputs.max, params.max, 1));
-    const step = Math.max(1e-6, numberInput(inputs.step, params.step, 0.2));
+    // A wired step far below the range's span (1e-6 across the 0→1 default)
+    // used to push a million pooled meshes into the scene in one frame and
+    // freeze the tab. Every other count-driven generator caps its output
+    // (Generate List, Array, Stagger) — the step is floored so at most
+    // MAX_TICKS of them exist.
+    const MAX_TICKS = 512;
+    const rawStep = Math.max(1e-6, numberInput(inputs.step, params.step, 0.2));
+    const step = Math.max(rawStep, (max - min) / MAX_TICKS);
     const maxHeight = Math.max(0.01, numberInput(inputs.maxHeight, params.maxHeight, 5));
     const width = Math.max(0.01, numberInput(inputs.width, params.width, 4));
     const decimals = Math.max(0, Math.min(6, Math.floor(numberInput(undefined, params.decimals, 1))));

@@ -330,23 +330,35 @@ export function ParamPanel({
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (!keyframesEnabled || !hoveredParamKey || currentFrame === undefined || currentFrame < 0 || !onToggleKeyframe) return;
-      if (e.key === "k" || e.key === "K") {
-        const activeEl = document.activeElement;
-        if (activeEl instanceof HTMLElement) {
-          activeEl.blur();
-        }
-        e.preventDefault();
-
-        let valToStore: any;
-        if (hoveredParamKey.includes(".")) {
-          const [baseKey, comp] = hoveredParamKey.split(".");
-          const baseVal = parseVector3(params[baseKey]);
-          valToStore = (baseVal as any)[comp] ?? 0;
-        } else {
-          valToStore = params[hoveredParamKey];
-        }
-        onToggleKeyframe(nodeId, hoveredParamKey, currentFrame, valToStore);
+      if (e.key !== "k" && e.key !== "K") return;
+      // Modifier combos aren't keyframing (Cmd+K, Ctrl+K…).
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // Never steal the key from real typing: the hover only tracks the
+      // pointer, so the cursor can rest on a panel row while the user types
+      // into the node-search modal or a text param — that "k" belongs to the
+      // field. The app's number inputs (type="text" + a decimal inputMode)
+      // are the exception: a "k" is junk there, so hovering-while-editing
+      // keeps the old blur-then-keyframe behaviour.
+      const target = e.target as HTMLElement | null;
+      if (target instanceof HTMLTextAreaElement || target?.isContentEditable) return;
+      if (target instanceof HTMLInputElement && target.inputMode !== "decimal" && target.inputMode !== "numeric") {
+        return;
       }
+      const activeEl = document.activeElement;
+      if (activeEl instanceof HTMLElement) {
+        activeEl.blur();
+      }
+      e.preventDefault();
+
+      let valToStore: any;
+      if (hoveredParamKey.includes(".")) {
+        const [baseKey, comp] = hoveredParamKey.split(".");
+        const baseVal = parseVector3(params[baseKey]);
+        valToStore = (baseVal as any)[comp] ?? 0;
+      } else {
+        valToStore = params[hoveredParamKey];
+      }
+      onToggleKeyframe(nodeId, hoveredParamKey, currentFrame, valToStore);
     }
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);

@@ -16,7 +16,7 @@ import { rehydrateFileNodesFromDisk } from "./shared/graph/rehydrateFiles";
 import { cloneGraph, cloneParams, cloneParamValue } from "./shared/graph/cloneGraph";
 import { consumeCameraHandoffRequest } from "./shared/graph/cameraHandoffStore";
 import { consumeCanvasSwitchRequest } from "./shared/graph/canvasSwitchStore";
-import { isGraphZone } from "./shared/graph/inputZoneStore";
+import { isGraphZone, isTimelineZone } from "./shared/graph/inputZoneStore";
 import { disposeNodeCaches } from "./shared/graph/nodeCaches";
 import { AutosaveRecord, projectHasContent, readAutosave, writeAutosave } from "./shared/graph/autosave";
 import { rehydrateGraphParams } from "./shared/graph/rehydrateParams";
@@ -67,12 +67,31 @@ function edge(fromNode: string, fromSocket: string, toNode: string, toSocket: st
 /**
  * Keyframe values are stored in the graph and round-trip through the .tsuji as
  * plain JSON, so a THREE.Vector3/Color is kept as its own plain fields —
- * rehydrateParams.ts turns those back into class instances on load, and
- * interpolateValue (evaluate.ts) blends either form.
+ * interpolateValue (evaluate.ts) blends the {x,y,z}/{r,g,b} shapes exactly
+ * like the class instances.
+ *
+ * THREE instances must NOT go through JSON.stringify here: Color.toJSON()
+ * returns its hex as a single *number* (16711680), which interpolateValue
+ * then lerps numerically — a red→green track flashed through garbage purples
+ * instead of blending in RGB space. The plain-field shapes below keep the
+ * tracks blending correctly both live and after a save/load round-trip.
  */
 function serializeKeyframeValue(value: unknown): unknown {
   if (value === undefined) return 0;
-  return JSON.parse(JSON.stringify(value));
+  if (value instanceof THREE.Vector3) return { x: value.x, y: value.y, z: value.z };
+  if (value instanceof THREE.Color) return { r: value.r, g: value.g, b: value.b };
+  if (value instanceof THREE.Euler) return { x: value.x, y: value.y, z: value.z };
+  if (value instanceof THREE.Quaternion) return { x: value.x, y: value.y, z: value.z, w: value.w };
+  if (Array.isArray(value)) return value.map(serializeKeyframeValue);
+  if (typeof value === "object" && value !== null) {
+    // Plain objects (curve control points, color ramps) — clone field by
+    // field so a later mutation of the live value can't rewrite the stored
+    // keyframe, which is what the old JSON round-trip provided.
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) out[k] = serializeKeyframeValue(v);
+    return out;
+  }
+  return value;
 }
 
 /**
@@ -456,7 +475,11 @@ function MainEditor() {
       const isCmdOrCtrl = e.metaKey || e.ctrlKey;
       const code = e.code;
 
-      if (!isInput && (code === "Space" || e.key === " ") && !isCmdOrCtrl) {
+      // The timeline drawer owns Space while the cursor is over it — without
+      // this gate both window listeners toggled play on the very same
+      // keypress and cancelled each other out, so Space looked dead whenever
+      // the mouse sat on the dope sheet (the drawer's own handler wins).
+      if (!isInput && (code === "Space" || e.key === " ") && !isCmdOrCtrl && !isTimelineZone()) {
         e.preventDefault();
         if (keyframesEnabled) {
           setIsPlaying((prev) => !prev);

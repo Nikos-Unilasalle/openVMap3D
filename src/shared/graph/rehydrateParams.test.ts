@@ -54,6 +54,31 @@ describe("rehydrateGraphParams", () => {
     expect((color as THREE.Color).b).toBeCloseTo(0.6);
   });
 
+  it("repairs old hex-number color keyframes into the plain {r,g,b} shape", () => {
+    // Files saved before the serializer fix hold hex integers in color
+    // tracks; rehydration must rebuild them so both the exact keyframes and
+    // the RGB blends between them read as real colors again.
+    const graph: Graph = {
+      nodes: [node("b1", OBJECT_BOX_NODE.type, { color: plainColor(1, 0, 0) })],
+      connections: [],
+      keyframes: {
+        b1: {
+          color: [
+            { frame: 0, value: 0xff0000 },
+            { frame: 100, value: 0x00ff00 },
+          ],
+        },
+      },
+    };
+
+    const result = rehydrateGraphParams(graph, DEFAULT_REGISTRY);
+
+    const track = result.keyframes?.b1?.color;
+    expect(track).toBeDefined();
+    expect(track![0].value).toEqual({ r: 1, g: 0, b: 0 });
+    expect(track![1].value).toEqual({ r: 0, g: 1, b: 0 });
+  });
+
   it("leaves an already-real THREE.Vector3 alone", () => {
     const original = new THREE.Vector3(5, 6, 7);
     const graph: Graph = { nodes: [node("t1", TRANSFORM_NODE.type, { location: original })], connections: [] };

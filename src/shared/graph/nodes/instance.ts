@@ -463,10 +463,11 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
           resolveScalarOrListItem(wired("posZ"), i, listIndex, basePos.z + paramPZ),
         );
 
-        // Rotation — either Euler angles in degrees, or (rotationMode = "align")
-        // a per-instance world direction that the chosen axis is rotated to point
-        // along (normals list → disc facing the surface, for example). Wiring a
-        // Target overrides the direction list: each instance faces the target.
+        // Rotation — either Euler angles in radians (the graph-wide vector
+        // convention), or (rotationMode = "align") a per-instance world
+        // direction that the chosen axis is rotated to point along (normals
+        // list → disc facing the surface, for example). Wiring a Target
+        // overrides the direction list: each instance faces the target.
         const rotItem = listIndex >= 0 && rotationsList.length > 0
           ? (rotationsList.length === 1 ? rotationsList[0] : rotationsList[listIndex % rotationsList.length])
           : rotationsList[i];
@@ -513,13 +514,19 @@ export const SET_INSTANCE_TRANSFORM_NODE: NodeDefinition = {
             quat.premultiply(placementQuat.invert());
           }
         } else {
-          const rotOffset = new THREE.Vector3(
-            resolveScalarOrListItem(wired("rotX"), i, listIndex, baseRot.x + paramRX),
-            resolveScalarOrListItem(wired("rotY"), i, listIndex, baseRot.y + paramRY),
-            resolveScalarOrListItem(wired("rotZ"), i, listIndex, baseRot.z + paramRZ),
+          // Rotation units: the `rotations` list is radians in euler mode (the
+          // graph-wide vector convention — Wiggle, Decompose Matrix and
+          // Transform all speak radians), while the scalar rotX/rotY/rotZ
+          // defaults are authored in degrees per their "(°)" labels. The
+          // sum is therefore composed in radians; only the wired scalars
+          // (degrees) need converting.
+          const rotOffsetRad = new THREE.Vector3(
+            resolveScalarOrListItem(wired("rotX"), i, listIndex, baseRot.x + paramRX * RAD),
+            resolveScalarOrListItem(wired("rotY"), i, listIndex, baseRot.y + paramRY * RAD),
+            resolveScalarOrListItem(wired("rotZ"), i, listIndex, baseRot.z + paramRZ * RAD),
           );
           quat = new THREE.Quaternion().setFromEuler(
-            new THREE.Euler((rotOffset.x * RAD), (rotOffset.y * RAD), (rotOffset.z * RAD)),
+            new THREE.Euler(rotOffsetRad.x, rotOffsetRad.y, rotOffsetRad.z),
           );
         }
 
@@ -711,11 +718,31 @@ export const GEOMETRY_TRANSFORM_NODE: NodeDefinition = {
         axis("posZ", "location", baseLoc.z),
       );
 
+      // Rotation units: the rotation vector (wired socket or the `degrees:
+      // true` panel field, which the ParamPanel stores in radians) is radians
+      // — the same convention TRANSFORM and composeNativeMatrix follow. Only
+      // the scalar rotX/rotY/rotZ fields are authored in degrees per their
+      // "(°)" labels, so those are the only values converted. The panel's
+      // vector field acts as a fallback for scalars left at their 0 default.
+      const RAD = Math.PI / 180;
+      const rotRad = (componentId: string, radBase: number): number => {
+        if (isWired(componentId)) {
+          const wiredValue = Number(inputs[componentId]);
+          return Number.isFinite(wiredValue) ? wiredValue * RAD : radBase;
+        }
+        if (isWired("rotation")) return radBase;
+        const paramDeg = Number(params[componentId]);
+        if (params[componentId] !== undefined && Number.isFinite(paramDeg) && paramDeg !== 0) {
+          return paramDeg * RAD;
+        }
+        return radBase;
+      };
+
       const baseRot = asVector(inputs.rotation, asVector(params.rotation, new THREE.Vector3(0, 0, 0)));
       const rotation = new THREE.Vector3(
-        axis("rotX", "rotation", baseRot.x),
-        axis("rotY", "rotation", baseRot.y),
-        axis("rotZ", "rotation", baseRot.z),
+        rotRad("rotX", baseRot.x),
+        rotRad("rotY", baseRot.y),
+        rotRad("rotZ", baseRot.z),
       );
 
       const baseScale = asVector(inputs.scale, asVector(params.scale, new THREE.Vector3(1, 1, 1)));
@@ -725,11 +752,7 @@ export const GEOMETRY_TRANSFORM_NODE: NodeDefinition = {
         axis("scaleZ", "scale", baseScale.z),
       );
 
-      const euler = new THREE.Euler(
-        (rotation.x * Math.PI) / 180,
-        (rotation.y * Math.PI) / 180,
-        (rotation.z * Math.PI) / 180,
-      );
+      const euler = new THREE.Euler(rotation.x, rotation.y, rotation.z);
       transformMat = new THREE.Matrix4();
       transformMat.compose(location, new THREE.Quaternion().setFromEuler(euler), scale);
     }

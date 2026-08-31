@@ -29,6 +29,27 @@ describe("KEYFRAME ANIMATION SYSTEM", () => {
     expect(mid.z).toBeCloseTo(70);
   });
 
+  it("blends plain {r,g,b} color keyframes in RGB space, not through hex numbers", () => {
+    // The old serializer stored THREE.Color keyframes as hex integers, which
+    // were then lerped numerically — red→green swept through garbage purples
+    // (0xff0000 → 0x00ff00 passes 0x8000f0). The plain-field shape must
+    // blend component-wise instead.
+    const keyframes: KeyframeStore = {
+      "node-1": {
+        color: [
+          { frame: 0, value: { r: 1, g: 0, b: 0 } },
+          { frame: 100, value: { r: 0, g: 1, b: 0 } },
+        ],
+      },
+    };
+
+    const mid = evaluateKeyframeValue(keyframes, "node-1", "color", 50, -1) as THREE.Color;
+    expect(mid).toBeInstanceOf(THREE.Color);
+    expect(mid.r).toBeCloseTo(0.5);
+    expect(mid.g).toBeCloseTo(0.5);
+    expect(mid.b).toBeCloseTo(0);
+  });
+
   it("evaluates keyframes store at exact frames and interpolated frames", () => {
     const keyframes: KeyframeStore = {
       "node-1": {

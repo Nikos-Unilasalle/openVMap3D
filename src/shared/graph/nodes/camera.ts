@@ -3,7 +3,7 @@ import { projectionMatrixFromCalibration, ProjectorCalibration } from "../calibr
 import { DEFAULT_PICKS, isCalibrationPicks, isReferencePointArray, solveFromPicks } from "../calibration/picks";
 import { NodeDefinition } from "../types";
 import { toBoolean } from "../sockets";
-import { createNodeCache } from "../nodeCaches";
+import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { requestCameraHandoff } from "../cameraHandoffStore";
 import { extractPositionFromInput } from "./transform";
 
@@ -33,7 +33,10 @@ function asVector3(v: unknown, fallback: THREE.Vector3): THREE.Vector3 {
   return fallback;
 }
 
-const groupCache = new Map<string, THREE.Group>();
+// createNodeCache, not a bare Map: same reasoning as flyToCache below — node
+// ids are stable, so an unregistered cache would let a deleted Camera/Fly To
+// node's group silently reattach to whatever node next lands on that id.
+const groupCache = createNodeCache<THREE.Group>(disposeObject3D);
 function getGroup(nodeId: string): THREE.Group {
   let group = groupCache.get(nodeId);
   if (!group) {
@@ -42,6 +45,45 @@ function getGroup(nodeId: string): THREE.Group {
   }
   return group;
 }
+
+const HELPER_BODY_ACTIVE = 0x3b82f6;
+const HELPER_BODY_IDLE = 0x64748b;
+const HELPER_LINE_ACTIVE = 0x60a5fa;
+const HELPER_LINE_IDLE = 0x94a3b8;
+
+/** The helper's GPU pieces, built once per node and updated in place. */
+interface CameraHelperParts {
+  group: THREE.Group;
+  bodyGeo: THREE.BufferGeometry;
+  frustumGeo: THREE.BufferGeometry;
+  bodyMat: THREE.MeshBasicMaterial;
+  frustumMat: THREE.LineBasicMaterial;
+  fov: number;
+  active: boolean;
+  nodeId?: string;
+}
+
+function frustumPoints(fov: number): THREE.Vector3[] {
+  const radFov = THREE.MathUtils.degToRad(fov || 50);
+  const aspect = 16 / 9;
+  const dist = 1.2;
+  const h = Math.tan(radFov / 2) * dist;
+  const w = h * aspect;
+
+  return [
+    new THREE.Vector3(0, 0, 0), new THREE.Vector3(-w, h, -dist),
+    new THREE.Vector3(0, 0, 0), new THREE.Vector3(w, h, -dist),
+    new THREE.Vector3(0, 0, 0), new THREE.Vector3(w, -h, -dist),
+    new THREE.Vector3(0, 0, 0), new THREE.Vector3(-w, -h, -dist),
+    // Rect boundary at dist
+    new THREE.Vector3(-w, h, -dist), new THREE.Vector3(w, h, -dist),
+    new THREE.Vector3(w, h, -dist), new THREE.Vector3(w, -h, -dist),
+    new THREE.Vector3(w, -h, -dist), new THREE.Vector3(-w, -h, -dist),
+    new THREE.Vector3(-w, -h, -dist), new THREE.Vector3(-w, h, -dist),
+  ];
+}
+
+const helperCache = createNodeCache<CameraHelperParts>(disposeCameraHelper);
 
 /**
  * Body box + frustum lines only — no pose here. The pose lives on the group
@@ -54,50 +96,73 @@ function getGroup(nodeId: string): THREE.Group {
  * but anything reading the returned object's own matrix directly — the
  * viewport's gizmo attach, in particular — found identity every time and
  * either grabbed nothing or dragged an invisible object stuck at the origin.
+ *
+ * The helper is built once per node and then mutated in place: rebuilding the
+ * BoxGeometry, both materials and the frustum BufferGeometry on every
+ * evaluation — 60 times a second, in every viewport — leaked their GL buffers
+ * faster than the GC could ever reclaim them.
  */
-function buildCameraHelperGeometry(fov: number, isActive: boolean): THREE.Group {
-  const group = new THREE.Group();
+function getCameraHelper(nodeId: string): CameraHelperParts {
+  let parts = helperCache.get(nodeId);
+  if (!parts) {
+    const bodyGeo = new THREE.BoxGeometry(0.3, 0.2, 0.4);
+    const bodyMat = new THREE.MeshBasicMaterial({ color: HELPER_BODY_IDLE, wireframe: true });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.set(0, 0, 0.2);
 
-  // Camera Body Box
-  const bodyGeo = new THREE.BoxGeometry(0.3, 0.2, 0.4);
-  const color = isActive ? 0x3b82f6 : 0x64748b;
-  const mat = new THREE.MeshBasicMaterial({ color, wireframe: true });
-  const body = new THREE.Mesh(bodyGeo, mat);
-  body.position.set(0, 0, 0.2);
-  group.add(body);
+    const frustumGeo = new THREE.BufferGeometry();
+    const frustumMat = new THREE.LineBasicMaterial({ color: HELPER_LINE_IDLE });
+    const frustum = new THREE.LineSegments(frustumGeo, frustumMat);
 
-  // Camera Frustum Pyramid lines
-  const radFov = THREE.MathUtils.degToRad(fov || 50);
-  const aspect = 16 / 9;
-  const dist = 1.2;
-  const h = Math.tan(radFov / 2) * dist;
-  const w = h * aspect;
+    const group = new THREE.Group();
+    group.add(body, frustum);
 
-  const points = [
-    new THREE.Vector3(0, 0, 0), new THREE.Vector3(-w, h, -dist),
-    new THREE.Vector3(0, 0, 0), new THREE.Vector3(w, h, -dist),
-    new THREE.Vector3(0, 0, 0), new THREE.Vector3(w, -h, -dist),
-    new THREE.Vector3(0, 0, 0), new THREE.Vector3(-w, -h, -dist),
-    // Rect boundary at dist
-    new THREE.Vector3(-w, h, -dist), new THREE.Vector3(w, h, -dist),
-    new THREE.Vector3(w, h, -dist), new THREE.Vector3(w, -h, -dist),
-    new THREE.Vector3(w, -h, -dist), new THREE.Vector3(-w, -h, -dist),
-    new THREE.Vector3(-w, -h, -dist), new THREE.Vector3(-w, h, -dist),
-  ];
+    // Mark every piece as editor-only so the viewport hides it in the output /
+    // camera view — a camera must not be rendered into the film (see the
+    // `userData.isHelper` visibility toggle in Viewport.tsx).
+    group.traverse((child) => {
+      child.userData.isHelper = true;
+    });
 
-  const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
-  const lineMat = new THREE.LineBasicMaterial({ color: isActive ? 0x60a5fa : 0x94a3b8 });
-  const frustum = new THREE.LineSegments(lineGeo, lineMat);
-  group.add(frustum);
+    parts = { group, bodyGeo, frustumGeo, bodyMat, frustumMat, fov: NaN, active: false };
+    helperCache.set(nodeId, parts);
+  }
+  return parts;
+}
 
-  // Mark every piece as editor-only so the viewport hides it in the output /
-  // camera view — a camera must not be rendered into the film (see the
-  // `userData.isHelper` visibility toggle in Viewport.tsx).
-  group.traverse((child) => {
-    child.userData.isHelper = true;
-  });
+function disposeCameraHelper(parts: CameraHelperParts): void {
+  parts.bodyGeo.dispose();
+  parts.frustumGeo.dispose();
+  parts.bodyMat.dispose();
+  parts.frustumMat.dispose();
+  parts.group.clear();
+}
 
-  return group;
+/** Rewrites the helper's frustum/colours/ownership only when they actually change. */
+function updateCameraHelper(parts: CameraHelperParts, fov: number, isActive: boolean, nodeId: string): void {
+  if (parts.fov !== fov) {
+    parts.fov = fov;
+    const points = frustumPoints(fov);
+    const attr = parts.frustumGeo.getAttribute("position") as THREE.BufferAttribute | undefined;
+    if (attr && attr.count === points.length) {
+      for (let i = 0; i < points.length; i++) attr.setXYZ(i, points[i].x, points[i].y, points[i].z);
+      attr.needsUpdate = true;
+    } else {
+      parts.frustumGeo.setFromPoints(points);
+    }
+    parts.frustumGeo.computeBoundingSphere();
+  }
+  if (parts.active !== isActive) {
+    parts.active = isActive;
+    parts.bodyMat.color.setHex(isActive ? HELPER_BODY_ACTIVE : HELPER_BODY_IDLE);
+    parts.frustumMat.color.setHex(isActive ? HELPER_LINE_ACTIVE : HELPER_LINE_IDLE);
+  }
+  if (parts.nodeId !== nodeId) {
+    parts.nodeId = nodeId;
+    parts.group.traverse((child) => {
+      child.userData.nodeId = nodeId;
+    });
+  }
 }
 
 /**
@@ -265,11 +330,9 @@ export const CAMERA_NODE: NodeDefinition = {
       group.matrix.copy(pose.matrix);
     }
     group.userData.nodeId = ctx.nodeId;
-    const helperContent = buildCameraHelperGeometry(pose.fov, isActive);
-    helperContent.traverse((child) => {
-      child.userData.nodeId = ctx.nodeId;
-    });
-    group.add(helperContent);
+    const helper = getCameraHelper(ctx.nodeId);
+    updateCameraHelper(helper, pose.fov, isActive, ctx.nodeId);
+    group.add(helper.group);
 
     return {
       ...pose,
@@ -451,7 +514,15 @@ export const CAMERA_FLY_TO_NODE: NodeDefinition = {
     const poseB = extractCameraPose(inputs.cameraB, defaultTargetPos);
 
     const isTriggered = toBoolean(inputs.trigger !== undefined ? inputs.trigger : params.trigger);
-    const nowSec = typeof performance !== "undefined" ? performance.now() / 1000 : Date.now() / 1000;
+    // Live preview advances the flight on the wall clock (a flight triggered
+    // from a keyboard node has to play out even while the timeline is paused);
+    // a captured export frame advances on the graph's deterministic `time` —
+    // same split as the hub nodes' hubClock. The export loop paces itself on
+    // real time, so a wall-clock flight drifted away from the frames it was
+    // supposed to be drawn on.
+    const nowSec = ctx.capturing
+      ? ctx.time
+      : typeof performance !== "undefined" ? performance.now() / 1000 : Date.now() / 1000;
 
     if (isTriggered && !state.lastTrigger) {
       state.isFlying = true;
@@ -579,11 +650,9 @@ export const CAMERA_FLY_TO_NODE: NodeDefinition = {
       state.isFlying === true ||
       (state.landed ? !canHandOff || parked : rawProgress > 0);
 
-    const helper = buildCameraHelperGeometry(fov, isActive);
-    helper.traverse((child) => {
-      child.userData.nodeId = ctx.nodeId;
-    });
-    group.add(helper);
+    const helper = getCameraHelper(ctx.nodeId);
+    updateCameraHelper(helper, fov, isActive, ctx.nodeId);
+    group.add(helper.group);
 
     return {
       matrix,

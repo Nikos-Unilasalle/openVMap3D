@@ -6,6 +6,7 @@ import { defaultFont } from "../../three/fonts/helvetikerFont";
 import { BUILTIN_FONTS, FONT_NAMES } from "../../three/fonts/fonts";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { composeNativeMatrix } from "./transform";
+import { disposeLabelMesh } from "./labelTexture";
 
 export function numberInput(input: unknown, param: unknown, fallback: number): number {
   const raw = input !== undefined ? input : param;
@@ -1482,7 +1483,15 @@ interface BarGraphState {
   labelStates: Map<number, LabelMeshState>;
 }
 
-const barGraphCache = createNodeCache<BarGraphState>();
+// Registered with a disposer like every other GPU cache in this file — the
+// unit geometry, each bar's material and the label meshes/textures leaked
+// whenever the node was deleted.
+const barGraphCache = createNodeCache<BarGraphState>((s) => {
+  disposeObject3D(s.group);
+  s.unitGeometry.dispose();
+  s.labelStates.forEach(disposeLabelMesh);
+  s.labelStates.clear();
+});
 
 function barGraphState(nodeId: string): BarGraphState {
   const existing = barGraphCache.get(nodeId);
@@ -1725,6 +1734,12 @@ export const OBJECT_BAR_GRAPH_NODE: NodeDefinition = {
           labelMesh.position.set(posX, barHeight + labelGap + labelWorldHeight / 2, 0);
           labelMesh.rotation.set(0, 0, 0);
         }
+      } else {
+        // Hiding only happened for labels beyond the bar count — toggling
+        // Show Labels off left the last labels rendered permanently.
+        state.labelStates.forEach((lState) => {
+          lState.mesh.visible = false;
+        });
       }
     }
 

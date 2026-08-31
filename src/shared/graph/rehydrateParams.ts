@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { Graph, NodeRegistry } from "./types";
+import { Graph, KeyframeStore, NodeRegistry } from "./types";
 
 /**
  * Undoes the one real cost of broadcasting the graph across the Tauri IPC
@@ -51,8 +51,56 @@ function isColorRampShape(v: unknown): v is { stops: unknown[] } {
   );
 }
 
+/**
+ * Repairs color keyframes saved by the old serializer. App's
+ * serializeKeyframeValue used to JSON-round-trip the value, so a THREE.Color
+ * track stored hex integers (`16711680`) — which interpolateValue then lerped
+ * *numerically*, sweeping red→green through garbage purples. Rebuilt as the
+ * plain {r,g,b} shape (not THREE.Color, so a re-save keeps round-tripping the
+ * same shape) both the exact keyframes and the blends between them read as
+ * real colors. Values that are already objects ({r,g,b} from the fixed
+ * serializer) pass through untouched.
+ */
+function rehydrateColorKeyframeTracks(graph: Graph, registry: NodeRegistry): KeyframeStore | undefined {
+  if (!graph.keyframes) return graph.keyframes;
+
+  const typeByNodeId = new Map(graph.nodes.map((n) => [n.id, n.type]));
+  let storeChanged = false;
+  const nextStore: KeyframeStore = { ...graph.keyframes };
+
+  for (const [nodeId, tracks] of Object.entries(graph.keyframes)) {
+    const def = registry.get(typeByNodeId.get(nodeId) ?? "");
+    if (!def) continue;
+
+    let tracksChanged = false;
+    const nextTracks: KeyframeStore[string] = { ...tracks };
+
+    for (const [paramKey, list] of Object.entries(tracks)) {
+      if (!(def.defaultParams[paramKey] instanceof THREE.Color)) continue;
+      let listChanged = false;
+      const nextList = list.map((kf) => {
+        if (typeof kf.value !== "number" && typeof kf.value !== "string") return kf;
+        listChanged = true;
+        const c = parseColorValue(kf.value);
+        return { ...kf, value: { r: c.r, g: c.g, b: c.b } };
+      });
+      if (listChanged) {
+        nextTracks[paramKey] = nextList;
+        tracksChanged = true;
+      }
+    }
+
+    if (tracksChanged) {
+      nextStore[nodeId] = nextTracks;
+      storeChanged = true;
+    }
+  }
+
+  return storeChanged ? nextStore : graph.keyframes;
+}
+
 export function rehydrateGraphParams(graph: Graph, registry: NodeRegistry): Graph {
-  return {
+  const rebuilt = {
     ...graph,
     nodes: graph.nodes.map((instance) => {
       const def = registry.get(instance.type);
@@ -115,4 +163,6 @@ export function rehydrateGraphParams(graph: Graph, registry: NodeRegistry): Grap
       return changed ? { ...instance, params } : instance;
     }),
   };
+
+  return { ...rebuilt, keyframes: rehydrateColorKeyframeTracks(rebuilt, registry) };
 }

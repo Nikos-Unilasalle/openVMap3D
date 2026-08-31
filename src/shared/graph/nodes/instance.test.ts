@@ -31,6 +31,54 @@ describe("GEOMETRY TRANSFORM NODE", () => {
     expect(scale.z).toBe(2);
   });
 
+  it("GEOMETRY_TRANSFORM_NODE treats a wired rotation vector as radians", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const res = GEOMETRY_TRANSFORM_NODE.evaluate(
+      { geometry: box, rotation: new THREE.Vector3(0, Math.PI / 2, 0) },
+      {},
+      CTX
+    );
+
+    const wrapper = (res.geometry as THREE.Group).children[0] as THREE.Group;
+    const quat = new THREE.Quaternion().setFromRotationMatrix(wrapper.matrix);
+    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(quat);
+    expect(forward.x).toBeCloseTo(1);
+    expect(forward.z).toBeCloseTo(0);
+  });
+
+  it("GEOMETRY_TRANSFORM_NODE applies scalar rotX params as degrees", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const res = GEOMETRY_TRANSFORM_NODE.evaluate(
+      { geometry: box },
+      { rotX: 90 },
+      CTX
+    );
+
+    const wrapper = (res.geometry as THREE.Group).children[0] as THREE.Group;
+    const quat = new THREE.Quaternion().setFromRotationMatrix(wrapper.matrix);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(quat);
+    expect(up.y).toBeCloseTo(0);
+    expect(up.z).toBeCloseTo(1);
+  });
+
+  it("GEOMETRY_TRANSFORM_NODE falls back to the rotation vector param (stored in radians)", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    // The panel stores a `degrees: true` vector param in radians: typing 90°
+    // yields π/2. The node used to ignore this field entirely (scalar 0
+    // defaults shadowed it) — it must now drive the rotation.
+    const res = GEOMETRY_TRANSFORM_NODE.evaluate(
+      { geometry: box },
+      { rotation: new THREE.Vector3(0, Math.PI / 2, 0) },
+      CTX
+    );
+
+    const wrapper = (res.geometry as THREE.Group).children[0] as THREE.Group;
+    const quat = new THREE.Quaternion().setFromRotationMatrix(wrapper.matrix);
+    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(quat);
+    expect(forward.x).toBeCloseTo(1);
+    expect(forward.z).toBeCloseTo(0);
+  });
+
   it("GEOMETRY_TRANSFORM_NODE applies Matrix4 transformation", () => {
     const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
     const matrix = new THREE.Matrix4().makeTranslation(3, 4, 5);
@@ -93,6 +141,38 @@ describe("INSTANCE MANIPULATION NODES", () => {
 
     const group = transformedRes.geometry as THREE.Group;
     expect(group.children.length).toBe(2);
+  });
+
+  it("SET_INSTANCE_TRANSFORM_NODE treats euler-mode rotations list entries as radians", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const transformedRes = SET_INSTANCE_TRANSFORM_NODE.evaluate(
+      { geometry: box, rotations: [new THREE.Vector3(0, 0, Math.PI / 2)] },
+      {},
+      { ...CTX, connectedInputs: new Set(["rotations"]) } as never
+    );
+
+    const group = transformedRes.geometry as THREE.Group;
+    expect(group.children.length).toBe(1);
+
+    const quat = new THREE.Quaternion().setFromRotationMatrix((group.children[0] as THREE.Group).matrix);
+    const xAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(quat);
+    expect(xAxis.y).toBeCloseTo(1);
+    expect(xAxis.x).toBeCloseTo(0);
+  });
+
+  it("SET_INSTANCE_TRANSFORM_NODE applies scalar rotX params as degrees", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const transformedRes = SET_INSTANCE_TRANSFORM_NODE.evaluate(
+      { geometry: box },
+      { rotX: 90 },
+      CTX
+    );
+
+    const group = transformedRes.geometry as THREE.Group;
+    const quat = new THREE.Quaternion().setFromRotationMatrix((group.children[0] as THREE.Group).matrix);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(quat);
+    expect(up.y).toBeCloseTo(0);
+    expect(up.z).toBeCloseTo(1);
   });
 
   it("SET_INSTANCE_TRANSFORM_NODE aligns instances to direction vectors (rotationMode = align)", () => {

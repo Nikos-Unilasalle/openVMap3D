@@ -342,16 +342,25 @@ function GraphEditorContent({
   );
 
   const onNodesDelete = useCallback(
-    (deletedNodes: Node<GraphNodeData>[]) => {
+    (deletedNodes: Node<GraphNodeData>[], alsoDeletedEdges: Edge[] = []) => {
       // Cache disposal is deliberately NOT done here. It is reconciled
       // against the graph in App.tsx instead, so that undo, redo, New, Open
       // and any other way a node can leave are covered by the same rule
       // rather than each needing to remember to call it.
       const deletedIds = new Set(deletedNodes.map((n) => n.id));
       for (const id of deletedIds) selectedIdsRef.current.delete(id);
+      // Edges selected at the same time as nodes (marquee / shift-click) are
+      // deleted in the SAME pass. Chaining the edge handler afterwards ran on
+      // stale closures still holding the just-deleted nodes and re-committed
+      // them into the document, minus their wires — "deleted" nodes came
+      // back. The combined filter below keeps exactly one commit, and one
+      // undo step, for the whole gesture.
+      const deletedEdgeIds = new Set(alsoDeletedEdges.map((e) => e.id));
 
       const nextNodes = nodes.filter((n) => !deletedIds.has(n.id));
-      const nextEdges = edges.filter((e) => !deletedIds.has(e.source) && !deletedIds.has(e.target));
+      const nextEdges = edges.filter(
+        (e) => !deletedEdgeIds.has(e.id) && !deletedIds.has(e.source) && !deletedIds.has(e.target),
+      );
 
       const updatedGraphNodes = graph.nodes
         .filter((n) => !deletedIds.has(n.id))
@@ -1006,10 +1015,12 @@ function GraphEditorContent({
       } else if (e.key === "Delete" || e.key === "Backspace") {
         const selNodes = nodes.filter((n) => n.selected);
         const selEdges = edges.filter((ed) => ed.selected);
-        if (selNodes.length > 0 || selEdges.length > 0) {
+        if (selNodes.length > 0) {
           e.preventDefault();
-          if (selNodes.length > 0) onNodesDelete(selNodes);
-          if (selEdges.length > 0) onEdgesDelete(selEdges);
+          onNodesDelete(selNodes, selEdges);
+        } else if (selEdges.length > 0) {
+          e.preventDefault();
+          onEdgesDelete(selEdges);
         }
       }
     };
