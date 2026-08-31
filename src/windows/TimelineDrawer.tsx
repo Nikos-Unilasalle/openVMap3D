@@ -14,6 +14,15 @@ import {
 } from "./timelineUtils";
 import { EasingPopover, EASING_OPTIONS, EASING_STRENGTH_CONFIG, strengthForEasing } from "./EasingPopover";
 import { DragNumberInput } from "./DragNumberInput";
+import {
+  DragTransform,
+  IDENTITY_DRAG,
+  TimelineDragMode,
+  applyDragTransform,
+  buildDragTransform,
+  formatDragTransform,
+  isNoOpDrag,
+} from "./timelineDrag";
 import { MotionGraph } from "./MotionGraph";
 import "./timeline-drawer.css";
 
@@ -162,10 +171,13 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
     isActive: boolean;
   } | null>(null);
 
+  /** Whether a keyframe drag slides the selection or retimes its spacing — see timelineDrag.ts. */
+  const [dragMode, setDragMode] = useState<TimelineDragMode>("move");
+
   // Dragging keyframes state
   const [draggingKeyframes, setDraggingKeyframes] = useState<{
     startFrame: number;
-    currentDelta: number;
+    transform: DragTransform;
     isAltDuplicate: boolean;
     initialKeys: SelectedKeyframeKey[];
   } | null>(null);
@@ -402,7 +414,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
 
     setDraggingKeyframes({
       startFrame: frame,
-      currentDelta: 0,
+      transform: { ...IDENTITY_DRAG, mode: dragMode, pivot: currentFrame },
       isAltDuplicate: e.altKey,
       initialKeys: keysToDrag,
     });
@@ -434,8 +446,15 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
       // Keyframe drag
       if (draggingKeyframes && gridViewportRef.current) {
         const currentFrameAtMouse = clientXToFrame(e.clientX, gridViewportRef.current);
-        const delta = currentFrameAtMouse - draggingKeyframes.startFrame;
-        setDraggingKeyframes((prev) => (prev ? { ...prev, currentDelta: delta, isAltDuplicate: e.altKey } : null));
+        setDraggingKeyframes((prev) =>
+          prev
+            ? {
+                ...prev,
+                transform: buildDragTransform(prev.transform.mode, prev.startFrame, currentFrameAtMouse, prev.transform.pivot),
+                isAltDuplicate: e.altKey,
+              }
+            : null,
+        );
         return;
       }
 
@@ -456,15 +475,15 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
 
       // Commit Keyframe Drag / Duplicate
       if (draggingKeyframes) {
-        const delta = draggingKeyframes.currentDelta;
-        if (delta !== 0) {
+        const transform = draggingKeyframes.transform;
+        if (!isNoOpDrag(transform)) {
           if (draggingKeyframes.isAltDuplicate || e.altKey) {
             // Duplicate
             const duplicates = draggingKeyframes.initialKeys.map((k) => ({
               nodeId: k.nodeId,
               paramKey: k.paramKey,
               sourceFrame: k.frame,
-              targetFrame: Math.max(0, Math.min(totalFrames, k.frame + delta)),
+              targetFrame: Math.max(0, Math.min(totalFrames, applyDragTransform(k.frame, transform))),
             }));
             onBatchDuplicateKeyframes(duplicates);
           } else {
@@ -473,7 +492,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
               nodeId: k.nodeId,
               paramKey: k.paramKey,
               oldFrame: k.frame,
-              newFrame: Math.max(0, Math.min(totalFrames, k.frame + delta)),
+              newFrame: Math.max(0, Math.min(totalFrames, applyDragTransform(k.frame, transform))),
             }));
             onBatchMoveKeyframes(moves);
           }
@@ -612,6 +631,14 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
           }));
           onBatchDuplicateKeyframes(duplicates);
         }
+      } else if (!e.metaKey && !e.ctrlKey && !e.altKey && (e.key === "g" || e.key === "G")) {
+        // Blender's own dope-sheet keys, and free here. Bare (no modifier)
+        // only, so ⌘G and friends keep whatever they mean elsewhere.
+        e.preventDefault();
+        setDragMode("move");
+      } else if (!e.metaKey && !e.ctrlKey && !e.altKey && (e.key === "s" || e.key === "S")) {
+        e.preventDefault();
+        setDragMode("scale");
       } else if (e.key === "Escape") {
         if (easingPopover) setEasingPopover(null);
         else if (contextMenu) setContextMenu(null);
@@ -748,6 +775,22 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
 
         {/* Right Actions & Zoom */}
         <div className="timeline-drawer-actions">
+          {/* What a keyframe drag does — see timelineDrag.ts. Scale needs the
+              playhead to lever against, so its title says where it pivots. */}
+          <button
+            className={`timeline-action-btn ${dragMode === "move" ? "active" : ""}`}
+            onClick={() => setDragMode("move")}
+            title="Drag moves keyframes, keeping their spacing (G)"
+          >
+            Move
+          </button>
+          <button
+            className={`timeline-action-btn ${dragMode === "scale" ? "active" : ""}`}
+            onClick={() => setDragMode("scale")}
+            title={`Drag retimes the spacing between keyframes, around the playhead at frame ${currentFrame} (S)`}
+          >
+            Scale
+          </button>
           <button
             className={`timeline-action-btn ${motionGraphOpen ? "active" : ""}`}
             onClick={() => setMotionGraphOpen((o) => !o)}
@@ -1146,7 +1189,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
                         );
                         const effectiveFrame =
                           draggingKeyframes && isSelected
-                            ? sFrame + draggingKeyframes.currentDelta
+                            ? applyDragTransform(sFrame, draggingKeyframes.transform)
                             : sFrame;
 
                         return (
@@ -1184,7 +1227,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
                               const isSelected = selectedKeyframeIds.has(kId);
                               const effectiveFrame =
                                 draggingKeyframes && isSelected
-                                  ? kf.frame + draggingKeyframes.currentDelta
+                                  ? applyDragTransform(kf.frame, draggingKeyframes.transform)
                                   : kf.frame;
 
                               return (
@@ -1198,10 +1241,9 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
                                 >
                                   {renderKeyframeGlyph(kf.easeIn || "smooth", false)}
                                   {/* Drag delta badge */}
-                                  {draggingKeyframes && isSelected && draggingKeyframes.currentDelta !== 0 && (
+                                  {draggingKeyframes && isSelected && !isNoOpDrag(draggingKeyframes.transform) && (
                                     <div className="timeline-drag-delta-badge">
-                                      {draggingKeyframes.currentDelta > 0 ? "+" : ""}
-                                      {draggingKeyframes.currentDelta} ({effectiveFrame})
+                                      {formatDragTransform(draggingKeyframes.transform)} ({effectiveFrame})
                                     </div>
                                   )}
                                 </div>
