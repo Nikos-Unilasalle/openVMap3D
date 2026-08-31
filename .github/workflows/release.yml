@@ -91,6 +91,12 @@ jobs:
       - name: Test
         run: npm test
 
+      # npm version only bumps package.json; the installers read their number
+      # from tauri.conf.json. Sync the native side to the tagged version so
+      # binaries don't ship reporting an older version than their tag.
+      - name: Sync version files
+        run: npm run sync:versions
+
       - name: Build and draft the release
         uses: tauri-apps/tauri-action@v0
         env:

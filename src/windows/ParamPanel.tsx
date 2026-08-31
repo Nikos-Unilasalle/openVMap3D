@@ -11,7 +11,7 @@ import { ColorRampEditor } from "./ColorRampEditor";
 import { DragNumberInput } from "./DragNumberInput";
 import "./param-panel.css";
 
-interface ParamPanelProps {
+export interface ParamPanelProps {
   nodeId: string;
   label: string;
   category?: NodeCategory;

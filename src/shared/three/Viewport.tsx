@@ -8,6 +8,7 @@ import { CAMERA_FLY_TO_NODE, CAMERA_NODE } from "../graph/nodes/camera";
 import { HubElement } from "../graph/nodes/hub";
 import { asVector3 } from "../graph/nodes/transform";
 import { disposeRendererCaches, resetAllParticleSimulations } from "../graph/particleRuntime";
+import { publishEvaluatedResults } from "../graph/evaluatedResultsStore";
 import { resolveCurveEditTarget } from "../graph/curveLookup";
 import { resolveSceneRoots } from "../graph/sceneRoots";
 import { findFirstMesh } from "../graph/meshRequired";
@@ -390,7 +391,6 @@ interface ViewportProps {
   /** Editor-only: the pinned viewport param HUD — see ViewportParamHUD. Not shown in outputMode. */
   keyframes?: KeyframeStore;
   keyframesEnabled?: boolean;
-  evaluatedResults?: EvalResult | null;
   onParamChange?: (paramId: string, value: unknown, targetNodeId?: string) => void;
   onUnpinParam?: (nodeId: string, paramId: string) => void;
   onRenameExposedParam?: (nodeId: string, paramId: string, label: string) => void;
@@ -427,7 +427,6 @@ export function Viewport({
   onHubChange,
   keyframes,
   keyframesEnabled = true,
-  evaluatedResults = null,
   onParamChange,
   onUnpinParam,
   onRenameExposedParam,
@@ -2098,6 +2097,12 @@ export function Viewport({
       }
       latestResults = results;
       latestResultsRef.current = results;
+      // Published outside React: the per-frame consumers (param panel, HUD,
+      // timeline) subscribe to the store themselves. The callback stays for
+      // the editor's one-shot stores (canvas switch, camera hand-off) —
+      // piping every frame through App state re-rendered the whole editor
+      // tree at frame rate.
+      publishEvaluatedResults(results);
       onEvaluatedResultsRef.current?.(results);
 
       // Evaluate and sync ALL 3D Lights & Light Helpers in the scene (standalone or array instances)
@@ -3505,7 +3510,6 @@ export function Viewport({
         <ViewportParamHUD
           graph={graph}
           registry={registry}
-          evaluatedResults={evaluatedResults}
           keyframes={keyframes}
           currentFrame={currentFrame}
           keyframesEnabled={keyframesEnabled}

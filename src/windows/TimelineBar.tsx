@@ -1,6 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { EasingType, Marker } from "../shared/graph/types";
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { EasingType, Graph, Marker } from "../shared/graph/types";
 import { setInputZone } from "../shared/graph/inputZoneStore";
+import {
+  getEvaluatedResultsSnapshot,
+  subscribeEvaluatedResults,
+} from "../shared/graph/evaluatedResultsStore";
 import { EasingPopover, EASING_STRENGTH_CONFIG, strengthForEasing } from "./EasingPopover";
 import { WaveformPeak, clipPixelRange, loadWaveformPeaks } from "./audioWaveform";
 import "./timeline-bar.css";
@@ -19,10 +23,8 @@ interface TimelineBarProps {
   keyframesEnabled: boolean;
   selectedKeyframes?: Record<number, KeyframeDataAtFrame>;
   markers?: Marker[];
-  waveformUrl?: string;
-  /** Where the audio clip starts on the timeline, and how long it runs. */
-  waveformStartFrame?: number;
-  waveformDuration?: number;
+  /** Stable between edits — scanned for a wired audio Player's clip (see waveformClip below). */
+  graphNodes?: Graph["nodes"];
   fps?: number;
   onToggleMarker?: (frame: number) => void;
   onMoveMarker?: (oldFrame: number, newFrame: number) => void;
@@ -158,9 +160,7 @@ export function TimelineBar({
   keyframesEnabled,
   selectedKeyframes = {},
   markers = [],
-  waveformUrl,
-  waveformStartFrame,
-  waveformDuration,
+  graphNodes,
   fps,
   onToggleMarker,
   onMoveMarker,
@@ -175,6 +175,31 @@ export function TimelineBar({
   onToggleDrawer,
 }: TimelineBarProps) {
   const trackRef = useRef<HTMLDivElement>(null);
+  // Subscribes to the frame results itself — piped in as a prop from App
+  // state, the bar re-rendered the whole editor tree at frame rate.
+  const evaluatedResults = useSyncExternalStore(subscribeEvaluatedResults, getEvaluatedResultsSnapshot);
+  // The wired audio Player's clip, from the evaluation results (not the
+  // audio store: that is a module cache filled asynchronously once the file
+  // has decoded, and nothing about that write reaches React). `url` is a
+  // socket, so it arrives with every frame's results like any other value.
+  const waveformClip = useMemo(() => {
+    if (!evaluatedResults || !graphNodes) return undefined;
+    for (const node of graphNodes) {
+      if (node.type !== "sound/player") continue;
+      const res = evaluatedResults.get(node.id);
+      const url = res?.url;
+      if (typeof url !== "string" || !url) continue;
+      // A trigger-driven clip (startFrame -1) has no knowable position on
+      // the timeline, so it is drawn from frame 0 rather than not at all.
+      const start = Number(res?.startFrame);
+      return {
+        url,
+        startFrame: Number.isFinite(start) && start >= 0 ? start : 0,
+        duration: Number(res?.duration) || 0,
+      };
+    }
+    return undefined;
+  }, [graphNodes, evaluatedResults]);
   const [hoverFrame, setHoverFrame] = useState<number | null>(null);
   const [hoverX, setHoverX] = useState<number>(0);
   const [isScrubbing, setIsScrubbing] = useState(false);
@@ -460,9 +485,9 @@ export function TimelineBar({
         >
           <div className="timeline-track-bg" />
           <WaveformCanvas
-            url={waveformUrl}
-            startFrame={waveformStartFrame ?? 0}
-            duration={waveformDuration ?? 0}
+            url={waveformClip?.url}
+            startFrame={waveformClip?.startFrame ?? 0}
+            duration={waveformClip?.duration ?? 0}
             fps={fps ?? 30}
             totalFrames={totalFrames}
           />

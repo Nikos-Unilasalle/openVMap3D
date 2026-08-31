@@ -1,6 +1,9 @@
-import { useState } from "react";
-import { EvalResult } from "../shared/graph/evaluate";
+import { useState, useSyncExternalStore } from "react";
 import { paramPanelValues } from "../shared/graph/paramPanelValues";
+import {
+  getEvaluatedResultsSnapshot,
+  subscribeEvaluatedResults,
+} from "../shared/graph/evaluatedResultsStore";
 import { Graph, KeyframeStore, NodeRegistry, ParamFieldDef } from "../shared/graph/types";
 import {
   booleanField,
@@ -17,7 +20,6 @@ import "./viewport-param-hud.css";
 interface ViewportParamHUDProps {
   graph: Graph;
   registry: NodeRegistry;
-  evaluatedResults: EvalResult | null;
   keyframes?: KeyframeStore;
   currentFrame: number;
   keyframesEnabled: boolean;
@@ -39,7 +41,6 @@ interface ViewportParamHUDProps {
 export function ViewportParamHUD({
   graph,
   registry,
-  evaluatedResults,
   keyframes,
   currentFrame,
   keyframesEnabled,
@@ -48,6 +49,9 @@ export function ViewportParamHUD({
   onRename,
 }: ViewportParamHUDProps) {
   const [collapsed, setCollapsed] = useState(false);
+  // Subscribes to the frame results itself — piped in as a prop from App
+  // state, this HUD re-rendered the whole editor tree at frame rate.
+  const evaluatedResults = useSyncExternalStore(subscribeEvaluatedResults, getEvaluatedResultsSnapshot);
   // Which row's label is mid-edit — at most one at a time, keyed by
   // "nodeId:paramId" since paramId alone collides across pinned nodes.
   const [editingKey, setEditingKey] = useState<string | null>(null);

@@ -9,6 +9,29 @@ export default defineConfig(async () => ({
   base: "./",
   plugins: [react()],
 
+  // Split the vendor weight: three.js (plus its BVH/CSG companions) and the
+  // bundled font JSONs (~2.5 MB of build-time data) otherwise ride in the
+  // entry chunk, so one 4.7 MB file parsed before first paint. Cacheable
+  // chunks also keep app-only changes from invalidating the three download.
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (id.includes("/node_modules/three/") || id.includes("three-mesh-bvh") || id.includes("three-bvh-csg")) {
+            return "three";
+          }
+          if (id.includes("/node_modules/react") || id.includes("/node_modules/scheduler") || id.includes("@xyflow")) {
+            return "react-vendor";
+          }
+          if (id.includes("/src/shared/three/fonts/")) {
+            return "fonts";
+          }
+          return undefined;
+        },
+      },
+    },
+  },
+
   // @xyflow/react pulls its own nested copy of react/react-dom as a
   // dependency (visible in `npm ls` even though npm dedupes it on disk) —
   // without this, Vite's dev-time dependency pre-bundler can resolve that

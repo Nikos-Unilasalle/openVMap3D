@@ -5,61 +5,67 @@
   "windows": ["main", "output"],
   "permissions": [
     "core:default",
-    "opener:default",
     "dialog:default",
-    "dialog:allow-open",
-    "dialog:allow-save",
     "fs:default",
-    "fs:allow-create",
     {
       "identifier": "fs:allow-read-file",
       "allow": [
-        { "path": "$HOME/**" },
         { "path": "$DOCUMENT/**" },
         { "path": "$DOWNLOAD/**" },
         { "path": "$DESKTOP/**" },
         { "path": "$PICTURE/**" },
         { "path": "$MUSIC/**" },
-        { "path": "$VIDEO/**" }
+        { "path": "$VIDEO/**" },
+        { "path": "/Volumes/**" },
+        { "path": "/media/**" },
+        { "path": "/mnt/**" }
       ]
     },
     {
       "identifier": "fs:allow-read-text-file",
       "allow": [
-        { "path": "$HOME/**" },
         { "path": "$DOCUMENT/**" },
         { "path": "$DOWNLOAD/**" },
         { "path": "$DESKTOP/**" },
         { "path": "$PICTURE/**" },
         { "path": "$MUSIC/**" },
-        { "path": "$VIDEO/**" }
+        { "path": "$VIDEO/**" },
+        { "path": "/Volumes/**" },
+        { "path": "/media/**" },
+        { "path": "/mnt/**" }
       ]
     },
     {
       "identifier": "fs:allow-write-text-file",
       "allow": [
-        { "path": "$HOME/**" },
         { "path": "$DOCUMENT/**" },
         { "path": "$DOWNLOAD/**" },
-        { "path": "$DESKTOP/**" }
+        { "path": "$DESKTOP/**" },
+        { "path": "/Volumes/**" },
+        { "path": "/media/**" },
+        { "path": "/mnt/**" }
       ]
     },
     {
       "identifier": "fs:allow-write-file",
       "allow": [
-        { "path": "$HOME/**" },
         { "path": "$DOCUMENT/**" },
         { "path": "$DOWNLOAD/**" },
-        { "path": "$DESKTOP/**" }
+        { "path": "$DESKTOP/**" },
+        { "path": "/Volumes/**" },
+        { "path": "/media/**" },
+        { "path": "/mnt/**" }
       ]
     },
     {
       "identifier": "fs:allow-write",
       "allow": [
-        { "path": "$HOME/**" },
         { "path": "$DOCUMENT/**" },
         { "path": "$DOWNLOAD/**" },
-        { "path": "$DESKTOP/**" }
+        { "path": "$DESKTOP/**" },
+        { "path": "/Volumes/**" },
+        { "path": "/media/**" },
+        { "path": "/mnt/**" }
       ]
     }
   ]

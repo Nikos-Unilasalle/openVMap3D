@@ -1,0 +1,33 @@
+name: CI
+
+# Pull-request gate: deploy.yml already runs tests + build on merges to main,
+# but nothing checked PRs. Also pins the README node catalogue to the
+# registry — a node added without `npm run docs:nodes` fails here instead of
+# shipping a lying catalogue.
+on:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Node catalogue is in sync with the registry
+        run: npm run docs:nodes -- --check
+
+      - name: Test
+        run: npm test
+
+      - name: Build (typecheck + bundle)
+        run: npm run build

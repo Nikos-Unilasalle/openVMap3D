@@ -1,6 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { TransformPatch, Viewport } from "./Viewport";
-import { EvalResult } from "../graph/evaluate";
 import { Graph, KeyframeStore, NodeRegistry } from "../graph/types";
 import type { PreviewCameraPose } from "../ipc";
 
@@ -45,7 +44,6 @@ interface SplitViewportProps {
   /** Editor pane's pinned param HUD — see ViewportParamHUD. Not passed to the output/camera-preview pane. */
   keyframes?: KeyframeStore;
   keyframesEnabled?: boolean;
-  evaluatedResults?: EvalResult | null;
   onParamChange?: (paramId: string, value: unknown, targetNodeId?: string) => void;
   onUnpinParam?: (nodeId: string, paramId: string) => void;
   onRenameExposedParam?: (nodeId: string, paramId: string, label: string) => void;
@@ -73,7 +71,6 @@ export function SplitViewport({
   onCycleViewMode: cycleMode,
   keyframes,
   keyframesEnabled,
-  evaluatedResults,
   onParamChange,
   onUnpinParam,
   onRenameExposedParam,
@@ -204,7 +201,6 @@ export function SplitViewport({
           onHubChange={onHubChange}
           keyframes={keyframes}
           keyframesEnabled={keyframesEnabled}
-          evaluatedResults={evaluatedResults}
           onParamChange={onParamChange}
           onUnpinParam={onUnpinParam}
           onRenameExposedParam={onRenameExposedParam}
@@ -251,7 +247,6 @@ export function SplitViewport({
             onHubChange={onHubChange}
             keyframes={keyframes}
             keyframesEnabled={keyframesEnabled}
-            evaluatedResults={evaluatedResults}
             onParamChange={onParamChange}
             onUnpinParam={onUnpinParam}
           />

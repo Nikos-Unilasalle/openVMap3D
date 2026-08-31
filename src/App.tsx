@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import * as THREE from "three";
 import { CAMERA_FLY_TO_NODE, CAMERA_NODE } from "./shared/graph/nodes/camera";
 import { DEFAULT_REGISTRY } from "./shared/graph/nodes";
@@ -22,6 +22,10 @@ import { AutosaveRecord, projectHasContent, readAutosave, writeAutosave } from "
 import { rehydrateGraphParams } from "./shared/graph/rehydrateParams";
 import { connectedSocketIds, paramPanelValues } from "./shared/graph/paramPanelValues";
 import {
+  getEvaluatedResultsSnapshot,
+  subscribeEvaluatedResults,
+} from "./shared/graph/evaluatedResultsStore";
+import {
   LATTICE_DEFORM_NODE,
   LATTICE_GRID_PARAM_IDS,
   latticeParamsWithRebuiltGrid,
@@ -37,10 +41,12 @@ import {
   KeyframeStore,
   Marker,
   NodeInstance,
+  NodeDefinition,
   normalizeCanvases,
   ParamFieldDef,
   Project,
 } from "./shared/graph/types";
+import { ParamPanel, ParamPanelProps } from "./windows/ParamPanel";
 import { broadcastGraph, maximizeMainWindow, PreviewCameraPose, startBroadcasting } from "./shared/ipc";
 import { exportVideo, mimeToExtension, saveVideoBlob } from "./shared/export/videoExport";
 import { TransformPatch, Viewport, ViewportExportHandle } from "./shared/three/Viewport";
@@ -50,7 +56,7 @@ import { GIZMO_SELECTABLE_TYPES, resolveGizmoTarget } from "./shared/graph/trans
 import { CalibrationOverlay } from "./windows/CalibrationOverlay";
 import { GraphEditor } from "./windows/GraphEditor";
 import { OutputWindow } from "./windows/OutputWindow";
-import { parseVector3, ParamPanel } from "./windows/ParamPanel";
+import { parseVector3 } from "./windows/ParamPanel";
 import { TimelineBar } from "./windows/TimelineBar";
 import { TimelineDrawer } from "./windows/TimelineDrawer";
 import { KeyframeClipboardItem } from "./windows/timelineUtils";
@@ -184,6 +190,28 @@ const AUTOSAVE_DEBOUNCE_MS = 800;
 
 const MIN_PANE_PERCENT = 15;
 const MAX_PANE_PERCENT = 85;
+
+/**
+ * The param panel's live values come from the per-frame evaluation store, so
+ * the subscription lives here rather than in MainEditor: only this subtree
+ * re-renders on each publish instead of the whole editor tree.
+ */
+function ConnectedParamPanel({
+  graph,
+  instance,
+  def,
+  frame,
+  ...panelProps
+}: {
+  graph: Graph;
+  instance: NodeInstance;
+  def: NodeDefinition;
+  frame: number | undefined;
+} & Omit<ParamPanelProps, "params">) {
+  const evaluatedResults = useSyncExternalStore(subscribeEvaluatedResults, getEvaluatedResultsSnapshot);
+  const params = paramPanelValues(graph, instance, def, evaluatedResults, frame);
+  return <ParamPanel {...panelProps} params={params} />;
+}
 
 /**
  * Two windows, one bundle: the Rust side (`output_window.rs`) opens the
@@ -368,7 +396,7 @@ function MainEditor() {
       ),
     );
   }, []);
-  const [evaluatedResults, setEvaluatedResults] = useState<Map<string, Record<string, unknown>> | null>(null);
+
 
   /**
    * Runs after every evaluation the viewport does. A Go To Canvas node can't
@@ -409,9 +437,13 @@ function MainEditor() {
     });
   }, [setGraph]);
 
+  // No React state here on purpose: the per-frame consumers (param panel,
+  // viewport HUD, timeline) subscribe to evaluatedResultsStore themselves —
+  // piping every frame through MainEditor state re-rendered the whole tree
+  // at 60 fps. This callback now only serves the one-shot request stores.
   const onEvaluatedResults = useCallback(
     (results: Map<string, Record<string, unknown>>) => {
-      setEvaluatedResults(results);
+      void results;
       const requestedCanvas = consumeCanvasSwitchRequest();
       if (requestedCanvas !== null) switchCanvas(requestedCanvas);
       const handoff = consumeCameraHandoffRequest();
@@ -988,7 +1020,7 @@ function MainEditor() {
         // evaluate.ts stores every node's resolved inputs alongside its
         // outputs precisely so a case like this can read back what a socket
         // actually saw, without re-deriving it from the graph.
-        const inputs = evaluatedResults?.get(nodeId)?.__evaluatedInputs as Record<string, unknown> | undefined;
+        const inputs = getEvaluatedResultsSnapshot()?.get(nodeId)?.__evaluatedInputs as Record<string, unknown> | undefined;
         const basisObj = inputs?.basis;
         if (!(basisObj instanceof THREE.Object3D)) {
           console.warn("Edit Mesh Points: nothing wired into Basis yet.");
@@ -1134,7 +1166,7 @@ function MainEditor() {
         return { ...prevGraph, nodes: [...prevGraph.nodes, newNode] };
       }, `bake:${nodeId}`);
     },
-    [setGraphWithHistory, graph.nodes, currentFrame, onToggleKeyframe, evaluatedResults, onParamChange],
+    [setGraphWithHistory, graph.nodes, currentFrame, onToggleKeyframe, onParamChange],
   );
 
   /**
@@ -1152,7 +1184,7 @@ function MainEditor() {
    */
   const onFreezeNode = useCallback(
     (nodeId: string) => {
-      const output = evaluatedResults?.get(nodeId)?.geometry;
+      const output = getEvaluatedResultsSnapshot()?.get(nodeId)?.geometry;
       if (!(output instanceof THREE.Object3D)) {
         console.warn("Freeze: this node has not produced any geometry yet.");
         return;
@@ -1177,7 +1209,7 @@ function MainEditor() {
         return { ...prevGraph, nodes: [...prevGraph.nodes, newNode] };
       }, `freeze:${nodeId}`);
     },
-    [evaluatedResults, setGraphWithHistory],
+    [setGraphWithHistory],
   );
 
   // Same functional-updater reasoning as onParamChange, but writing all
@@ -1285,17 +1317,6 @@ function MainEditor() {
     };
   }, []);
 
-  const selectedParamValues =
-    selectedInstance && selectedDef
-      ? paramPanelValues(
-          graph,
-          selectedInstance,
-          selectedDef,
-          evaluatedResults,
-          keyframesEnabled ? currentFrame : undefined
-        )
-      : {};
-
   const selectedKeyframesRecord = useMemo(() => {
     const map: Record<number, { paramKeys: string[]; easeIn?: EasingType; easeStrength?: number; easeBezier?: [number, number, number, number] }> = {};
     if (selectedNodeId && graph.keyframes?.[selectedNodeId]) {
@@ -1318,34 +1339,6 @@ function MainEditor() {
     }
     return map;
   }, [selectedNodeId, graph.keyframes]);
-
-  // The first sound/player node with a loaded file drives the timeline
-  // waveform strip (music sync).
-  //
-  // Read from the evaluation results, not from the audio store: the store is a
-  // module cache filled asynchronously once the file has decoded, and nothing
-  // about that write reaches React. Keyed on graph.nodes, this memo never
-  // recomputed after a project was reopened — the file loaded, the waveform
-  // never appeared. `url` is a socket now, so it arrives with every frame's
-  // results like any other value.
-  const waveformClip = useMemo(() => {
-    if (!evaluatedResults) return undefined;
-    for (const node of graph.nodes) {
-      if (node.type !== "sound/player") continue;
-      const res = evaluatedResults.get(node.id);
-      const url = res?.url;
-      if (typeof url !== "string" || !url) continue;
-      // A trigger-driven clip (startFrame -1) has no knowable position on the
-      // timeline, so it is drawn from frame 0 rather than not at all.
-      const start = Number(res?.startFrame);
-      return {
-        url,
-        startFrame: Number.isFinite(start) && start >= 0 ? start : 0,
-        duration: Number(res?.duration) || 0,
-      };
-    }
-    return undefined;
-  }, [graph.nodes, evaluatedResults]);
 
   const onMoveKeyframe = useCallback(
     (oldFrame: number, newFrame: number) => {
@@ -1846,7 +1839,6 @@ function MainEditor() {
           onCycleViewMode={cycleViewMode}
           keyframes={graph.keyframes}
           keyframesEnabled={keyframesEnabled}
-          evaluatedResults={evaluatedResults}
           onParamChange={onParamChange}
           onUnpinParam={onToggleExposed}
           onRenameExposedParam={onRenameExposed}
@@ -1871,7 +1863,11 @@ function MainEditor() {
           so it stays reachable in every Shift+Tab view state, full-canvas
           Graph included, where that pane collapses to 0 height. */}
       {selectedInstance && selectedDef && (
-        <ParamPanel
+        <ConnectedParamPanel
+          graph={graph}
+          instance={selectedInstance}
+          def={selectedDef}
+          frame={keyframesEnabled ? currentFrame : undefined}
           nodeId={selectedInstance.id}
           label={selectedDef.label}
           category={selectedDef.category}
@@ -1880,7 +1876,6 @@ function MainEditor() {
               ? selectedDef.dynamicParamFields(selectedInstance)
               : (selectedDef.paramFields ?? [])
           }
-          params={selectedParamValues}
           keyframes={graph.keyframes}
           currentFrame={keyframesEnabled ? currentFrame : -1}
           keyframesEnabled={keyframesEnabled}
@@ -1905,9 +1900,7 @@ function MainEditor() {
             keyframesEnabled={keyframesEnabled}
             selectedKeyframes={selectedKeyframesRecord}
             markers={graph.markers ?? []}
-            waveformUrl={waveformClip?.url}
-            waveformStartFrame={waveformClip?.startFrame}
-            waveformDuration={waveformClip?.duration}
+            graphNodes={graph.nodes}
             fps={exportFps}
             onToggleMarker={onToggleMarker}
             onMoveMarker={onMoveMarker}

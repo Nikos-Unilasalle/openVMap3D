@@ -1,6 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { CATEGORY_COLOR, UNKNOWN_CATEGORY_COLOR } from "../shared/graph/categories";
 import { isTimelineZone, setInputZone } from "../shared/graph/inputZoneStore";
+import {
+  getEvaluatedResultsSnapshot,
+  subscribeEvaluatedResults,
+} from "../shared/graph/evaluatedResultsStore";
 import { EasingType, Graph, Marker, NodeRegistry } from "../shared/graph/types";
 import {
   copyKeyframesToClipboard,
@@ -73,7 +77,6 @@ export interface TimelineDrawerProps {
   onToggleMarker?: (frame: number) => void;
   onMoveMarker?: (oldFrame: number, newFrame: number) => void;
   onRenameMarker?: (frame: number, label: string) => void;
-  evaluatedResults?: Map<string, Record<string, unknown>>;
   drawerHeight: number;
   onDrawerHeightChange: (height: number) => void;
   onSplitHandleMouseDown: (e: React.MouseEvent) => void;
@@ -142,12 +145,14 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
   onToggleMarker,
   onMoveMarker: _onMoveMarker,
   onRenameMarker,
-  evaluatedResults,
   drawerHeight,
   onDrawerHeightChange,
   onSplitHandleMouseDown,
 }) => {
   const [viewMode, setViewMode] = useState<"selected" | "all">("selected");
+  // Subscribes to the frame results itself — piped in as a prop from App
+  // state, the drawer re-rendered the whole editor tree at frame rate.
+  const evaluatedResults = useSyncExternalStore(subscribeEvaluatedResults, getEvaluatedResultsSnapshot);
   const [pixelsPerFrame, setPixelsPerFrame] = useState(6);
   const [leftPaneWidth, setLeftPaneWidth] = useState(260);
   const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(new Set());
