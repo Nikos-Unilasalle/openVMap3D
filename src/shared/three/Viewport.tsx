@@ -54,6 +54,7 @@ import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { createMotionBlur } from "./motionBlur";
+import { advancePlayhead, IDLE_PLAYHEAD, PlayheadState } from "./playhead";
 import { PostProcessConfig } from "../graph/nodes/postprocessing";
 import { Graph, KeyframeStore, NodeRegistry } from "../graph/types";
 import { isViewportZone, setInputZone } from "../graph/inputZoneStore";
@@ -352,6 +353,25 @@ interface ViewportProps {
   currentFrame?: number;
   onEvaluatedResults?: (results: Map<string, Record<string, unknown>>) => void;
   isPlaying?: boolean;
+  /**
+   * Total timeline length. Only needed by the viewport that drives playback
+   * (see `onFrameChange`); without it the incoming `currentFrame` is used as-is.
+   */
+  totalFrames?: number;
+  /**
+   * Set to make this viewport own the playhead while playing, advancing it off
+   * the same clock it renders on and reporting each new frame back out.
+   *
+   * Keyframed motion only moves when `currentFrame` changes, so when an
+   * outside timer pushed that frame in, two consecutive renders could land on
+   * the same one. Motion blur's velocity buffer compares each render with the
+   * one before it, so those duplicate renders measured no movement at all and
+   * came out sharp — the reason a keyframed scene barely blurred while a
+   * Time-node-driven one, running on this same clock, always did.
+   *
+   * Exactly one viewport should be given this.
+   */
+  onFrameChange?: (frame: number) => void;
   /** Fired continuously while dragging the 2D HUD gizmo on the camera view — writes the element's position/rotation/scale back to its hub node. */
   onHubChange?: (nodeId: string, patch: Partial<{ x: number; y: number; rotation: number; scale: number }>) => void;
   /**
@@ -398,6 +418,8 @@ export function Viewport({
   currentFrame = -1,
   onEvaluatedResults,
   isPlaying = true,
+  totalFrames = 0,
+  onFrameChange,
   exportHandleRef,
   onHubChange,
   keyframes,
@@ -413,6 +435,13 @@ export function Viewport({
 
   const currentFrameRef = useRef(currentFrame);
   currentFrameRef.current = currentFrame;
+  const totalFramesRef = useRef(totalFrames);
+  totalFramesRef.current = totalFrames;
+  const onFrameChangeRef = useRef(onFrameChange);
+  onFrameChangeRef.current = onFrameChange;
+
+  /** Ties the timeline to the render clock while playing — see playhead.ts. */
+  const playheadRef = useRef<PlayheadState>(IDLE_PLAYHEAD);
 
   // Set by captureFrame(), read (and cleared) by the very next tick() —
   // see ViewportExportHandle's own doc comment above.
@@ -2011,6 +2040,32 @@ export function Viewport({
             ? { width: prevRender.width as number, height: prevRender.height as number }
             : undefined;
         const renderFps = typeof prevRender?.fps === "number" ? (prevRender.fps as number) : undefined;
+
+        // Advance the playhead here, off this same clock, rather than taking
+        // whatever an outside timer last pushed in — see playhead.ts. Export
+        // is untouched: it forces its own frame index above.
+        let timelineFrame = exportFrameIndex;
+        if (!capture) {
+          const stepped = advancePlayhead(playheadRef.current, {
+            driving: onFrameChangeRef.current !== undefined,
+            playing: isPlayingRef.current,
+            totalFrames: totalFramesRef.current,
+            incomingFrame: currentFrameRef.current,
+            fps: renderFps ?? 30,
+            clockTime: clock.time,
+          });
+          playheadRef.current = stepped.state;
+          timelineFrame = stepped.frame;
+        }
+        if (!capture && timelineFrame !== currentFrameRef.current) {
+          // Keep our own view of it current for the rest of this frame: the
+          // prop only comes back after React has committed, which is one or
+          // more renders away, and every read until then must agree with what
+          // was actually evaluated.
+          currentFrameRef.current = timelineFrame;
+          onFrameChangeRef.current?.(timelineFrame);
+        }
+
         results = evaluateGraph(graphRef.current, registryRef.current, {
           time: clock.time,
           step: clock.step,
@@ -2022,7 +2077,7 @@ export function Viewport({
           fps: renderFps,
           sessionId: sessionIdRef.current,
           capturing: capture !== null,
-          currentFrame: exportFrameIndex,
+          currentFrame: capture ? exportFrameIndex : currentFrameRef.current,
           keyframes: graphRef.current.keyframes,
           scene,
         });

@@ -28,6 +28,15 @@ interface SplitViewportProps {
   currentFrame?: number;
   onEvaluatedResults?: (results: Map<string, Record<string, unknown>>) => void;
   isPlaying?: boolean;
+  /** Timeline length, for the pane that drives playback — see Viewport's `onFrameChange`. */
+  totalFrames?: number;
+  /**
+   * Handed to the primary pane only, and only while it is on screen, so
+   * exactly one viewport ever advances the playhead. In graph-only view both
+   * panes are hidden and suspended, so nothing drives and the caller's own
+   * timer takes back over.
+   */
+  onFrameChange?: (frame: number) => void;
   onHubChange?: (nodeId: string, patch: Partial<{ x: number; y: number; rotation: number; scale: number }>) => void;
   /** Freezes both panes while a video export runs — see Viewport's `suspended`. */
   suspended?: boolean;
@@ -54,6 +63,8 @@ export function SplitViewport({
   onCameraChange,
   previewCameraPose = null,
   currentFrame,
+  totalFrames,
+  onFrameChange,
   onEvaluatedResults,
   isPlaying,
   onHubChange,
@@ -183,6 +194,11 @@ export function SplitViewport({
           isSplitView={isSplit}
           onToggleSplitView={cycleMode}
           currentFrame={currentFrame}
+          totalFrames={totalFrames}
+          // Only while this pane is actually on screen: hidden, it is
+          // suspended and would drive nothing, so the caller's fallback timer
+          // has to be free to take over.
+          onFrameChange={primaryVisible ? onFrameChange : undefined}
           onEvaluatedResults={onEvaluatedResults}
           isPlaying={isPlaying}
           onHubChange={onHubChange}

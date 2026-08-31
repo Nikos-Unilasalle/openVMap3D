@@ -411,9 +411,33 @@ function MainEditor() {
     }
   }, [totalFrames, keyframesEnabled, setCurrentFrame]);
 
+  /**
+   * When the viewport last advanced the playhead itself. See the fallback
+   * timer below, and Viewport's `onFrameChange`.
+   */
+  const viewportDrivenAtRef = useRef(0);
+  const onViewportFrame = useCallback(
+    (frame: number) => {
+      viewportDrivenAtRef.current = Date.now();
+      setCurrentFrame(frame);
+    },
+    [setCurrentFrame],
+  );
+
+  /**
+   * Fallback playhead, for when no viewport is rendering to advance it —
+   * graph-only view suspends both panes.
+   *
+   * A visible viewport drives the timeline off the very clock it renders on
+   * (Viewport's `onFrameChange`), which is what keeps keyframed motion moving
+   * between one render and the next; this timer stepping in at the same time
+   * would put a second, unsynchronised clock back on the playhead and undo
+   * that. So it yields whenever the viewport has reported recently.
+   */
   useEffect(() => {
     if (!keyframesEnabled || !isPlaying || totalFrames <= 0) return;
     const interval = setInterval(() => {
+      if (Date.now() - viewportDrivenAtRef.current < 200) return;
       setCurrentFrame((prev) => (prev + 1) % totalFrames);
     }, 1000 / 60);
     return () => clearInterval(interval);
@@ -1786,6 +1810,8 @@ function MainEditor() {
           onTransformStart={onTransformStart}
           onCameraChange={onPreviewCameraChange}
           currentFrame={keyframesEnabled ? currentFrame : -1}
+          totalFrames={totalFrames}
+          onFrameChange={onViewportFrame}
           onEvaluatedResults={onEvaluatedResults}
           isPlaying={isPlaying}
           onHubChange={handleHubChange}
