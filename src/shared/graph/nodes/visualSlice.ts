@@ -296,6 +296,12 @@ export const VISUAL_SLICE_NODE: NodeDefinition = {
     { id: "geometry", label: "Geometry", type: "geometry", owns: true },
     { id: "point", label: "Plane Point", type: "vector" },
     { id: "direction", label: "Plane Normal", type: "vector" },
+    // Parents the cutting plane, so it can ride an animated object instead of
+    // being pinned to world coordinates. The plane is a point and a normal
+    // rather than a pose, so the matrix is applied to those two directly —
+    // there is no location/rotation/scale here for composeNativeMatrix to
+    // parent in the usual way.
+    { id: "matrix", label: "Matrix", type: "matrix" },
   ],
   outputs: [
     { id: "geometry", label: "Geometry", type: "geometry" },
@@ -332,11 +338,24 @@ export const VISUAL_SLICE_NODE: NodeDefinition = {
     // setting just because one node exists somewhere in the graph.
     if (ctx.renderer) ctx.renderer.localClippingEnabled = true;
 
-    const point = asVector3(inputs.point, asVector3(params.point, DEFAULT_POINT));
+    // Cloned: asVector3 hands back the params' own Vector3 when nothing is
+    // wired, and the transform below would otherwise move the stored param.
+    const point = asVector3(inputs.point, asVector3(params.point, DEFAULT_POINT)).clone();
     const normal = asVector3(inputs.direction, asVector3(params.direction, DEFAULT_NORMAL)).clone();
     if (normal.lengthSq() < 1e-12) normal.copy(DEFAULT_NORMAL);
     normal.normalize();
     if (params.invert) normal.negate();
+
+    // A wired matrix carries the plane with it. The normal goes through the
+    // inverse-transpose, not the matrix itself: under non-uniform scale a
+    // direction transformed like a position stops being perpendicular to the
+    // surface, and the cut would tilt away from where the plane actually is.
+    if (inputs.matrix instanceof THREE.Matrix4) {
+      point.applyMatrix4(inputs.matrix);
+      normal.applyMatrix3(new THREE.Matrix3().getNormalMatrix(inputs.matrix));
+      if (normal.lengthSq() < 1e-12) normal.copy(DEFAULT_NORMAL);
+      normal.normalize();
+    }
 
     // world-space plane: clippingPlanes are compared against each vertex's
     // world position, so the plane needs no relation to this node's own

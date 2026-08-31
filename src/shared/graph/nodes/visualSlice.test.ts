@@ -31,6 +31,85 @@ describe("VISUAL_SLICE_NODE", () => {
     expect(meshA.material.clippingPlanes![0].normal.y).toBeCloseTo(1);
   });
 
+  it("a wired matrix carries the plane with it", () => {
+    const mesh = boxMesh();
+    VISUAL_SLICE_NODE.evaluate(
+      {
+        geometry: mesh,
+        point: new THREE.Vector3(0, 0, 0),
+        direction: new THREE.Vector3(0, 1, 0),
+        matrix: new THREE.Matrix4().makeTranslation(0, 3, 0),
+      },
+      VISUAL_SLICE_NODE.defaultParams,
+      CTX,
+    );
+
+    const plane = (mesh.material as THREE.Material).clippingPlanes![0];
+    expect(plane.normal.y).toBeCloseTo(1, 6);
+    // The plane through y=0 has been carried up to y=3, so the origin is now
+    // 3 below it.
+    expect(plane.distanceToPoint(new THREE.Vector3(0, 0, 0))).toBeCloseTo(-3, 6);
+  });
+
+  it("a wired rotation turns the plane's normal", () => {
+    const mesh = boxMesh();
+    VISUAL_SLICE_NODE.evaluate(
+      {
+        geometry: mesh,
+        point: new THREE.Vector3(0, 0, 0),
+        direction: new THREE.Vector3(0, 1, 0),
+        matrix: new THREE.Matrix4().makeRotationZ(Math.PI / 2),
+      },
+      VISUAL_SLICE_NODE.defaultParams,
+      CTX,
+    );
+
+    const plane = (mesh.material as THREE.Material).clippingPlanes![0];
+    expect(plane.normal.x).toBeCloseTo(-1, 6);
+    expect(plane.normal.y).toBeCloseTo(0, 6);
+  });
+
+  it("keeps the normal perpendicular under a non-uniform scale", () => {
+    // A direction pushed through the matrix itself instead of its
+    // inverse-transpose stops being perpendicular to the surface, and the cut
+    // tilts away from where the plane really is. 45° in a box scaled 4x on X
+    // is the case that shows it.
+    const mesh = boxMesh();
+    const matrix = new THREE.Matrix4().makeScale(4, 1, 1);
+    VISUAL_SLICE_NODE.evaluate(
+      {
+        geometry: mesh,
+        point: new THREE.Vector3(0, 0, 0),
+        direction: new THREE.Vector3(1, 1, 0).normalize(),
+        matrix,
+      },
+      VISUAL_SLICE_NODE.defaultParams,
+      CTX,
+    );
+
+    const plane = (mesh.material as THREE.Material).clippingPlanes![0];
+    // Two points that lie in the plane before the transform must still lie in
+    // it after — the definition of the plane having been carried correctly.
+    for (const local of [new THREE.Vector3(1, -1, 0), new THREE.Vector3(0, 0, 5)]) {
+      const moved = local.clone().applyMatrix4(matrix);
+      expect(plane.distanceToPoint(moved)).toBeCloseTo(0, 6);
+    }
+  });
+
+  it("does not write the transform back into the node's own params", () => {
+    // asVector3 hands back the params' Vector3 itself when nothing is wired,
+    // so transforming in place would drift the stored point every frame.
+    const mesh = boxMesh();
+    const params = { ...VISUAL_SLICE_NODE.defaultParams, point: new THREE.Vector3(0, 0, 0) };
+    const matrix = new THREE.Matrix4().makeTranslation(0, 2, 0);
+    for (let i = 0; i < 3; i++) {
+      VISUAL_SLICE_NODE.evaluate({ geometry: mesh, matrix }, params, CTX);
+    }
+    expect((params.point as THREE.Vector3).y).toBe(0);
+    const plane = (mesh.material as THREE.Material).clippingPlanes![0];
+    expect(plane.distanceToPoint(new THREE.Vector3(0, 0, 0))).toBeCloseTo(-2, 6);
+  });
+
   it("invert flips the plane normal", () => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
     VISUAL_SLICE_NODE.evaluate(
