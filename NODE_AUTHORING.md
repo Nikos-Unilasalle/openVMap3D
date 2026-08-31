@@ -12,7 +12,7 @@ this guide, then stop — one node per task, don't try to build several at once.
 
 ```
 src/shared/graph/
-  sockets.ts          <- the 7 socket types (read-only, don't edit)
+  sockets.ts          <- the 12 socket types (read-only, don't edit)
   types.ts             <- NodeDefinition/EvalContext shape (read-only, don't edit)
   nodes/
     time.ts
@@ -110,25 +110,32 @@ on its param panel when selected. Use one of these exactly (from
 Pick the one matching BIBLE.md's catalog section for your node — if BIBLE.md
 lists it under "Logic", use `category: "logic"`. Two exceptions:
 - **Any Compose/Decompose node** (Compose Vector, Decompose Matrix, Compose
-  Color, etc.) always uses `category: "converter"`, regardless of which
-  BIBLE.md section it's listed under — grouped together for findability,
-  not by what they conceptually belong to.
+  Color, etc.) uses `category: "compose"` — its own palette section, grouped
+  together for findability rather than by what they conceptually belong to.
 - **Generic cross-type conversion utilities** (Value ↔ Vector ↔ Color, not
-  in BIBLE.md's catalog at all) also use `converter`.
+  in BIBLE.md's catalog at all) use `converter`.
+
+Also update `sockets.ts`'s doc comment and this table together if a type is
+ever added — and regenerate the README catalogue (`npm run docs:nodes`).
 
 ## 4. The socket types
 
-Pick types for `inputs`/`outputs` from exactly these seven — no others exist:
+Pick types for `inputs`/`outputs` from exactly these twelve — no others exist:
 
-| type       | carries                    | color   |
-|------------|-----------------------------|---------|
-| `value`    | `number` (also booleans: 0/1) | yellow |
-| `vector`   | `THREE.Vector3`             | blue    |
-| `matrix`   | `THREE.Matrix4`             | purple  |
-| `color`    | `THREE.Color`               | pink    |
-| `geometry` | `THREE.Object3D`            | green   |
-| `texture`  | `THREE.Texture`             | teal    |
-| `list`     | `unknown[]`                 | gray    |
+| type          | carries                      | color   |
+|---------------|-------------------------------|---------|
+| `value`       | `number` (also booleans: 0/1) | yellow  |
+| `vector`      | `THREE.Vector3`               | blue    |
+| `matrix`      | `THREE.Matrix4`               | purple  |
+| `color`       | `THREE.Color`                 | pink    |
+| `geometry`    | `THREE.Object3D`              | green   |
+| `texture`     | `THREE.Texture`               | teal    |
+| `curve`       | `THREE.Curve<Vector3>`        | lime    |
+| `material`    | `MaterialValue` (a plain descriptor — see sockets.ts) | slate |
+| `list`        | `unknown[]`                   | gray    |
+| `text`        | `string`                      | orange  |
+| `postprocess` | `PostProcessConfig`           | violet  |
+| `any`         | adapts to whatever is wired   | white   |
 
 There is no Boolean or Trigger type. A boolean travels as a `value`
 socket carrying `0` or `1` — use `toBoolean`/`fromBoolean` from

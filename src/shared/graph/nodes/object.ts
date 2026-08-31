@@ -10,6 +10,10 @@ import { disposeLabelMesh } from "./labelTexture";
 
 export function numberInput(input: unknown, param: unknown, fallback: number): number {
   const raw = input !== undefined ? input : param;
+  // An empty string (a cleared number field) or null reads as "no value" and
+  // falls through to the fallback — Number("") is 0, which used to make the
+  // fallback unreachable for a genuinely empty input.
+  if (raw === "" || raw === null || raw === undefined) return fallback;
   const n = Number(raw);
   return Number.isFinite(n) ? n : fallback;
 }

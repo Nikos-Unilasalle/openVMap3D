@@ -1,5 +1,7 @@
 import * as THREE from "three";
 import { Connection, EasingType, EvalContext, Graph, Keyframe, KeyframeStore, NodeRegistry } from "./types";
+import { toBoolean } from "./sockets";
+import { cloneParamValue } from "./cloneGraph";
 
 export interface TopoResult {
   /** Node ids in dependency order — safe to evaluate front to back. */
@@ -382,8 +384,11 @@ const VISIBILITY_SOCKET = "visible";
 function applyVisibility(geometry: unknown, value: unknown): void {
   // undefined means the node never declared the socket — leave it alone.
   if (value === undefined || !(geometry instanceof THREE.Object3D)) return;
-  const asNumber = Number(value);
-  geometry.visible = Number.isFinite(asNumber) ? asNumber !== 0 : Boolean(value);
+  // toBoolean is the engine-wide coercion (see sockets.ts) and reads the
+  // string forms the way every other node does ("false"/"0"/"no" → hidden).
+  // The old Number()-then-Boolean() path made a wired string "false" — or
+  // "no"/"off" — evaluate as visible.
+  geometry.visible = toBoolean(value);
 }
 
 // The previous frame's per-node socket outputs, carried across calls so that a
@@ -443,14 +448,17 @@ export function evaluateGraph(graph: Graph, registry: NodeRegistry, ctx: EvalCon
     // interpolation below already clones its own Vector3/Color).
     const params: Record<string, unknown> = { ...def.defaultParams, ...instance.params };
 
-    // Clone the shared mutable defaults one level deep, but only for the keys
-    // the instance did NOT override (its own object comes from IPC/graph and
-    // is already per-instance).
+    // Clone the shared mutable defaults, but only for the keys the instance
+    // did NOT override (its own object comes from IPC/graph and is already
+    // per-instance). Beyond the THREE math types this covers arrays and
+    // composite params (color-ramp stops, curve profiles) whose objects are
+    // shared module-level defaults — one careless in-place mutation would
+    // otherwise corrupt every instance that didn't override them.
     for (const key of Object.keys(def.defaultParams)) {
       if (key in instance.params) continue;
       const v = def.defaultParams[key];
-      if (v instanceof THREE.Vector3 || v instanceof THREE.Color || v instanceof THREE.Euler || v instanceof THREE.Quaternion) {
-        params[key] = v.clone();
+      if (v !== null && typeof v === "object") {
+        params[key] = cloneParamValue(v);
       }
     }
 

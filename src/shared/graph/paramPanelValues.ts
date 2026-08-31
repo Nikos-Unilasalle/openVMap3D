@@ -114,7 +114,11 @@ export function paramPanelValues(
 
   for (const [key, value] of Object.entries(evaluated ?? {})) {
     if (key === "__evaluatedInputs") continue;
-    if (key in def.defaultParams) continue;
+    // Params win over output readouts — including params that exist only on
+    // the instance (injected at runtime, absent from defaultParams), which
+    // the defaultParams-only check used to let an identically-named output
+    // shadow.
+    if (key in def.defaultParams || key in instance.params) continue;
     merged[key] = value;
   }
 

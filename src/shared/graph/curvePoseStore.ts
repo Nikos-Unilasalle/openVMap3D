@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { createNodeCache } from "./nodeCaches";
 
 /**
  * The native pose (location/rotation/scale + wired matrix) that a curve node
@@ -8,8 +9,12 @@ import * as THREE from "three";
  * its pose here and the consumer composes it into its own matrix, keeping the
  * built geometry local (a spawned copy then sits on its support instead of
  * being pushed off it by a baked-in world offset).
+ *
+ * createNodeCache, not a bare Map: node ids are stable, so an unregistered
+ * cache would let a deleted curve node's pose silently reattach to whatever
+ * node next lands on that id.
  */
-const poses = new Map<string, THREE.Matrix4>();
+const poses = createNodeCache<THREE.Matrix4>();
 
 export function setCurveNodePose(nodeId: string, matrix: THREE.Matrix4): void {
   poses.set(nodeId, matrix.clone());

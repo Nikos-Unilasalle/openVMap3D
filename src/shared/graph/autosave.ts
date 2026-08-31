@@ -61,12 +61,13 @@ export function writeAutosave(project: Project, filename: string): string | null
   } catch {
     return null;
   }
-  if (serialized.length > MAX_AUTOSAVE_BYTES) return null;
+  // Measure the exact string that will be stored — the payload is embedded
+  // as an escaped JSON string inside the record, so sizing it alone
+  // under-counted by roughly 2× and "safe" writes still hit the quota.
+  const record = JSON.stringify({ filename, savedAt: Date.now(), project: serialized });
+  if (record.length > MAX_AUTOSAVE_BYTES) return null;
   try {
-    store.setItem(
-      AUTOSAVE_KEY,
-      JSON.stringify({ filename, savedAt: Date.now(), project: serialized }),
-    );
+    store.setItem(AUTOSAVE_KEY, record);
   } catch {
     // Quota, or a storage-disabled context. The in-memory document is
     // untouched; the user just doesn't get the safety net this time.

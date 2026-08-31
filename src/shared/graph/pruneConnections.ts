@@ -55,14 +55,28 @@ function isLive(connection: Connection, graph: Graph, registry: NodeRegistry): b
 /** The same graph with dead connections removed, or the graph itself when there are none. */
 export function pruneDanglingConnections(graph: Graph, registry: NodeRegistry): Graph {
   const live = graph.connections.filter((connection) => isLive(connection, graph, registry));
-  if (live.length === graph.connections.length) return graph;
+
+  // One wire per input socket: the evaluator reads only the first connection
+  // into a socket, so a hand-edited or legacy file carrying two drew both in
+  // the editor while only the first drove anything. Later duplicates into the
+  // same input are dropped — the first in array order is exactly the one the
+  // evaluator was already honoring.
+  const seenInputs = new Set<string>();
+  const deduped = live.filter((connection) => {
+    const key = `${connection.toNode}.${connection.toSocket}`;
+    if (seenInputs.has(key)) return false;
+    seenInputs.add(key);
+    return true;
+  });
+
+  if (deduped.length === graph.connections.length) return graph;
 
   for (const connection of graph.connections) {
-    if (live.includes(connection)) continue;
+    if (deduped.includes(connection)) continue;
     console.warn(
-      `dropped a connection to a socket that no longer exists: ${connection.fromNode}.${connection.fromSocket} -> ${connection.toNode}.${connection.toSocket}`,
+      `dropped a connection to a socket that no longer exists (or a superseded duplicate): ${connection.fromNode}.${connection.fromSocket} -> ${connection.toNode}.${connection.toSocket}`,
     );
   }
 
-  return { ...graph, connections: live };
+  return { ...graph, connections: deduped };
 }

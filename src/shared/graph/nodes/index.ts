@@ -121,8 +121,6 @@ export const STARTER_NODES = [
   VECTOR_COMPOSE_NODE,
   VECTOR_DECOMPOSE_NODE,
   VECTOR_MATH_NODE,
-  DISTANCE_NODE,
-  PROXIMITY_OBJECT_NODE,
   COLOR_CONSTANT_NODE,
   COLOR_COMPOSE_NODE,
   COLOR_DECOMPOSE_NODE,
@@ -389,4 +387,15 @@ export * from "./forceField";
 export * from "./ground";
 export * from "./particleTrails";
 export * from "./distance";
+// Registered above but previously missing from the module's public surface
+// (NODE_AUTHORING §8: every node file is re-exported here).
+export * from "./line";
+export * from "./curvesToLines";
+export * from "./curveSubdivide";
+export * from "./curveToPoints";
+export * from "./matrixMath";
+export * from "./invertNormals";
+export * from "./decal";
+export * from "./mouse";
+export * from "./click";
 

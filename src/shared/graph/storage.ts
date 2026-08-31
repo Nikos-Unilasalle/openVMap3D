@@ -49,8 +49,9 @@ export function incrementFilename(filename: string): string {
       numStr.startsWith("0") && numStr.length > 1
         ? String(nextNum).padStart(numStr.length, "0")
         : String(nextNum);
-    const actualTag = tag || "_v";
-    return `${prefix}${actualTag}${paddedNum}${ext}`;
+    // An empty tag means the name ended in bare digits ("scene10") — bump in
+    // place ("scene11") instead of injecting a "_v" the user never wrote.
+    return `${prefix}${tag}${paddedNum}${ext}`;
   }
 
   return `${base}_v2${ext}`;

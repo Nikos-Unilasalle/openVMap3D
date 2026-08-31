@@ -455,12 +455,15 @@ function MainEditor() {
    */
   useEffect(() => {
     if (!keyframesEnabled || !isPlaying || totalFrames <= 0) return;
+    // Step at the project's own frame rate (the Render node's FPS), not a
+    // hardcoded 60 — a 30 fps project otherwise played 2× too fast in the
+    // graph-only view where no viewport drives the playhead.
     const interval = setInterval(() => {
       if (Date.now() - viewportDrivenAtRef.current < 200) return;
       setCurrentFrame((prev) => (prev + 1) % totalFrames);
-    }, 1000 / 60);
+    }, 1000 / exportFps);
     return () => clearInterval(interval);
-  }, [keyframesEnabled, isPlaying, totalFrames, setCurrentFrame]);
+  }, [keyframesEnabled, isPlaying, totalFrames, exportFps, setCurrentFrame]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {

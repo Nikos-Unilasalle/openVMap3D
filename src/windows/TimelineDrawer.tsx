@@ -264,7 +264,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
       const scrollOffset = gridViewportRef.current ? gridViewportRef.current.scrollLeft : 0;
       const x = clientX - rect.left + scrollOffset;
       const frame = Math.round(x / pixelsPerFrame);
-      return Math.max(0, Math.min(totalFrames, frame));
+      return Math.max(0, Math.min(totalFrames - 1, frame));
     },
     [pixelsPerFrame, totalFrames],
   );
@@ -291,7 +291,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
   const jumpToNextKeyframe = () => {
     const next = allKeyframeFrames.find((f) => f > currentFrame);
     if (next !== undefined) onFrameChange(next);
-    else onFrameChange(totalFrames);
+    else onFrameChange(totalFrames - 1);
   };
 
   // Selected keyframe objects
@@ -483,7 +483,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
               nodeId: k.nodeId,
               paramKey: k.paramKey,
               sourceFrame: k.frame,
-              targetFrame: Math.max(0, Math.min(totalFrames, applyDragTransform(k.frame, transform))),
+              targetFrame: Math.max(0, Math.min(totalFrames - 1, applyDragTransform(k.frame, transform))),
             }));
             onBatchDuplicateKeyframes(duplicates);
           } else {
@@ -492,7 +492,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
               nodeId: k.nodeId,
               paramKey: k.paramKey,
               oldFrame: k.frame,
-              newFrame: Math.max(0, Math.min(totalFrames, applyDragTransform(k.frame, transform))),
+              newFrame: Math.max(0, Math.min(totalFrames - 1, applyDragTransform(k.frame, transform))),
             }));
             onBatchMoveKeyframes(moves);
           }
@@ -589,7 +589,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
         if (e.shiftKey) {
-          onFrameChange(Math.min(totalFrames, currentFrame + 10));
+          onFrameChange(Math.min(totalFrames - 1, currentFrame + 10));
         } else {
           jumpToNextKeyframe();
         }
@@ -627,7 +627,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
             nodeId: k.nodeId,
             paramKey: k.paramKey,
             sourceFrame: k.frame,
-            targetFrame: Math.min(totalFrames, k.frame + 10),
+            targetFrame: Math.min(totalFrames - 1, k.frame + 10),
           }));
           onBatchDuplicateKeyframes(duplicates);
         }
@@ -747,7 +747,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
           </button>
           <button
             className="timeline-ctrl-btn"
-            onClick={() => onFrameChange(Math.min(totalFrames, currentFrame + 1))}
+            onClick={() => onFrameChange(Math.min(totalFrames - 1, currentFrame + 1))}
             title="Next frame (Shift+→)"
           >
             ▶
@@ -755,7 +755,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
           <button className="timeline-ctrl-btn" onClick={jumpToNextKeyframe} title="Next keyframe (→)">
             ▷|
           </button>
-          <button className="timeline-ctrl-btn" onClick={() => onFrameChange(totalFrames)} title="Go to end">
+          <button className="timeline-ctrl-btn" onClick={() => onFrameChange(totalFrames - 1)} title="Go to end">
             ⏭
           </button>
 
@@ -829,7 +829,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
                   nodeId: k.nodeId,
                   paramKey: k.paramKey,
                   sourceFrame: k.frame,
-                  targetFrame: Math.min(totalFrames, k.frame + 10),
+                  targetFrame: Math.min(totalFrames - 1, k.frame + 10),
                 }));
                 onBatchDuplicateKeyframes(duplicates);
               }
@@ -1314,7 +1314,7 @@ export const TimelineDrawer: React.FC<TimelineDrawerProps> = ({
                 nodeId: k.nodeId,
                 paramKey: k.paramKey,
                 sourceFrame: k.frame,
-                targetFrame: Math.min(totalFrames, k.frame + 10),
+                targetFrame: Math.min(totalFrames - 1, k.frame + 10),
               }));
               onBatchDuplicateKeyframes(duplicates);
               setContextMenu(null);
