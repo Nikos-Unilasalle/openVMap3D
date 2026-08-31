@@ -30,7 +30,7 @@ export const RANDOM_VALUE_NODE: NodeDefinition = {
     { id: "max", label: "Max", kind: "number", step: 0.1 },
     { id: "seed", label: "Seed", kind: "number", step: 1 },
   ],
-  evaluate: (inputs, params, _ctx) => {
+  evaluate: (inputs, params, ctx) => {
     const seed = inputs.seed !== undefined ? Number(inputs.seed) : Number(params.seed) || 0;
     const min = inputs.min !== undefined ? Number(inputs.min) : Number(params.min) ?? 0;
     const max = inputs.max !== undefined ? Number(inputs.max) : Number(params.max) ?? 1;
@@ -38,7 +38,11 @@ export const RANDOM_VALUE_NODE: NodeDefinition = {
 
     let val = 0;
     if (algo === "white") {
-      val = min + Math.random() * (max - min);
+      // Per-frame variation is the point of "white" — but seeded per frame
+      // (the step folded into the seed) rather than Math.random(), which
+      // NODE_AUTHORING forbids: a captured export has to replay exactly.
+      const rng = createPRNG(seed * 9781 + (ctx.step || 0) * 6271);
+      val = randomUniform(rng, min, max);
     } else if (algo === "noise") {
       const noiseNorm = randomNoise1D(seed * 0.5, 0);
       val = min + noiseNorm * (max - min);
@@ -232,7 +236,7 @@ export const RANDOM_LIST_NODE: NodeDefinition = {
     { id: "max", label: "Max", kind: "number", step: 0.1 },
     { id: "seed", label: "Seed", kind: "number", step: 1 },
   ],
-  evaluate: (inputs, params, _ctx) => {
+  evaluate: (inputs, params, ctx) => {
     const count = Math.max(0, Math.floor(inputs.count !== undefined ? Number(inputs.count) : Number(params.count) ?? 10));
     const seed = inputs.seed !== undefined ? Number(inputs.seed) : Number(params.seed) || 0;
     const min = inputs.min !== undefined ? Number(inputs.min) : Number(params.min) ?? 0;
@@ -240,12 +244,15 @@ export const RANDOM_LIST_NODE: NodeDefinition = {
     const algo = String(params.algorithm || "noise");
 
     const rng = createPRNG(seed);
+    // Own per-frame stream for "white" — seeded per step (see Random Value):
+    // deterministic across exports, unlike the Math.random() it replaces.
+    const whiteRng = algo === "white" ? createPRNG(seed * 9781 + (ctx.step || 0) * 6271) : null;
     const list: number[] = [];
 
     for (let i = 0; i < count; i++) {
       let val = 0;
-      if (algo === "white") {
-        val = min + Math.random() * (max - min);
+      if (whiteRng) {
+        val = randomUniform(whiteRng, min, max);
       } else if (algo === "noise") {
         // Continuous smooth 1D Perlin noise for fluid animation
         const noiseNorm = randomNoise1D(seed * 0.5 + i * 0.25, i * 0.5);

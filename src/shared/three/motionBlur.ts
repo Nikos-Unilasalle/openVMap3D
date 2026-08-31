@@ -260,26 +260,33 @@ export function createMotionBlur(width: number, height: number): MotionBlur {
     renderer.setRenderTarget(velocityTarget);
     renderer.setClearColor(0x000000, 0);
     renderer.clear(true, true, false);
-    renderer.render(scene, camera);
-    isRenderingVelocity = false;
+    try {
+      renderer.render(scene, camera);
+    } finally {
+      // Restore in a finally: a throw mid-render (shader compile, disposed
+      // material) used to leave the override installed, the hidden
+      // Points/Line/Sprites invisible and the velocity hooks in place — the
+      // scene stayed broken until the next successful blur frame.
+      isRenderingVelocity = false;
 
-    scene.overrideMaterial = previousOverride;
-    scene.background = previousBackground;
-    renderer.setClearColor(previousClearColor, previousClearAlpha);
-    renderer.setRenderTarget(previousTarget);
-    for (const object of hidden) object.visible = true;
-    // Restore the render hooks we set. The meshes are cached at module level
-    // and shared with the other split viewport pane, which has its own closure
-    // (and its own local velocityHook) — leaving ours installed here would let
-    // one pane's hook read matrices written by the other, corrupting the blur.
-    //
-    // `delete`, not `= undefined`: three calls `object.onBeforeRender(...)`
-    // unconditionally on every draw, and the no-op it relies on lives on
-    // Object3D's prototype. Assigning undefined shadows that prototype method
-    // with an own property, so the very next scene pass threw
-    // "object.onBeforeRender is not a function" and the viewport went black.
-    // Removing the own property lets the prototype no-op show through again.
-    for (const mesh of hooked) delete (mesh as { onBeforeRender?: unknown }).onBeforeRender;
+      scene.overrideMaterial = previousOverride;
+      scene.background = previousBackground;
+      renderer.setClearColor(previousClearColor, previousClearAlpha);
+      renderer.setRenderTarget(previousTarget);
+      for (const object of hidden) object.visible = true;
+      // Restore the render hooks we set. The meshes are cached at module level
+      // and shared with the other split viewport pane, which has its own closure
+      // (and its own local velocityHook) — leaving ours installed here would let
+      // one pane's hook read matrices written by the other, corrupting the blur.
+      //
+      // `delete`, not `= undefined`: three calls `object.onBeforeRender(...)`
+      // unconditionally on every draw, and the no-op it relies on lives on
+      // Object3D's prototype. Assigning undefined shadows that prototype method
+      // with an own property, so the very next scene pass threw
+      // "object.onBeforeRender is not a function" and the viewport went black.
+      // Removing the own property lets the prototype no-op show through again.
+      for (const mesh of hooked) delete (mesh as { onBeforeRender?: unknown }).onBeforeRender;
+    }
 
     // Snapshot *after* drawing — these become "previous" for the next frame.
     const live = new Set<string>();

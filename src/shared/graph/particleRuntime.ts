@@ -1093,3 +1093,30 @@ export function readPositionsSync(
   renderer.readRenderTargetPixels(state.target, 0, 0, size, size, state.buffer);
   return state.buffer;
 }
+
+/**
+ * Drops every per-node simulation/readback state bound to a dying renderer
+ * (a closed output window, an unmounted split pane). The per-node maps hold
+ * *strong* references to renderers, so without this a dead renderer kept its
+ * whole Simulation/readback object graph alive until the node itself was
+ * deleted or the simulation reset.
+ */
+export function disposeRendererCaches(renderer: THREE.WebGLRenderer): void {
+  for (const perRenderer of simCache.values()) {
+    const sim = perRenderer.get(renderer);
+    if (sim) {
+      sim.gpuCompute.dispose();
+      sim.seedTexture?.dispose();
+      perRenderer.delete(renderer);
+    }
+  }
+  for (const perRenderer of readbackCache.values()) {
+    const state = perRenderer.get(renderer);
+    if (state) {
+      state.target.dispose();
+      state.quad.dispose();
+      state.material.dispose();
+      perRenderer.delete(renderer);
+    }
+  }
+}

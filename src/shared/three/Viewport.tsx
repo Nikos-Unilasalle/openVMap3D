@@ -7,7 +7,7 @@ import { EvalResult, disposeEvalSession, evaluateGraph } from "../graph/evaluate
 import { CAMERA_FLY_TO_NODE, CAMERA_NODE } from "../graph/nodes/camera";
 import { HubElement } from "../graph/nodes/hub";
 import { asVector3 } from "../graph/nodes/transform";
-import { resetAllParticleSimulations } from "../graph/particleRuntime";
+import { disposeRendererCaches, resetAllParticleSimulations } from "../graph/particleRuntime";
 import { resolveCurveEditTarget } from "../graph/curveLookup";
 import { resolveSceneRoots } from "../graph/sceneRoots";
 import { findFirstMesh } from "../graph/meshRequired";
@@ -86,6 +86,9 @@ let nextSessionOrdinal = 0;
 
 /** At 60fps, one second of grace before an undecodable HUD image is given up on. */
 const MAX_CAPTURE_WAIT_TICKS = 60;
+
+/** Reused by the per-frame point-handle syncs — they only read x/y/z, so one shared instance replaces a fresh Vector3 per point per frame. */
+const POINT_HANDLE_SCRATCH = new THREE.Vector3();
 
 /**
  * Edit Mesh Points reuses curveHandles — one draggable THREE.Mesh per point —
@@ -1873,7 +1876,10 @@ export function Viewport({
 
     const backgroundBlur = createBackgroundBlur(renderer);
 
-    let clock: ClockState = createClock(epochMs ?? Date.now());
+    // `||`, not `??`: the prop's default is 0, so the nullish guard never
+    // fired and a caller omitting epochMs got a clock epoch of 0 — every
+    // time-driven node reading `clock.time ≈ Date.now()/1000`.
+    let clock: ClockState = createClock(epochMs || Date.now());
     let frameId = 0;
 
     // Restarts the deterministic clock at "now" and drops every cached GPU
@@ -2184,6 +2190,9 @@ export function Viewport({
           const helper = activeLightHelpers.get(uuid);
           if (helper) {
             editorUiScene.remove(helper);
+            // Owns its geometry/material — freed here, not just detached, or
+            // every light add/remove cycle leaked a small helper set.
+            disposeObject3D(helper);
             activeLightHelpers.delete(uuid);
           }
         }
@@ -2493,7 +2502,10 @@ export function Viewport({
         }
         const nodeResult = results.get(pointsSelNode.id);
         const rawPoints = Array.isArray(nodeResult?.points) ? (nodeResult.points as unknown[]) : [];
-        const selPoints = rawPoints.map((p) => asVector3(p, new THREE.Vector3()));
+        // One scratch Vector3 reused for the whole map — sync() only reads
+        // x/y/z, and a fresh Vector3 per point per frame allocated hundreds
+        // of thousands of objects a second on a dense selection.
+        const selPoints = rawPoints.map((p) => asVector3(p, POINT_HANDLE_SCRATCH));
         const selMatrix = nodeResult?.matrix instanceof THREE.Matrix4 ? (nodeResult.matrix as THREE.Matrix4) : new THREE.Matrix4();
 
         if (selPoints.length > 0) {
@@ -2525,7 +2537,7 @@ export function Viewport({
         }
         const nodeResult = results.get(pointsInfNode.id);
         const rawPoints = Array.isArray(nodeResult?.points) ? (nodeResult.points as unknown[]) : [];
-        const infPoints = rawPoints.map((p) => asVector3(p, new THREE.Vector3()));
+        const infPoints = rawPoints.map((p) => asVector3(p, POINT_HANDLE_SCRATCH));
         const infMatrix = nodeResult?.matrix instanceof THREE.Matrix4 ? (nodeResult.matrix as THREE.Matrix4) : new THREE.Matrix4();
 
         if (infPoints.length > 0) {
@@ -2904,8 +2916,17 @@ export function Viewport({
       }
 
       renderer.setViewport(viewX, viewY, viewWidth, viewHeight);
+      // A letterboxed output frame never redraws the bars: with the scissor
+      // confined to the frame rect, both the clear and the draw skip the area
+      // outside it, so stale pixels survived a resize or aspect change. One
+      // unclipped clear per frame keeps the bars black.
+      const letterboxed = outputMode && targetAspect !== null;
+      if (letterboxed) {
+        renderer.setScissorTest(false);
+        renderer.clear();
+      }
       renderer.setScissor(viewX, viewY, viewWidth, viewHeight);
-      renderer.setScissorTest(outputMode && targetAspect !== null);
+      renderer.setScissorTest(letterboxed);
 
       // The HUD must map onto the actual rendered frame. When a render node
       // defines a target aspect, that region (possibly letterboxed) is the
@@ -3118,10 +3139,21 @@ export function Viewport({
       }
       activeLights.clear();
       activeLightHelpers.clear();
+      // EffectComposer owns two full-screen render targets plus the internal
+      // copy-pass material — renderer.dispose() alone never freed them, so
+      // every unmount/remount cycle (StrictMode, Shift+Tab pane rebuilds)
+      // leaked them until context loss.
+      composer.dispose();
+      renderPass.dispose?.();
+      outputPass.dispose?.();
       postChain.dispose();
       viewportBackground.dispose();
       motionBlurEffect.dispose();
       backgroundBlur.dispose();
+      // Release this pane's particle simulations/readbacks before the renderer
+      // goes away — the caches key state by renderer and would otherwise pin
+      // the dead renderer (and everything it owns) until the node is deleted.
+      disposeRendererCaches(renderer);
       renderer.dispose();
       if (host.contains(renderer.domElement)) {
         host.removeChild(renderer.domElement);
@@ -3428,10 +3460,10 @@ export function Viewport({
                   onClick={() => setTransformMode(mode)}
                   title={
                     mode === "translate"
-                      ? "Gizmo: Translate (W)"
+                      ? "Gizmo: Translate (G)"
                       : mode === "rotate"
-                      ? "Gizmo: Rotate (E)"
-                      : "Gizmo: Scale (R)"
+                      ? "Gizmo: Rotate (R)"
+                      : "Gizmo: Scale (S)"
                   }
                 >
                   {mode === "translate" ? (

@@ -49,12 +49,58 @@ export function disposeNodeCaches(nodeIds: Iterable<string>): void {
   }
 }
 
+/**
+ * Per-node state that must additionally be split per evaluation session —
+ * several viewports evaluate the same graph on their own clocks (editor
+ * pane, split preview, the offscreen export one), so an edge detector sharing
+ * one slot across panes loses the second pane's rising edges: the first pane
+ * updates `prev`, and the second pane reads prev === current. The Matrix
+ * Delay node established this two-level key; this is its shared form. The
+ * outer key stays the node id so `disposeNodeCaches` still drops everything.
+ */
+export function createSessionCache<T>(): Map<string, Map<string, T>> {
+  return createNodeCache<Map<string, T>>();
+}
+
+/** Get-or-create this node's state for one session, mutating it in place. */
+export function sessionState<T>(
+  cache: Map<string, Map<string, T>>,
+  nodeId: string,
+  sessionId: string,
+  init: () => T,
+): T {
+  let bySession = cache.get(nodeId);
+  if (!bySession) {
+    bySession = new Map();
+    cache.set(nodeId, bySession);
+  }
+  let state = bySession.get(sessionId);
+  if (!state) {
+    state = init();
+    bySession.set(sessionId, state);
+  }
+  return state;
+}
+
 /** Frees a mesh-like object's GPU resources — the common disposer for scene-object caches. */
 export function disposeObject3D(object: { traverse: (cb: (o: any) => void) => void }): void {
   object.traverse((child: any) => {
     child.geometry?.dispose?.();
     const material = child.material;
-    if (Array.isArray(material)) material.forEach((m: any) => m?.dispose?.());
-    else material?.dispose?.();
+    const disposeMaterial = (m: any) => {
+      if (!m) return;
+      // The texture slots a material owns go with it. A texture shared with
+      // another live material is safe to dispose here anyway: three.js
+      // re-uploads it from its (still-alive) source on next use, so the
+      // worst case is one re-upload, never a broken material.
+      m.map?.dispose?.();
+      m.normalMap?.dispose?.();
+      m.roughnessMap?.dispose?.();
+      m.emissiveMap?.dispose?.();
+      m.aoMap?.dispose?.();
+      m.dispose?.();
+    };
+    if (Array.isArray(material)) material.forEach(disposeMaterial);
+    else disposeMaterial(material);
   });
 }

@@ -110,7 +110,13 @@ interface PrimitiveTextureState {
   lastRoughnessPath?: string;
 }
 
-const primitiveTextureCache = createNodeCache<PrimitiveTextureState>();
+// Registered with a disposer: deleting a primitive node used to orphan all
+// three loaded maps for good.
+const primitiveTextureCache = createNodeCache<PrimitiveTextureState>((s) => {
+  s.textureMap?.dispose();
+  s.normalMap?.dispose();
+  s.roughnessMap?.dispose();
+});
 
 function getOrCreatePrimitiveTextureState(nodeId: string): PrimitiveTextureState {
   let state = primitiveTextureCache.get(nodeId);
@@ -592,6 +598,10 @@ export function buildPrimitiveDynamicParamFields(extraFields: ParamFieldDef[] = 
           texture.wrapS = THREE.RepeatWrapping;
           texture.wrapT = THREE.RepeatWrapping;
           texture.colorSpace = THREE.SRGBColorSpace;
+          // Dispose the map being replaced — every load used to leak the
+          // previous full-size GPU texture (the cache disposer only saw the
+          // last one).
+          state.textureMap?.dispose();
           state.textureMap = texture;
         } catch (err) {
           console.error("Failed to load primitive texture image:", err);
@@ -624,6 +634,7 @@ export function buildPrimitiveDynamicParamFields(extraFields: ParamFieldDef[] = 
           );
           texture.wrapS = THREE.RepeatWrapping;
           texture.wrapT = THREE.RepeatWrapping;
+          state.normalMap?.dispose();
           state.normalMap = texture;
         } catch (err) {
           console.error("Failed to load primitive normal map image:", err);
@@ -656,6 +667,7 @@ export function buildPrimitiveDynamicParamFields(extraFields: ParamFieldDef[] = 
           );
           texture.wrapS = THREE.RepeatWrapping;
           texture.wrapT = THREE.RepeatWrapping;
+          state.roughnessMap?.dispose();
           state.roughnessMap = texture;
         } catch (err) {
           console.error("Failed to load primitive roughness map image:", err);

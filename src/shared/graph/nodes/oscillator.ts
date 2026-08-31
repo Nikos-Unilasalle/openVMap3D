@@ -1,6 +1,6 @@
 import { NodeDefinition, EasingType } from "../types";
 import { toBoolean } from "../sockets";
-import { createNodeCache } from "../nodeCaches";
+import { createSessionCache, sessionState } from "../nodeCaches";
 import { computeSegmentEasing } from "../evaluate";
 import { EASE_OPTIONS } from "./motion";
 
@@ -91,7 +91,7 @@ interface EnvelopeState {
   levelAtRelease: number;
 }
 
-const envelopeCache = createNodeCache<EnvelopeState>();
+const envelopeCache = createSessionCache<EnvelopeState>();
 
 /**
  * Envelope node — Attack / Release envelope generator.
@@ -117,17 +117,17 @@ export const ENVELOPE_NODE: NodeDefinition = {
     const attack = Math.max(0.001, inputs.attack !== undefined ? Number(inputs.attack) || 0 : Number(params.attack) || 0.1);
     const release = Math.max(0.001, inputs.release !== undefined ? Number(inputs.release) || 0 : Number(params.release) || 0.5);
 
-    let state = envelopeCache.get(ctx.nodeId);
-    if (!state) {
-      state = {
-        lastTime: ctx.time,
-        prevTrigger: false,
-        triggerTime: -1000,
-        releasing: false,
-        releaseStartTime: -1000,
-        levelAtRelease: 0,
-      };
-    }
+    // Per-session state: two panes evaluate the same graph on their own
+    // clocks, and a shared slot made the second pane miss the rising edge
+    // (its prev had already been overwritten by the first pane's pass).
+    const state = sessionState(envelopeCache, ctx.nodeId, ctx.sessionId ?? "default", () => ({
+      lastTime: ctx.time,
+      prevTrigger: false,
+      triggerTime: -1000,
+      releasing: false,
+      releaseStartTime: -1000,
+      levelAtRelease: 0,
+    }));
 
     // Check rising edge or falling edge
     if (trig && !state.prevTrigger) {
@@ -143,7 +143,6 @@ export const ENVELOPE_NODE: NodeDefinition = {
 
     state.prevTrigger = trig;
     state.lastTime = ctx.time;
-    envelopeCache.set(ctx.nodeId, state);
 
     let level = 0;
     if (trig) {
@@ -167,7 +166,7 @@ interface PulseState {
   energy: number;
 }
 
-const pulseStateCache = createNodeCache<PulseState>();
+const pulseStateCache = createSessionCache<PulseState>();
 
 /**
  * Pulse node — simulates a physical impulse. A rising edge on `trigger` adds
@@ -194,10 +193,13 @@ export const PULSE_NODE: NodeDefinition = {
     const decay = Math.max(0.001, inputs.decay !== undefined ? Number(inputs.decay) || 0 : Number(params.decay) || 0.3);
     const amplitude = Number(params.amplitude) || 0;
 
-    let state = pulseStateCache.get(ctx.nodeId);
-    if (!state) {
-      state = { lastTime: ctx.time, prevTrigger: false, energy: 0 };
-    }
+    // Per-session state (see Envelope): a shared slot dropped the second
+    // pane's rising edges when two viewports rendered the same graph.
+    const state = sessionState(pulseStateCache, ctx.nodeId, ctx.sessionId ?? "default", () => ({
+      lastTime: ctx.time,
+      prevTrigger: false,
+      energy: 0,
+    }));
 
     // Scrub backwards: reseed rather than let a negative dt blow up the decay.
     const rewound = ctx.time < state.lastTime - 0.5;
@@ -212,7 +214,6 @@ export const PULSE_NODE: NodeDefinition = {
 
     state.prevTrigger = trig;
     state.lastTime = ctx.time;
-    pulseStateCache.set(ctx.nodeId, state);
 
     return { out: state.energy };
   },

@@ -231,6 +231,16 @@ export function createPostProcessChain(deps: PostProcessChainDeps) {
   const { renderer, composer, renderPass, outputPass, motionBlurEffect } = deps;
   const passCache = new Map<string, CachedPass>();
 
+  // One shared instance per fog mode, mutated per frame — allocating a fresh
+  // Fog/FogExp2 (and a fallback Color) on every evaluate was pure churn, and
+  // a mode swap is the only change that legitimately recompiles shaders.
+  let linearFog: THREE.Fog | null = null;
+  let expFog: THREE.FogExp2 | null = null;
+  const FALLBACK_FOG_COLOR = new THREE.Color(0x8899aa);
+  // RenderPass only reads clearColor to feed renderer.setClearColor, so one
+  // shared instance is safe — a fresh Color per frame was allocation noise.
+  const CLEAR_COLOR = new THREE.Color(0x000000);
+
   function disposePass(entry: CachedPass) {
     try {
       if (typeof entry.pass.dispose === "function") {
@@ -260,16 +270,23 @@ export function createPostProcessChain(deps: PostProcessChainDeps) {
       // Handle Fog postprocess configuration
       const fogCfg = configs.find((c) => c && c.type === "fog");
       if (fogCfg) {
-        const color = fogCfg.params.color instanceof THREE.Color ? fogCfg.params.color : new THREE.Color(0x8899aa);
+        const color = fogCfg.params.color instanceof THREE.Color ? fogCfg.params.color : FALLBACK_FOG_COLOR;
         const mode = String(fogCfg.params.mode || "linear");
         const density = Number(fogCfg.params.density) || 0.02;
         const near = Number(fogCfg.params.near) || 1.0;
         const far = Number(fogCfg.params.far) || 30.0;
 
         if (mode === "exponential") {
-          scene.fog = new THREE.FogExp2(color, density);
+          if (!expFog) expFog = new THREE.FogExp2(color, density);
+          expFog.color.copy(color);
+          expFog.density = density;
+          scene.fog = expFog;
         } else {
-          scene.fog = new THREE.Fog(color, near, far);
+          if (!linearFog) linearFog = new THREE.Fog(color, near, far);
+          linearFog.color.copy(color);
+          linearFog.near = near;
+          linearFog.far = far;
+          scene.fog = linearFog;
         }
       } else {
         scene.fog = null;
@@ -279,7 +296,7 @@ export function createPostProcessChain(deps: PostProcessChainDeps) {
 
       composer.passes.length = 0;
       composer.addPass(renderPass);
-      renderPass.clearColor = new THREE.Color(0x000000);
+      renderPass.clearColor = CLEAR_COLOR;
       renderPass.clearAlpha = 1;
       renderPass.clear = true;
       renderPass.clearDepth = true;
@@ -298,14 +315,26 @@ export function createPostProcessChain(deps: PostProcessChainDeps) {
         }
 
         configurePass(cached.pass, cfg, width, height, renderer.getPixelRatio(), outlineTarget);
+        // Depth-dependent passes (Bokeh/DOF, Outline, GTAO) capture the camera
+        // at construction. After an ortho/perspective toggle — or a pane's
+        // camera object being swapped — the RenderPass drew through the new
+        // camera while these kept computing depth with the stale one. All
+        // three store a public `camera`; refresh it every frame (passes
+        // without one, ShaderPass etc., leave the property undefined).
+        if (cached.pass.camera !== undefined) {
+          cached.pass.camera = camera;
+        }
         // A cached pass owns render targets sized on its first instantiation;
         // EffectComposer.setSize only reaches the passes currently in
         // composer.passes, and this one only rejoins the chain here, after the
         // last resize — so re-apply the size or a pass baked before a window
-        // resize would keep rendering at the stale resolution.
+        // resize would keep rendering at the stale resolution. EffectComposer
+        // feeds passes *device* pixels (CSS size × pixelRatio), so match that
+        // or bloom/outline/DOF internals sit at half resolution on a 2× display.
         if (typeof cached.pass.setSize === "function") {
           try {
-            cached.pass.setSize(width, height);
+            const dpr = renderer.getPixelRatio();
+            cached.pass.setSize(width * dpr, height * dpr);
           } catch {
             // Some materials reject (0,0) framebuffers; resize next frame.
           }

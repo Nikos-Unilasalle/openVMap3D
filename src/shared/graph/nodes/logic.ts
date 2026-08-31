@@ -1,6 +1,6 @@
 import { NodeDefinition } from "../types";
 import { fromBoolean, SocketType, toBoolean } from "../sockets";
-import { createNodeCache } from "../nodeCaches";
+import { createNodeCache, createSessionCache, sessionState } from "../nodeCaches";
 
 const COMPARE_OPS = ["equal", "not_equal", "greater", "greater_equal", "less", "less_equal"];
 
@@ -104,8 +104,11 @@ export const BOOLEAN_LOGIC_NODE: NodeDefinition = {
   },
 };
 
-/** State map for Trigger node: node ID -> previous boolean state */
-const triggerStateCache = createNodeCache<boolean>();
+/** State map for Trigger node: node id -> session -> previous boolean state (per-session: see createSessionCache) */
+interface TriggerEdgeState {
+  prev: boolean;
+}
+const triggerStateCache = createSessionCache<TriggerEdgeState>();
 
 /** Trigger node — rising-edge detector. Outputs 1 on the exact step the input transitions from false to true. */
 export const TRIGGER_NODE: NodeDefinition = {
@@ -118,10 +121,10 @@ export const TRIGGER_NODE: NodeDefinition = {
   paramFields: [{ id: "in", label: "In (fallback)", kind: "boolean" }],
   evaluate: (inputs, params, ctx) => {
     const current = toBoolean(inputs.in !== undefined ? inputs.in : params.in);
-    const prev = triggerStateCache.get(ctx.nodeId) ?? false;
-    triggerStateCache.set(ctx.nodeId, current);
+    const state = sessionState(triggerStateCache, ctx.nodeId, ctx.sessionId ?? "default", () => ({ prev: false }));
 
-    const isRisingEdge = current && !prev;
+    const isRisingEdge = current && !state.prev;
+    state.prev = current;
     return { trigger: fromBoolean(isRisingEdge) };
   },
 };

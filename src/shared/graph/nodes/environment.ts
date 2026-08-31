@@ -72,6 +72,10 @@ function loadEnvTexture(nodeId: string, filePath: string, content?: Uint8Array |
           hdrTexture.generateMipmaps = true;
           hdrTexture.minFilter = THREE.LinearMipmapLinearFilter;
           hdrTexture.needsUpdate = true;
+          // Replacing the map without disposing the previous one leaked a
+          // full-size GPU texture per swap — the cache disposer only ever
+          // saw the last one.
+          state.texture?.dispose();
           state.texture = hdrTexture;
         },
         undefined,
@@ -89,6 +93,7 @@ function loadEnvTexture(nodeId: string, filePath: string, content?: Uint8Array |
           exrTexture.generateMipmaps = true;
           exrTexture.minFilter = THREE.LinearMipmapLinearFilter;
           exrTexture.needsUpdate = true;
+          state.texture?.dispose();
           state.texture = exrTexture;
         },
         undefined,
@@ -107,6 +112,7 @@ function loadEnvTexture(nodeId: string, filePath: string, content?: Uint8Array |
           texture.generateMipmaps = true;
           texture.minFilter = THREE.LinearMipmapLinearFilter;
           texture.needsUpdate = true;
+          state.texture?.dispose();
           state.texture = texture;
         },
         undefined,
@@ -148,6 +154,7 @@ function loadBackgroundImageTexture(nodeId: string, filePath: string, content?: 
         if (content) URL.revokeObjectURL(url);
         texture.colorSpace = THREE.SRGBColorSpace;
         texture.needsUpdate = true;
+        state.backgroundImage?.dispose();
         state.backgroundImage = texture;
       },
       undefined,

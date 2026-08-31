@@ -144,6 +144,11 @@ export const DEMO_CATALOG: DemoCategory[] = [
         label: "Squash & Stretch",
         description: "A bobbing ball squashes and stretches with its own velocity.",
       },
+      {
+        file: "demo_velocity_lean.tsuji",
+        label: "Velocity Lean",
+        description: "A saucer circling — Velocity reads its speed and banks the box into the motion, level when slow.",
+      },
     ],
   },
   {
