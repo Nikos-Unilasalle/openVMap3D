@@ -373,13 +373,45 @@ describe("SHOW PIVOT", () => {
     const mesh = on.geometry as THREE.Mesh;
     const cross = mesh.children.find((c) => c.userData.isPivotCross);
     expect(cross).toBeDefined();
-    expect(cross!.position.set).toBeDefined();
-    expect(cross!.position.x).toBe(1);
-    expect(cross!.position.y).toBe(2);
-    expect(cross!.position.z).toBe(3);
+    // The cross's WORLD position is the pivot (object at identity here).
+    const world = new THREE.Matrix4().multiplyMatrices(mesh.matrix, cross!.matrix);
+    const pos = new THREE.Vector3().setFromMatrixPosition(world);
+    expect(pos.x).toBeCloseTo(1);
+    expect(pos.y).toBeCloseTo(2);
+    expect(pos.z).toBeCloseTo(3);
 
     // And off again removes it.
     const back = OBJECT_BOX_NODE.evaluate({}, {}, { ...CTX, nodeId });
     expect((back.geometry as THREE.Mesh).children.some((c) => c.userData.isPivotCross)).toBe(false);
+  });
+});
+
+describe("SHOW PIVOT axis marker", () => {
+  it("keeps the cross axis-aligned and unscaled no matter the object's transform", () => {
+    const nodeId = "pivot-axis";
+    const res = OBJECT_BOX_NODE.evaluate(
+      {},
+      {
+        showPivot: 1,
+        pivot: new THREE.Vector3(0, 0, 1),
+        rotation: new THREE.Vector3(0, Math.PI / 2, 0),
+        scale: new THREE.Vector3(5, 5, 5),
+      },
+      { ...CTX, nodeId },
+    );
+    const mesh = res.geometry as THREE.Mesh;
+    const cross = mesh.children.find((c) => c.userData.isPivotCross)!;
+
+    const world = new THREE.Matrix4().multiplyMatrices(mesh.matrix, cross.matrix);
+    // Sits at the pivot's world position...
+    const pos = new THREE.Vector3().setFromMatrixPosition(world);
+    expect(pos.x).toBeCloseTo(0);
+    expect(pos.y).toBeCloseTo(0);
+    expect(pos.z).toBeCloseTo(1);
+    // ...its unit X arm stays exactly +X (no rotation, no object scale).
+    const arm = new THREE.Vector3(1, 0, 0).applyMatrix4(world).sub(pos);
+    expect(arm.x).toBeCloseTo(1);
+    expect(arm.y).toBeCloseTo(0);
+    expect(arm.z).toBeCloseTo(0);
   });
 });

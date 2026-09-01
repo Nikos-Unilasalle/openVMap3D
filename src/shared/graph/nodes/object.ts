@@ -562,7 +562,14 @@ function applyPivotCross(object: THREE.Object3D, params: Record<string, unknown>
   const cross = pivotCross(nodeId);
   if (!existing) object.add(cross);
   const pivot = params.pivot instanceof THREE.Vector3 ? params.pivot : new THREE.Vector3();
-  cross.position.copy(pivot);
+  // Draw the cross at the pivot's WORLD position, axis-aligned and unscaled:
+  // as a child its world matrix is object.matrix · cross.matrix, so setting
+  // cross.matrix = object.matrix⁻¹ · T(worldPivot) cancels the object's
+  // rotation and scale — the cross is an axis marker of constant size, not
+  // geometry that turns and grows with the object.
+  const worldPivot = pivot.clone().applyMatrix4(object.matrix);
+  cross.matrixAutoUpdate = false;
+  cross.matrix.copy(object.matrix).invert().multiply(new THREE.Matrix4().makeTranslation(worldPivot.x, worldPivot.y, worldPivot.z));
 }
 
 export const COMMON_MATERIAL_PARAM_FIELDS: ParamFieldDef[] = [
