@@ -333,8 +333,18 @@ function GraphEditorContent({
     [edges, graph, nodes, onGraphChange],
   );
 
+  // The sync effect below must run only when the document changes.
+  // updateGroup's identity follows nodes/edges (it reads them to commit) —
+  // the very state the effect rewrites on every pass — so depending on it
+  // directly made the effect and its own setNodes chase each other forever
+  // ("Maximum update depth exceeded", white screen on boot). The ref keeps
+  // the effect's dependency list exactly what it was before groups existed,
+  // while the handler it calls stays current.
+  const updateGroupRef = useRef(updateGroup);
+  updateGroupRef.current = updateGroup;
+
   useEffect(() => {
-    const rawNodes = toFlowNodes(graph, registry, updateGroup);
+    const rawNodes = toFlowNodes(graph, registry, updateGroupRef.current);
     const flowEdges = toFlowEdges(graph, rawNodes);
     const nextNodes = refreshDynamicSockets(rawNodes, flowEdges, graph.nodes, registry);
 
@@ -351,7 +361,7 @@ function GraphEditorContent({
           return {
             ...fn,
             position: { x: group.rect.x, y: group.rect.y },
-            data: { ...fn.data, group: { ...group }, onUpdate: updateGroup },
+            data: { ...fn.data, group: { ...group }, onUpdate: updateGroupRef.current },
           };
         }
         const graphNode = graph.nodes.find((gn) => gn.id === fn.id);
@@ -390,7 +400,7 @@ function GraphEditorContent({
         );
       return unchanged ? prevEdges : flowEdges;
     });
-  }, [graph, registry, setNodes, setEdges, updateGroup]);
+  }, [graph, registry, setNodes, setEdges]);
 
   const commit = useCallback(
     (nextNodes: Node<GraphNodeData>[], nextEdges: Edge[]) => {
