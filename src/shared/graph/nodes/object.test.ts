@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { EvalContext } from "../types";
-import { OBJECT_DISC_NODE, OBJECT_PLANE_NODE, OBJECT_POLYGON_NODE, OBJECT_TEXT_NODE } from "./object";
+import { OBJECT_BOX_NODE, OBJECT_DISC_NODE, OBJECT_PLANE_NODE, OBJECT_POLYGON_NODE, OBJECT_TEXT_NODE } from "./object";
 import { BUILTIN_FONTS, FONT_NAMES } from "../../three/fonts/fonts";
 import helvetikerData from "../../three/fonts/helvetikerData.json";
 
@@ -334,5 +334,52 @@ describe("OBJECT_POLYGON_NODE", () => {
       const g = (poly({ sides }, `poly-min-${sides}`).geometry as THREE.Mesh).geometry;
       expect(g.getAttribute("position").count).toBeGreaterThan(2);
     }
+  });
+});
+
+describe("SHOW PIVOT", () => {
+  it("keeps the displaced pivot point fixed under rotation", () => {
+    // Rotate the box 90° about Y with the pivot displaced to (0,0,1): the
+    // geometry point sitting AT the pivot must not move, and the object's
+    // origin swings around it instead.
+    const res = OBJECT_BOX_NODE.evaluate(
+      {},
+      {
+        rotation: new THREE.Vector3(0, Math.PI / 2, 0),
+        pivot: new THREE.Vector3(0, 0, 1),
+      },
+      { ...CTX, nodeId: "pivot-box" },
+    );
+
+    const matrix = res.matrix as THREE.Matrix4;
+    const pivotWorld = new THREE.Vector3(0, 0, 1).applyMatrix4(matrix);
+    expect(pivotWorld.x).toBeCloseTo(0);
+    expect(pivotWorld.y).toBeCloseTo(0);
+    expect(pivotWorld.z).toBeCloseTo(1);
+
+    // The geometry origin (the old pivot) swung to the other side: P - R·P.
+    const origin = new THREE.Vector3(0, 0, 0).applyMatrix4(matrix);
+    expect(origin.x).toBeCloseTo(-1);
+    expect(origin.y).toBeCloseTo(0);
+    expect(origin.z).toBeCloseTo(1);
+  });
+
+  it("attaches a helper cross child only while Show Pivot is on", () => {
+    const nodeId = "pivot-cross";
+    const off = OBJECT_BOX_NODE.evaluate({}, {}, { ...CTX, nodeId });
+    expect(((off.geometry as THREE.Mesh).children ?? []).some((c) => c.userData.isPivotCross)).toBe(false);
+
+    const on = OBJECT_BOX_NODE.evaluate({}, { showPivot: 1, pivot: new THREE.Vector3(1, 2, 3) }, { ...CTX, nodeId });
+    const mesh = on.geometry as THREE.Mesh;
+    const cross = mesh.children.find((c) => c.userData.isPivotCross);
+    expect(cross).toBeDefined();
+    expect(cross!.position.set).toBeDefined();
+    expect(cross!.position.x).toBe(1);
+    expect(cross!.position.y).toBe(2);
+    expect(cross!.position.z).toBe(3);
+
+    // And off again removes it.
+    const back = OBJECT_BOX_NODE.evaluate({}, {}, { ...CTX, nodeId });
+    expect((back.geometry as THREE.Mesh).children.some((c) => c.userData.isPivotCross)).toBe(false);
   });
 });

@@ -531,7 +531,7 @@ function pivotCross(nodeId: string): THREE.LineSegments {
       new THREE.Vector3(0, -s, 0), new THREE.Vector3(0, s, 0),
       new THREE.Vector3(0, 0, -s), new THREE.Vector3(0, 0, s),
     ]);
-    const material = new THREE.LineBasicMaterial({ color: 0xffd54a });
+    const material = new THREE.LineBasicMaterial({ color: 0xffd54a, depthTest: false, transparent: true });
     cross = new THREE.LineSegments(geometry, material);
     // Editor-only overlay: the viewport hides isHelper objects in the
     // output / camera view, and the Outline pass only ever targets meshes.
@@ -794,6 +794,38 @@ export const FLAT_PRIMITIVE_DEFAULT_PARAMS = {
 
 const meshCache = createNodeCache<THREE.Mesh>(disposeObject3D);
 
+/**
+ * The object primitives' matrix, with the "Show Pivot" behavior: a displaced
+ * pivot P is the TRUE rotation center — the local matrix becomes
+ * T(loc)·T(P)·R·T(-P), expressed exactly as `base · R⁻¹·T(P)·R·T(-P)` so the
+ * parent-matrix and inherit composition inside composeNativeMatrix is
+ * preserved. Only the default inheritRotation="parent" composition pivots;
+ * the Show Pivot cross (child at local P) lands exactly on that rotation
+ * center in world space.
+ */
+function primitiveMatrix(inputs: Record<string, unknown>, params: Record<string, unknown>): THREE.Matrix4 {
+  const base = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params);
+  const pivot = params.pivot;
+  if (!(pivot instanceof THREE.Vector3) || pivot.lengthSq() < 1e-12) return base;
+  if (String(params.inheritRotation ?? "parent") !== "parent") return base;
+  const scale = params.scale instanceof THREE.Vector3 ? params.scale : new THREE.Vector3(1, 1, 1);
+  if (Math.abs(scale.x) < 1e-9 || Math.abs(scale.y) < 1e-9 || Math.abs(scale.z) < 1e-9) return base;
+
+  // Exact sandwich: T(loc)·R·S · [S⁻¹R⁻¹·T(P)·R·S·T(-P)] = T(loc)·T(P)·R·S·T(-P)
+  // — the pivot point P (and therefore the Show Pivot cross at local P) stays
+  // fixed under the rotation.
+  const rotation = params.rotation instanceof THREE.Vector3 ? params.rotation : new THREE.Vector3();
+  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rotation.x, rotation.y, rotation.z));
+  const corr = new THREE.Matrix4()
+    .makeScale(1 / scale.x, 1 / scale.y, 1 / scale.z)
+    .multiply(new THREE.Matrix4().makeRotationFromQuaternion(q.clone().invert()))
+    .multiply(new THREE.Matrix4().makeTranslation(pivot.x, pivot.y, pivot.z))
+    .multiply(new THREE.Matrix4().makeRotationFromQuaternion(q))
+    .multiply(new THREE.Matrix4().makeScale(scale.x, scale.y, scale.z))
+    .multiply(new THREE.Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z));
+  return base.multiply(corr);
+}
+
 function boxMesh(nodeId: string): THREE.Mesh {
   const existing = meshCache.get(nodeId);
   if (existing) return existing;
@@ -823,7 +855,7 @@ export const OBJECT_BOX_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
+      mesh.matrix.copy(primitiveMatrix(inputs, params));
     }
 
     const matParams = extractMaterialParams(inputs, params);
@@ -982,7 +1014,7 @@ export const OBJECT_PLANE_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
+      mesh.matrix.copy(primitiveMatrix(inputs, params));
     }
 
     // The quad spans -0.5..0.5, so a hole half-width of 0.5 would leave
@@ -1058,7 +1090,7 @@ export const OBJECT_SPHERE_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
+      mesh.matrix.copy(primitiveMatrix(inputs, params));
     }
 
     const matParams = extractMaterialParams(inputs, params);
@@ -1127,7 +1159,7 @@ export const OBJECT_DISC_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
+      mesh.matrix.copy(primitiveMatrix(inputs, params));
     }
 
     const radius = Math.max(0.001, numberInput(inputs.radius, params.radius, 0.5));
@@ -1264,7 +1296,7 @@ export const OBJECT_POLYGON_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
+      mesh.matrix.copy(primitiveMatrix(inputs, params));
     }
 
     // Below 3 there is no polygon at all — a wired Sides sweeping down to 0
@@ -1344,7 +1376,7 @@ export const OBJECT_CYLINDER_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
+      mesh.matrix.copy(primitiveMatrix(inputs, params));
     }
 
     const matParams = extractMaterialParams(inputs, params);
@@ -1384,7 +1416,7 @@ export const OBJECT_CONE_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
+      mesh.matrix.copy(primitiveMatrix(inputs, params));
     }
 
     const matParams = extractMaterialParams(inputs, params);
@@ -1455,7 +1487,7 @@ export const OBJECT_TEXT_NODE: NodeDefinition = {
     // A custom font loaded via the file field wins; otherwise the Font menu.
     const font = textState.font ?? BUILTIN_FONTS[String(params.fontPreset ?? "Helvetiker")] ?? defaultFont;
 
-    const baseMatrix = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params);
+    const baseMatrix = primitiveMatrix(inputs, params);
 
     const stateChanged =
       textState.lastText !== textStr ||
@@ -1664,7 +1696,7 @@ export const OBJECT_BAR_GRAPH_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       group.matrixAutoUpdate = false;
-      group.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
+      group.matrix.copy(primitiveMatrix(inputs, params));
     }
 
     const rawValues = Array.isArray(inputs.values)
@@ -1881,7 +1913,7 @@ export const OBJECT_EMPTY_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       group.matrixAutoUpdate = false;
-      group.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
+      group.matrix.copy(primitiveMatrix(inputs, params));
     }
 
     const pos = new THREE.Vector3();
