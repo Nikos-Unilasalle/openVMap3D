@@ -15,6 +15,7 @@ import {
   useEdgesState,
   useNodesState,
   useReactFlow,
+  useUpdateNodeInternals,
   useViewport,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -153,14 +154,43 @@ function edgeColor(nodes: Node<GraphNodeData>[], nodeId: string, socketId: strin
 }
 
 function toFlowEdges(graph: Graph, flowNodes: Node<GraphNodeData>[]): Edge[] {
-  return graph.connections.map((conn) => ({
-    id: conn.id,
-    source: conn.fromNode,
-    sourceHandle: conn.fromSocket,
-    target: conn.toNode,
-    targetHandle: conn.toSocket,
-    style: { stroke: edgeColor(flowNodes, conn.fromNode, conn.fromSocket), strokeWidth: EDGE_STROKE_WIDTH },
-  }));
+  const folded = collapsedMemberIds(graph);
+  return graph.connections.map((conn) => {
+    const stroke = edgeColor(flowNodes, conn.fromNode, conn.fromSocket);
+    // Cables pulled into a collapsed group's ports read as thin dashed leads
+    // — they are references to folded content, not the graph's real wiring.
+    const foldedEdge = folded.has(conn.fromNode) || folded.has(conn.toNode);
+    return {
+      id: conn.id,
+      source: conn.fromNode,
+      sourceHandle: conn.fromSocket,
+      target: conn.toNode,
+      targetHandle: conn.toSocket,
+      style: foldedEdge
+        ? { stroke, strokeWidth: 1.5, strokeDasharray: "5 4", opacity: 0.65 }
+        : { stroke, strokeWidth: EDGE_STROKE_WIDTH },
+    };
+  });
+}
+
+/** Document-position ids of the members folded into a collapsed group. */
+function collapsedMemberIds(graph: Graph): Set<string> {
+  const ids = new Set<string>();
+  for (const group of graph.groups ?? []) {
+    if (!group.collapsed) continue;
+    for (const n of graph.nodes) {
+      const p = n.position;
+      if (
+        p.x >= group.rect.x &&
+        p.y >= group.rect.y &&
+        p.x <= group.rect.x + group.rect.width &&
+        p.y <= group.rect.y + group.rect.height
+      ) {
+        ids.add(n.id);
+      }
+    }
+  }
+  return ids;
 }
 
 function refreshDynamicSockets(
@@ -390,6 +420,13 @@ function GraphEditorContent({
   // while the handler it calls stays current.
   const updateGroupRef = useRef(updateGroup);
   updateGroupRef.current = updateGroup;
+  // Same reasoning: the internals refresher is invoked from the effect but
+  // must never appear in its dependency list.
+  const updateNodeInternals = useUpdateNodeInternals();
+  const updateNodeInternalsRef = useRef(updateNodeInternals);
+  updateNodeInternalsRef.current = updateNodeInternals;
+  /** Which node ids were last known to be folded into collapsed groups. */
+  const foldedInternalsKeyRef = useRef("");
 
   useEffect(() => {
     const rawNodes = toFlowNodes(graph, registry, updateGroupRef.current);
@@ -452,6 +489,26 @@ function GraphEditorContent({
         );
       return unchanged ? prevEdges : flowEdges;
     });
+
+    // Collapsing/expanding reshapes member nodes purely through CSS (the
+    // card shrinks into a port square, or grows back), and xyflow only
+    // re-measures Handles when it is TOLD dimensions changed. Without this
+    // nudge, edges kept anchoring at the pre-collapse card geometry and
+    // flailed across the canvas. Fires whenever the folded set changes, in
+    // both directions, after the new classes/sizes have reached the DOM.
+    const foldedIds = collapsedMemberIds(graph);
+    const foldedKey = [...foldedIds].sort().join(",");
+    if (foldedKey !== foldedInternalsKeyRef.current) {
+      const toRefresh = new Set(foldedIds);
+      if (foldedInternalsKeyRef.current) {
+        for (const id of foldedInternalsKeyRef.current.split(",")) toRefresh.add(id);
+      }
+      foldedInternalsKeyRef.current = foldedKey;
+      const internalsIds = [...toRefresh];
+      if (internalsIds.length > 0) {
+        setTimeout(() => updateNodeInternalsRef.current(internalsIds), 0);
+      }
+    }
   }, [graph, registry, setNodes, setEdges]);
 
   const commit = useCallback(
