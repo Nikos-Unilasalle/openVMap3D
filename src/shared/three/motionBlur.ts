@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import { isFatLine, isRealMesh } from "./objectKinds";
 
 /**
  * Velocity-buffer motion blur — the GPU Gems 3 ch.27 idea (per-pixel screen
@@ -103,6 +104,143 @@ const VELOCITY_FRAGMENT_SHADER = /* glsl */ `
   }
 `;
 
+const PARTICLE_VELOCITY_VERTEX_SHADER = /* glsl */ `
+  uniform sampler2D positions;
+  uniform sampler2D velocities;
+  uniform float pointSize;
+  uniform float lifetime;
+  uniform float fadeFraction;
+  uniform float fadeSize;
+  uniform mat4 prevModelMatrix;
+  uniform mat4 prevViewProjectionMatrix;
+  attribute vec2 reference;
+  varying vec4 vCurrentClip;
+  varying vec4 vPreviousClip;
+  varying float vAlive;
+
+  void main() {
+    vec4 data = texture2D(positions, reference);
+    vAlive = data.a >= 0.0 ? 1.0 : 0.0;
+    if (vAlive < 0.5) {
+      gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+      gl_PointSize = 0.0;
+      return;
+    }
+
+    vec4 velData = texture2D(velocities, reference);
+    vec3 vel = velData.xyz;
+    // Step seconds: 1/60s (approx per-frame simulation delta)
+    vec3 prevLocalPos = data.xyz - vel * 0.016666667;
+
+    vec4 currentWorld = modelMatrix * vec4(data.xyz, 1.0);
+    vec4 prevWorld = prevModelMatrix * vec4(prevLocalPos, 1.0);
+
+    vCurrentClip = projectionMatrix * viewMatrix * currentWorld;
+    vPreviousClip = prevViewProjectionMatrix * prevWorld;
+
+    float lifeT = lifetime > 0.0 ? clamp(data.a / lifetime, 0.0, 1.0) : 1.0;
+    float fadeIn = smoothstep(0.0, max(fadeFraction, 0.0001), lifeT);
+    float fadeOut = 1.0 - smoothstep(1.0 - max(fadeFraction, 0.0001), 1.0, lifeT);
+    float vEnvelope = min(fadeIn, fadeOut);
+
+    vec4 mvPosition = viewMatrix * currentWorld;
+    float sizeMul = mix(1.0, vEnvelope, fadeSize);
+    float baseSize = vAlive * pointSize * sizeMul * (300.0 / -mvPosition.z);
+
+    // Expand point size across travel distance so the velocity buffer covers the entire swept path
+    vec4 midClip = (vCurrentClip + vPreviousClip) * 0.5;
+    vec2 currentNDC = vCurrentClip.xy / max(vCurrentClip.w, 1e-4);
+    vec2 prevNDC = vPreviousClip.xy / max(vPreviousClip.w, 1e-4);
+    float travelPixels = length(currentNDC - prevNDC) * 500.0;
+
+    gl_PointSize = max(baseSize, baseSize + travelPixels);
+    gl_Position = midClip;
+  }
+`;
+
+const PARTICLE_VELOCITY_FRAGMENT_SHADER = /* glsl */ `
+  varying vec4 vCurrentClip;
+  varying vec4 vPreviousClip;
+  varying float vAlive;
+
+  void main() {
+    if (vAlive < 0.5) discard;
+    vec2 current = vCurrentClip.xy / max(vCurrentClip.w, 1e-4);
+    vec2 previous = vPreviousClip.xy / max(vPreviousClip.w, 1e-4);
+    vec2 velocity = (current - previous) * 0.5;
+    gl_FragColor = vec4(velocity, 0.0, 1.0);
+  }
+`;
+
+const POINTS_VELOCITY_VERTEX_SHADER = /* glsl */ `
+  uniform mat4 prevModelMatrix;
+  uniform mat4 prevViewProjectionMatrix;
+  uniform float pointSize;
+  varying vec4 vCurrentClip;
+  varying vec4 vPreviousClip;
+
+  void main() {
+    vec4 localPosition = vec4(position, 1.0);
+    vec4 currentWorld = modelMatrix * localPosition;
+    vec4 prevWorld = prevModelMatrix * localPosition;
+    vCurrentClip = projectionMatrix * viewMatrix * currentWorld;
+    vPreviousClip = prevViewProjectionMatrix * prevWorld;
+
+    vec4 mvPosition = modelViewMatrix * localPosition;
+    float baseSize = pointSize * (300.0 / -mvPosition.z);
+
+    vec4 midClip = (vCurrentClip + vPreviousClip) * 0.5;
+    vec2 currentNDC = vCurrentClip.xy / max(vCurrentClip.w, 1e-4);
+    vec2 prevNDC = vPreviousClip.xy / max(vPreviousClip.w, 1e-4);
+    float travelPixels = length(currentNDC - prevNDC) * 500.0;
+
+    gl_PointSize = max(baseSize, baseSize + travelPixels);
+    gl_Position = midClip;
+  }
+`;
+
+const POINTS_VELOCITY_FRAGMENT_SHADER = /* glsl */ `
+  varying vec4 vCurrentClip;
+  varying vec4 vPreviousClip;
+
+  void main() {
+    vec2 current = vCurrentClip.xy / max(vCurrentClip.w, 1e-4);
+    vec2 previous = vPreviousClip.xy / max(vPreviousClip.w, 1e-4);
+    vec2 velocity = (current - previous) * 0.5;
+    gl_FragColor = vec4(velocity, 0.0, 1.0);
+  }
+`;
+
+const INSTANCED_VELOCITY_VERTEX_SHADER = /* glsl */ `
+  attribute mat4 prevInstanceMatrix;
+  uniform mat4 prevModelMatrix;
+  uniform mat4 prevViewProjectionMatrix;
+  varying vec4 vCurrentClip;
+  varying vec4 vPreviousClip;
+
+  void main() {
+    vec4 localPosition = vec4(position, 1.0);
+    vec4 currentWorld = modelMatrix * instanceMatrix * localPosition;
+    vec4 prevWorld = prevModelMatrix * prevInstanceMatrix * localPosition;
+
+    vCurrentClip = projectionMatrix * viewMatrix * currentWorld;
+    vPreviousClip = prevViewProjectionMatrix * prevWorld;
+    gl_Position = vCurrentClip;
+  }
+`;
+
+const INSTANCED_VELOCITY_FRAGMENT_SHADER = /* glsl */ `
+  varying vec4 vCurrentClip;
+  varying vec4 vPreviousClip;
+
+  void main() {
+    vec2 current = vCurrentClip.xy / max(vCurrentClip.w, 1e-4);
+    vec2 previous = vPreviousClip.xy / max(vPreviousClip.w, 1e-4);
+    vec2 velocity = (current - previous) * 0.5;
+    gl_FragColor = vec4(velocity, 0.0, 1.0);
+  }
+`;
+
 const MOTION_BLUR_SHADER = {
   uniforms: {
     tDiffuse: { value: null as THREE.Texture | null },
@@ -165,6 +303,15 @@ export interface MotionBlur {
   dispose: () => void;
 }
 
+function isEffectivelyVisible(object: THREE.Object3D): boolean {
+  let curr: THREE.Object3D | null = object;
+  while (curr) {
+    if (!curr.visible) return false;
+    curr = curr.parent;
+  }
+  return true;
+}
+
 export function createMotionBlur(width: number, height: number): MotionBlur {
   const velocityTarget = new THREE.WebGLRenderTarget(Math.max(1, width), Math.max(1, height), {
     // Velocity is signed, so an ordinary 8-bit target would clip every
@@ -181,6 +328,45 @@ export function createMotionBlur(width: number, height: number): MotionBlur {
     vertexShader: VELOCITY_VERTEX_SHADER,
     fragmentShader: VELOCITY_FRAGMENT_SHADER,
     side: THREE.DoubleSide,
+  });
+
+  const instancedVelocityMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      prevModelMatrix: { value: new THREE.Matrix4() },
+      prevViewProjectionMatrix: { value: new THREE.Matrix4() },
+    },
+    vertexShader: INSTANCED_VELOCITY_VERTEX_SHADER,
+    fragmentShader: INSTANCED_VELOCITY_FRAGMENT_SHADER,
+    side: THREE.DoubleSide,
+  });
+
+  const particleVelocityMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      positions: { value: null as THREE.Texture | null },
+      velocities: { value: null as THREE.Texture | null },
+      pointSize: { value: 4 },
+      lifetime: { value: 0 },
+      fadeFraction: { value: 0.15 },
+      fadeSize: { value: 0 },
+      prevModelMatrix: { value: new THREE.Matrix4() },
+      prevViewProjectionMatrix: { value: new THREE.Matrix4() },
+    },
+    vertexShader: PARTICLE_VELOCITY_VERTEX_SHADER,
+    fragmentShader: PARTICLE_VELOCITY_FRAGMENT_SHADER,
+    transparent: true,
+    depthWrite: false,
+  });
+
+  const pointsVelocityMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      pointSize: { value: 4 },
+      prevModelMatrix: { value: new THREE.Matrix4() },
+      prevViewProjectionMatrix: { value: new THREE.Matrix4() },
+    },
+    vertexShader: POINTS_VELOCITY_VERTEX_SHADER,
+    fragmentShader: POINTS_VELOCITY_FRAGMENT_SHADER,
+    transparent: true,
+    depthWrite: false,
   });
 
   const pass = new ShaderPass(MOTION_BLUR_SHADER);
@@ -220,11 +406,22 @@ export function createMotionBlur(width: number, height: number): MotionBlur {
     );
 
     const meshes: THREE.Mesh[] = [];
+    const instancedMeshes: THREE.InstancedMesh[] = [];
     const hooked: THREE.Mesh[] = [];
+    const particlePoints: THREE.Points[] = [];
+    const genericPoints: THREE.Points[] = [];
     const hidden: THREE.Object3D[] = [];
     const ordinals = new Map<string, number>();
+
     scene.traverse((object) => {
-      if (object instanceof THREE.Mesh) {
+      if (!isEffectivelyVisible(object)) return;
+
+      if (object instanceof THREE.InstancedMesh) {
+        object.userData.__velocityKey = velocityKey(object, ordinals);
+        instancedMeshes.push(object);
+        return;
+      }
+      if (isRealMesh(object)) {
         if (object.onBeforeRender !== velocityHook) {
           object.onBeforeRender = velocityHook;
           hooked.push(object);
@@ -233,17 +430,18 @@ export function createMotionBlur(width: number, height: number): MotionBlur {
         meshes.push(object);
         return;
       }
-      // An override material replaces whatever a Points/Line/Sprite draws
-      // itself with, and the particle system's real positions live in a GPU
-      // texture its own vertex shader samples — not in the `position`
-      // attribute this override would read, which is all zeros. Rendering
-      // those here would stamp a bogus velocity blob at the world origin, so
-      // they sit the pass out and stay sharp instead.
-      if (object instanceof THREE.Points || object instanceof THREE.Line || object instanceof THREE.Sprite) {
-        if (object.visible) {
-          object.visible = false;
-          hidden.push(object);
+      if (object instanceof THREE.Points) {
+        object.userData.__velocityKey = velocityKey(object, ordinals);
+        if (object.userData.isParticleSystem) {
+          particlePoints.push(object);
+        } else {
+          genericPoints.push(object);
         }
+        return;
+      }
+      if (object instanceof THREE.Line || object instanceof THREE.Sprite || isFatLine(object)) {
+        object.visible = false;
+        hidden.push(object);
       }
     });
 
@@ -256,29 +454,125 @@ export function createMotionBlur(width: number, height: number): MotionBlur {
 
     isRenderingVelocity = true;
     scene.background = null;
-    scene.overrideMaterial = velocityMaterial;
     renderer.setRenderTarget(velocityTarget);
     renderer.setClearColor(0x000000, 0);
     renderer.clear(true, true, false);
-    renderer.render(scene, camera);
-    isRenderingVelocity = false;
 
+    // Pass 1: Render standard meshes with scene.overrideMaterial
+    if (meshes.length > 0) {
+      for (const im of instancedMeshes) im.visible = false;
+      for (const p of particlePoints) p.visible = false;
+      for (const p of genericPoints) p.visible = false;
+      scene.overrideMaterial = velocityMaterial;
+      renderer.render(scene, camera);
+      scene.overrideMaterial = null;
+      for (const im of instancedMeshes) im.visible = true;
+      for (const p of particlePoints) p.visible = true;
+      for (const p of genericPoints) p.visible = true;
+    }
+
+    // Pass 2: Render instanced meshes with per-instance previous matrix tracking
+    if (instancedMeshes.length > 0) {
+      for (const m of meshes) m.visible = false;
+      for (const p of particlePoints) p.visible = false;
+      for (const p of genericPoints) p.visible = false;
+      const originalInstMaterials = new Map<THREE.InstancedMesh, THREE.Material | THREE.Material[]>();
+
+      for (const instMesh of instancedMeshes) {
+        originalInstMaterials.set(instMesh, instMesh.material);
+        instMesh.material = instancedVelocityMaterial;
+
+        let prevAttr = instMesh.geometry.getAttribute("prevInstanceMatrix") as THREE.InstancedBufferAttribute | undefined;
+        if (!prevAttr || prevAttr.array.length !== instMesh.instanceMatrix.array.length) {
+          prevAttr = new THREE.InstancedBufferAttribute(new Float32Array(instMesh.instanceMatrix.array), 16);
+          instMesh.geometry.setAttribute("prevInstanceMatrix", prevAttr);
+        }
+
+        const key = instMesh.userData.__velocityKey as string;
+        const prevMtx = previousMatrices.get(key);
+        instancedVelocityMaterial.uniforms.prevModelMatrix.value.copy(prevMtx ?? instMesh.matrixWorld);
+        instancedVelocityMaterial.uniforms.prevViewProjectionMatrix.value.copy(
+          hasPreviousFrame ? previousViewProjection : currentViewProjection,
+        );
+        instancedVelocityMaterial.uniformsNeedUpdate = true;
+      }
+
+      scene.overrideMaterial = null;
+      renderer.render(scene, camera);
+
+      // Restore original materials and update prevInstanceMatrix buffer
+      for (const [instMesh, mat] of originalInstMaterials) {
+        instMesh.material = mat;
+        const prevAttr = instMesh.geometry.getAttribute("prevInstanceMatrix") as THREE.InstancedBufferAttribute | undefined;
+        if (prevAttr) {
+          prevAttr.copyArray(instMesh.instanceMatrix.array);
+          prevAttr.needsUpdate = true;
+        }
+      }
+      for (const m of meshes) m.visible = true;
+      for (const p of particlePoints) p.visible = true;
+      for (const p of genericPoints) p.visible = true;
+    }
+
+    // Pass 3: Render particle systems and point clouds with their custom velocity materials
+    if (particlePoints.length > 0 || genericPoints.length > 0) {
+      for (const m of meshes) m.visible = false;
+      for (const im of instancedMeshes) im.visible = false;
+      const originalMaterials = new Map<THREE.Points, THREE.Material | THREE.Material[]>();
+
+      for (const p of particlePoints) {
+        originalMaterials.set(p, p.material);
+        p.material = particleVelocityMaterial;
+        particleVelocityMaterial.uniforms.positions.value = p.userData.particlePositionsTexture ?? null;
+        particleVelocityMaterial.uniforms.velocities.value = p.userData.particleVelocitiesTexture ?? null;
+        particleVelocityMaterial.uniforms.pointSize.value = p.userData.particlePointSize ?? 4;
+        particleVelocityMaterial.uniforms.lifetime.value = p.userData.particleLifetime ?? 0;
+        particleVelocityMaterial.uniforms.fadeFraction.value = p.userData.particleFadeFraction ?? 0.15;
+        particleVelocityMaterial.uniforms.fadeSize.value = p.userData.particleFadeSize ?? 0;
+        const key = p.userData.__velocityKey as string;
+        const prevMtx = previousMatrices.get(key);
+        particleVelocityMaterial.uniforms.prevModelMatrix.value.copy(prevMtx ?? p.matrixWorld);
+        particleVelocityMaterial.uniforms.prevViewProjectionMatrix.value.copy(
+          hasPreviousFrame ? previousViewProjection : currentViewProjection,
+        );
+        particleVelocityMaterial.uniformsNeedUpdate = true;
+      }
+
+      for (const p of genericPoints) {
+        originalMaterials.set(p, p.material);
+        p.material = pointsVelocityMaterial;
+        const pointSize =
+          (p.material as { size?: number })?.size ??
+          (p.material as { uniforms?: { pointSize?: { value: number } } })?.uniforms?.pointSize?.value ??
+          4;
+        pointsVelocityMaterial.uniforms.pointSize.value = pointSize;
+        const key = p.userData.__velocityKey as string;
+        const prevMtx = previousMatrices.get(key);
+        pointsVelocityMaterial.uniforms.prevModelMatrix.value.copy(prevMtx ?? p.matrixWorld);
+        pointsVelocityMaterial.uniforms.prevViewProjectionMatrix.value.copy(
+          hasPreviousFrame ? previousViewProjection : currentViewProjection,
+        );
+        pointsVelocityMaterial.uniformsNeedUpdate = true;
+      }
+
+      scene.overrideMaterial = null;
+      renderer.render(scene, camera);
+
+      // Restore original materials and mesh visibility
+      for (const [p, mat] of originalMaterials) {
+        p.material = mat;
+      }
+      for (const m of meshes) m.visible = true;
+      for (const im of instancedMeshes) im.visible = true;
+    }
+
+    isRenderingVelocity = false;
     scene.overrideMaterial = previousOverride;
     scene.background = previousBackground;
     renderer.setClearColor(previousClearColor, previousClearAlpha);
     renderer.setRenderTarget(previousTarget);
     for (const object of hidden) object.visible = true;
-    // Restore the render hooks we set. The meshes are cached at module level
-    // and shared with the other split viewport pane, which has its own closure
-    // (and its own local velocityHook) — leaving ours installed here would let
-    // one pane's hook read matrices written by the other, corrupting the blur.
-    //
-    // `delete`, not `= undefined`: three calls `object.onBeforeRender(...)`
-    // unconditionally on every draw, and the no-op it relies on lives on
-    // Object3D's prototype. Assigning undefined shadows that prototype method
-    // with an own property, so the very next scene pass threw
-    // "object.onBeforeRender is not a function" and the viewport went black.
-    // Removing the own property lets the prototype no-op show through again.
+
     for (const mesh of hooked) delete (mesh as { onBeforeRender?: unknown }).onBeforeRender;
 
     // Snapshot *after* drawing — these become "previous" for the next frame.
@@ -290,6 +584,21 @@ export function createMotionBlur(width: number, height: number): MotionBlur {
       if (stored) stored.copy(mesh.matrixWorld);
       else previousMatrices.set(key, mesh.matrixWorld.clone());
     }
+    for (const im of instancedMeshes) {
+      const key = im.userData.__velocityKey as string;
+      live.add(key);
+      const stored = previousMatrices.get(key);
+      if (stored) stored.copy(im.matrixWorld);
+      else previousMatrices.set(key, im.matrixWorld.clone());
+    }
+    for (const p of [...particlePoints, ...genericPoints]) {
+      const key = p.userData.__velocityKey as string;
+      live.add(key);
+      const stored = previousMatrices.get(key);
+      if (stored) stored.copy(p.matrixWorld);
+      else previousMatrices.set(key, p.matrixWorld.clone());
+    }
+
     // Drop instances that left the scene, so a graph edit that halves an
     // Array's count doesn't leave the other half's matrices in memory for
     // the rest of the session.
@@ -315,6 +624,9 @@ export function createMotionBlur(width: number, height: number): MotionBlur {
       previousMatrices.clear();
       velocityTarget.dispose();
       velocityMaterial.dispose();
+      instancedVelocityMaterial.dispose();
+      particleVelocityMaterial.dispose();
+      pointsVelocityMaterial.dispose();
       pass.dispose();
     },
   };

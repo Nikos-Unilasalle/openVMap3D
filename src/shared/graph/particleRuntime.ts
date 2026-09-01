@@ -818,6 +818,7 @@ const MAX_STEPS_PER_FRAME = 240;
 
 export interface SimulationResult {
   positionsTexture: THREE.Texture;
+  velocityTexture?: THREE.Texture;
   capacity: number;
 }
 
@@ -971,8 +972,13 @@ export function getOrCreateSimulation(
   }
   sim.lastSteppedStep += steps;
 
+  const positionsTexture = sim.gpuCompute.getCurrentRenderTarget(sim.positionVar).texture;
+  const velocityTexture = sim.gpuCompute.getCurrentRenderTarget(sim.velocityVar).texture;
+  positionsTexture.userData = { ...(positionsTexture.userData ?? {}), velocityTexture };
+
   return {
-    positionsTexture: sim.gpuCompute.getCurrentRenderTarget(sim.positionVar).texture,
+    positionsTexture,
+    velocityTexture,
     capacity: size * size,
   };
 }

@@ -109,5 +109,14 @@ describe("velocity keys unit", () => {
     // rather than sharing one bucket with everything else.
     expect(velocityKey(new THREE.Mesh(), ordinals)).toBe("anon#0");
   });
+
+  it("keys particle points and objects consistently", () => {
+    const ordinals = new Map<string, number>();
+    const points = new THREE.Points();
+    points.userData.nodeId = "particle-node";
+    points.userData.isParticleSystem = true;
+    expect(velocityKey(points, ordinals)).toBe("particle-node#0");
+    expect(velocityKey(points, ordinals)).toBe("particle-node#1");
+  });
 });
 

@@ -459,6 +459,7 @@ export const PARTICLE_SIMULATE_NODE: NodeDefinition = {
   ],
   outputs: [
     { id: "positions", label: "Positions", type: "texture" },
+    { id: "velocities", label: "Velocities", type: "texture" },
     { id: "count", label: "Count", type: "value" },
     { id: "lifetime", label: "Lifetime", type: "value" },
   ],
@@ -550,8 +551,8 @@ export const PARTICLE_SIMULATE_NODE: NodeDefinition = {
       ground,
       toBoolean(params.burstSpawn),
     );
-    if (!result) return { positions: null, count: 0, lifetime };
-    return { positions: result.positionsTexture, count: result.capacity, lifetime };
+    if (!result) return { positions: null, velocities: null, count: 0, lifetime };
+    return { positions: result.positionsTexture, velocities: result.velocityTexture, count: result.capacity, lifetime };
   },
 };
 
@@ -682,6 +683,7 @@ export const PARTICLE_RENDER_NODE: NodeDefinition = {
   category: "particles",
   inputs: [
     { id: "positions", label: "Positions", type: "texture" },
+    { id: "velocities", label: "Velocities", type: "texture" },
     { id: "count", label: "Count", type: "value" },
     { id: "lifetime", label: "Lifetime", type: "value" },
   ],
@@ -713,7 +715,15 @@ export const PARTICLE_RENDER_NODE: NodeDefinition = {
     const spriteKey = typeof params.sprite === "string" ? params.sprite : "circle";
     const spriteTexture = spriteKey === "none" ? null : getSpriteTexture(spriteKey);
 
-    entry.material.uniforms.positions.value = inputs.positions instanceof THREE.Texture ? inputs.positions : null;
+    const posTex = inputs.positions instanceof THREE.Texture ? inputs.positions : null;
+    const velTex =
+      inputs.velocities instanceof THREE.Texture
+        ? inputs.velocities
+        : posTex?.userData?.velocityTexture instanceof THREE.Texture
+          ? (posTex.userData.velocityTexture as THREE.Texture)
+          : null;
+
+    entry.material.uniforms.positions.value = posTex;
     entry.material.uniforms.pointSize.value = Number(params.size) || 4;
     entry.material.uniforms.color.value = asColor(params.color, new THREE.Color(0xffffff));
     entry.material.uniforms.sprite.value = spriteTexture;
@@ -725,6 +735,15 @@ export const PARTICLE_RENDER_NODE: NodeDefinition = {
     entry.material.uniforms.fadeFraction.value = Math.min(0.5, Math.max(0.001, Number(params.fadeFraction) || 0.15));
     entry.material.uniforms.fadeSize.value = toBoolean(params.fadeSize) ? 1 : 0;
     entry.material.uniforms.fadeOpacity.value = toBoolean(params.fadeOpacity) ? 1 : 0;
+
+    // Attach metadata for motion blur velocity pass
+    entry.points.userData.isParticleSystem = true;
+    entry.points.userData.particlePositionsTexture = posTex;
+    entry.points.userData.particleVelocitiesTexture = velTex;
+    entry.points.userData.particleLifetime = typeof inputs.lifetime === "number" ? inputs.lifetime : 0;
+    entry.points.userData.particleFadeFraction = Math.min(0.5, Math.max(0.001, Number(params.fadeFraction) || 0.15));
+    entry.points.userData.particleFadeSize = toBoolean(params.fadeSize) ? 1 : 0;
+    entry.points.userData.particlePointSize = Number(params.size) || 4;
 
     return { geometry: entry.points };
   },
