@@ -7,18 +7,29 @@
  * work with no warning. This keeps the last state of the document in
  * localStorage and hands it back on the next load.
  *
- * It is a safety net, not a save system: it holds exactly one document (the
- * one you were last editing) and an explicit Save is still what produces a
- * file you own. `.tsuji` remains the format — the payload here is the same
- * JSON serializeProject writes, so a recovered document and a saved one are
- * byte-identical.
+ * It is a safety net, not a save system: it holds rotating snapshots of the
+ * document you were last editing and an explicit Save is still what produces
+ * a file you own. `.tsuji` remains the format — the payload here is the same
+ * JSON serializeProject writes (compact, to stretch the quota), so a
+ * recovered document and a saved one are structurally identical.
  */
 
 import { deserializeProject, serializeProject } from "./storage";
 import { NodeRegistry, Project } from "./types";
 import { DEFAULT_REGISTRY } from "./nodes";
 
-const AUTOSAVE_KEY = "tsuji.autosave.v1";
+/**
+ * Three rotating slots instead of one: opening any demo/project immediately
+ * began overwriting the single recovery copy, and one bad write destroyed
+ * the whole net. The newest readable slot wins on load.
+ */
+const AUTOSAVE_SLOTS = 3;
+const AUTOSAVE_KEY_PREFIX = "tsuji.autosave.v2.";
+const LEGACY_KEY = "tsuji.autosave.v1";
+
+function slotKey(index: number): string {
+  return `${AUTOSAVE_KEY_PREFIX}${index}`;
+}
 
 /**
  * localStorage caps out around 5 MB per origin in most engines. A graph is
@@ -47,6 +58,9 @@ function storage(): Storage | null {
   }
 }
 
+let rotationCounter = 0;
+let warnedOversize = false;
+
 /**
  * Writes the document. Returns the serialized payload on success (the caller
  * uses it as the "what's on disk now" snapshot for dirty tracking), or null if
@@ -57,7 +71,7 @@ export function writeAutosave(project: Project, filename: string): string | null
   if (!store) return null;
   let serialized: string;
   try {
-    serialized = serializeProject(project);
+    serialized = serializeProject(project, { compact: true });
   } catch {
     return null;
   }
@@ -65,9 +79,21 @@ export function writeAutosave(project: Project, filename: string): string | null
   // as an escaped JSON string inside the record, so sizing it alone
   // under-counted by roughly 2× and "safe" writes still hit the quota.
   const record = JSON.stringify({ filename, savedAt: Date.now(), project: serialized });
-  if (record.length > MAX_AUTOSAVE_BYTES) return null;
+  if (record.length > MAX_AUTOSAVE_BYTES) {
+    // Say so once: a user whose project outgrew the safety net believed the
+    // net was running when it had silently stopped updating.
+    if (!warnedOversize) {
+      warnedOversize = true;
+      console.warn(
+        `tsuji: autosave paused — this document (${(record.length / 1e6).toFixed(1)} MB) exceeds the ` +
+          "localStorage safety net. Save to a .tsuji file to keep it.",
+      );
+    }
+    return null;
+  }
   try {
-    store.setItem(AUTOSAVE_KEY, record);
+    store.setItem(slotKey(rotationCounter % AUTOSAVE_SLOTS), record);
+    rotationCounter++;
   } catch {
     // Quota, or a storage-disabled context. The in-memory document is
     // untouched; the user just doesn't get the safety net this time.
@@ -77,23 +103,47 @@ export function writeAutosave(project: Project, filename: string): string | null
 }
 
 /**
- * The stored document, or null if there is none (or it can't be read — a
- * snapshot written by an incompatible build is dropped rather than crashing
- * the editor on boot).
+ * The newest readable snapshot across all slots, or null if there is none
+ * (or none can be read — a snapshot written by an incompatible build is
+ * dropped rather than crashing the editor on boot).
  */
 export function readAutosave(registry: NodeRegistry = DEFAULT_REGISTRY): AutosaveRecord | null {
   const store = storage();
   if (!store) return null;
-  const raw = store.getItem(AUTOSAVE_KEY);
-  if (!raw) return null;
+
+  let bestRaw: string | null = null;
+  let bestSavedAt = -1;
+  for (const key of [slotKey(0), slotKey(1), slotKey(2), LEGACY_KEY]) {
+    const raw = store.getItem(key);
+    if (!raw) continue;
+    let savedAt = 0;
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed.project !== "string") continue;
+      savedAt = Number.isFinite(parsed.savedAt) ? Number(parsed.savedAt) : 0;
+    } catch {
+      // A truncated slot is skipped; another slot may still be readable.
+      continue;
+    }
+    if (savedAt > bestSavedAt) {
+      bestSavedAt = savedAt;
+      bestRaw = raw;
+    }
+  }
+  if (!bestRaw) {
+    // Nothing readable anywhere — wipe the slots so a corrupted entry doesn't
+    // sit there slowing every later boot.
+    clearAutosave();
+    return null;
+  }
+
   try {
-    const record = JSON.parse(raw);
-    if (!record || typeof record.project !== "string") return null;
+    const record = JSON.parse(bestRaw);
     const project = deserializeProject(record.project, registry);
     return {
       project,
       filename: typeof record.filename === "string" && record.filename ? record.filename : "project_v1.tsuji",
-      savedAt: Number.isFinite(record.savedAt) ? Number(record.savedAt) : 0,
+      savedAt: bestSavedAt,
     };
   } catch (err) {
     // A snapshot that can't be read is dropped rather than crashing the editor
@@ -107,7 +157,10 @@ export function readAutosave(registry: NodeRegistry = DEFAULT_REGISTRY): Autosav
 
 export function clearAutosave(): void {
   try {
-    storage()?.removeItem(AUTOSAVE_KEY);
+    const store = storage();
+    if (!store) return;
+    for (let i = 0; i < AUTOSAVE_SLOTS; i++) store.removeItem(slotKey(i));
+    store.removeItem(LEGACY_KEY);
   } catch {}
 }
 

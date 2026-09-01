@@ -189,6 +189,24 @@ export const TopBar: React.FC<TopBarProps> = ({
     onFilenameChange(val, currentFilePath);
   };
 
+  // Cmd/Ctrl+S saves, Cmd/Ctrl+O opens — the shortcuts the ShortcutsModal has
+  // always advertised, now wired to the exact handlers the buttons use (one
+  // implementation, no drift). Plain commands rather than typing, so they
+  // fire regardless of the focused field; preventDefault keeps the browser's
+  // own Save/Open page dialog out of the way on web.
+  useEffect(() => {
+    const handleFileKeys = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key !== "s" && key !== "o") return;
+      e.preventDefault();
+      if (key === "s") void handleSave();
+      else void handleLoadClick();
+    };
+    window.addEventListener("keydown", handleFileKeys);
+    return () => window.removeEventListener("keydown", handleFileKeys);
+  }, [handleSave, handleLoadClick]);
+
   return (
     <header className="top-bar">
       {/* Left section: Logo + File Operations */}

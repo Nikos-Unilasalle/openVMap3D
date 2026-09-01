@@ -74,11 +74,23 @@ function cleanGraph(graph: Graph): Graph {
     })),
     keyframes: graph.keyframes ? JSON.parse(JSON.stringify(graph.keyframes)) : {},
     markers: Array.isArray(graph.markers)
-      ? graph.markers.map((m) => ({ frame: m.frame, ...(m.label ? { label: m.label } : {}) }))
+      ? graph.markers.map((m) => ({ frame: m.frame, label: m.label }))
       : [],
-    exposedParams: Array.isArray(graph.exposedParams)
-      ? graph.exposedParams.map((e) => ({ nodeId: e.nodeId, paramId: e.paramId, ...(e.label ? { label: e.label } : {}) }))
-      : [],
+    exposedParams: Array.isArray(graph.exposedParams) ? graph.exposedParams : [],
+    groups: Array.isArray(graph.groups)
+      ? graph.groups.map((g) => ({
+          id: g.id,
+          title: String(g.title ?? "Groupe"),
+          color: String(g.color ?? "#6366f1"),
+          rect: {
+            x: Math.round(g.rect?.x ?? 0),
+            y: Math.round(g.rect?.y ?? 0),
+            width: Math.max(40, Math.round(g.rect?.width ?? 200)),
+            height: Math.max(40, Math.round(g.rect?.height ?? 120)),
+          },
+          collapsed: g.collapsed === true ? true : undefined,
+        }))
+      : undefined,
   };
 }
 
@@ -93,14 +105,19 @@ export function serializeGraph(graph: Graph): string {
  * this is additive rather than a break: a file written before canvases
  * existed loads as canvas 1 with the rest empty.
  */
-export function serializeProject(project: Project): string {
+/**
+ * `compact` drops the pretty-printing: the explicit Save path keeps indented,
+ * human-readable files, while the autosave safety net (which pays localStorage
+ * quota per byte) asks for the ~30-40% smaller compact form.
+ */
+export function serializeProject(project: Project, options: { compact?: boolean } = {}): string {
   return JSON.stringify(
     {
       canvases: normalizeCanvases(project.canvases).map(cleanGraph),
       activeCanvas: clampCanvasIndex(project.activeCanvas),
     },
     null,
-    2,
+    options.compact ? undefined : 2,
   );
 }
 
@@ -144,7 +161,7 @@ export function deserializeGraph(jsonString: string, registry: NodeRegistry = DE
 }
 
 function adoptGraph(
-  data: { nodes: unknown[]; connections: unknown[]; keyframes?: unknown; markers?: unknown; exposedParams?: unknown },
+  data: { nodes: unknown[]; connections: unknown[]; keyframes?: unknown; markers?: unknown; exposedParams?: unknown; groups?: unknown },
   registry: NodeRegistry,
 ): Graph {
   // Sockets are a public surface — every saved file references them by id —
@@ -161,6 +178,7 @@ function adoptGraph(
       keyframes: data.keyframes && typeof data.keyframes === "object" ? (data.keyframes as Graph["keyframes"]) : {},
       markers: normalizeMarkers(data.markers),
       exposedParams: Array.isArray(data.exposedParams) ? (data.exposedParams as Graph["exposedParams"]) : [],
+      groups: Array.isArray(data.groups) ? (data.groups as Graph["groups"]) : undefined,
     },
     registry,
   );

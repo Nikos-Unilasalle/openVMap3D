@@ -156,8 +156,22 @@ describe("cloneGraph", () => {
     expect(graph.exposedParams![0].label).toBe("Spin");
   });
 
-  test("undo/redo (via repeated cloneGraph round-trips) never drops exposedParams — this is the pinned-viewport-HUD-disappears-on-undo bug", () => {
+  test("clones node groups deeply (undo of a group drag can't alias the rect)", () => {
     const graph: Graph = {
+      nodes: [],
+      connections: [],
+      groups: [{ id: "g1", title: "Zone A", color: "#6366f1", rect: { x: 10, y: 20, width: 300, height: 200 } }],
+    };
+
+    const cloned = cloneGraph(graph);
+    cloned.groups![0].rect.x = 999;
+    cloned.groups![0].title = "Renamed";
+
+    expect(graph.groups![0].rect.x).toBe(10);
+    expect(graph.groups![0].title).toBe("Zone A");
+  });
+
+  test("undo/redo (via repeated cloneGraph round-trips) never drops exposedParams — this is the pinned-viewport-HUD-disappears-on-undo bug", () => {    const graph: Graph = {
       nodes: [{ id: "a", type: "transform", position: { x: 0, y: 0 }, params: {} }],
       connections: [],
       exposedParams: [{ nodeId: "a", paramId: "location" }],

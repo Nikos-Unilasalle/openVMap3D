@@ -216,3 +216,118 @@ input, textarea, [contenteditable="true"], .drag-number-editing, .param-text-inp
   outline: 1.5px solid #38bdf8 !important;
   outline-offset: 1px;
 }
+
+/* Transient editor warning chip (self-connection blocked, cycle created) —
+   floated above the canvas, auto-dismissed by GraphEditor's timer. */
+.graph-editor-warning {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  max-width: 70%;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: rgba(127, 29, 29, 0.92);
+  border: 1px solid #f87171;
+  color: #fee2e2;
+  font-size: 12.5px;
+  pointer-events: none;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+/* Group frames — editor-only organization, rendered behind the nodes. */
+.group-frame {
+  position: relative;
+  border: 1.5px solid;
+  border-radius: 10px;
+  box-sizing: border-box;
+  pointer-events: auto;
+}
+
+.group-frame-selected {
+  outline: 1.5px solid #38bdf8;
+  outline-offset: 2px;
+}
+
+.group-frame-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 8px;
+  border-radius: 8.5px 8.5px 0 0;
+  cursor: grab;
+  user-select: none;
+}
+
+.group-frame-collapsed .group-frame-header {
+  border-radius: 8.5px;
+}
+
+.group-frame-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.group-frame-title-input {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  border-radius: 5px;
+  background: rgba(15, 23, 42, 0.9);
+  color: #e2e8f0;
+  font-size: 12.5px;
+  font-weight: 600;
+  outline: none;
+}
+
+.group-frame-color {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.group-frame-collapse {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 4px;
+  background: rgba(15, 23, 42, 0.6);
+  color: #cbd5e1;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.group-frame-collapse:hover {
+  background: rgba(56, 189, 248, 0.25);
+}
+
+.group-frame-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  border-right: 2.5px solid rgba(148, 163, 184, 0.55);
+  border-bottom: 2.5px solid rgba(148, 163, 184, 0.55);
+  border-bottom-right-radius: 8px;
+}

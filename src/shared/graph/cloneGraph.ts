@@ -88,5 +88,8 @@ export function cloneGraph(graph: Graph): Graph {
     keyframes: cloneKeyframes(graph.keyframes),
     markers: graph.markers ? graph.markers.map((m) => ({ ...m })) : undefined,
     exposedParams: graph.exposedParams ? graph.exposedParams.map((e) => ({ ...e })) : undefined,
+    groups: graph.groups
+      ? graph.groups.map((g) => ({ ...g, rect: { ...g.rect } }))
+      : undefined,
   };
 }

@@ -310,12 +310,29 @@ export interface Marker {
   label?: string;
 }
 
+/**
+ * A visual group frame in the graph editor: a titled, colored rectangle that
+ * carries the nodes it covers when dragged, and folds them away when
+ * collapsed. Membership is positional — a node sits in the group while its
+ * position lies inside the rect — so groups never appear in connections or
+ * evaluation; they are pure editor organization (and comments, via the
+ * title).
+ */
+export interface NodeGroup {
+  id: string;
+  title: string;
+  color: string;
+  rect: { x: number; y: number; width: number; height: number };
+  collapsed?: boolean;
+}
+
 export interface Graph {
   nodes: NodeInstance[];
   connections: Connection[];
   keyframes?: KeyframeStore;
   markers?: Marker[];
   exposedParams?: ExposedParamRef[];
+  groups?: NodeGroup[];
 }
 
 export function emptyGraph(): Graph {

@@ -127,11 +127,42 @@ describe("storage utilities", () => {
 
     it("round-trips every canvas and which one was open", () => {
       const restored = deserializeProject(serializeProject(projectWith([canvasOne, canvasTwo], 1)));
-
       expect(restored.activeCanvas).toBe(1);
       expect(restored.canvases[0].nodes.map((n) => n.id)).toEqual(["a"]);
       expect(restored.canvases[1].nodes.map((n) => n.id)).toEqual(["b"]);
       expect(restored.canvases[1].markers).toEqual([{ frame: 7 }]);
+    });
+
+    it("round-trips node groups (frames) with their rect, color and collapsed state", () => {
+      const withGroup: Graph = {
+        ...canvasOne,
+        groups: [
+          {
+            id: "grp_1",
+            title: "Scène entrée",
+            color: "#10b981",
+            rect: { x: 0, y: 0, width: 420, height: 260 },
+            collapsed: true,
+          },
+        ],
+      };
+
+      const restored = deserializeProject(serializeProject(projectWith([withGroup])));
+
+      expect(restored.canvases[0].groups).toEqual([
+        {
+          id: "grp_1",
+          title: "Scène entrée",
+          color: "#10b981",
+          rect: { x: 0, y: 0, width: 420, height: 260 },
+          collapsed: true,
+        },
+      ]);
+    });
+
+    it("reads a file with no groups (older save) without inventing any", () => {
+      const restored = deserializeProject(serializeProject(projectWith([canvasOne])));
+      expect(restored.canvases[0].groups).toBeUndefined();
     });
 
     it("always writes and reads a full set of canvas slots", () => {

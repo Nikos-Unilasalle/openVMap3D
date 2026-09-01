@@ -25,8 +25,9 @@ import { findCompatibleSocket, segmentIntersectsRect } from "../shared/graph/ins
 import { isGraphZone, setInputZone } from "../shared/graph/inputZoneStore";
 import { randomId } from "../shared/randomId";
 import { SOCKET_COLOR } from "../shared/graph/sockets";
-import { Connection, ExposedParamRef, Graph, KeyframeStore, Marker, NodeInstance, NodeRegistry } from "../shared/graph/types";
+import { Connection, ExposedParamRef, Graph, KeyframeStore, Marker, NodeGroup, NodeInstance, NodeRegistry } from "../shared/graph/types";
 import { GraphNode, GraphNodeData } from "./GraphNode";
+import { GROUP_ID_PREFIX, GROUP_NODE_TYPE, GroupFrame, GroupFrameData } from "./GroupFrame";
 import { NodePalette } from "./NodePalette";
 import { QuickAddToolbar } from "./QuickAddToolbar";
 import { NodeSearchModal } from "./NodeSearchModal";
@@ -62,18 +63,59 @@ function SpawnCursorMarker({ position }: { position: { x: number; y: number } })
   );
 }
 
-const NODE_TYPES = { graphNode: GraphNode };
+const NODE_TYPES = { graphNode: GraphNode, [GROUP_NODE_TYPE]: GroupFrame };
 const EDGE_STROKE_WIDTH = 3;
 const DEFAULT_NODE_WIDTH = 160;
 const DEFAULT_NODE_HEIGHT = 90;
 
-function toFlowNodes(graph: Graph, registry: NodeRegistry): Node<GraphNodeData>[] {
-  return graph.nodes.map((instance) => {
+/** Group frame colors, cycled by creation order. */
+const GROUP_COLORS = ["#6366f1", "#f59e0b", "#10b981", "#ec4899", "#06b6d4", "#a855f7"];
+
+const GROUP_PADDING_X = 28;
+const GROUP_PADDING_TOP = 62;
+const GROUP_PADDING_BOTTOM = 24;
+
+function isGroupNode(node: Node<GraphNodeData>): boolean {
+  return node.id.startsWith(GROUP_ID_PREFIX);
+}
+
+/** The group whose collapsed rect covers this position, if any. */
+function collapsedGroupAt(groups: NodeGroup[] | undefined, position: { x: number; y: number }): NodeGroup | undefined {
+  return (groups ?? []).find(
+    (g) =>
+      g.collapsed &&
+      position.x >= g.rect.x &&
+      position.y >= g.rect.y &&
+      position.x <= g.rect.x + g.rect.width &&
+      position.y <= g.rect.y + g.rect.height,
+  );
+}
+
+function groupFlowNode(
+  group: NodeGroup,
+  onUpdate: GroupFrameData["onUpdate"],
+): Node<GraphNodeData> {
+  return {
+    id: `${GROUP_ID_PREFIX}${group.id}`,
+    type: GROUP_NODE_TYPE,
+    position: { x: group.rect.x, y: group.rect.y },
+    zIndex: -1,
+    data: { group: { ...group }, onUpdate } as unknown as GraphNodeData,
+  };
+}
+
+function toFlowNodes(
+  graph: Graph,
+  registry: NodeRegistry,
+  onGroupUpdate?: GroupFrameData["onUpdate"],
+): Node<GraphNodeData>[] {
+  const realNodes = graph.nodes.map((instance) => {
     const def = registry.get(instance.type);
     return {
       id: instance.id,
       type: "graphNode",
       position: instance.position,
+      hidden: collapsedGroupAt(graph.groups, instance.position) !== undefined,
       data: {
         nodeId: instance.id,
         nodeType: instance.type,
@@ -84,6 +126,8 @@ function toFlowNodes(graph: Graph, registry: NodeRegistry): Node<GraphNodeData>[
       },
     };
   });
+  const groupNodes = (graph.groups ?? []).map((g) => groupFlowNode(g, onGroupUpdate ?? (() => {})));
+  return [...groupNodes, ...realNodes];
 }
 
 function edgeColor(nodes: Node<GraphNodeData>[], nodeId: string, socketId: string): string {
@@ -159,6 +203,7 @@ function toGraph(
   existingKeyframes?: KeyframeStore,
   existingMarkers?: Marker[],
   existingExposedParams?: ExposedParamRef[],
+  existingGroups?: NodeGroup[],
 ): Graph {
   const flowNodeIds = new Set(flowNodes.map((f) => f.id));
   const nodes = baseNodes
@@ -188,7 +233,7 @@ function toGraph(
 
   const exposedParams = (existingExposedParams ?? []).filter((e) => flowNodeIds.has(e.nodeId));
 
-  return { nodes, connections, keyframes, markers: existingMarkers ?? [], exposedParams };
+  return { nodes, connections, keyframes, markers: existingMarkers ?? [], exposedParams, groups: existingGroups };
 }
 
 interface GraphEditorProps {
@@ -259,8 +304,37 @@ function GraphEditorContent({
     position: { x: number; y: number };
   } | null>(null);
 
+  /**
+   * Group frame edits (title/color/collapse/resize) land here from the
+   * GroupFrame component: refresh the flow node immediately, then commit the
+   * new groups list through the document (one undo step per edit).
+   */
+  const updateGroup = useCallback(
+    (groupId: string, patch: Partial<NodeGroup>) => {
+      setNodes((nds) =>
+        nds.map((n) =>
+          n.id === `${GROUP_ID_PREFIX}${groupId}`
+            ? {
+                ...n,
+                data: {
+                  ...n.data,
+                  group: { ...(n.data as unknown as GroupFrameData).group, ...patch },
+                },
+              }
+            : n,
+        ),
+      );
+      const nextGroups = (graph.groups ?? []).map((g) => (g.id === groupId ? { ...g, ...patch } : g));
+      onGraphChange?.({
+        ...toGraph(graph.nodes, nodes, edges, graph.keyframes, graph.markers, graph.exposedParams, nextGroups),
+        groups: nextGroups,
+      });
+    },
+    [edges, graph, nodes, onGraphChange],
+  );
+
   useEffect(() => {
-    const rawNodes = toFlowNodes(graph, registry);
+    const rawNodes = toFlowNodes(graph, registry, updateGroup);
     const flowEdges = toFlowEdges(graph, rawNodes);
     const nextNodes = refreshDynamicSockets(rawNodes, flowEdges, graph.nodes, registry);
 
@@ -271,6 +345,15 @@ function GraphEditorContent({
         return nextNodes.map((n) => ({ ...n, selected: selectedIdsRef.current.has(n.id) }));
       }
       return prevNodes.map((fn) => {
+        if (isGroupNode(fn)) {
+          const group = (graph.groups ?? []).find((g) => `${GROUP_ID_PREFIX}${g.id}` === fn.id);
+          if (!group) return fn;
+          return {
+            ...fn,
+            position: { x: group.rect.x, y: group.rect.y },
+            data: { ...fn.data, group: { ...group }, onUpdate: updateGroup },
+          };
+        }
         const graphNode = graph.nodes.find((gn) => gn.id === fn.id);
         if (!graphNode) return fn;
         return {
@@ -284,6 +367,8 @@ function GraphEditorContent({
           // behind whatever snapshot this effect happens to be holding.
           selected: selectedIdsRef.current.has(fn.id),
           position: graphNode.position,
+          // A collapsed group folds its members away (restored on expand).
+          hidden: collapsedGroupAt(graph.groups, graphNode.position) !== undefined,
           data: {
             ...fn.data,
             params: graphNode.params,
@@ -305,13 +390,15 @@ function GraphEditorContent({
         );
       return unchanged ? prevEdges : flowEdges;
     });
-  }, [graph, registry, setNodes, setEdges]);
+  }, [graph, registry, setNodes, setEdges, updateGroup]);
 
   const commit = useCallback(
     (nextNodes: Node<GraphNodeData>[], nextEdges: Edge[]) => {
-      onGraphChange?.(toGraph(graph.nodes, nextNodes, nextEdges, graph.keyframes, graph.markers, graph.exposedParams));
+      onGraphChange?.(
+        toGraph(graph.nodes, nextNodes, nextEdges, graph.keyframes, graph.markers, graph.exposedParams, graph.groups),
+      );
     },
-    [graph.nodes, graph.keyframes, graph.markers, onGraphChange],
+    [graph.nodes, graph.keyframes, graph.markers, graph.exposedParams, graph.groups, onGraphChange],
   );
 
   const onNodesChange = useCallback(
@@ -347,7 +434,14 @@ function GraphEditorContent({
       // against the graph in App.tsx instead, so that undo, redo, New, Open
       // and any other way a node can leave are covered by the same rule
       // rather than each needing to remember to call it.
-      const deletedIds = new Set(deletedNodes.map((n) => n.id));
+      // Deleting a group frame removes the FRAME, never the nodes it covers
+      // — group ids are editor-only (group:<id>) and never reach the document.
+      const deletedGroups = deletedNodes.filter(isGroupNode);
+      const realDeletedNodes = deletedNodes.filter((n) => !isGroupNode(n));
+      const deletedGroupIds = new Set(deletedGroups.map((n) => n.id.slice(GROUP_ID_PREFIX.length)));
+      const nextGroups = (graph.groups ?? []).filter((g) => !deletedGroupIds.has(g.id));
+
+      const deletedIds = new Set(realDeletedNodes.map((n) => n.id));
       for (const id of deletedIds) selectedIdsRef.current.delete(id);
       // Edges selected at the same time as nodes (marquee / shift-click) are
       // deleted in the SAME pass. Chaining the edge handler afterwards ran on
@@ -357,7 +451,7 @@ function GraphEditorContent({
       // undo step, for the whole gesture.
       const deletedEdgeIds = new Set(alsoDeletedEdges.map((e) => e.id));
 
-      const nextNodes = nodes.filter((n) => !deletedIds.has(n.id));
+      const nextNodes = nodes.filter((n) => !deletedIds.has(n.id) && !deletedGroupIds.has(n.id.slice(GROUP_ID_PREFIX.length)));
       const nextEdges = edges.filter(
         (e) => !deletedEdgeIds.has(e.id) && !deletedIds.has(e.source) && !deletedIds.has(e.target),
       );
@@ -377,9 +471,12 @@ function GraphEditorContent({
       const refreshedNodes = refreshDynamicSockets(nextNodes, nextEdges, updatedGraphNodes, registry);
       setNodes(refreshedNodes);
       setEdges(nextEdges);
-      onGraphChange?.(toGraph(updatedGraphNodes, refreshedNodes, nextEdges, graph.keyframes, graph.markers, graph.exposedParams));
+      onGraphChange?.({
+        ...toGraph(updatedGraphNodes, refreshedNodes, nextEdges, graph.keyframes, graph.markers, graph.exposedParams, nextGroups),
+        groups: nextGroups,
+      });
     },
-    [edges, graph.nodes, graph.keyframes, graph.markers, nodes, onGraphChange, registry, setEdges, setNodes],
+    [edges, graph.groups, graph.nodes, graph.keyframes, graph.markers, nodes, onGraphChange, registry, setEdges, setNodes],
   );
 
   const onEdgesDelete = useCallback(
@@ -412,6 +509,42 @@ function GraphEditorContent({
     [nodes],
   );
 
+  // Would wiring `from` -> `to` close a loop through the existing document
+  // graph? BFS downstream from `to` looking for `from`.
+  const wouldCreateCycle = useCallback(
+    (from: string, to: string, checkEdges: Edge[]): boolean => {
+      if (from === to) return true;
+      const adjacency = new Map<string, string[]>();
+      for (const e of checkEdges) {
+        if (!adjacency.has(e.source)) adjacency.set(e.source, []);
+        adjacency.get(e.source)!.push(e.target);
+      }
+      const stack = [to];
+      const seen = new Set<string>([to]);
+      while (stack.length > 0) {
+        const current = stack.pop()!;
+        if (current === from) return true;
+        for (const next of adjacency.get(current) ?? []) {
+          if (!seen.has(next)) {
+            seen.add(next);
+            stack.push(next);
+          }
+        }
+      }
+      return false;
+    },
+    [],
+  );
+
+  const [editorWarning, setEditorWarning] = useState<string | null>(null);
+  const editorWarningTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showEditorWarning = useCallback((message: string) => {
+    setEditorWarning(message);
+    if (editorWarningTimer.current) clearTimeout(editorWarningTimer.current);
+    editorWarningTimer.current = setTimeout(() => setEditorWarning(null), 3000);
+  }, []);
+  useEffect(() => () => clearTimeout(editorWarningTimer.current ?? undefined), []);
+
   const onConnectStart = useCallback((_: any, { nodeId, handleId, handleType }: any) => {
     connectingHandleRef.current = nodeId && handleId && handleType ? { nodeId, handleId, handleType } : null;
     connectFiredRef.current = false;
@@ -421,6 +554,14 @@ function GraphEditorContent({
     (connection) => {
       connectFiredRef.current = true;
       if (!connection.source || !connection.target || !connection.sourceHandle || !connection.targetHandle) return;
+      // A node wired into itself evaluates its input from its own previous
+      // output — never what someone dragging a wire means. Blocked outright;
+      // cycles ACROSS nodes are a deliberate engine feature and stay allowed,
+      // but they get a visible heads-up (see the warning chip below).
+      if (connection.source === connection.target) {
+        showEditorWarning("Un nœud ne peut pas être câblé dans lui-même.");
+        return;
+      }
       const withoutConflict = edges.filter(
         (e) => !(e.target === connection.target && e.targetHandle === connection.targetHandle),
       );
@@ -433,12 +574,15 @@ function GraphEditorContent({
         style: { stroke: edgeColor(nodes, connection.source!, connection.sourceHandle!), strokeWidth: EDGE_STROKE_WIDTH },
       };
       const nextEdges = [...withoutConflict, newEdge];
+      if (wouldCreateCycle(connection.source, connection.target, nextEdges)) {
+        showEditorWarning("Cycle créé — les nœuds du cycle lisent la valeur de la frame précédente.");
+      }
       const nextNodes = refreshDynamicSockets(nodes, nextEdges, graph.nodes, registry);
       setNodes(nextNodes);
       setEdges(nextEdges);
       commit(nextNodes, nextEdges);
     },
-    [commit, edges, graph.nodes, nodes, registry, setEdges, setNodes],
+    [commit, edges, graph.nodes, nodes, registry, setEdges, setNodes, showEditorWarning, wouldCreateCycle],
   );
 
   const [searchModalOpen, setSearchModalOpen] = useState(false);
@@ -549,8 +693,78 @@ function GraphEditorContent({
     [edges, graph, nodes, onGraphChange, registry, screenToFlowPosition, setEdges, setNodes],
   );
 
+  /**
+   * Dragging a group frame carries its members along: the member set is
+   * snapshotted (by position inside the rect) at drag start, onNodeDrag
+   * moves them live in flow state, and onNodeDragStop commits the new
+   * group rect + member positions as one undo step.
+   */
+  const groupDragRef = useRef<{
+    groupId: string;
+    origin: { x: number; y: number };
+    members: { id: string; x: number; y: number }[];
+  } | null>(null);
+
+  const onNodeDragStart = useCallback(
+    (_event: unknown, draggedNode: Node<GraphNodeData>) => {
+      if (!isGroupNode(draggedNode)) return;
+      const groupId = draggedNode.id.slice(GROUP_ID_PREFIX.length);
+      const group = (graph.groups ?? []).find((g) => g.id === groupId);
+      if (!group) return;
+      groupDragRef.current = {
+        groupId,
+        origin: { x: draggedNode.position.x, y: draggedNode.position.y },
+        members: nodes
+          .filter((n) => !isGroupNode(n) && collapsedGroupAt(graph.groups, n.position) === undefined)
+          .filter(
+            (n) =>
+              n.position.x >= group.rect.x &&
+              n.position.y >= group.rect.y &&
+              n.position.x <= group.rect.x + group.rect.width &&
+              n.position.y <= group.rect.y + group.rect.height,
+          )
+          .map((n) => ({ id: n.id, x: n.position.x, y: n.position.y })),
+      };
+    },
+    [graph.groups, nodes],
+  );
+
+  const onNodeDrag = useCallback((_event: unknown, draggedNode: Node<GraphNodeData>) => {
+    const drag = groupDragRef.current;
+    if (!drag || draggedNode.id !== `${GROUP_ID_PREFIX}${drag.groupId}`) return;
+    const dx = draggedNode.position.x - drag.origin.x;
+    const dy = draggedNode.position.y - drag.origin.y;
+    setNodes((nds) =>
+      nds.map((n) => {
+        const member = drag.members.find((m) => m.id === n.id);
+        return member ? { ...n, position: { x: member.x + dx, y: member.y + dy } } : n;
+      }),
+    );
+  }, [setNodes]);
+
   const onNodeDragStop = useCallback(
     (event: unknown, draggedNode: Node<GraphNodeData>, draggedNodes?: Node<GraphNodeData>[]) => {
+      if (isGroupNode(draggedNode)) {
+        const drag = groupDragRef.current;
+        groupDragRef.current = null;
+        if (!drag || draggedNode.id !== `${GROUP_ID_PREFIX}${drag.groupId}`) return;
+        const dx = draggedNode.position.x - drag.origin.x;
+        const dy = draggedNode.position.y - drag.origin.y;
+        if (dx === 0 && dy === 0) return;
+        const nextGroups = (graph.groups ?? []).map((g) =>
+          g.id === drag.groupId ? { ...g, rect: { ...g.rect, x: g.rect.x + dx, y: g.rect.y + dy } } : g,
+        );
+        const memberPositions = new Map(drag.members.map((m) => [m.id, { x: m.x + dx, y: m.y + dy }]));
+        const updatedGraphNodes = graph.nodes.map((n) => {
+          const moved = memberPositions.get(n.id);
+          return moved ? { ...n, position: moved } : n;
+        });
+        onGraphChange?.({
+          ...toGraph(updatedGraphNodes, nodes, edges, graph.keyframes, graph.markers, graph.exposedParams, nextGroups),
+          groups: nextGroups,
+        });
+        return;
+      }
       if (event instanceof MouseEvent && event.shiftKey) {
         const nodesById = new Map(nodes.map((n) => [n.id, n]));
         const dimensionsOf = (n: Node<GraphNodeData>) => ({
@@ -619,9 +833,11 @@ function GraphEditorContent({
         const newPos = draggedMap.get(n.id);
         return newPos ? { ...n, position: { x: newPos.x, y: newPos.y } } : n;
       });
-      onGraphChange?.(toGraph(updatedNodes, nodes, edges, graph.keyframes, graph.markers, graph.exposedParams));
+      onGraphChange?.(
+        toGraph(updatedNodes, nodes, edges, graph.keyframes, graph.markers, graph.exposedParams, graph.groups),
+      );
     },
-    [commit, edges, graph.keyframes, graph.markers, graph.nodes, nodes, onGraphChange, registry, setEdges, setNodes],
+    [commit, edges, graph.groups, graph.keyframes, graph.markers, graph.nodes, nodes, onGraphChange, registry, setEdges, setNodes],
   );
 
   const onSelectionChange = useCallback(
@@ -1012,6 +1228,30 @@ function GraphEditorContent({
       } else if (isCmdOrCtrl && !isShift && e.key.toLowerCase() === "a") {
         e.preventDefault();
         setNodes((nds) => nds.map((n) => ({ ...n, selected: true })));
+      } else if (isCmdOrCtrl && !isShift && code === "KeyG") {
+        e.preventDefault();
+        // Group the selection: one frame computed from the selected real
+        // nodes' bounds, cycled through the palette colors. Membership is
+        // positional, so the frame simply covers what was selected.
+        const selected = nodes.filter((n) => n.selected && !isGroupNode(n));
+        if (selected.length === 0) return;
+        const minX = Math.min(...selected.map((n) => n.position.x)) - GROUP_PADDING_X;
+        const minY = Math.min(...selected.map((n) => n.position.y)) - GROUP_PADDING_TOP;
+        const maxX =
+          Math.max(...selected.map((n) => n.position.x + (n.measured?.width ?? DEFAULT_NODE_WIDTH))) + GROUP_PADDING_X;
+        const maxY =
+          Math.max(...selected.map((n) => n.position.y + (n.measured?.height ?? DEFAULT_NODE_HEIGHT))) + GROUP_PADDING_BOTTOM;
+        const group: NodeGroup = {
+          id: randomId(),
+          title: "Groupe",
+          color: GROUP_COLORS[(graph.groups?.length ?? 0) % GROUP_COLORS.length],
+          rect: { x: minX, y: minY, width: Math.max(140, maxX - minX), height: Math.max(100, maxY - minY) },
+        };
+        const nextGroups = [...(graph.groups ?? []), group];
+        onGraphChange?.({
+          ...toGraph(graph.nodes, nodes, edges, graph.keyframes, graph.markers, graph.exposedParams, nextGroups),
+          groups: nextGroups,
+        });
       } else if (e.key === "Delete" || e.key === "Backspace") {
         const selNodes = nodes.filter((n) => n.selected);
         const selEdges = edges.filter((ed) => ed.selected);
@@ -1024,15 +1264,17 @@ function GraphEditorContent({
         }
       }
     };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+  window.addEventListener("keydown", handleKeyDown);
+  return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
     addNode,
     copySelected,
     duplicateSelected,
     edges,
+    graph,
     nodes,
     onEdgesDelete,
+    onGraphChange,
     onNodesDelete,
     pasteClipboard,
     setNodes,
@@ -1082,6 +1324,7 @@ function GraphEditorContent({
       <NodePalette nodes={paletteNodes} onAddNode={addNode} />
       <div className="graph-editor-canvas">
         <QuickAddToolbar onAddNode={addNode} />
+        {editorWarning && <div className="graph-editor-warning">{editorWarning}</div>}
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -1096,6 +1339,8 @@ function GraphEditorContent({
           isValidConnection={isValidConnection}
           onEdgeContextMenu={onEdgeContextMenu}
           onEdgeClick={onEdgeClick}
+          onNodeDragStart={onNodeDragStart}
+          onNodeDrag={onNodeDrag}
           onNodeDragStop={onNodeDragStop}
           onNodeClick={onNodeClick}
           onPaneClick={onPaneClick}
