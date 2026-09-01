@@ -262,6 +262,8 @@ const CURVE_VISIBLE_INPUT = { id: "visible", label: "Visible", type: "value" as 
 
 const CURVE_TRANSFORM_DEFAULTS = {
   visible: 1,
+  showPivot: false,
+  pivot: new THREE.Vector3(0, 0, 0),
   location: new THREE.Vector3(0, 0, 0),
   rotation: new THREE.Vector3(0, 0, 0),
   scale: new THREE.Vector3(1, 1, 1),
@@ -273,6 +275,8 @@ function curveTransformFields(): ParamFieldDef[] {
     { id: "location", label: "Location", kind: "vector", group: "Transform" },
     { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true, group: "Transform" },
     { id: "scale", label: "Scale", kind: "vector", group: "Transform" },
+    { id: "showPivot", label: "Show Pivot", kind: "boolean", group: "Transform" },
+    { id: "pivot", label: "Pivot Offset", kind: "vector", group: "Transform" },
   ];
 }
 
@@ -1086,12 +1090,16 @@ export const CURVE_TO_MESH_NODE: NodeDefinition = {
     surfaceRings: 8,
     surfaceIterations: 60,
     showCurve: 1,
+    showPivot: false,
+    pivot: new THREE.Vector3(0, 0, 0),
   },
   dynamicParamFields: (instance) => [
     { id: "visible", label: "Visible", kind: "boolean", group: "Transform" },
     { id: "location", label: "Location", kind: "vector", group: "Transform" },
     { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true, group: "Transform" },
     { id: "scale", label: "Scale", kind: "vector", group: "Transform" },
+    { id: "showPivot", label: "Show Pivot", kind: "boolean", group: "Transform" },
+    { id: "pivot", label: "Pivot Offset", kind: "vector", group: "Transform" },
 
     { id: "thickness", label: "Base Thickness", kind: "number", step: 0.02, group: "Geometry" },
     { id: "startProgress", label: "Start %", kind: "number", step: 0.01, group: "Geometry" },
@@ -1573,12 +1581,16 @@ export const CURVES_TO_MESH_NODE: NodeDefinition = {
     uvOffsetY: 0,
     profile: DEFAULT_PROFILE_POINTS,
     doubleSided: true,
+    showPivot: false,
+    pivot: new THREE.Vector3(0, 0, 0),
   },
   dynamicParamFields: () => [
     { id: "visible", label: "Visible", kind: "boolean", group: "Transform" },
     { id: "location", label: "Location", kind: "vector", group: "Transform" },
     { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true, group: "Transform" },
     { id: "scale", label: "Scale", kind: "vector", group: "Transform" },
+    { id: "showPivot", label: "Show Pivot", kind: "boolean", group: "Transform" },
+    { id: "pivot", label: "Pivot Offset", kind: "vector", group: "Transform" },
     { id: "thickness", label: "Base Thickness", kind: "number", step: 0.02, group: "Geometry" },
     { id: "startProgress", label: "Start %", kind: "number", step: 0.01, group: "Geometry" },
     { id: "endProgress", label: "End %", kind: "number", step: 0.01, group: "Geometry" },

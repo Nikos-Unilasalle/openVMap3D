@@ -133,4 +133,13 @@ describe("computeGizmoWriteback — offset target (a Matrix Transform node)", ()
 
     expect(patch.location?.x).toBeCloseTo(6);
   });
+
+  test("allows assigning position and axis directly on TransformPatch", () => {
+    const patch: import("./gizmoWriteback").TransformPatch = {
+      position: new THREE.Vector3(1, 2, 3),
+      axis: new THREE.Vector3(0, 1, 0),
+    };
+    expect(patch.position?.toArray()).toEqual([1, 2, 3]);
+    expect(patch.axis?.toArray()).toEqual([0, 1, 0]);
+  });
 });

@@ -67,6 +67,7 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
   outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: {
     visible: 1,
+    showPivot: false,
     pivot: new THREE.Vector3(0, 0, 0),
     location: new THREE.Vector3(0, 0, 0),
     rotation: new THREE.Vector3(0, 0, 0),
@@ -215,6 +216,7 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
     { id: "location", label: "Location", kind: "vector" },
     { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true },
     { id: "scale", label: "Scale", kind: "vector" },
+    { id: "showPivot", label: "Show Pivot", kind: "boolean", group: "Transform" },
     { id: "pivot", label: "Pivot", kind: "vector", group: "Transform" },
     { id: "color", label: "Color (fallback)", kind: "color" },
     { id: "emissive", label: "Emissive (Glow)", kind: "color" },

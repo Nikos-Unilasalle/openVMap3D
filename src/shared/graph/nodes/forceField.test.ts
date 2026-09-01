@@ -38,4 +38,34 @@ describe("FORCE_FIELD_NODE", () => {
     expect(field.position).toEqual(new THREE.Vector3(1, 2, 3));
     expect(field.strength).toBe(9);
   });
+
+  it("transforms position and axis when a matrix input is wired", () => {
+    // Translation (10, 0, 0) and 90° Y rotation
+    const matrix = new THREE.Matrix4().compose(
+      new THREE.Vector3(10, 0, 0),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI / 2, 0)),
+      new THREE.Vector3(1, 1, 1),
+    );
+
+    const res = FORCE_FIELD_NODE.evaluate(
+      {
+        matrix,
+        position: new THREE.Vector3(0, 0, 2),
+        axis: new THREE.Vector3(0, 0, 1),
+      },
+      FORCE_FIELD_NODE.defaultParams,
+      CTX,
+    );
+    const field = res.field as ForceFieldDescriptor;
+
+    // (0, 0, 2) rotated 90° about Y is (2, 0, 0), translated by (10, 0, 0) is (12, 0, 0)
+    expect(field.position.x).toBeCloseTo(12, 5);
+    expect(field.position.y).toBeCloseTo(0, 5);
+    expect(field.position.z).toBeCloseTo(0, 5);
+
+    // axis (0, 0, 1) rotated 90° about Y becomes (1, 0, 0)
+    expect(field.axis.x).toBeCloseTo(1, 5);
+    expect(field.axis.y).toBeCloseTo(0, 5);
+    expect(field.axis.z).toBeCloseTo(0, 5);
+  });
 });

@@ -137,4 +137,18 @@ describe("inherit pivot modes", () => {
     const expected = new THREE.Matrix4().multiplyMatrices(scalingParent(2), composeTransform(CHILD_AT_3, ZERO, ONE));
     for (let i = 0; i < 16; i++) expect(got.elements[i]).toBeCloseTo(expected.elements[i], 10);
   });
+
+  it("rotates geometry around a custom pivot offset", () => {
+    // Rotating 90° about pivot (1, 0, 0)
+    const pivot = new THREE.Vector3(1, 0, 0);
+    const rot = new THREE.Vector3(0, Math.PI / 2, 0);
+    const matrix = composeNativeMatrix(null, ZERO, rot, ONE, { pivot });
+    
+    // A point at (2, 0, 0) relative to local origin is 1 unit from pivot along +X.
+    // After 90° rotation around pivot along +Y, it should be at pivot (1, 0, 0) + (0, 0, -1) = (1, 0, -1)
+    const testPoint = new THREE.Vector3(2, 0, 0).applyMatrix4(matrix);
+    expect(testPoint.x).toBeCloseTo(1, 5);
+    expect(testPoint.y).toBeCloseTo(0, 5);
+    expect(testPoint.z).toBeCloseTo(-1, 5);
+  });
 });

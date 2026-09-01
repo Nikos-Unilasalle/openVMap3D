@@ -540,6 +540,8 @@ const NATIVE_TRANSFORM_PARAM_FIELDS: ParamFieldDef[] = [
   { id: "location", label: "Location", kind: "vector", group: "Transform" },
   { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true, group: "Transform" },
   { id: "scale", label: "Scale", kind: "vector", group: "Transform" },
+  { id: "showPivot", label: "Show Pivot", kind: "boolean", group: "Transform" },
+  { id: "pivot", label: "Pivot Offset", kind: "vector", group: "Transform" },
   // Only meaningful with something wired into Matrix; harmless otherwise,
   // which is why they sit with the transform rather than in a mode of their
   // own. See InheritPivot in transform.ts.
@@ -576,7 +578,10 @@ export function buildPrimitiveDynamicParamFields(extraFields: ParamFieldDef[] = 
           const url = URL.createObjectURL(blob);
           const texture = new THREE.TextureLoader().load(
             url,
-            () => {
+            (loadedTex) => {
+              loadedTex.minFilter = THREE.LinearMipmapLinearFilter;
+              loadedTex.magFilter = THREE.LinearFilter;
+              loadedTex.generateMipmaps = true;
               URL.revokeObjectURL(url);
               textureAlphaCache.delete(texture);
               const mesh = meshCache.get(nodeId);
@@ -674,6 +679,8 @@ export const COMMON_DEFAULT_PARAMS = {
   location: new THREE.Vector3(0, 0, 0),
   rotation: new THREE.Vector3(0, 0, 0),
   scale: new THREE.Vector3(1, 1, 1),
+  showPivot: false,
+  pivot: new THREE.Vector3(0, 0, 0),
   // "parent" is plain scene-graph parenting — the behaviour before these
   // existed, so every saved scene keeps rendering identically.
   inheritRotation: "parent",

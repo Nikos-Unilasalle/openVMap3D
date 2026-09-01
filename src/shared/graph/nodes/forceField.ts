@@ -29,6 +29,7 @@ export const FORCE_FIELD_NODE: NodeDefinition = {
   label: "Force Field",
   category: "particles",
   inputs: [
+    { id: "matrix", label: "Matrix", type: "matrix" },
     { id: "position", label: "Position", type: "vector" },
     { id: "axis", label: "Axis / Direction", type: "vector" },
     { id: "strength", label: "Strength", type: "value" },
@@ -57,10 +58,20 @@ export const FORCE_FIELD_NODE: NodeDefinition = {
     { id: "speed", label: "Speed", kind: "number", step: 0.05, group: "Turbulence" },
   ],
   evaluate: (inputs, params): { field: ForceFieldDescriptor } => {
+    const basePos = asVector(inputs.position, asVector(params.position, new THREE.Vector3()));
+    const baseAxis = asVector(inputs.axis, asVector(params.axis, new THREE.Vector3(0, 1, 0)));
+    const pos = basePos.clone();
+    const axis = baseAxis.clone().normalize();
+
+    if (inputs.matrix instanceof THREE.Matrix4) {
+      pos.applyMatrix4(inputs.matrix);
+      axis.transformDirection(inputs.matrix).normalize();
+    }
+
     const field: ForceFieldDescriptor = {
       type: asFieldType(params.fieldType),
-      position: asVector(inputs.position, asVector(params.position, new THREE.Vector3())),
-      axis: asVector(inputs.axis, asVector(params.axis, new THREE.Vector3(0, 1, 0))),
+      position: pos,
+      axis,
       strength: numberInput(inputs.strength, params.strength, 2),
       radius: numberInput(inputs.radius, params.radius, 0),
       scale: numberInput(inputs.scale, params.scale, 1),

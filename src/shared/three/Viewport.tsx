@@ -1043,6 +1043,40 @@ export function Viewport({
     decalProxy.visible = false;
     let decalProxyNodeId: string | null = null;
 
+    // Force Field 3D proxy: shows interactive position & direction helper for particles/force-field
+    const forceFieldProxy = new THREE.Object3D();
+    const forceFieldCoreGeo = new THREE.SphereGeometry(0.18, 16, 16);
+    const forceFieldCoreMat = new THREE.MeshBasicMaterial({ color: 0xec4899, depthWrite: false });
+    const forceFieldCore = new THREE.Mesh(forceFieldCoreGeo, forceFieldCoreMat);
+    const forceFieldRingGeo = new THREE.RingGeometry(0.4, 0.45, 32);
+    const forceFieldRingMat = new THREE.MeshBasicMaterial({ color: 0xec4899, side: THREE.DoubleSide, depthWrite: false });
+    const forceFieldRing1 = new THREE.Mesh(forceFieldRingGeo, forceFieldRingMat);
+    forceFieldRing1.rotation.x = Math.PI / 2;
+    const forceFieldRing2 = new THREE.Mesh(forceFieldRingGeo, forceFieldRingMat);
+    forceFieldRing2.rotation.y = Math.PI / 2;
+    const forceFieldArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 0), 1.2, 0xec4899, 0.3, 0.15);
+    forceFieldProxy.add(forceFieldCore, forceFieldRing1, forceFieldRing2, forceFieldArrow);
+    forceFieldProxy.visible = false;
+    let forceFieldProxyNodeId: string | null = null;
+
+    // Yellow Pivot Cross Helper: displayed above geometry (depthTest: false) for objects with showPivot === true
+    const pivotCrossGroup = new THREE.Group();
+    const PIVOT_CROSS_SIZE = 0.35;
+    const pivotCrossPositions = new Float32Array([
+      -PIVOT_CROSS_SIZE, 0, 0,  PIVOT_CROSS_SIZE, 0, 0,
+      0, -PIVOT_CROSS_SIZE, 0,  0, PIVOT_CROSS_SIZE, 0,
+      0, 0, -PIVOT_CROSS_SIZE,  0, 0, PIVOT_CROSS_SIZE,
+    ]);
+    const pivotCrossGeo = new THREE.BufferGeometry();
+    pivotCrossGeo.setAttribute("position", new THREE.BufferAttribute(pivotCrossPositions, 3));
+    const pivotCrossMat = new THREE.LineBasicMaterial({
+      color: 0xffe600,
+      depthTest: false,
+      depthWrite: false,
+      transparent: true,
+    });
+    const pivotCrossPool: THREE.LineSegments[] = [];
+
     if (!outputMode) {
       editorUiScene.add(curveHandles.group);
       editorUiScene.add(pointsSelectionHandles.group);
@@ -1051,6 +1085,8 @@ export function Viewport({
       editorUiScene.add(sliceProxy);
       editorUiScene.add(clipBoxProxy);
       editorUiScene.add(decalProxy);
+      editorUiScene.add(forceFieldProxy);
+      editorUiScene.add(pivotCrossGroup);
       // The face-selection highlight lives in the *main* scene (not the
       // editor overlay, which clears depth and would show every selected face
       // through the object) so it is occluded like the surface it sits on.
@@ -1307,6 +1343,16 @@ export function Viewport({
             location: object.position.clone(),
             rotation: new THREE.Vector3(euler.x, euler.y, euler.z),
             scale: new THREE.Vector3(Math.abs(object.scale.x), Math.abs(object.scale.y), Math.abs(object.scale.z)),
+          });
+          return;
+        }
+
+        // Force Field's 3D proxy: translate moves `position`, rotate turns `axis`
+        if (object === forceFieldProxy && forceFieldProxyNodeId && onTransformChangeRef.current) {
+          const direction = new THREE.Vector3(0, 1, 0).applyQuaternion(object.quaternion).normalize();
+          onTransformChangeRef.current(forceFieldProxyNodeId, {
+            position: object.position.clone(),
+            axis: direction,
           });
           return;
         }
@@ -2680,6 +2726,58 @@ export function Viewport({
         decalProxyNodeId = null;
       }
 
+      // Force Field proxy — position and axis gizmo
+      if (!outputMode && selectedNodeForPivot?.type === "particles/force-field") {
+        forceFieldProxyNodeId = selectedNodeForPivot.id;
+        forceFieldProxy.visible = true;
+        if (!transformControls?.dragging || transformControls.object !== forceFieldProxy) {
+          const pos = asVector3(selectedNodeForPivot.params.position, new THREE.Vector3());
+          const axis = asVector3(selectedNodeForPivot.params.axis, new THREE.Vector3(0, 1, 0)).clone().normalize();
+          if (axis.lengthSq() < 1e-4) axis.set(0, 1, 0);
+          forceFieldProxy.position.copy(pos);
+          forceFieldProxy.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis);
+        }
+      } else if (forceFieldProxyNodeId) {
+        forceFieldProxy.visible = false;
+        forceFieldProxyNodeId = null;
+      }
+
+      // Update yellow pivot crosses for any object with showPivot === true
+      if (!outputMode) {
+        let activeCrossCount = 0;
+        for (const node of graphRef.current.nodes) {
+          if (node.params?.showPivot) {
+            let cross = pivotCrossPool[activeCrossCount];
+            if (!cross) {
+              cross = new THREE.LineSegments(pivotCrossGeo, pivotCrossMat);
+              cross.renderOrder = 99999;
+              pivotCrossPool.push(cross);
+              pivotCrossGroup.add(cross);
+            }
+            cross.visible = true;
+
+            // Find object's world matrix
+            let targetObj: THREE.Object3D | undefined;
+            scene.traverse((obj) => {
+              if (!targetObj && obj.userData?.nodeId === node.id) targetObj = obj;
+            });
+            const pivOffset = asVector3(node.params?.pivot, new THREE.Vector3());
+            const foundObj: THREE.Object3D | undefined = targetObj;
+            if (foundObj) {
+              foundObj.updateWorldMatrix(true, false);
+              cross.position.copy(pivOffset).applyMatrix4(foundObj.matrixWorld);
+            } else {
+              const loc = asVector3(node.params?.location, new THREE.Vector3());
+              cross.position.copy(loc).add(pivOffset);
+            }
+            activeCrossCount++;
+          }
+        }
+        for (let i = activeCrossCount; i < pivotCrossPool.length; i++) {
+          pivotCrossPool[i].visible = false;
+        }
+      }
+
       // Move/rotate/scale gizmo: attach to selected mesh, Empty, Light,
       // to the picked control point / multi-point centroid proxy, or to the
       // pivot marker when a Pivot Transform is selected
@@ -2698,6 +2796,8 @@ export function Viewport({
           pickedCurveHandle = clipBoxProxy;
         } else if (decalProxyNodeId) {
           pickedCurveHandle = decalProxy;
+        } else if (forceFieldProxyNodeId) {
+          pickedCurveHandle = forceFieldProxy;
         }
       }
 
@@ -3079,6 +3179,14 @@ export function Viewport({
       decalProxyEdges.material.dispose();
       decalProxyFace.geometry.dispose();
       decalProxyFace.material.dispose();
+      forceFieldProxy.removeFromParent();
+      forceFieldCoreGeo.dispose();
+      forceFieldCoreMat.dispose();
+      forceFieldRingGeo.dispose();
+      forceFieldRingMat.dispose();
+      pivotCrossGroup.removeFromParent();
+      pivotCrossGeo.dispose();
+      pivotCrossMat.dispose();
       controls.dispose();
       // Per-viewport editor furniture (grid/axes, corner gizmo, zoom-scrub
       // bar) is not part of the shared per-node caches — it is built fresh for

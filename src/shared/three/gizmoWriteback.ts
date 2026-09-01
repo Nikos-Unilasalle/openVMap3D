@@ -31,6 +31,9 @@ export interface TransformPatch {
   direction?: THREE.Vector3;
   /** Clip Box's box extents — written directly by its dedicated viewport proxy, which also drives `location`/`rotation` above (see Viewport.tsx). */
   size?: THREE.Vector3;
+  /** Force Field position & axis — written directly by its dedicated viewport proxy (see Viewport.tsx). */
+  position?: THREE.Vector3;
+  axis?: THREE.Vector3;
 }
 
 export interface GizmoWritebackInput {

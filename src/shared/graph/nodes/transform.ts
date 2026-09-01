@@ -135,20 +135,7 @@ export function composeNativeMatrix(
   scale: unknown,
   params?: Record<string, unknown>,
 ): THREE.Matrix4 {
-  const parent = wiredMatrix instanceof THREE.Matrix4 ? wiredMatrix : new THREE.Matrix4();
-  const loc = asVector3(location, ZERO);
-  const rot = asVector3(rotation, ZERO);
-  const scl = asVector3(scale, ONE);
-  const inherit = readInheritModes(params);
-
-  if (inherit.rotation === "parent" && inherit.scale === "parent") {
-    return new THREE.Matrix4().multiplyMatrices(parent, composeTransform(loc, rot, scl));
-  }
-
-  const resolvedLoc = resolveLocationVector(loc);
-  const localTranslation = new THREE.Matrix4().makeTranslation(resolvedLoc.x, resolvedLoc.y, resolvedLoc.z);
-  const localRotScale = composeTransform(ZERO, rot, scl);
-  return applyInherited(parent, localTranslation, localRotScale, inherit);
+  return composeNativeMatrixWithPivot(wiredMatrix, location, rotation, scale, params?.pivot, params);
 }
 
 /**
