@@ -45,6 +45,14 @@ export interface GizmoWritebackInput {
    * evaluate-time fallback.
    */
   upstreamMatrix: THREE.Matrix4 | null;
+  /**
+   * The node's displaced "Show Pivot" vector, when it has one. A native
+   * object composes T(loc)·T(P)·R·S·T(-P), whose decomposition reads
+   * location as `loc + P - R·S·P` (rotation and scale decompose exactly) —
+   * the pivot is peeled back off so the location param keeps meaning
+   * "object origin" and gizmo drags don't drift.
+   */
+  pivot?: THREE.Vector3;
   /** Socket ids with a wire into the node being written — those are read-only. */
   wiredSockets: ReadonlySet<string>;
 }
@@ -69,7 +77,7 @@ export interface GizmoWritebackInput {
  *    animation happened to be showing that frame.
  */
 export function computeGizmoWriteback(input: GizmoWritebackInput): TransformPatch {
-  const { target, mode, object, upstreamMatrix, wiredSockets } = input;
+  const { target, mode, object, upstreamMatrix, pivot, wiredSockets } = input;
   const patch: TransformPatch = {};
 
   if (target.kind === "absolute") {
@@ -101,7 +109,13 @@ export function computeGizmoWriteback(input: GizmoWritebackInput): TransformPatc
   const scale = new THREE.Vector3();
   solved.decompose(location, quaternion, scale);
 
-  assign(patch, mode, wiredSockets, location, quaternion, scale);
+  if (pivot) {
+    location
+      .add(new THREE.Vector3(pivot.x * scale.x, pivot.y * scale.y, pivot.z * scale.z).applyQuaternion(quaternion))
+      .sub(pivot);
+  }
+
+  assign(patch, mode, wiredSockets, location, quaternion, scale, pivot);
   return patch;
 }
 
@@ -112,6 +126,7 @@ function assign(
   location: THREE.Vector3,
   quaternion: THREE.Quaternion,
   scale: THREE.Vector3,
+  pivot?: THREE.Vector3,
 ): void {
   if (mode === "translate" && !wiredSockets.has("location")) {
     patch.location = location;
@@ -122,5 +137,14 @@ function assign(
   }
   if (mode === "scale" && !wiredSockets.has("scale")) {
     patch.scale = scale;
+  }
+  // With a displaced pivot, rotate and scale drags change where the
+  // sandwich's translation lands — the recomposed location has to be
+  // written alongside or the object jumps the moment the graph recomposes.
+  // Location is an independent, exactly-computed value here, so co-writing
+  // it has none of the Euler/scale round-trip risks the comment above
+  // guards against.
+  if (pivot && mode !== "translate" && !wiredSockets.has("location")) {
+    patch.location = location;
   }
 }

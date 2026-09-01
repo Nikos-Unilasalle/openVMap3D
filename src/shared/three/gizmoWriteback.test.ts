@@ -134,3 +134,92 @@ describe("computeGizmoWriteback — offset target (a Matrix Transform node)", ()
     expect(patch.location?.x).toBeCloseTo(6);
   });
 });
+
+describe("computeGizmoWriteback — displaced Show Pivot", () => {
+  // The object composes T(loc)·T(P)·R·S·T(-P): its decomposition reads
+  // location as loc + P - R·S·P. The pivot must be peeled back off so a
+  // gizmo drag doesn't drift the object.
+  function pivotedMatrix(loc: THREE.Vector3, rotY: number, s: number, p: THREE.Vector3) {
+    const sandwich = new THREE.Matrix4()
+      .makeTranslation(loc.x, loc.y, loc.z)
+      .multiply(new THREE.Matrix4().makeTranslation(p.x, p.y, p.z))
+      .multiply(new THREE.Matrix4().makeRotationY(rotY))
+      .multiply(new THREE.Matrix4().makeScale(s, s, s))
+      .multiply(new THREE.Matrix4().makeTranslation(-p.x, -p.y, -p.z));
+    return sandwich;
+  }
+
+  const P = new THREE.Vector3(0, 0, 2);
+  const LOC = new THREE.Vector3(3, 1, 0);
+  const ROT = Math.PI / 2;
+  const S = 2;
+
+  test("a rotate drag's params recompose into EXACTLY the dragged matrix (no drift)", () => {
+    // A gizmo rotation premultiplies a world rotation onto the object's
+    // matrix. The write-back must return params that, run back through the
+    // pivot sandwich, reproduce that matrix bit for bit - before this fix
+    // the location kept its pre-rotation value and the object jumped.
+    const before = pivotedMatrix(LOC, ROT, S, P);
+    const dragged = new THREE.Matrix4().makeRotationY(ROT).multiply(before);
+
+    const patch = computeGizmoWriteback({
+      target: { kind: "native", objectNodeId: "box", deltaSourceNodeId: null },
+      mode: "rotate",
+      object: draggedTo(dragged),
+      upstreamMatrix: null,
+      pivot: P,
+      wiredSockets: NOTHING_WIRED,
+    });
+
+    expect(patch.location).toBeDefined();
+    expect(patch.rotation).toBeDefined();
+
+    const rotation = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(patch.rotation!.x, patch.rotation!.y, patch.rotation!.z),
+    );
+    const recomposed = new THREE.Matrix4()
+      .makeTranslation(patch.location!.x, patch.location!.y, patch.location!.z)
+      .multiply(new THREE.Matrix4().makeTranslation(P.x, P.y, P.z))
+      .multiply(new THREE.Matrix4().makeRotationFromQuaternion(rotation))
+      .multiply(new THREE.Matrix4().makeScale(S, S, S))
+      .multiply(new THREE.Matrix4().makeTranslation(-P.x, -P.y, -P.z));
+
+    for (let i = 0; i < 16; i++) {
+      expect(recomposed.elements[i]).toBeCloseTo(dragged.elements[i], 5);
+    }
+  });
+
+  test("a translate drag writes location + drag delta, not the sandwich's translation", () => {
+    const matrix = pivotedMatrix(LOC, ROT, S, P);
+
+    const patch = computeGizmoWriteback({
+      target: { kind: "native", objectNodeId: "box", deltaSourceNodeId: null },
+      mode: "translate",
+      object: draggedTo(matrix),
+      upstreamMatrix: null,
+      pivot: P,
+      wiredSockets: NOTHING_WIRED,
+    });
+
+    expect(patch.location?.x).toBeCloseTo(LOC.x);
+    expect(patch.location?.y).toBeCloseTo(LOC.y);
+    expect(patch.location?.z).toBeCloseTo(LOC.z);
+  });
+
+  test("without the pivot the location reads as the drifted sandwich translation (the old bug)", () => {
+    const matrix = pivotedMatrix(LOC, ROT, S, P);
+
+    const patch = computeGizmoWriteback({
+      target: { kind: "native", objectNodeId: "box", deltaSourceNodeId: null },
+      mode: "translate",
+      object: draggedTo(matrix),
+      upstreamMatrix: null,
+      wiredSockets: NOTHING_WIRED,
+    });
+
+    // loc + P - R·S·P with R = 90°Y, S = 2, P = (0,0,2):
+    // R·S·P = (4,0,0) → translation = (3,1,0) + (0,0,2) - (4,0,0) = (-1,1,2).
+    expect(patch.location?.x).toBeCloseTo(-1);
+    expect(patch.location?.z).toBeCloseTo(2);
+  });
+});

@@ -1410,11 +1410,26 @@ export function Viewport({
               : null;
         const upstreamResult = upstreamNodeId ? latestResults?.get(upstreamNodeId)?.matrix : undefined;
 
+        // A displaced Show Pivot puts the pivot sandwich into the object's
+        // matrix; the write-back must peel it back off the decomposed
+        // location or every drag drifts the object.
+        const gizmoTarget = attachedGizmoTarget;
+        const gizmoPivot =
+          gizmoTarget.kind === "native"
+            ? (() => {
+                const owner = graphRef.current.nodes.find((n) => n.id === gizmoTarget.objectNodeId);
+                return owner && owner.params.pivot instanceof THREE.Vector3
+                  ? (owner.params.pivot as THREE.Vector3)
+                  : undefined;
+              })()
+            : undefined;
+
         const patch = computeGizmoWriteback({
           target: attachedGizmoTarget,
           mode: transformModeRef.current,
           object,
           upstreamMatrix: upstreamResult instanceof THREE.Matrix4 ? upstreamResult : null,
+          pivot: gizmoPivot,
           wiredSockets: new Set(
             graphRef.current.connections.filter((c) => c.toNode === targetNodeId).map((c) => c.toSocket),
           ),
