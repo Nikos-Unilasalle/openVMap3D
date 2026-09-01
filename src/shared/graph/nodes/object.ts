@@ -508,9 +508,61 @@ export const COMMON_PRIMITIVE_OUTPUTS = [
  * Cloned, so a downstream node mutating the matrix cannot move the object
  * behind its back.
  */
-export function primitiveOutputs(object: THREE.Object3D): Record<string, unknown> {
+export function primitiveOutputs(object: THREE.Object3D, params?: Record<string, unknown>): Record<string, unknown> {
+  if (params) applyPivotCross(object, params);
   if (object.matrixAutoUpdate) object.updateMatrix();
   return { geometry: object, matrix: object.matrix.clone() };
+}
+
+/** Side length of the "Show Pivot" cross, in world units. */
+const PIVOT_CROSS_SIZE = 0.5;
+
+const pivotCrossCache = createNodeCache<THREE.LineSegments>((cross) => {
+  cross.geometry.dispose();
+  (cross.material as THREE.Material).dispose();
+});
+
+function pivotCross(nodeId: string): THREE.LineSegments {
+  let cross = pivotCrossCache.get(nodeId);
+  if (!cross) {
+    const s = PIVOT_CROSS_SIZE;
+    const geometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(-s, 0, 0), new THREE.Vector3(s, 0, 0),
+      new THREE.Vector3(0, -s, 0), new THREE.Vector3(0, s, 0),
+      new THREE.Vector3(0, 0, -s), new THREE.Vector3(0, 0, s),
+    ]);
+    const material = new THREE.LineBasicMaterial({ color: 0xffd54a });
+    cross = new THREE.LineSegments(geometry, material);
+    // Editor-only overlay: the viewport hides isHelper objects in the
+    // output / camera view, and the Outline pass only ever targets meshes.
+    cross.userData.isHelper = true;
+    cross.userData.isPivotCross = true;
+    cross.userData.nodeId = nodeId;
+    cross.renderOrder = 999;
+    pivotCrossCache.set(nodeId, cross);
+  }
+  return cross;
+}
+
+/**
+ * "Show Pivot": a plain yellow cross at the node's `pivot` vector (local
+ * space — the cross is a child of the object, so it rides every transform).
+ * Keyframable like any param, since the cross re-reads `params.pivot` every
+ * evaluate.
+ */
+function applyPivotCross(object: THREE.Object3D, params: Record<string, unknown>): void {
+  const nodeId = typeof object.userData.nodeId === "string" ? object.userData.nodeId : "";
+  if (!nodeId) return;
+  const existing = object.children.find((child) => child.userData.isPivotCross);
+  const show = toBoolean(params.showPivot ?? 0);
+  if (!show) {
+    existing?.removeFromParent();
+    return;
+  }
+  const cross = pivotCross(nodeId);
+  if (!existing) object.add(cross);
+  const pivot = params.pivot instanceof THREE.Vector3 ? params.pivot : new THREE.Vector3();
+  cross.position.copy(pivot);
 }
 
 export const COMMON_MATERIAL_PARAM_FIELDS: ParamFieldDef[] = [
@@ -573,6 +625,8 @@ const NATIVE_TRANSFORM_PARAM_FIELDS: ParamFieldDef[] = [
 export function buildPrimitiveDynamicParamFields(extraFields: ParamFieldDef[] = []): () => ParamFieldDef[] {
   return () => [
     ...NATIVE_TRANSFORM_PARAM_FIELDS,
+    { id: "showPivot", label: "Show Pivot", kind: "boolean" },
+    { id: "pivot", label: "Pivot", kind: "vector" },
     ...extraFields,
     {
       id: "texturePath",
@@ -712,6 +766,8 @@ export const COMMON_DEFAULT_PARAMS = {
   opacity: 1.0,
   transmission: 0,
   thickness: 0.5,
+  showPivot: 0,
+  pivot: new THREE.Vector3(0, 0, 0),
 };
 
 /**
@@ -774,7 +830,7 @@ export const OBJECT_BOX_NODE: NodeDefinition = {
     const texParams = extractTextureParams(inputs, params, ctx.nodeId);
     applyMaterialParams(mesh, matParams, THREE.FrontSide, texParams);
 
-    return primitiveOutputs(mesh);
+    return primitiveOutputs(mesh, params);
   },
 };
 
@@ -969,7 +1025,7 @@ export const OBJECT_PLANE_NODE: NodeDefinition = {
     const defaultSide: THREE.Side = depth > 0 ? THREE.FrontSide : THREE.DoubleSide;
     applyMaterialParams(mesh, matParams, defaultSide, texParams);
 
-    return primitiveOutputs(mesh);
+    return primitiveOutputs(mesh, params);
   },
 };
 
@@ -1009,7 +1065,7 @@ export const OBJECT_SPHERE_NODE: NodeDefinition = {
     const texParams = extractTextureParams(inputs, params, ctx.nodeId);
     applyMaterialParams(mesh, matParams, THREE.FrontSide, texParams);
 
-    return primitiveOutputs(mesh);
+    return primitiveOutputs(mesh, params);
   },
 };
 
@@ -1135,7 +1191,7 @@ export const OBJECT_DISC_NODE: NodeDefinition = {
     const defaultSide: THREE.Side = depth > 0 ? THREE.FrontSide : THREE.DoubleSide;
     applyMaterialParams(mesh, matParams, defaultSide, texParams);
 
-    return primitiveOutputs(mesh);
+    return primitiveOutputs(mesh, params);
   },
 };
 
@@ -1255,7 +1311,7 @@ export const OBJECT_POLYGON_NODE: NodeDefinition = {
     const texParams = extractTextureParams(inputs, params, ctx.nodeId);
     applyMaterialParams(mesh, matParams, depth > 0 ? THREE.FrontSide : THREE.DoubleSide, texParams);
 
-    return primitiveOutputs(mesh);
+    return primitiveOutputs(mesh, params);
   },
 };
 
@@ -1295,7 +1351,7 @@ export const OBJECT_CYLINDER_NODE: NodeDefinition = {
     const texParams = extractTextureParams(inputs, params, ctx.nodeId);
     applyMaterialParams(mesh, matParams, THREE.FrontSide, texParams);
 
-    return primitiveOutputs(mesh);
+    return primitiveOutputs(mesh, params);
   },
 };
 
@@ -1335,7 +1391,7 @@ export const OBJECT_CONE_NODE: NodeDefinition = {
     const texParams = extractTextureParams(inputs, params, ctx.nodeId);
     applyMaterialParams(mesh, matParams, THREE.FrontSide, texParams);
 
-    return primitiveOutputs(mesh);
+    return primitiveOutputs(mesh, params);
   },
 };
 
@@ -1442,7 +1498,7 @@ export const OBJECT_TEXT_NODE: NodeDefinition = {
     const texParams = extractTextureParams(inputs, params, ctx.nodeId);
     applyMaterialParams(mesh, matParams, THREE.FrontSide, texParams);
 
-    return primitiveOutputs(mesh);
+    return primitiveOutputs(mesh, params);
   },
 };
 
@@ -1759,7 +1815,7 @@ export const OBJECT_BAR_GRAPH_NODE: NodeDefinition = {
       }
     }
 
-    return primitiveOutputs(group);
+    return primitiveOutputs(group, params);
   },
 };
 

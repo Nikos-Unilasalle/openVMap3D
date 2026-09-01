@@ -64,6 +64,13 @@ function SpawnCursorMarker({ position }: { position: { x: number; y: number } })
   );
 }
 
+/**
+ * Groups are temporarily disabled (parked for a rework): no frames render,
+ * Cmd+G does nothing, and saved graphs keep their `groups` data untouched
+ * for when this flips back to true.
+ */
+const GROUPS_ENABLED = false;
+
 const NODE_TYPES = { graphNode: GraphNode, [GROUP_NODE_TYPE]: GroupFrame };
 const EDGE_STROKE_WIDTH = 3;
 const DEFAULT_NODE_WIDTH = 160;
@@ -144,7 +151,7 @@ function toFlowNodes(
       },
     };
   });
-  const groupNodes = (graph.groups ?? []).map((g) => groupFlowNode(g, onGroupUpdate ?? (() => {})));
+  const groupNodes = GROUPS_ENABLED ? (graph.groups ?? []).map((g) => groupFlowNode(g, onGroupUpdate ?? (() => {}))) : [];
   return [...groupNodes, ...realNodes];
 }
 
@@ -440,7 +447,7 @@ function GraphEditorContent({
         return nextNodes.map((n) => ({ ...n, selected: selectedIdsRef.current.has(n.id) }));
       }
       return prevNodes.map((fn) => {
-        if (isGroupNode(fn)) {
+        if (GROUPS_ENABLED && isGroupNode(fn)) {
           const group = (graph.groups ?? []).find((g) => `${GROUP_ID_PREFIX}${g.id}` === fn.id);
           if (!group) return fn;
           return {
@@ -1368,7 +1375,7 @@ function GraphEditorContent({
       } else if (isCmdOrCtrl && !isShift && e.key.toLowerCase() === "a") {
         e.preventDefault();
         setNodes((nds) => nds.map((n) => ({ ...n, selected: true })));
-      } else if (isCmdOrCtrl && !isShift && code === "KeyG") {
+      } else if (GROUPS_ENABLED && isCmdOrCtrl && !isShift && code === "KeyG") {
         e.preventDefault();
         // Group the selection: one frame computed from the selected real
         // nodes' bounds, cycled through the palette colors. Membership is

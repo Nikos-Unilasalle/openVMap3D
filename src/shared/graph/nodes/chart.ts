@@ -210,7 +210,7 @@ export const LINE_GRAPH_NODE: NodeDefinition = {
       applyMaterialParams(marker, { ...matParams, color: markerColor }, THREE.FrontSide, texParams);
     }
 
-    return primitiveOutputs(state.group);
+    return primitiveOutputs(state.group, params);
   },
 };
 
