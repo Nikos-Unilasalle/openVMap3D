@@ -27,7 +27,7 @@ import { randomId } from "../shared/randomId";
 import { SOCKET_COLOR } from "../shared/graph/sockets";
 import { Connection, ExposedParamRef, Graph, KeyframeStore, Marker, NodeGroup, NodeInstance, NodeRegistry } from "../shared/graph/types";
 import { GraphNode, GraphNodeData } from "./GraphNode";
-import { GROUP_ID_PREFIX, GROUP_NODE_TYPE, GroupFrame, GroupFrameData } from "./GroupFrame";
+import { GROUP_ID_PREFIX, GROUP_NODE_TYPE, GroupFrame, GroupFrameData, COLLAPSED_PORT_CLASS, collapsedPortPosition } from "./GroupFrame";
 import { NodePalette } from "./NodePalette";
 import { QuickAddToolbar } from "./QuickAddToolbar";
 import { NodeSearchModal } from "./NodeSearchModal";
@@ -111,11 +111,18 @@ function toFlowNodes(
 ): Node<GraphNodeData>[] {
   const realNodes = graph.nodes.map((instance) => {
     const def = registry.get(instance.type);
+    // A collapsed group folds its members into a single white square on the
+    // frame's left edge (COLLAPSED_PORT_CLASS): the nodes stay mounted at the
+    // port coordinates — so their cables stay visible and converge on the
+    // square — while the document keeps their real positions untouched.
+    const collapsed = collapsedGroupAt(graph.groups, instance.position);
     return {
       id: instance.id,
       type: "graphNode",
-      position: instance.position,
-      hidden: collapsedGroupAt(graph.groups, instance.position) !== undefined,
+      position: collapsed ? collapsedPortPosition(collapsed.rect) : instance.position,
+      className: collapsed ? COLLAPSED_PORT_CLASS : undefined,
+      selectable: !collapsed,
+      draggable: !collapsed,
       data: {
         nodeId: instance.id,
         nodeType: instance.type,
@@ -206,11 +213,33 @@ function toGraph(
   existingGroups?: NodeGroup[],
 ): Graph {
   const flowNodeIds = new Set(flowNodes.map((f) => f.id));
+  // Members of a COLLAPSED group sit at their folded-port coordinates in flow
+  // state — those are visuals, never document positions, so every commit
+  // freezes them (any commit made while a group is collapsed would otherwise
+  // write the port position over the node's real one).
+  const collapsedRects = (existingGroups ?? []).filter((g) => g.collapsed);
+  const frozenIds =
+    collapsedRects.length > 0
+      ? new Set(
+          baseNodes
+            .filter((n) =>
+              collapsedRects.some(
+                (g) =>
+                  n.position.x >= g.rect.x &&
+                  n.position.y >= g.rect.y &&
+                  n.position.x <= g.rect.x + g.rect.width &&
+                  n.position.y <= g.rect.y + g.rect.height,
+              ),
+            )
+            .map((n) => n.id),
+        )
+      : null;
   const nodes = baseNodes
     .filter((n) => flowNodeIds.has(n.id))
     .map((n) => {
       const flowNode = flowNodes.find((f) => f.id === n.id);
-      return flowNode ? { ...n, position: flowNode.position } : n;
+      if (!flowNode) return n;
+      return frozenIds?.has(n.id) ? n : { ...n, position: flowNode.position };
     });
   const connections: Connection[] = flowEdges
     .filter((e) => flowNodeIds.has(e.source) && flowNodeIds.has(e.target))
@@ -325,8 +354,17 @@ function GraphEditorContent({
         ),
       );
       const nextGroups = (graph.groups ?? []).map((g) => (g.id === groupId ? { ...g, ...patch } : g));
+      // Commit with DOCUMENT positions: this fires on collapse/expand too, and
+      // at that instant collapsed members still sit at their port coordinates
+      // in flow state — committing those would write fake positions into the
+      // document. Group-frame edits never move real nodes, so the document is
+      // always the right source here.
+      const docPositioned = nodes.map((n) => {
+        const gn = graph.nodes.find((candidate) => candidate.id === n.id);
+        return gn ? { ...n, position: gn.position } : n;
+      });
       onGraphChange?.({
-        ...toGraph(graph.nodes, nodes, edges, graph.keyframes, graph.markers, graph.exposedParams, nextGroups),
+        ...toGraph(graph.nodes, docPositioned, edges, graph.keyframes, graph.markers, graph.exposedParams, nextGroups),
         groups: nextGroups,
       });
     },
@@ -366,6 +404,7 @@ function GraphEditorContent({
         }
         const graphNode = graph.nodes.find((gn) => gn.id === fn.id);
         if (!graphNode) return fn;
+        const collapsed = collapsedGroupAt(graph.groups, graphNode.position);
         return {
           ...fn,
           // Sourced from the ref, not `fn.selected` off `prevNodes`: this
@@ -376,9 +415,10 @@ function GraphEditorContent({
           // updated synchronously inside onNodesChange, so it can't be
           // behind whatever snapshot this effect happens to be holding.
           selected: selectedIdsRef.current.has(fn.id),
-          position: graphNode.position,
-          // A collapsed group folds its members away (restored on expand).
-          hidden: collapsedGroupAt(graph.groups, graphNode.position) !== undefined,
+          position: collapsed ? collapsedPortPosition(collapsed.rect) : graphNode.position,
+          className: collapsed ? COLLAPSED_PORT_CLASS : undefined,
+          selectable: !collapsed,
+          draggable: !collapsed,
           data: {
             ...fn.data,
             params: graphNode.params,
@@ -569,7 +609,7 @@ function GraphEditorContent({
       // cycles ACROSS nodes are a deliberate engine feature and stay allowed,
       // but they get a visible heads-up (see the warning chip below).
       if (connection.source === connection.target) {
-        showEditorWarning("Un nœud ne peut pas être câblé dans lui-même.");
+        showEditorWarning("A node cannot be wired into itself.");
         return;
       }
       const withoutConflict = edges.filter(
@@ -585,7 +625,7 @@ function GraphEditorContent({
       };
       const nextEdges = [...withoutConflict, newEdge];
       if (wouldCreateCycle(connection.source, connection.target, nextEdges)) {
-        showEditorWarning("Cycle créé — les nœuds du cycle lisent la valeur de la frame précédente.");
+        showEditorWarning("Cycle created — nodes in a cycle read the previous frame's values.");
       }
       const nextNodes = refreshDynamicSockets(nodes, nextEdges, graph.nodes, registry);
       setNodes(nextNodes);
@@ -712,7 +752,8 @@ function GraphEditorContent({
   const groupDragRef = useRef<{
     groupId: string;
     origin: { x: number; y: number };
-    members: { id: string; x: number; y: number }[];
+    /** Flow positions (real pose, or folded-port coordinates while collapsed) — drives the live visual drag. */
+    members: { id: string; flow: { x: number; y: number }; doc: { x: number; y: number } }[];
   } | null>(null);
 
   const onNodeDragStart = useCallback(
@@ -721,11 +762,15 @@ function GraphEditorContent({
       const groupId = draggedNode.id.slice(GROUP_ID_PREFIX.length);
       const group = (graph.groups ?? []).find((g) => g.id === groupId);
       if (!group) return;
-      groupDragRef.current = {
-        groupId,
-        origin: { x: draggedNode.position.x, y: draggedNode.position.y },
-        members: nodes
-          .filter((n) => !isGroupNode(n) && collapsedGroupAt(graph.groups, n.position) === undefined)
+      // Membership is positional against the DOCUMENT positions (graph.nodes):
+      // while the group is collapsed the members' *flow* positions are the
+      // folded-port coordinates, which no longer sit inside the rect. Each
+      // member carries both snapshots — flow for the live drag, document for
+      // the commit (a collapsed drag must shift the DOCUMENT pose by the same
+      // delta, never write the port coordinates into the document).
+      const docPositions = new Map(graph.nodes.map((n) => [n.id, n.position]));
+      const memberIds = new Set(
+        graph.nodes
           .filter(
             (n) =>
               n.position.x >= group.rect.x &&
@@ -733,10 +778,21 @@ function GraphEditorContent({
               n.position.x <= group.rect.x + group.rect.width &&
               n.position.y <= group.rect.y + group.rect.height,
           )
-          .map((n) => ({ id: n.id, x: n.position.x, y: n.position.y })),
+          .map((n) => n.id),
+      );
+      groupDragRef.current = {
+        groupId,
+        origin: { x: draggedNode.position.x, y: draggedNode.position.y },
+        members: nodes
+          .filter((n) => !isGroupNode(n) && memberIds.has(n.id))
+          .map((n) => ({
+            id: n.id,
+            flow: { x: n.position.x, y: n.position.y },
+            doc: { ...(docPositions.get(n.id) ?? n.position) },
+          })),
       };
     },
-    [graph.groups, nodes],
+    [graph.groups, graph.nodes, nodes],
   );
 
   const onNodeDrag = useCallback((_event: unknown, draggedNode: Node<GraphNodeData>) => {
@@ -747,7 +803,7 @@ function GraphEditorContent({
     setNodes((nds) =>
       nds.map((n) => {
         const member = drag.members.find((m) => m.id === n.id);
-        return member ? { ...n, position: { x: member.x + dx, y: member.y + dy } } : n;
+        return member ? { ...n, position: { x: member.flow.x + dx, y: member.flow.y + dy } } : n;
       }),
     );
   }, [setNodes]);
@@ -764,7 +820,12 @@ function GraphEditorContent({
         const nextGroups = (graph.groups ?? []).map((g) =>
           g.id === drag.groupId ? { ...g, rect: { ...g.rect, x: g.rect.x + dx, y: g.rect.y + dy } } : g,
         );
-        const memberPositions = new Map(drag.members.map((m) => [m.id, { x: m.x + dx, y: m.y + dy }]));
+        // The DOCUMENT pose shifts by the drag delta — for a collapsed group
+        // the flow positions are the folded-port coordinates, so the commit
+        // must come from the doc snapshot, never from flow state.
+        const memberPositions = new Map(
+          drag.members.map((m) => [m.id, { x: m.doc.x + dx, y: m.doc.y + dy }]),
+        );
         const updatedGraphNodes = graph.nodes.map((n) => {
           const moved = memberPositions.get(n.id);
           return moved ? { ...n, position: moved } : n;
@@ -1253,7 +1314,7 @@ function GraphEditorContent({
           Math.max(...selected.map((n) => n.position.y + (n.measured?.height ?? DEFAULT_NODE_HEIGHT))) + GROUP_PADDING_BOTTOM;
         const group: NodeGroup = {
           id: randomId(),
-          title: "Groupe",
+          title: "Group",
           color: GROUP_COLORS[(graph.groups?.length ?? 0) % GROUP_COLORS.length],
           rect: { x: minX, y: minY, width: Math.max(140, maxX - minX), height: Math.max(100, maxY - minY) },
         };

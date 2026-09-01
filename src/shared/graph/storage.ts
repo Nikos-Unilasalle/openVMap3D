@@ -80,7 +80,7 @@ function cleanGraph(graph: Graph): Graph {
     groups: Array.isArray(graph.groups)
       ? graph.groups.map((g) => ({
           id: g.id,
-          title: String(g.title ?? "Groupe"),
+          title: String(g.title ?? "Group"),
           color: String(g.color ?? "#6366f1"),
           rect: {
             x: Math.round(g.rect?.x ?? 0),

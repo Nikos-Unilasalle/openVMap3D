@@ -2,8 +2,19 @@ import { useEffect, useRef, useState } from "react";
 import { NodeProps } from "@xyflow/react";
 import { NodeGroup } from "../shared/graph/types";
 
-export const GROUP_NODE_TYPE = "group";
+export const GROUP_NODE_TYPE = "groupFrame";
 export const GROUP_ID_PREFIX = "group:";
+
+/** A collapsed group folds its members into this one white square on the frame's left edge. */
+export const COLLAPSED_PORT_CLASS = "collapsed-port";
+export const COLLAPSED_PORT_SIZE = 14;
+
+export function collapsedPortPosition(rect: NodeGroup["rect"]): { x: number; y: number } {
+  return {
+    x: rect.x - COLLAPSED_PORT_SIZE / 2,
+    y: rect.y + rect.height / 2 - COLLAPSED_PORT_SIZE / 2,
+  };
+}
 
 export interface GroupFrameData {
   group: NodeGroup;
@@ -95,10 +106,10 @@ export function GroupFrame(props: NodeProps) {
         width,
         height,
         borderColor: group.color,
-        background: hexWithAlpha(group.color, 0.06),
+        background: hexWithAlpha(group.color, 0.1),
       }}
     >
-      <div className="group-frame-header" style={{ background: hexWithAlpha(group.color, 0.16) }}>
+      <div className="group-frame-header">
         {editingTitle ? (
           <input
             className="group-frame-title-input nodrag nopan"
@@ -118,7 +129,7 @@ export function GroupFrame(props: NodeProps) {
           <span
             className="group-frame-title nodrag"
             onDoubleClick={() => setEditingTitle(true)}
-            title="Double-cliquez pour renommer"
+            title="Double-click to rename"
           >
             {group.title}
           </span>
@@ -128,19 +139,19 @@ export function GroupFrame(props: NodeProps) {
           className="group-frame-color nodrag nopan"
           value={/^#[0-9a-f]{6}$/i.test(group.color) ? group.color : "#6366f1"}
           onChange={(e) => onUpdate(group.id, { color: e.target.value })}
-          title="Couleur du groupe"
+          title="Group color"
         />
         <button
           type="button"
           className="group-frame-collapse nodrag"
           onClick={() => onUpdate(group.id, { collapsed: !group.collapsed })}
-          title={group.collapsed ? "Déplier le groupe" : "Replier le groupe"}
+          title={group.collapsed ? "Expand group" : "Collapse group"}
         >
           {group.collapsed ? "▸" : "▾"}
         </button>
       </div>
       {!group.collapsed && (
-        <div className="group-frame-resize nodrag" onPointerDown={startResize} title="Redimensionner" />
+        <div className="group-frame-resize nodrag" onPointerDown={startResize} title="Resize" />
       )}
     </div>
   );

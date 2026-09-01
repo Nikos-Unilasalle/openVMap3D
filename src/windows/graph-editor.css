@@ -236,7 +236,18 @@ input, textarea, [contenteditable="true"], .drag-number-editing, .param-text-inp
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
 }
 
-/* Group frames — editor-only organization, rendered behind the nodes. */
+/* Group frames — editor-only organization, rendered behind the nodes.
+   The wrapper (react-flow__node-groupFrame) must stay chrome-free: the node
+   type used to be named "group", which is one of xyflow's BUILT-IN types and
+   pulled in its default light-gray padded box — a whitish frame floating
+   around our own, drowning the group's color. */
+.react-flow__node-groupFrame {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+}
+
 .group-frame {
   position: relative;
   border: 1.5px solid;
@@ -250,6 +261,8 @@ input, textarea, [contenteditable="true"], .drag-number-editing, .param-text-inp
   outline-offset: 2px;
 }
 
+/* Header reads exactly like the frame body (no extra tint) — only the
+   title text and the two controls sit at full opacity. */
 .group-frame-header {
   display: flex;
   align-items: center;
@@ -259,6 +272,7 @@ input, textarea, [contenteditable="true"], .drag-number-editing, .param-text-inp
   border-radius: 8.5px 8.5px 0 0;
   cursor: grab;
   user-select: none;
+  background: transparent;
 }
 
 .group-frame-collapsed .group-frame-header {
@@ -273,7 +287,7 @@ input, textarea, [contenteditable="true"], .drag-number-editing, .param-text-inp
   white-space: nowrap;
   font-size: 12.5px;
   font-weight: 600;
-  color: #e2e8f0;
+  color: #f1f5f9;
 }
 
 .group-frame-title-input {
@@ -296,7 +310,7 @@ input, textarea, [contenteditable="true"], .drag-number-editing, .param-text-inp
   padding: 0;
   border: 1px solid rgba(148, 163, 184, 0.5);
   border-radius: 4px;
-  background: transparent;
+  background: #0f172a;
   cursor: pointer;
 }
 
@@ -309,8 +323,8 @@ input, textarea, [contenteditable="true"], .drag-number-editing, .param-text-inp
   padding: 0;
   border: 1px solid rgba(148, 163, 184, 0.4);
   border-radius: 4px;
-  background: rgba(15, 23, 42, 0.6);
-  color: #cbd5e1;
+  background: #0f172a;
+  color: #e2e8f0;
   font-size: 10px;
   line-height: 1;
   cursor: pointer;
@@ -330,4 +344,29 @@ input, textarea, [contenteditable="true"], .drag-number-editing, .param-text-inp
   border-right: 2.5px solid rgba(148, 163, 184, 0.55);
   border-bottom: 2.5px solid rgba(148, 163, 184, 0.55);
   border-bottom-right-radius: 8px;
+}
+
+/* A collapsed group folds each member node into a small white square parked
+   on the frame's left edge; the members stay mounted there (so their cables
+   remain visible and converge on the square) while the document keeps their
+   real positions. Stacked squares read as the single port. */
+.react-flow__node.collapsed-port {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid rgba(100, 116, 139, 0.8);
+  border-radius: 3px;
+  background: #f8fafc;
+  overflow: hidden;
+  pointer-events: none;
+  outline: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.react-flow__node.collapsed-port .graph-node {
+  display: none;
+}
+
+.react-flow__node.collapsed-port .react-flow__handle {
+  opacity: 0;
 }
