@@ -27,7 +27,7 @@ import { randomId } from "../shared/randomId";
 import { SOCKET_COLOR } from "../shared/graph/sockets";
 import { Connection, ExposedParamRef, Graph, KeyframeStore, Marker, NodeGroup, NodeInstance, NodeRegistry } from "../shared/graph/types";
 import { GraphNode, GraphNodeData } from "./GraphNode";
-import { GROUP_ID_PREFIX, GROUP_NODE_TYPE, GroupFrame, GroupFrameData, COLLAPSED_PORT_CLASS, collapsedPortPosition } from "./GroupFrame";
+import { COLLAPSED_PORT_CLASS, GROUP_ID_PREFIX, GROUP_NODE_TYPE, GroupFrame, GroupFrameData, collapsedPortPosition, collapsedPortSides, CollapsedPortSide } from "./GroupFrame";
 import { NodePalette } from "./NodePalette";
 import { QuickAddToolbar } from "./QuickAddToolbar";
 import { NodeSearchModal } from "./NodeSearchModal";
@@ -109,17 +109,27 @@ function toFlowNodes(
   registry: NodeRegistry,
   onGroupUpdate?: GroupFrameData["onUpdate"],
 ): Node<GraphNodeData>[] {
+  // Precompute each collapsed group's member→port assignment so the folded
+  // squares split left/right by where their cables actually go.
+  const collapsedSides = new Map<string, Map<string, CollapsedPortSide>>();
+  for (const g of graph.groups ?? []) {
+    if (g.collapsed) collapsedSides.set(g.id, collapsedPortSides(graph, g));
+  }
+  const sideOf = (nodeId: string, group: NodeGroup): CollapsedPortSide =>
+    collapsedSides.get(group.id)?.get(nodeId) ?? "left";
+
   const realNodes = graph.nodes.map((instance) => {
     const def = registry.get(instance.type);
-    // A collapsed group folds its members into a single white square on the
-    // frame's left edge (COLLAPSED_PORT_CLASS): the nodes stay mounted at the
-    // port coordinates — so their cables stay visible and converge on the
-    // square — while the document keeps their real positions untouched.
+    // A collapsed group folds its members into small white squares parked
+    // just outside the frame (left port for cables coming from the left,
+    // right port for cables going right). The nodes stay mounted at the port
+    // coordinates — so their cables stay visible and converge on the
+    // squares — while the document keeps their real positions untouched.
     const collapsed = collapsedGroupAt(graph.groups, instance.position);
     return {
       id: instance.id,
       type: "graphNode",
-      position: collapsed ? collapsedPortPosition(collapsed.rect) : instance.position,
+      position: collapsed ? collapsedPortPosition(collapsed.rect, sideOf(instance.id, collapsed)) : instance.position,
       className: collapsed ? COLLAPSED_PORT_CLASS : undefined,
       selectable: !collapsed,
       draggable: !collapsed,
@@ -415,7 +425,9 @@ function GraphEditorContent({
           // updated synchronously inside onNodesChange, so it can't be
           // behind whatever snapshot this effect happens to be holding.
           selected: selectedIdsRef.current.has(fn.id),
-          position: collapsed ? collapsedPortPosition(collapsed.rect) : graphNode.position,
+          position: collapsed
+            ? collapsedPortPosition(collapsed.rect, collapsedPortSides(graph, collapsed).get(fn.id) ?? "left")
+            : graphNode.position,
           className: collapsed ? COLLAPSED_PORT_CLASS : undefined,
           selectable: !collapsed,
           draggable: !collapsed,
@@ -737,7 +749,7 @@ function GraphEditorContent({
 
         setNodes(nextNodes);
         setEdges(nextEdges);
-        onGraphChange?.(toGraph([...graph.nodes, instance], nextNodes, nextEdges, graph.keyframes, graph.markers, graph.exposedParams));
+        onGraphChange?.(toGraph([...graph.nodes, instance], nextNodes, nextEdges, graph.keyframes, graph.markers, graph.exposedParams, graph.groups));
       }
     },
     [edges, graph, nodes, onGraphChange, registry, screenToFlowPosition, setEdges, setNodes],
@@ -1087,7 +1099,7 @@ function GraphEditorContent({
 
       setNodes(finalNodes);
       setEdges(nextEdges);
-      onGraphChange?.(toGraph([...graph.nodes, ...newInstances], finalNodes, nextEdges, graph.keyframes, graph.markers, graph.exposedParams));
+      onGraphChange?.(toGraph([...graph.nodes, ...newInstances], finalNodes, nextEdges, graph.keyframes, graph.markers, graph.exposedParams, graph.groups));
     },
     [graph, nodes, edges, pendingWireConnection, onGraphChange, registry, setNodes, setEdges],
   );

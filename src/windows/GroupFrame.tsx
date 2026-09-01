@@ -5,15 +5,58 @@ import { NodeGroup } from "../shared/graph/types";
 export const GROUP_NODE_TYPE = "groupFrame";
 export const GROUP_ID_PREFIX = "group:";
 
-/** A collapsed group folds its members into this one white square on the frame's left edge. */
+/**
+ * A collapsed group folds its members into small white squares parked just
+ * OUTSIDE the frame — members with cables coming from the left fold onto the
+ * left square, members with cables going right fold onto the right one — so
+ * the cables stay short and visible instead of sweeping across the graph.
+ */
 export const COLLAPSED_PORT_CLASS = "collapsed-port";
 export const COLLAPSED_PORT_SIZE = 14;
+export const COLLAPSED_PORT_GAP = 10;
+const HEADER_HEIGHT = 34;
 
-export function collapsedPortPosition(rect: NodeGroup["rect"]): { x: number; y: number } {
-  return {
-    x: rect.x - COLLAPSED_PORT_SIZE / 2,
-    y: rect.y + rect.height / 2 - COLLAPSED_PORT_SIZE / 2,
-  };
+export type CollapsedPortSide = "left" | "right";
+
+export function collapsedPortPosition(rect: NodeGroup["rect"], side: CollapsedPortSide): { x: number; y: number } {
+  // Vertically centered on the collapsed frame's visible 34px header bar.
+  const y = rect.y + HEADER_HEIGHT / 2 - COLLAPSED_PORT_SIZE / 2;
+  return side === "left"
+    ? { x: rect.x - COLLAPSED_PORT_GAP - COLLAPSED_PORT_SIZE, y }
+    : { x: rect.x + rect.width + COLLAPSED_PORT_GAP, y };
+}
+
+/**
+ * Which collapsed port each member folds onto: members with a cable to a
+ * node sitting LEFT of the group fold onto the left square, members with
+ * cables only to the right fold onto the right one, and members with no
+ * external cables default left. Decided against DOCUMENT positions
+ * (graph.nodes + graph.connections), so it is stable no matter where the
+ * flow pass currently has the folded nodes parked.
+ */
+export function collapsedPortSides(graph: {
+  nodes: { id: string; position: { x: number; y: number } }[];
+  connections: { fromNode: string; toNode: string }[];
+}, group: NodeGroup): Map<string, CollapsedPortSide> {
+  const inside = (p: { x: number; y: number }) =>
+    p.x >= group.rect.x && p.y >= group.rect.y && p.x <= group.rect.x + group.rect.width && p.y <= group.rect.y + group.rect.height;
+  const posById = new Map(graph.nodes.map((n) => [n.id, n.position]));
+  const memberIds = new Set(graph.nodes.filter((n) => inside(n.position)).map((n) => n.id));
+
+  const sides = new Map<string, CollapsedPortSide>();
+  for (const conn of graph.connections) {
+    for (const [memberId, otherId] of [
+      [conn.toNode, conn.fromNode],
+      [conn.fromNode, conn.toNode],
+    ]) {
+      if (!memberIds.has(memberId) || memberIds.has(otherId) || sides.has(memberId)) continue;
+      const other = posById.get(otherId);
+      if (!other) continue;
+      sides.set(memberId, other.x < group.rect.x + group.rect.width / 2 ? "left" : "right");
+    }
+  }
+  for (const id of memberIds) if (!sides.has(id)) sides.set(id, "left");
+  return sides;
 }
 
 export interface GroupFrameData {
@@ -22,7 +65,6 @@ export interface GroupFrameData {
   onUpdate: (groupId: string, patch: Partial<NodeGroup>) => void;
 }
 
-const HEADER_HEIGHT = 34;
 const MIN_WIDTH = 140;
 const MIN_HEIGHT = 56;
 
@@ -53,6 +95,15 @@ export function GroupFrame(props: NodeProps) {
   const resizeStart = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
 
   useEffect(() => setTitleDraft(group.title), [group.title]);
+
+  // Optimistic color: the picker fires faster than the full updateGroup →
+  // App → sync-effect round-trip, so the frame paints the picked color
+  // immediately and resyncs from the document when it catches up. Without
+  // this a stale props round-trip visibly snapped the swatch back while
+  // dragging in the picker.
+  const [localColor, setLocalColor] = useState(group.color);
+  useEffect(() => setLocalColor(group.color), [group.color]);
+  const frameColor = /^#[0-9a-f]{6}$/i.test(localColor) ? localColor : "#6366f1";
 
   const startResize = (e: React.PointerEvent) => {
     e.stopPropagation();
@@ -105,8 +156,8 @@ export function GroupFrame(props: NodeProps) {
       style={{
         width,
         height,
-        borderColor: group.color,
-        background: hexWithAlpha(group.color, 0.1),
+        borderColor: frameColor,
+        background: hexWithAlpha(frameColor, 0.1),
       }}
     >
       <div className="group-frame-header">
@@ -137,8 +188,11 @@ export function GroupFrame(props: NodeProps) {
         <input
           type="color"
           className="group-frame-color nodrag nopan"
-          value={/^#[0-9a-f]{6}$/i.test(group.color) ? group.color : "#6366f1"}
-          onChange={(e) => onUpdate(group.id, { color: e.target.value })}
+          value={frameColor}
+          onChange={(e) => {
+            setLocalColor(e.target.value);
+            onUpdate(group.id, { color: e.target.value });
+          }}
           title="Group color"
         />
         <button

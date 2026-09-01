@@ -310,7 +310,7 @@ input, textarea, [contenteditable="true"], .drag-number-editing, .param-text-inp
   padding: 0;
   border: 1px solid rgba(148, 163, 184, 0.5);
   border-radius: 4px;
-  background: #0f172a;
+  background: rgba(15, 23, 42, 0.3);
   cursor: pointer;
 }
 
@@ -323,7 +323,7 @@ input, textarea, [contenteditable="true"], .drag-number-editing, .param-text-inp
   padding: 0;
   border: 1px solid rgba(148, 163, 184, 0.4);
   border-radius: 4px;
-  background: #0f172a;
+  background: rgba(15, 23, 42, 0.3);
   color: #e2e8f0;
   font-size: 10px;
   line-height: 1;
@@ -347,9 +347,15 @@ input, textarea, [contenteditable="true"], .drag-number-editing, .param-text-inp
 }
 
 /* A collapsed group folds each member node into a small white square parked
-   on the frame's left edge; the members stay mounted there (so their cables
-   remain visible and converge on the square) while the document keeps their
-   real positions. Stacked squares read as the single port. */
+   just OUTSIDE the frame (left port for cables coming from the left, right
+   port for cables going right); the members stay mounted there (so their
+   cables remain visible and converge on the squares) while the document
+   keeps their real positions. Stacked squares read as one port per side.
+
+   The card is shrunk to the square's size and made invisible with
+   `visibility` — NOT `display:none`, which would hide the Handles and leave
+   xyflow unable to measure the edge endpoints (the "cables going
+   everywhere" bug). Handles stay in the layout, painted transparent. */
 .react-flow__node.collapsed-port {
   width: 14px;
   height: 14px;
@@ -357,14 +363,14 @@ input, textarea, [contenteditable="true"], .drag-number-editing, .param-text-inp
   border: 1px solid rgba(100, 116, 139, 0.8);
   border-radius: 3px;
   background: #f8fafc;
-  overflow: hidden;
+  overflow: visible;
   pointer-events: none;
   outline: none;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
 
 .react-flow__node.collapsed-port .graph-node {
-  display: none;
+  visibility: hidden;
 }
 
 .react-flow__node.collapsed-port .react-flow__handle {
