@@ -1429,7 +1429,7 @@ export const OBJECT_TEXT_NODE: NodeDefinition = {
   },
 };
 
-const textMeshCache = createNodeCache<TextMeshState>();
+const textMeshCache = createNodeCache<TextMeshState>((s) => disposeObject3D(s.mesh));
 
 interface TextMeshState {
   mesh: THREE.Mesh;
@@ -1482,7 +1482,14 @@ interface BarGraphState {
   labelStates: Map<number, LabelMeshState>;
 }
 
-const barGraphCache = createNodeCache<BarGraphState>();
+const barGraphCache = createNodeCache<BarGraphState>((s) => {
+  disposeObject3D(s.group);
+  s.unitGeometry.dispose();
+  s.labelStates.forEach((l) => {
+    l.texture?.dispose();
+    disposeObject3D(l.mesh);
+  });
+});
 
 function barGraphState(nodeId: string): BarGraphState {
   const existing = barGraphCache.get(nodeId);

@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { Connection, EasingType, EvalContext, Graph, Keyframe, KeyframeStore, NodeRegistry } from "./types";
+import { Connection, EasingType, EvalContext, Graph, Keyframe, KeyframeStore, NodeInstance, NodeRegistry } from "./types";
 
 export interface TopoResult {
   /** Node ids in dependency order — safe to evaluate front to back. */
@@ -347,7 +347,7 @@ export function topoSort(graph: Graph): TopoResult {
 /** Per-node outputs from the most recent evaluation, keyed by node id then socket id. */
 export type EvalResult = Map<string, Record<string, unknown>>;
 
-function connectionInto(connections: Connection[], nodeId: string, socketId: string): Connection | undefined {
+export function connectionInto(connections: Connection[], nodeId: string, socketId: string): Connection | undefined {
   return connections.find((c) => c.toNode === nodeId && c.toSocket === socketId);
 }
 
@@ -407,23 +407,89 @@ export function disposeEvalSession(sessionId: string): void {
   previousFrameOutputsBySession.delete(sessionId);
 }
 
-// Cache the topological order by graph reference: playback re-runs the graph
-// every frame without mutating it, and recomputing the order (O(V+E) plus the
-// per-connection allocations) every frame is pure waste. The order only depends
-// on the graph's structure, which is fixed while the reference is the same.
-let lastTopoGraph: Graph | null = null;
-let lastTopo: TopoResult | null = null;
+// Cache the topological order and structural lookups by graph reference: playback
+// re-runs the graph every frame without mutating it, and recomputing the order,
+// node lookups, and connection filtering every frame is pure waste.
+interface GraphStructuralCache {
+  topo: TopoResult;
+  nodesById: Map<string, NodeInstance>;
+  connectionsByToNode: Map<string, Connection[]>;
+  connectionByToNodeSocket: Map<string, Connection>;
+}
+
+let lastGraphRef: Graph | null = null;
+let lastStructuralCache: GraphStructuralCache | null = null;
+
+function getGraphStructuralCache(graph: Graph): GraphStructuralCache {
+  if (lastGraphRef === graph && lastStructuralCache) {
+    return lastStructuralCache;
+  }
+  const topo = topoSort(graph);
+  const nodesById = new Map<string, NodeInstance>();
+  for (let i = 0; i < graph.nodes.length; i++) {
+    const n = graph.nodes[i];
+    nodesById.set(n.id, n);
+  }
+
+  const connectionsByToNode = new Map<string, Connection[]>();
+  const connectionByToNodeSocket = new Map<string, Connection>();
+
+  for (let i = 0; i < graph.connections.length; i++) {
+    const conn = graph.connections[i];
+    let list = connectionsByToNode.get(conn.toNode);
+    if (!list) {
+      list = [];
+      connectionsByToNode.set(conn.toNode, list);
+    }
+    list.push(conn);
+    connectionByToNodeSocket.set(`${conn.toNode}:${conn.toSocket}`, conn);
+  }
+
+  lastGraphRef = graph;
+  lastStructuralCache = {
+    topo,
+    nodesById,
+    connectionsByToNode,
+    connectionByToNodeSocket,
+  };
+  return lastStructuralCache;
+}
+
+const mutableKeysCache = new WeakMap<Record<string, unknown>, string[]>();
+
+function getMutableDefaultKeys(defaultParams: Record<string, unknown>): string[] {
+  let keys = mutableKeysCache.get(defaultParams);
+  if (!keys) {
+    keys = [];
+    const allKeys = Object.keys(defaultParams);
+    for (let i = 0; i < allKeys.length; i++) {
+      const key = allKeys[i];
+      const v = defaultParams[key];
+      if (
+        v instanceof THREE.Vector3 ||
+        v instanceof THREE.Color ||
+        v instanceof THREE.Euler ||
+        v instanceof THREE.Quaternion
+      ) {
+        keys.push(key);
+      }
+    }
+    mutableKeysCache.set(defaultParams, keys);
+  }
+  return keys;
+}
+
+// Object pooling for connectedInputs and inputSources to eliminate GC churn at 60 fps
+const pooledConnectedInputs = new Set<string>();
+const pooledInputSources = new Map<string, string>();
+const EMPTY_CONNECTIONS: Connection[] = [];
 
 export function evaluateGraph(graph: Graph, registry: NodeRegistry, ctx: EvalContext): EvalResult {
-  if (lastTopoGraph !== graph) {
-    lastTopo = topoSort(graph);
-    lastTopoGraph = graph;
-  }
-  const { order, cyclic } = lastTopo!;
+  const { topo, nodesById, connectionsByToNode, connectionByToNodeSocket } = getGraphStructuralCache(graph);
+  const { order, cyclic } = topo;
   const sessionId = ctx.sessionId ?? DEFAULT_SESSION;
   const previousFrameOutputs = previousFrameOutputsBySession.get(sessionId) ?? null;
   const results: EvalResult = new Map();
-  const nodesById = new Map(graph.nodes.map((n) => [n.id, n]));
 
   for (const nodeId of [...order, ...cyclic]) {
     const instance = nodesById.get(nodeId);
@@ -444,21 +510,19 @@ export function evaluateGraph(graph: Graph, registry: NodeRegistry, ctx: EvalCon
     const params: Record<string, unknown> = { ...def.defaultParams, ...instance.params };
 
     // Clone the shared mutable defaults one level deep, but only for the keys
-    // the instance did NOT override (its own object comes from IPC/graph and
-    // is already per-instance).
-    for (const key of Object.keys(def.defaultParams)) {
-      if (key in instance.params) continue;
-      const v = def.defaultParams[key];
-      if (v instanceof THREE.Vector3 || v instanceof THREE.Color || v instanceof THREE.Euler || v instanceof THREE.Quaternion) {
+    // the instance did NOT override (using cached mutable keys list)
+    const mutableKeys = getMutableDefaultKeys(def.defaultParams);
+    for (let i = 0; i < mutableKeys.length; i++) {
+      const key = mutableKeys[i];
+      if (!(key in instance.params)) {
+        const v = def.defaultParams[key] as THREE.Vector3 | THREE.Color | THREE.Euler | THREE.Quaternion;
         params[key] = v.clone();
       }
     }
 
     // Apply keyframe interpolation to params so that param-based properties
     // (location, rotation, scale, color, etc.) reflect their animated values
-    // during evaluation — not just in the param panel.  Without this, the
-    // param panel shows the interpolated value but the viewport reads the
-    // static stored value, so the 3D scene never moves.
+    // during evaluation — not just in the param panel.
     const kfStore = ctx.keyframes || graph.keyframes;
     const frame = ctx.currentFrame ?? -1;
     if (kfStore && frame >= 0 && kfStore[nodeId]) {
@@ -466,25 +530,21 @@ export function evaluateGraph(graph: Graph, registry: NodeRegistry, ctx: EvalCon
         params[paramKey] = evaluateKeyframeValue(kfStore, nodeId, paramKey, frame, params[paramKey]);
       }
     }
-    const nodeConnections = graph.connections.filter((c) => c.toNode === nodeId);
+
+    const nodeConnections = connectionsByToNode.get(nodeId) ?? EMPTY_CONNECTIONS;
     const socketDefs = def.dynamicInputs ? def.dynamicInputs(nodeConnections) : def.inputs;
     const inputs: Record<string, unknown> = {};
-    // Which sockets a wire actually reaches, kept alongside the values: the
-    // fill-in below makes `inputs.x !== undefined` true either way, so a node
-    // forking its behaviour on "is this driven" has no other way to tell (see
-    // EvalContext.connectedInputs).
-    const connectedInputs = new Set<string>();
-    const inputSources = new Map<string, string>();
-    for (const socket of socketDefs) {
-      const conn = connectionInto(graph.connections, nodeId, socket.id);
+
+    pooledConnectedInputs.clear();
+    pooledInputSources.clear();
+
+    for (let i = 0; i < socketDefs.length; i++) {
+      const socket = socketDefs[i];
+      const conn = connectionByToNodeSocket.get(`${nodeId}:${socket.id}`);
       if (conn) {
-        connectedInputs.add(socket.id);
-        inputSources.set(socket.id, conn.fromNode);
+        pooledConnectedInputs.add(socket.id);
+        pooledInputSources.set(socket.id, conn.fromNode);
         // Priority rule: Node connection l'emporte toujours sur les keyframes!
-        // If the source produced no value this frame (it threw, is an unknown
-        // type, or is a cyclic node not ready yet), reuse the last frame's
-        // output if we have one — never let a *connected* socket silently drop
-        // to a static param as if nothing were wired to it.
         const fresh = results.get(conn.fromNode)?.[conn.fromSocket];
         inputs[socket.id] =
           fresh !== undefined ? fresh : previousFrameOutputs?.get(conn.fromNode)?.[conn.fromSocket];
@@ -506,8 +566,8 @@ export function evaluateGraph(graph: Graph, registry: NodeRegistry, ctx: EvalCon
         def.evaluate(inputs, params, {
           ...ctx,
           nodeId,
-          connectedInputs,
-          inputSources,
+          connectedInputs: pooledConnectedInputs,
+          inputSources: pooledInputSources,
           markers: ctx.markers || graph.markers,
         }) || {};
       applyVisibility(outputs.geometry, inputs[VISIBILITY_SOCKET]);

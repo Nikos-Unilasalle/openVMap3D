@@ -3,7 +3,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { NodeDefinition } from "../types";
-import { createNodeCache } from "../nodeCaches";
+import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { composeNativeMatrixWithPivot } from "./transform";
 import { COMMON_PRIMITIVE_OUTPUTS, TextureParams, applyMaterialParams, extractMaterialParams, primitiveOutputs } from "./object";
 import { isTauri } from "../../isTauri";
@@ -452,7 +452,7 @@ interface GltfState {
   meshCount?: number;
 }
 
-const gltfStateCache = createNodeCache<GltfState>();
+const gltfStateCache = createNodeCache<GltfState>((s) => disposeObject3D(s.group));
 
 function getOrCreateGltfState(nodeId: string): GltfState {
   const existing = gltfStateCache.get(nodeId);

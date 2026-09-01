@@ -22,10 +22,10 @@ import { Graph, NodeDefinition, NodeRegistry } from "./types";
  * `target` and a Look At's `target` are both geometry-typed, but they only
  * *read* a position — the object they aim at has to stay visible.
  *
- * Known gap: geometry routed through a List (List Group → Spawner) is not
- * tracked, since ownership is decided one hop at a time and a list is a
- * value like any other. The source object keeps rendering alongside the
- * spawned copies; hide it with its own `visible` param.
+ * Geometry routed through grouping containers (e.g. List Group) or pass-through
+ * nodes (e.g. Reroute) is tracked recursively: if the downstream consumer
+ * (Spawner, Merge, Array, Render) takes ownership, the upstream source object
+ * is also marked as owned.
  */
 
 /** Sockets carrying an Object3D — `any` included, since a Reroute or a Logic Bridge only knows its real type once something is wired into it. */
@@ -55,14 +55,34 @@ function inputSocketsOf(def: NodeDefinition, graph: Graph, nodeId: string) {
 }
 
 /** Does any connection out of `nodeId` hand its geometry to a socket that claims ownership of it? */
-function isOwnedDownstream(graph: Graph, registry: NodeRegistry, nodeId: string): boolean {
+function isOwnedDownstream(
+  graph: Graph,
+  registry: NodeRegistry,
+  nodeId: string,
+  visited = new Set<string>()
+): boolean {
+  if (visited.has(nodeId)) return false;
+  visited.add(nodeId);
+
   return graph.connections.some((connection) => {
     if (connection.fromNode !== nodeId) return false;
     const consumer = graph.nodes.find((n) => n.id === connection.toNode);
-    const consumerDef = consumer ? registry.get(consumer.type) : undefined;
+    if (!consumer) return false;
+    const consumerDef = registry.get(consumer.type);
     if (!consumerDef) return false;
     const socket = inputSocketsOf(consumerDef, graph, connection.toNode).find((s) => s.id === connection.toSocket);
-    return Boolean(socket?.owns);
+    if (!socket) return false;
+
+    // Direct ownership claim on the receiving socket
+    if (socket.owns) return true;
+
+    // Multi-hop ownership: if the consumer is a pass-through/grouping node without
+    // standalone rendering (like List Group or Reroute), propagate downstream.
+    if (consumerDef.category === "list" || consumerDef.type === "utility/reroute") {
+      return isOwnedDownstream(graph, registry, consumer.id, visited);
+    }
+
+    return false;
   });
 }
 

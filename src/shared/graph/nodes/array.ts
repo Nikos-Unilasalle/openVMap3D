@@ -1,9 +1,9 @@
 import * as THREE from "three";
 import { NodeDefinition, ParamFieldDef } from "../types";
-import { createNodeCache } from "../nodeCaches";
+import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { InstancedItemSpec, renderInstanced } from "./instancedRender";
 
-const groupCache = createNodeCache<THREE.Group>();
+const groupCache = createNodeCache<THREE.Group>(disposeObject3D);
 
 function getGroup(nodeId: string): THREE.Group {
   const existing = groupCache.get(nodeId);

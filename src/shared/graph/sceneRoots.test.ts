@@ -142,4 +142,38 @@ describe("resolveSceneRoots", () => {
   test("an unknown node type is ignored rather than throwing", () => {
     expect(roots([node("mystery", "not/a/real/node")])).toEqual([]);
   });
+
+  test("geometry routed through a List Group into a Merge is owned downstream (multi-hop)", () => {
+    const result = roots(
+      [
+        node("box1", "object/box"),
+        node("box2", "object/box"),
+        node("list1", "list/group"),
+        node("merge1", "structure/merge"),
+      ],
+      [
+        wire("box1", "geometry", "list1", "in0"),
+        wire("box2", "geometry", "list1", "in1"),
+        wire("list1", "list", "merge1", "in0"),
+      ],
+    );
+
+    expect(result).toEqual(["merge1"]);
+  });
+
+  test("geometry routed through a Reroute into a Render is owned downstream (multi-hop)", () => {
+    const result = roots(
+      [
+        node("box1", "object/box"),
+        node("reroute1", "utility/reroute"),
+        node("render1", "render"),
+      ],
+      [
+        wire("box1", "geometry", "reroute1", "in"),
+        wire("reroute1", "out", "render1", "geometry"),
+      ],
+    );
+
+    expect(result).toEqual(["render1"]);
+  });
 });

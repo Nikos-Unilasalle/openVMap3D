@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { createNodeCache } from "../nodeCaches";
+import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { NodeDefinition } from "../types";
 import { clearMeshWarning, warnMeshRequired } from "../meshRequired";
 import { sampleSurfacePoints } from "../../three/bvh";
@@ -13,7 +13,7 @@ function toNumberList(v: unknown): number[] {
 const RAD = Math.PI / 180;
 const UP = new THREE.Vector3(0, 1, 0);
 
-const groupCache = createNodeCache<THREE.Group>();
+const groupCache = createNodeCache<THREE.Group>(disposeObject3D);
 
 function getGroup(nodeId: string): THREE.Group {
   const existing = groupCache.get(nodeId);

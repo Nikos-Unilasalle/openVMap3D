@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { NodeDefinition } from "../types";
-import { createNodeCache } from "../nodeCaches";
+import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { composeNativeMatrixWithPivot } from "./transform";
 import { COMMON_PRIMITIVE_OUTPUTS, TextureParams, applyMaterialParams, extractMaterialParams, primitiveOutputs } from "./object";
 
@@ -15,7 +15,11 @@ interface ObjState {
   lastNormalPath?: string;
 }
 
-const objStateCache = createNodeCache<ObjState>();
+const objStateCache = createNodeCache<ObjState>((state) => {
+  disposeObject3D(state.group);
+  state.textureMap?.dispose();
+  state.normalMap?.dispose();
+});
 
 function getOrCreateObjState(nodeId: string): ObjState {
   const existing = objStateCache.get(nodeId);

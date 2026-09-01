@@ -97,6 +97,32 @@ describe("cloneParams", () => {
     cloned.stops[0].position = 0.5;
     expect(stops[0].position).toBe(0);
   });
+
+  test("deep-clones mixed arrays where the first element is null or a number", () => {
+    const mixed = [0, new THREE.Vector3(1, 2, 3), null, new THREE.Color(1, 0, 0)];
+    const cloned = cloneParams({ mixed }) as { mixed: unknown[] };
+
+    expect(cloned.mixed).not.toBe(mixed);
+    expect(cloned.mixed[1]).toBeInstanceOf(THREE.Vector3);
+    expect(cloned.mixed[1]).not.toBe(mixed[1]);
+    expect(cloned.mixed[3]).toBeInstanceOf(THREE.Color);
+    expect(cloned.mixed[3]).not.toBe(mixed[3]);
+
+    (cloned.mixed[1] as THREE.Vector3).x = 999;
+    expect((mixed[1] as THREE.Vector3).x).toBe(1);
+  });
+
+  test("clones typed arrays (Float32Array) independently", () => {
+    const buffer = new Float32Array([1.0, 2.0, 3.0]);
+    const cloned = cloneParams({ buffer }) as { buffer: Float32Array };
+
+    expect(cloned.buffer).toBeInstanceOf(Float32Array);
+    expect(cloned.buffer).not.toBe(buffer);
+    expect(cloned.buffer).toEqual(buffer);
+
+    cloned.buffer[0] = 999.0;
+    expect(buffer[0]).toBe(1.0);
+  });
 });
 
 describe("cloneGraph", () => {

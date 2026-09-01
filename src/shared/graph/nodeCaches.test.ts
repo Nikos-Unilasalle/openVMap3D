@@ -71,4 +71,32 @@ describe("createNodeCache", () => {
     expect(() => disposeNodeCaches(["a"])).not.toThrow();
     expect(other.has("a")).toBe(false);
   });
+
+  test("disposeObject3D correctly invokes .dispose() on mesh geometry and materials", () => {
+    const geomDispose = vi.fn();
+    const matDispose = vi.fn();
+
+    const group = {
+      traverse: (cb: (o: any) => void) => {
+        cb({
+          geometry: { dispose: geomDispose },
+          material: { dispose: matDispose },
+        });
+      },
+    };
+
+    const cache = createNodeCache<any>((obj) => {
+      obj.traverse((child: any) => {
+        child.geometry?.dispose?.();
+        child.material?.dispose?.();
+      });
+    });
+
+    cache.set("meshNode", group);
+    disposeNodeCaches(["meshNode"]);
+
+    expect(geomDispose).toHaveBeenCalledTimes(1);
+    expect(matDispose).toHaveBeenCalledTimes(1);
+    expect(cache.has("meshNode")).toBe(false);
+  });
 });

@@ -3,7 +3,7 @@ import { projectionMatrixFromCalibration, ProjectorCalibration } from "../calibr
 import { DEFAULT_PICKS, isCalibrationPicks, isReferencePointArray, solveFromPicks } from "../calibration/picks";
 import { NodeDefinition } from "../types";
 import { toBoolean } from "../sockets";
-import { createNodeCache } from "../nodeCaches";
+import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { requestCameraHandoff } from "../cameraHandoffStore";
 import { extractPositionFromInput } from "./transform";
 
@@ -33,7 +33,7 @@ function asVector3(v: unknown, fallback: THREE.Vector3): THREE.Vector3 {
   return fallback;
 }
 
-const groupCache = new Map<string, THREE.Group>();
+const groupCache = createNodeCache<THREE.Group>(disposeObject3D);
 function getGroup(nodeId: string): THREE.Group {
   let group = groupCache.get(nodeId);
   if (!group) {

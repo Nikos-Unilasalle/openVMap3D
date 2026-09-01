@@ -27,3 +27,7 @@ dist-ssr
 # Python bytecode from tools/
 __pycache__/
 *.pyc
+
+# Obsidian Vault local state and caches
+.obsidian/
+docs_vault/.obsidian/

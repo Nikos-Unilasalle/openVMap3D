@@ -72,4 +72,19 @@ describe("pruneDanglingConnections", () => {
 
     expect(pruneDanglingConnections(graph, DEFAULT_REGISTRY)).toBe(graph);
   });
+
+  test("prunes wires connected to non-existent sockets on dynamic nodes", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const connections = [
+      wire("box1", "geometry", "merge1", "in0"),
+      wire("box2", "geometry", "merge1", "nonExistentSocket"),
+    ];
+
+    const result = prune(
+      [node("box1", "object/box"), node("box2", "object/box"), node("merge1", "structure/merge")],
+      connections,
+    );
+
+    expect(result).toEqual([wire("box1", "geometry", "merge1", "in0")]);
+  });
 });

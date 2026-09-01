@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { growingSockets } from "../dynamicInputs";
 import { NodeDefinition, ParamFieldDef } from "../types";
-import { createNodeCache } from "../nodeCaches";
+import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import {
   applyMaterialParams,
   COMMON_MATERIAL_PARAM_FIELDS,
@@ -19,7 +19,7 @@ const INPUT_PREFIX = "in";
  * needs to be the SAME THREE.Group across frames, not a fresh one every
  * evaluation, so the viewport can hold a stable reference to it.
  */
-const groupCache = createNodeCache<THREE.Group>();
+const groupCache = createNodeCache<THREE.Group>(disposeObject3D);
 
 function getGroup(nodeId: string): THREE.Group {
   const existing = groupCache.get(nodeId);

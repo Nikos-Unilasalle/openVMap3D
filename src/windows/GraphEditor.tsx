@@ -376,8 +376,19 @@ function GraphEditorContent({
   const onEdgesDelete = useCallback(
     (deletedEdges: Edge[]) => {
       const deletedIds = new Set(deletedEdges.map((e) => e.id));
-      const nextEdges = edges.filter((e) => !deletedIds.has(e.id));
+      let nextEdges = edges.filter((e) => !deletedIds.has(e.id));
       const nextNodes = refreshDynamicSockets(nodes, nextEdges, graph.nodes, registry);
+
+      // Auto-prune any edges whose socket handles disappeared after dynamic socket contraction
+      nextEdges = nextEdges.filter((e) => {
+        const srcNode = nextNodes.find((n) => n.id === e.source);
+        const tgtNode = nextNodes.find((n) => n.id === e.target);
+        if (!srcNode || !tgtNode) return false;
+        const srcHasSocket = srcNode.data.outputs.some((s) => s.id === e.sourceHandle);
+        const tgtHasSocket = tgtNode.data.inputs.some((s) => s.id === e.targetHandle);
+        return srcHasSocket && tgtHasSocket;
+      });
+
       setNodes(nextNodes);
       setEdges(nextEdges);
       commit(nextNodes, nextEdges);
