@@ -62,17 +62,19 @@ dv.paragraph(`
 
 ```mermaid
 flowchart TD
-    subgraph ALL_RESOLVED["🟢 100% RÉSOLU : Stabilité, VRAM, GC, Rendu & Graphe"]
+    subgraph ALL_RESOLVED["🟢 100% RÉSOLU : Stabilité, VRAM, GC, Rendu, Gizmos & Motion Blur"]
         F1["[[P0_VRAM_Leak_Remediation_Plan]]"]
         F2["[[P1_Evaluation_Loop_GC_Remediation_Plan]]"]
         F3["[[P2_Geometry_Ownership_and_Clone_Integrity_Plan]]"]
         F4["[[P3_Dynamic_Sockets_and_Math_Consolidation_Plan]]"]
+        F5["[[Force_Field_Gizmo_and_Show_Pivot_Plan]]"]
+        F6["[[Particle_Motion_Blur_Implementation]]"]
     end
 
     subgraph STATUS["🎯 État du Codebase Tsuji"]
-        S1["1736 / 1736 Tests Vitest Réussis (100%)"]
+        S1["1740 / 1740 Tests Vitest Réussis (100%)"]
         S2["Typecheck TypeScript 0 Erreur"]
-        S3["Zéro-Allocation 60 FPS & VRAM Stable"]
+        S3["Zéro-Allocation 60 FPS & Motion Blur GPU"]
     end
 
     ALL_RESOLVED --> STATUS
@@ -80,16 +82,18 @@ flowchart TD
     classDef ok fill:#064e3b,stroke:#10b981,color:#a7f3d0,font-size:11px;
     classDef st fill:#1e3a5f,stroke:#38bdf8,color:#bae6fd,font-size:11px;
 
-    class F1,F2,F3,F4 ok;
+    class F1,F2,F3,F4,F5,F6 ok;
     class S1,S2,S3 st;
 ```
 
 > [!SUCCESS]
-> **Toutes les Priorités d'Optimisation & Débogage (P0 à P3) sont Résolues :**  
+> **Toutes les Priorités & Dernières Fonctionnalités sont Validées :**  
 > • **P0 (VRAM) :** Tous les caches de nœuds équipés de `disposeObject3D` $\rightarrow$ [[P0_VRAM_Leak_Remediation_Plan]].  
 > • **P1 (GC 60 FPS) :** `GraphStructuralCache`, indexation $\mathcal{O}(1)$ et Object Pooling $\rightarrow$ [[P1_Evaluation_Loop_GC_Remediation_Plan]].  
 > • **P2 (Rendu & Clonage) :** Propagation multi-hop (`sceneRoots.ts`) et clonage de TypedArrays (`cloneGraph.ts`) $\rightarrow$ [[P2_Geometry_Ownership_and_Clone_Integrity_Plan]].  
-> • **P3 (Sockets & Maths) :** Purge proactive des fils orphelins et invariants d'angles verrouillés $\rightarrow$ [[P3_Dynamic_Sockets_and_Math_Consolidation_Plan]].
+> • **P3 (Sockets & Maths) :** Purge proactive des fils orphelins et invariants d'angles verrouillés $\rightarrow$ [[P3_Dynamic_Sockets_and_Math_Consolidation_Plan]].  
+> • **Gizmos & Pivots :** Gizmo 3D interactif pour Force Fields + Entrée Matrix + Option universelle "Show Pivot" avec croix jaune viewport $\rightarrow$ [[Force_Field_Gizmo_and_Show_Pivot_Plan]].  
+> • **Motion Blur Particules & InstancedMesh :** Shaders de vélocité GPU pour `THREE.Points` et `THREE.InstancedMesh` avec empreinte de déplacement élargie et préservation stricte de la visibilité $\rightarrow$ [[Particle_Motion_Blur_Implementation]].
 
 ---
 
