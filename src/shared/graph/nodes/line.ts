@@ -6,7 +6,7 @@ import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { NodeDefinition, ParamFieldDef } from "../types";
 import { getCurveNodePose } from "../curvePoseStore";
 import { COMMON_MATERIAL_PARAM_FIELDS, extractMaterialParams, primitiveOutputs } from "./object";
-import { composeNativeMatrix } from "./transform";
+import { composeNativeMatrixWithShowPivot, applyPivotCross, PIVOT_DEFAULT_PARAMS } from "./transform";
 
 function asNumber(v: unknown, fallback: number): number {
   const n = Number(v);
@@ -117,6 +117,7 @@ export const CURVE_TO_LINE_NODE: NodeDefinition = {
     { id: "matrix", label: "Matrix", type: "matrix" },
   ],
   defaultParams: {
+    ...PIVOT_DEFAULT_PARAMS,
     ...LINE_TRANSFORM_DEFAULTS,
     linewidth: 2,
     dashed: false,
@@ -229,7 +230,8 @@ export const CURVE_TO_LINE_NODE: NodeDefinition = {
     // Native pose × the source curve node's pose (so the line follows the
     // curve's gizmo), keeping the geometry in the curve's local space.
     if (ctx.nodeId !== ctx.liveEditNodeId) {
-      line.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
+      line.matrix.copy(composeNativeMatrixWithShowPivot(inputs.matrix, params));
+      applyPivotCross(line, params);
       const curveSourceId = ctx.inputSources?.get("curve");
       const curvePose = curveSourceId ? getCurveNodePose(curveSourceId) : null;
       if (curvePose) line.matrix.multiply(curvePose);

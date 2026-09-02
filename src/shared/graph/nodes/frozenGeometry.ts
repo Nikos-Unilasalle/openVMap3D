@@ -3,7 +3,7 @@ import { NodeDefinition } from "../types";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { bakeMeshesToGeometry, FrozenGeometryData, geometryToFrozenData } from "../bakeGeometry";
 import { collectMeshes } from "../meshRequired";
-import { composeNativeMatrix } from "./transform";
+import { composeNativeMatrixWithShowPivot, applyPivotCross, PIVOT_DEFAULT_PARAMS } from "./transform";
 import {
   applyMaterialParams,
   buildPrimitiveDynamicParamFields,
@@ -57,6 +57,7 @@ export const OBJECT_FROZEN_NODE: NodeDefinition = {
   inputs: [...COMMON_PRIMITIVE_INPUTS],
   outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: {
+    ...PIVOT_DEFAULT_PARAMS,
     ...COMMON_DEFAULT_PARAMS,
     positions: [] as number[],
     normals: [] as number[],
@@ -90,7 +91,8 @@ export const OBJECT_FROZEN_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
+      mesh.matrix.copy(composeNativeMatrixWithShowPivot(inputs.matrix, params));
+      applyPivotCross(mesh, params);
     }
 
     const matParams = extractMaterialParams(inputs, params);

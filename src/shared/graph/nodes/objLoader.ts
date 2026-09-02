@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { NodeDefinition } from "../types";
 import { createNodeCache } from "../nodeCaches";
-import { composeNativeMatrixWithPivot } from "./transform";
+import { composeNativeMatrixWithShowPivot, applyPivotCross } from "./transform";
 import { COMMON_PRIMITIVE_OUTPUTS, TextureParams, applyMaterialParams, extractMaterialParams, primitiveOutputs } from "./object";
 
 interface ObjState {
@@ -63,6 +63,7 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
   outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: {
     visible: 1,
+    showPivot: 0,
     pivot: new THREE.Vector3(0, 0, 0),
     location: new THREE.Vector3(0, 0, 0),
     rotation: new THREE.Vector3(0, 0, 0),
@@ -211,6 +212,7 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
     { id: "location", label: "Location", kind: "vector" },
     { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true },
     { id: "scale", label: "Scale", kind: "vector" },
+    { id: "showPivot", label: "Show Pivot", kind: "boolean", group: "Transform" },
     { id: "pivot", label: "Pivot", kind: "vector", group: "Transform" },
     { id: "color", label: "Color (fallback)", kind: "color" },
     { id: "emissive", label: "Emissive (Glow)", kind: "color" },
@@ -234,9 +236,8 @@ export const OBJECT_OBJ_NODE: NodeDefinition = {
     // Apply matrix transformation
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       group.matrixAutoUpdate = false;
-      group.matrix.copy(
-        composeNativeMatrixWithPivot(inputs.matrix, params.location, params.rotation, params.scale, inputs.pivot, params),
-      );
+      group.matrix.copy(composeNativeMatrixWithShowPivot(inputs.matrix, params));
+      applyPivotCross(group, params);
     }
 
     const matParams = extractMaterialParams(inputs, params);

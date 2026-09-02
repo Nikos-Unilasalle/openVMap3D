@@ -5,7 +5,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { NodeDefinition } from "../types";
 import { COMMON_MATERIAL_PARAM_FIELDS, extractMaterialParams, primitiveOutputs } from "./object";
-import { composeNativeMatrix } from "./transform";
+import { composeNativeMatrixWithShowPivot, applyPivotCross, PIVOT_DEFAULT_PARAMS, PIVOT_PARAM_FIELDS } from "./transform";
 
 function asNumber(v: unknown, fallback: number): number {
   const n = Number(v);
@@ -63,6 +63,7 @@ export const CURVES_TO_LINES_NODE: NodeDefinition = {
     { id: "matrix", label: "Matrix", type: "matrix" },
   ],
   defaultParams: {
+    ...PIVOT_DEFAULT_PARAMS,
     visible: 1,
     location: new THREE.Vector3(0, 0, 0),
     rotation: new THREE.Vector3(0, 0, 0),
@@ -85,6 +86,7 @@ export const CURVES_TO_LINES_NODE: NodeDefinition = {
     opacity: 1.0,
   },
   dynamicParamFields: () => [
+    ...PIVOT_PARAM_FIELDS,
     { id: "visible", label: "Visible", kind: "boolean", group: "Transform" },
     { id: "location", label: "Location", kind: "vector", group: "Transform" },
     { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true, group: "Transform" },
@@ -217,7 +219,8 @@ export const CURVES_TO_LINES_NODE: NodeDefinition = {
     material.resolution.copy(size);
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
-      line.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
+      line.matrix.copy(composeNativeMatrixWithShowPivot(inputs.matrix, params));
+      applyPivotCross(line, params);
     }
 
     return primitiveOutputs(line);

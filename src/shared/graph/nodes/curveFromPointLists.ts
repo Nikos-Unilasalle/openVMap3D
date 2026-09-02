@@ -3,7 +3,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { NodeDefinition } from "../types";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { toBoolean } from "../sockets";
-import { composeNativeMatrix } from "./transform";
+import { composeNativeMatrixWithShowPivot, applyPivotCross, PIVOT_DEFAULT_PARAMS } from "./transform";
 import {
   applyMaterialParams,
   buildPrimitiveDynamicParamFields,
@@ -80,6 +80,7 @@ export const CURVES_FROM_POINT_LISTS_NODE: NodeDefinition = {
   inputs: [{ id: "pointLists", label: "Point Lists (List of Lists)", type: "list" }, ...COMMON_PRIMITIVE_INPUTS],
   outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: {
+    ...PIVOT_DEFAULT_PARAMS,
     ...COMMON_DEFAULT_PARAMS,
     radius: 0.1,
     radialSegments: 8,
@@ -108,7 +109,8 @@ export const CURVES_FROM_POINT_LISTS_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
+      mesh.matrix.copy(composeNativeMatrixWithShowPivot(inputs.matrix, params));
+      applyPivotCross(mesh, params);
     }
 
     // Every sub-list's points, flattened — cheap enough to stringify at this

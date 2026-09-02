@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { getUnusedAxes } from "./vector";
-import { NodeDefinition } from "../types";
+import { NodeDefinition, ParamFieldDef } from "../types";
 
 const ZERO = new THREE.Vector3(0, 0, 0);
 const ONE = new THREE.Vector3(1, 1, 1);
@@ -228,6 +228,98 @@ export function composeNativeMatrixWithPivot(
   // inherited half must land outside it, not between it and the geometry.
   const localRotScale = new THREE.Matrix4().multiply(mRotScale).multiply(mPivotInv);
   return applyInherited(parent, mPivotLoc, localRotScale, inherit);
+}
+
+/**
+ * "Show Pivot" — the shared pivot system for object-like nodes: a checkbox
+ * that reveals a plain yellow cross at the `pivot` vector, and a pivot that
+ * is the object's TRUE rotation/scale center (the correction below turns the
+ * composed matrix into T(loc)·T(P)·R·S·T(-P)). The cross is editor-only
+ * (userData.isHelper) and draws as a world-space axis: constant size, never
+ * rotated or scaled by the object.
+ */
+export const PIVOT_DEFAULT_PARAMS = { showPivot: 0, pivot: new THREE.Vector3(0, 0, 0) };
+
+export const PIVOT_PARAM_FIELDS: ParamFieldDef[] = [
+  { id: "showPivot", label: "Show Pivot", kind: "boolean" },
+  { id: "pivot", label: "Pivot", kind: "vector" },
+];
+
+const PIVOT_CROSS_SIZE = 0.5;
+
+const pivotCrossCache = createNodeCache<THREE.LineSegments>((cross) => {
+  cross.geometry.dispose();
+  (cross.material as THREE.Material).dispose();
+});
+
+function pivotCross(nodeId: string): THREE.LineSegments {
+  let cross = pivotCrossCache.get(nodeId);
+  if (!cross) {
+    const s = PIVOT_CROSS_SIZE;
+    const geometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(-s, 0, 0), new THREE.Vector3(s, 0, 0),
+      new THREE.Vector3(0, -s, 0), new THREE.Vector3(0, s, 0),
+      new THREE.Vector3(0, 0, -s), new THREE.Vector3(0, 0, s),
+    ]);
+    // depthTest off so a pivot inside the geometry stays visible; no shadow,
+    // no outline (LineSegments are invisible to the Outline pass).
+    const material = new THREE.LineBasicMaterial({ color: 0xffd54a, depthTest: false, transparent: true });
+    cross = new THREE.LineSegments(geometry, material);
+    cross.userData.isHelper = true;
+    cross.userData.isPivotCross = true;
+    cross.userData.nodeId = nodeId;
+    cross.renderOrder = 999;
+    pivotCrossCache.set(nodeId, cross);
+  }
+  return cross;
+}
+
+/** Adds/moves/removes the yellow pivot cross child according to params.showPivot. */
+export function applyPivotCross(object: THREE.Object3D, params: Record<string, unknown>): void {
+  const nodeId = typeof object.userData.nodeId === "string" ? object.userData.nodeId : "";
+  if (!nodeId) return;
+  const existing = object.children.find((child) => child.userData.isPivotCross);
+  const show = params.showPivot === undefined ? false : Boolean(params.showPivot) && params.showPivot !== 0;
+  if (!show) {
+    existing?.removeFromParent();
+    return;
+  }
+  const cross = pivotCross(nodeId);
+  if (!existing) object.add(cross);
+  const pivot = params.pivot instanceof THREE.Vector3 ? params.pivot : ZERO;
+  // World-space axis marker: cancel the object's rotation and scale so the
+  // cross keeps constant arm length and stays aligned to X/Y/Z.
+  const worldPivot = pivot.clone().applyMatrix4(object.matrix);
+  cross.matrixAutoUpdate = false;
+  cross.matrix.copy(object.matrix).invert().multiply(new THREE.Matrix4().makeTranslation(worldPivot.x, worldPivot.y, worldPivot.z));
+}
+
+/** The pivot rotation/scale correction for a composed native matrix, or null when unset/degenerate. */
+export function pivotCorrection(params?: Record<string, unknown>): THREE.Matrix4 | null {
+  const pivot = params?.pivot;
+  if (!(pivot instanceof THREE.Vector3) || pivot.lengthSq() < 1e-12) return null;
+  if (String(params?.inheritRotation ?? "parent") !== "parent") return null;
+  const scale = params?.scale instanceof THREE.Vector3 ? params.scale : ONE;
+  if (Math.abs(scale.x) < 1e-9 || Math.abs(scale.y) < 1e-9 || Math.abs(scale.z) < 1e-9) return null;
+  const rotation = params?.rotation instanceof THREE.Vector3 ? params.rotation : ZERO;
+  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rotation.x, rotation.y, rotation.z));
+  return new THREE.Matrix4()
+    .makeScale(1 / scale.x, 1 / scale.y, 1 / scale.z)
+    .multiply(new THREE.Matrix4().makeRotationFromQuaternion(q.clone().invert()))
+    .multiply(new THREE.Matrix4().makeTranslation(pivot.x, pivot.y, pivot.z))
+    .multiply(new THREE.Matrix4().makeRotationFromQuaternion(q))
+    .multiply(new THREE.Matrix4().makeScale(scale.x, scale.y, scale.z))
+    .multiply(new THREE.Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z));
+}
+
+/** Composes a native matrix, then applies the pivot correction when a pivot is set. */
+export function composeNativeMatrixWithShowPivot(
+  wiredMatrix: unknown,
+  params: Record<string, unknown>,
+): THREE.Matrix4 {
+  const base = composeNativeMatrix(wiredMatrix, params.location, params.rotation, params.scale, params);
+  const corr = pivotCorrection(params);
+  return corr ? base.multiply(corr) : base;
 }
 
 /**

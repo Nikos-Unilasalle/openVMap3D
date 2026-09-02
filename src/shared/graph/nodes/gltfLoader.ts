@@ -4,7 +4,7 @@ import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { NodeDefinition } from "../types";
 import { createNodeCache } from "../nodeCaches";
-import { composeNativeMatrixWithPivot } from "./transform";
+import { composeNativeMatrixWithShowPivot, applyPivotCross } from "./transform";
 import { COMMON_PRIMITIVE_OUTPUTS, TextureParams, applyMaterialParams, extractMaterialParams, primitiveOutputs } from "./object";
 import { isTauri } from "../../isTauri";
 import { describeMissingResources, directoryOf, externalResourceUris, resolveExternalResources } from "./gltfExternalResources";
@@ -494,15 +494,11 @@ export const OBJECT_GLTF_NODE: NodeDefinition = {
     { id: "visible", label: "Visible", type: "value" },
     { id: "matrix", label: "Matrix", type: "matrix" },
     { id: "material", label: "Material", type: "material" },
-    // glTF has no pivot concept of its own — vertices sit wherever the
-    // exporting app left them relative to (0,0,0), which a plain Transform
-    // always rotates/scales around. This lets rotation/scale pivot around
-    // whatever point actually matches the model instead.
-    { id: "pivot", label: "Pivot", type: "vector" },
   ],
   outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: {
     visible: 1,
+    showPivot: 0,
     pivot: new THREE.Vector3(0, 0, 0),
     location: new THREE.Vector3(0, 0, 0),
     rotation: new THREE.Vector3(0, 0, 0),
@@ -620,6 +616,7 @@ export const OBJECT_GLTF_NODE: NodeDefinition = {
     { id: "location", label: "Location", kind: "vector" },
     { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true },
     { id: "scale", label: "Scale", kind: "vector" },
+    { id: "showPivot", label: "Show Pivot", kind: "boolean", group: "Transform" },
     { id: "pivot", label: "Pivot", kind: "vector", group: "Transform" },
     {
       id: "useOwnMaterials",
@@ -644,9 +641,8 @@ export const OBJECT_GLTF_NODE: NodeDefinition = {
 
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       group.matrixAutoUpdate = false;
-      group.matrix.copy(
-        composeNativeMatrixWithPivot(inputs.matrix, params.location, params.rotation, params.scale, inputs.pivot, params),
-      );
+      group.matrix.copy(composeNativeMatrixWithShowPivot(inputs.matrix, params));
+      applyPivotCross(group, params);
     }
 
     // glTF ships PBR materials per-mesh (base color, metallic/roughness maps,

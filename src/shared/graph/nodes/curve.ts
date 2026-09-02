@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { NodeDefinition, ParamFieldDef } from "../types";
 import { createNodeCache } from "../nodeCaches";
-import { asVector3, composeNativeMatrix } from "./transform";
+import { asVector3, composeNativeMatrixWithShowPivot, applyPivotCross, PIVOT_DEFAULT_PARAMS, PIVOT_PARAM_FIELDS } from "./transform";
 import {
   applyMaterialParams,
   COMMON_MATERIAL_PARAM_FIELDS,
@@ -253,7 +253,8 @@ function applyNativePose(
 ): void {
   if (ctx.nodeId !== ctx.liveEditNodeId) {
     obj.matrixAutoUpdate = false;
-    obj.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
+    obj.matrix.copy(composeNativeMatrixWithShowPivot(inputs.matrix, params));
+    applyPivotCross(obj, params);
   }
 }
 
@@ -684,6 +685,7 @@ export const CURVE_FROM_POINTS_NODE: NodeDefinition = {
     { id: "geometry", label: "Curve Preview", type: "geometry" },
   ],
   defaultParams: {
+    ...PIVOT_DEFAULT_PARAMS,
     type: "catmull",
     closed: false,
     tension: 0.5,
@@ -695,6 +697,7 @@ export const CURVE_FROM_POINTS_NODE: NodeDefinition = {
     ...CURVE_TRANSFORM_DEFAULTS,
   },
   dynamicParamFields: () => [
+    ...PIVOT_PARAM_FIELDS,
     ...curveTransformFields(),
     { id: "type", label: "Type", kind: "select", options: ["catmull", "bezier", "linear"] },
     { id: "closed", label: "Closed", kind: "boolean" },
@@ -726,7 +729,7 @@ export const CURVE_FROM_POINTS_NODE: NodeDefinition = {
     // remembering to flip Type to Linear silently did nothing; forcing
     // linear here whenever Sag is on means the knob always visibly works.
     const type = sag > 0 ? "linear" : String(params.type || "catmull");
-    const poseMatrix = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params);
+    const poseMatrix = composeNativeMatrixWithShowPivot(inputs.matrix, params);
 
     let curve: THREE.Curve<THREE.Vector3>;
     curve = buildPointsCurve(pts, type, closed, tension, sag, localDownFor(poseMatrix));
@@ -761,6 +764,7 @@ export const CURVE_PRIMITIVE_NODE: NodeDefinition = {
     { id: "geometry", label: "Curve Preview", type: "geometry" },
   ],
   defaultParams: {
+    ...PIVOT_DEFAULT_PARAMS,
     primitiveType: "helix",
     radius: 1.5,
     height: 3.0,
@@ -771,6 +775,7 @@ export const CURVE_PRIMITIVE_NODE: NodeDefinition = {
     ...CURVE_TRANSFORM_DEFAULTS,
   },
   dynamicParamFields: () => [
+    ...PIVOT_PARAM_FIELDS,
     ...curveTransformFields(),
     {
       id: "primitiveType",
@@ -802,7 +807,7 @@ export const CURVE_PRIMITIVE_NODE: NodeDefinition = {
     // gentle drape. Coarsen the sample once segments actually go straight,
     // same way a real anchored strand only has a handful of spans.
     const steps = sag > 0 ? 20 : 64;
-    const poseMatrix = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params);
+    const poseMatrix = composeNativeMatrixWithShowPivot(inputs.matrix, params);
     const localDown = localDownFor(poseMatrix);
 
     let curve: THREE.Curve<THREE.Vector3>;
@@ -1045,6 +1050,7 @@ export const CURVE_TO_MESH_NODE: NodeDefinition = {
   ],
   outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: {
+    ...PIVOT_DEFAULT_PARAMS,
     visible: 1,
     location: new THREE.Vector3(0, 0, 0),
     rotation: new THREE.Vector3(0, 0, 0),
@@ -1088,6 +1094,7 @@ export const CURVE_TO_MESH_NODE: NodeDefinition = {
     showCurve: 1,
   },
   dynamicParamFields: (instance) => [
+    ...PIVOT_PARAM_FIELDS,
     { id: "visible", label: "Visible", kind: "boolean", group: "Transform" },
     { id: "location", label: "Location", kind: "vector", group: "Transform" },
     { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true, group: "Transform" },
@@ -1267,7 +1274,8 @@ export const CURVE_TO_MESH_NODE: NodeDefinition = {
     // surface instead of pushing them off by a baked-in world offset.
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       group.matrixAutoUpdate = false;
-      group.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
+      group.matrix.copy(composeNativeMatrixWithShowPivot(inputs.matrix, params));
+      applyPivotCross(group, params);
       const curveSourceId = ctx.inputSources?.get("curve");
       const curvePose = curveSourceId ? getCurveNodePose(curveSourceId) : null;
       if (curvePose) group.matrix.multiply(curvePose);
@@ -1311,6 +1319,7 @@ export const SAMPLE_CURVE_NODE: NodeDefinition = {
     up: new THREE.Vector3(0, 1, 0),
   },
   dynamicParamFields: () => [
+    ...PIVOT_PARAM_FIELDS,
     { id: "progress", label: "Progress (0-1)", kind: "number", step: 0.01 },
     { id: "up", label: "Up Vector", kind: "vector" },
   ],
@@ -1388,6 +1397,7 @@ export const CURVE_DEFORM_NODE: NodeDefinition = {
   ],
   outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: {
+    ...PIVOT_DEFAULT_PARAMS,
     visible: 1,
     location: new THREE.Vector3(0, 0, 0),
     rotation: new THREE.Vector3(0, 0, 0),
@@ -1397,6 +1407,7 @@ export const CURVE_DEFORM_NODE: NodeDefinition = {
     axis: "z",
   },
   dynamicParamFields: () => [
+    ...PIVOT_PARAM_FIELDS,
     { id: "visible", label: "Visible", kind: "boolean" },
     { id: "location", label: "Location", kind: "vector" },
     { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true },
@@ -1527,7 +1538,8 @@ export const CURVE_DEFORM_NODE: NodeDefinition = {
     // gizmo to drag and could only be placed by moving its source.
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       state.mesh.matrixAutoUpdate = false;
-      state.mesh.matrix.copy(composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params));
+      state.mesh.matrix.copy(composeNativeMatrixWithShowPivot(inputs.matrix, params));
+      applyPivotCross(state.mesh, params);
     }
 
     return primitiveOutputs(state.mesh);
@@ -1548,6 +1560,7 @@ export const CURVES_TO_MESH_NODE: NodeDefinition = {
   ],
   outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: {
+    ...PIVOT_DEFAULT_PARAMS,
     visible: 1,
     location: new THREE.Vector3(0, 0, 0),
     rotation: new THREE.Vector3(0, 0, 0),
@@ -1575,6 +1588,7 @@ export const CURVES_TO_MESH_NODE: NodeDefinition = {
     doubleSided: true,
   },
   dynamicParamFields: () => [
+    ...PIVOT_PARAM_FIELDS,
     { id: "visible", label: "Visible", kind: "boolean", group: "Transform" },
     { id: "location", label: "Location", kind: "vector", group: "Transform" },
     { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true, group: "Transform" },
@@ -1653,7 +1667,8 @@ export const CURVES_TO_MESH_NODE: NodeDefinition = {
     if (ctx.nodeId !== ctx.liveEditNodeId) {
       const wiredMatrix = inputs.matrix instanceof THREE.Matrix4 ? inputs.matrix.clone() : new THREE.Matrix4();
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(composeNativeMatrix(wiredMatrix, params.location, params.rotation, params.scale, params));
+      mesh.matrix.copy(composeNativeMatrixWithShowPivot(wiredMatrix, params));
+      applyPivotCross(mesh, params);
     }
 
     const matParams = extractMaterialParams(inputs, params);

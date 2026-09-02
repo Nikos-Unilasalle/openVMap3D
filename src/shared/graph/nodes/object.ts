@@ -5,7 +5,7 @@ import { toBoolean } from "../sockets";
 import { defaultFont } from "../../three/fonts/helvetikerFont";
 import { BUILTIN_FONTS, FONT_NAMES } from "../../three/fonts/fonts";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
-import { composeNativeMatrix } from "./transform";
+import { composeNativeMatrixWithShowPivot, applyPivotCross } from "./transform";
 import { disposeLabelMesh } from "./labelTexture";
 
 export function numberInput(input: unknown, param: unknown, fallback: number): number {
@@ -514,63 +514,6 @@ export function primitiveOutputs(object: THREE.Object3D, params?: Record<string,
   return { geometry: object, matrix: object.matrix.clone() };
 }
 
-/** Side length of the "Show Pivot" cross, in world units. */
-const PIVOT_CROSS_SIZE = 0.5;
-
-const pivotCrossCache = createNodeCache<THREE.LineSegments>((cross) => {
-  cross.geometry.dispose();
-  (cross.material as THREE.Material).dispose();
-});
-
-function pivotCross(nodeId: string): THREE.LineSegments {
-  let cross = pivotCrossCache.get(nodeId);
-  if (!cross) {
-    const s = PIVOT_CROSS_SIZE;
-    const geometry = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(-s, 0, 0), new THREE.Vector3(s, 0, 0),
-      new THREE.Vector3(0, -s, 0), new THREE.Vector3(0, s, 0),
-      new THREE.Vector3(0, 0, -s), new THREE.Vector3(0, 0, s),
-    ]);
-    const material = new THREE.LineBasicMaterial({ color: 0xffd54a, depthTest: false, transparent: true });
-    cross = new THREE.LineSegments(geometry, material);
-    // Editor-only overlay: the viewport hides isHelper objects in the
-    // output / camera view, and the Outline pass only ever targets meshes.
-    cross.userData.isHelper = true;
-    cross.userData.isPivotCross = true;
-    cross.userData.nodeId = nodeId;
-    cross.renderOrder = 999;
-    pivotCrossCache.set(nodeId, cross);
-  }
-  return cross;
-}
-
-/**
- * "Show Pivot": a plain yellow cross at the node's `pivot` vector (local
- * space — the cross is a child of the object, so it rides every transform).
- * Keyframable like any param, since the cross re-reads `params.pivot` every
- * evaluate.
- */
-function applyPivotCross(object: THREE.Object3D, params: Record<string, unknown>): void {
-  const nodeId = typeof object.userData.nodeId === "string" ? object.userData.nodeId : "";
-  if (!nodeId) return;
-  const existing = object.children.find((child) => child.userData.isPivotCross);
-  const show = toBoolean(params.showPivot ?? 0);
-  if (!show) {
-    existing?.removeFromParent();
-    return;
-  }
-  const cross = pivotCross(nodeId);
-  if (!existing) object.add(cross);
-  const pivot = params.pivot instanceof THREE.Vector3 ? params.pivot : new THREE.Vector3();
-  // Draw the cross at the pivot's WORLD position, axis-aligned and unscaled:
-  // as a child its world matrix is object.matrix · cross.matrix, so setting
-  // cross.matrix = object.matrix⁻¹ · T(worldPivot) cancels the object's
-  // rotation and scale — the cross is an axis marker of constant size, not
-  // geometry that turns and grows with the object.
-  const worldPivot = pivot.clone().applyMatrix4(object.matrix);
-  cross.matrixAutoUpdate = false;
-  cross.matrix.copy(object.matrix).invert().multiply(new THREE.Matrix4().makeTranslation(worldPivot.x, worldPivot.y, worldPivot.z));
-}
 
 export const COMMON_MATERIAL_PARAM_FIELDS: ParamFieldDef[] = [
   { id: "color", label: "Color (fallback)", kind: "color", group: "Material" },
@@ -811,26 +754,7 @@ const meshCache = createNodeCache<THREE.Mesh>(disposeObject3D);
  * center in world space.
  */
 function primitiveMatrix(inputs: Record<string, unknown>, params: Record<string, unknown>): THREE.Matrix4 {
-  const base = composeNativeMatrix(inputs.matrix, params.location, params.rotation, params.scale, params);
-  const pivot = params.pivot;
-  if (!(pivot instanceof THREE.Vector3) || pivot.lengthSq() < 1e-12) return base;
-  if (String(params.inheritRotation ?? "parent") !== "parent") return base;
-  const scale = params.scale instanceof THREE.Vector3 ? params.scale : new THREE.Vector3(1, 1, 1);
-  if (Math.abs(scale.x) < 1e-9 || Math.abs(scale.y) < 1e-9 || Math.abs(scale.z) < 1e-9) return base;
-
-  // Exact sandwich: T(loc)·R·S · [S⁻¹R⁻¹·T(P)·R·S·T(-P)] = T(loc)·T(P)·R·S·T(-P)
-  // — the pivot point P (and therefore the Show Pivot cross at local P) stays
-  // fixed under the rotation.
-  const rotation = params.rotation instanceof THREE.Vector3 ? params.rotation : new THREE.Vector3();
-  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rotation.x, rotation.y, rotation.z));
-  const corr = new THREE.Matrix4()
-    .makeScale(1 / scale.x, 1 / scale.y, 1 / scale.z)
-    .multiply(new THREE.Matrix4().makeRotationFromQuaternion(q.clone().invert()))
-    .multiply(new THREE.Matrix4().makeTranslation(pivot.x, pivot.y, pivot.z))
-    .multiply(new THREE.Matrix4().makeRotationFromQuaternion(q))
-    .multiply(new THREE.Matrix4().makeScale(scale.x, scale.y, scale.z))
-    .multiply(new THREE.Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z));
-  return base.multiply(corr);
+  return composeNativeMatrixWithShowPivot(inputs.matrix, params);
 }
 
 function boxMesh(nodeId: string): THREE.Mesh {
