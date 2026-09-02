@@ -252,11 +252,43 @@ export interface MaterialParams {
   transmission: number;
   /** Physical-material thickness in world units — how glass-like the transmission looks. */
   thickness: number;
+  /** Custom shader material, if provided by a specialized material node */
+  customMaterial?: THREE.Material;
 }
 
 function materialParamsFromValue(v: unknown): MaterialParams | null {
   if (typeof v !== "object" || v === null) return null;
+  if (v instanceof THREE.Material) {
+    return {
+      color: new THREE.Color(0xffffff),
+      emissive: new THREE.Color(0x000000),
+      emissiveIntensity: 1.0,
+      shadeless: false,
+      roughness: 0.4,
+      metalness: 0.1,
+      wireframe: false,
+      opacity: (v as any).opacity ?? 1.0,
+      transmission: 0,
+      thickness: 0.5,
+      customMaterial: v,
+    };
+  }
   const m = v as Record<string, unknown>;
+  if ("customMaterial" in m && m.customMaterial instanceof THREE.Material) {
+    return {
+      color: asColor(m.color, new THREE.Color(0xffffff)),
+      emissive: asColor(m.emissive, new THREE.Color(0x000000)),
+      emissiveIntensity: Math.max(0, numberInput(m.emissiveIntensity, undefined, 1.0)),
+      shadeless: toBoolean(m.shadeless),
+      roughness: numberInput(m.roughness, undefined, 0.4),
+      metalness: numberInput(m.metalness, undefined, 0.1),
+      wireframe: toBoolean(m.wireframe),
+      opacity: Math.min(1, Math.max(0, numberInput(m.opacity, undefined, 1.0))),
+      transmission: Math.min(1, Math.max(0, numberInput(m.transmission, undefined, 0))),
+      thickness: Math.max(0, numberInput(m.thickness, undefined, 0.5)),
+      customMaterial: m.customMaterial as THREE.Material,
+    };
+  }
   if (!("color" in m) && !("roughness" in m) && !("opacity" in m)) return null;
   return {
     color: asColor(m.color, new THREE.Color(0xffffff)),
@@ -310,8 +342,27 @@ export function applyMaterialParams(
   defaultSide: THREE.Side = THREE.FrontSide,
   texParams?: TextureParams
 ) {
+  if (matParams.customMaterial) {
+    if (mesh.material !== matParams.customMaterial) {
+      if (Array.isArray(mesh.material)) {
+        mesh.material.forEach((m) => m.dispose());
+      } else if (
+        mesh.material &&
+        !(mesh.material as any).__isSharedCustom &&
+        !(mesh.material instanceof THREE.MeshStandardMaterial) &&
+        !(mesh.material instanceof THREE.MeshBasicMaterial) &&
+        !(mesh.material instanceof THREE.MeshPhysicalMaterial)
+      ) {
+        mesh.material.dispose();
+      }
+      mesh.material = matParams.customMaterial;
+    }
+    return;
+  }
+
   const alpha = texParams?.activeDiffuse ? textureHasAlpha(texParams.activeDiffuse) : false;
   const signature = [
+    matParams.customMaterial ? (matParams.customMaterial as THREE.Material).uuid : "standard",
     matParams.color.getHex(),
     matParams.emissive.getHex(),
     matParams.emissiveIntensity,

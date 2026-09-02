@@ -166,8 +166,31 @@ Dans les scènes de vidéo-mapping où la bande passante GPU est critique (multi
 
 ---
 
+## 7. Shaders FX Avancés du Moteur Tsuji
+
+Les shaders procéduraux de Tsuji reposent sur des principes physiques et artistiques branchless optimisés pour WebGL2 :
+
+### 7.1 Métal Liquide par Domain Warping FBM
+Le déplacement de surface imbrique plusieurs couches d'échantillonnage de bruit Simplex :
+$$p' = p + \vec{\alpha} \cdot \text{FBM}(p \cdot s_1 + t \cdot v_1)$$
+$$p'' = p' + \vec{\beta} \cdot \text{FBM}(p' \cdot s_2 - t \cdot v_2)$$
+La normale de surface et la position des sommets sont perturbées simultanément, créant une tension superficielle de mercure en fusion sans simulation hydrodynamique lourde.
+
+### 7.2 Interférence Optique en Couches Minces (Thin-Film Iridescence)
+Le déphasage lumineux $\Delta \phi$ dépend de l'épaisseur nanométrique $d$, de l'indice de réfraction $\eta$ et de l'angle d'incidence $\theta_i$ :
+$$\text{OPD} = 2 \eta d \cos(\theta_t)$$
+Les franges spectrales arc-en-ciel sont calculées par déphasage direct sur chaque composante RVB avec $\lambda_R = 650\text{ nm}, \lambda_G = 510\text{ nm}, \lambda_B = 440\text{ nm}$ :
+$$I_c = \cos\left(\frac{2\pi \cdot \text{OPD}}{\lambda_c}\right) \cdot 0.5 + 0.5$$
+
+### 7.3 Caméra Thermique & Infrarouge (FLIR / White Hot)
+L'émissivité thermique est projetée sur une rampe de température continue (Noir $\rightarrow$ Violet $\rightarrow$ Rouge $\rightarrow$ Jaune $\rightarrow$ Blanc incandescence), avec possibilité d'inversion instantanée (polarité militaire White Hot / Black Hot).
+
+---
+
 ## 🔗 Notes Associées
+- [[Creative FX and Stage Nodes]]
+- [[Node Catalog]]
 - [[Post-Processing Uber-Shader Passes]]
 - [[GPGPU Simulation and Particle Dynamics]]
 - [[Audio Reactive Signal Processing]]
-- [[ShaderFX Nodes and Transition Pipeline]]
+

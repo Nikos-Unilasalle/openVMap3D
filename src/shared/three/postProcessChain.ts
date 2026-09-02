@@ -99,6 +99,7 @@ function configurePass(
   height: number,
   pixelRatio: number,
   outlineTarget: THREE.Object3D | null,
+  time = 0,
 ): void {
   switch (cfg.type) {
     case "bloom": {
@@ -161,7 +162,10 @@ function configurePass(
     }
     case "film-grain": {
       if (pass.uniforms["nIntensity"]) pass.uniforms["nIntensity"].value = Number(cfg.params.noiseIntensity) ?? 0.35;
+      if (pass.uniforms["sIntensity"]) pass.uniforms["sIntensity"].value = Number(cfg.params.scanlinesIntensity) ?? 0.05;
+      if (pass.uniforms["sCount"]) pass.uniforms["sCount"].value = Number(cfg.params.scanlinesCount) ?? 2048;
       if (pass.uniforms["grayscale"]) pass.uniforms["grayscale"].value = Boolean(cfg.params.grayscale) ? 1 : 0;
+      if (pass.uniforms["time"]) pass.uniforms["time"].value = time;
       break;
     }
     case "glitch": {
@@ -216,6 +220,8 @@ export interface PostProcessFrame {
   height: number;
   /** Root whose meshes the Outline pass highlights, if that pass is active. */
   outlineTarget: THREE.Object3D | null;
+  /** Current playback or wallclock time in seconds for animated passes. */
+  time?: number;
 }
 
 /**
@@ -297,7 +303,7 @@ export function createPostProcessChain(deps: PostProcessChainDeps) {
           passCache.set(cfg.nodeId, cached);
         }
 
-        configurePass(cached.pass, cfg, width, height, renderer.getPixelRatio(), outlineTarget);
+        configurePass(cached.pass, cfg, width, height, renderer.getPixelRatio(), outlineTarget, frame.time ?? 0);
         // A cached pass owns render targets sized on its first instantiation;
         // EffectComposer.setSize only reaches the passes currently in
         // composer.passes, and this one only rejoins the chain here, after the

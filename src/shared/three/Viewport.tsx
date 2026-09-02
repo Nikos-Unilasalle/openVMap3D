@@ -2727,7 +2727,7 @@ export function Viewport({
       }
 
       // Force Field proxy — position and axis gizmo
-      if (!outputMode && selectedNodeForPivot?.type === "particles/force-field") {
+      if (!outputMode && (selectedNodeForPivot?.type === "particles/force-field" || selectedNodeForPivot?.type === "particles/curl-noise")) {
         forceFieldProxyNodeId = selectedNodeForPivot.id;
         forceFieldProxy.visible = true;
         if (!transformControls?.dragging || transformControls.object !== forceFieldProxy) {
@@ -3062,6 +3062,7 @@ export function Viewport({
           width,
           height,
           outlineTarget: currentObject,
+          time: clock.time,
         });
       } else {
         // Nothing in the chain this frame — release the passes once we actually

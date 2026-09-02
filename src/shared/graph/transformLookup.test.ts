@@ -208,6 +208,10 @@ describe("GIZMO_SELECTABLE_TYPES", () => {
       "calibration/grid",
       "modifier/lattice",
       "particles/force-field",
+      "particles/curl-noise",
+      "particles/strange-attractor",
+      "object/raccoon",
+      "object/laser-beam",
     ]);
   });
 });
