@@ -46,20 +46,53 @@ describe("PARTICLE_STRANGE_ATTRACTOR_NODE", () => {
     expect(res.geometry).toBeInstanceOf(THREE.Line);
   });
 
-  it("supports Aizawa and Thomas attractors", () => {
-    const aizawa = PARTICLE_STRANGE_ATTRACTOR_NODE.evaluate(
-      {},
-      { ...PARTICLE_STRANGE_ATTRACTOR_NODE.defaultParams, attractorType: "aizawa", steps: 200 },
-      CTX,
-    ) as any;
-    expect(aizawa.geometry).toBeDefined();
+  it("supports all built-in attractor presets", () => {
+    const types = ["aizawa", "thomas", "rossler", "halvorsen", "chen", "chua", "sprott", "four-wing"];
+    for (const t of types) {
+      const res = PARTICLE_STRANGE_ATTRACTOR_NODE.evaluate(
+        {},
+        { ...PARTICLE_STRANGE_ATTRACTOR_NODE.defaultParams, attractorType: t, steps: 150 },
+        { ...CTX, nodeId: `attractor-${t}` },
+      ) as any;
+      expect(res.geometry).toBeDefined();
+      expect(res.points.length).toBeGreaterThan(0);
+    }
+  });
 
-    const thomas = PARTICLE_STRANGE_ATTRACTOR_NODE.evaluate(
-      {},
-      { ...PARTICLE_STRANGE_ATTRACTOR_NODE.defaultParams, attractorType: "thomas", steps: 200 },
-      CTX,
+  it("supports custom user-defined formula mode", () => {
+    const res = PARTICLE_STRANGE_ATTRACTOR_NODE.evaluate(
+      { paramA: 12.0 },
+      {
+        ...PARTICLE_STRANGE_ATTRACTOR_NODE.defaultParams,
+        attractorType: "custom",
+        customDx: "a * (y - x)",
+        customDy: "x * (b - z) - y",
+        customDz: "x * y - c * z",
+        paramA: 12.0,
+        paramB: 28.0,
+        paramC: 2.666,
+        steps: 300,
+      },
+      { ...CTX, nodeId: "attractor-custom" },
     ) as any;
-    expect(thomas.geometry).toBeDefined();
+    expect(res.geometry).toBeInstanceOf(THREE.Points);
+    const pts = res.geometry as THREE.Points;
+    expect(pts.geometry.attributes.position.count).toBe(300);
+    expect(res.points.length).toBeGreaterThan(0);
+  });
+
+  it("gracefully falls back on malformed custom expressions without crashing", () => {
+    const res = PARTICLE_STRANGE_ATTRACTOR_NODE.evaluate(
+      {},
+      {
+        ...PARTICLE_STRANGE_ATTRACTOR_NODE.defaultParams,
+        attractorType: "custom",
+        customDx: "syntax error ((",
+        steps: 100,
+      },
+      { ...CTX, nodeId: "attractor-error" },
+    ) as any;
+    expect(res.geometry).toBeDefined();
   });
 
   it("applies transform location and visibility", () => {

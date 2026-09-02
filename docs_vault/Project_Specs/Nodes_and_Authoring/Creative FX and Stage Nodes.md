@@ -50,11 +50,24 @@ Tous les modificateurs géométriques de Tsuji intègrent désormais le contrat 
 * **Intégration Tsuji** : Câblé sur les prises `Force Field` de `particles/simulate` et visualisé en 3D via le proxy Gizmo interactif du Viewport.
 
 ### 2.2 `particles/strange-attractor`
-* **Objectif** : Générer des sculptures de trajectoires déterministes issues de la théorie du chaos.
-* **Systèmes intégrés** :
-  * **Lorenz (Effet Papillon)** : $\dot{x} = \sigma(y-x), \; \dot{y} = x(\rho-z)-y, \; \dot{z} = xy - \beta z$ ($\sigma=10, \rho=28, \beta=8/3$).
-  * **Aizawa (Torus)** : $\dot{x} = (z - 0.7)x - 3.5y, \; \dot{y} = 3.5x + (z-0.7)y, \; \dot{z} = 0.6 + 0.95z - z^3/3 - (x^2+y^2)(1+0.25z)$.
-  * **Thomas (Labyrinthe cyclique)** : $\dot{x} = \sin(y) - bx, \; \dot{y} = \sin(z) - by, \; \dot{z} = \sin(x) - bz$.
+* **Objectif** : Générer des sculptures de trajectoires déterministes issues de la théorie du chaos avec intégrateur **Runge-Kutta 4 (RK4)** haute fidélité.
+* **Systèmes intégrés (Presets)** :
+  * **Lorenz (Effet Papillon)** : $\dot{x} = 10(y-x), \; \dot{y} = x(28-z)-y, \; \dot{z} = xy - \frac{8}{3}z$.
+  * **Aizawa (Torus)** : $\dot{x} = (z - 0.7)x - 3.5y, \; \dot{y} = 3.5x + (z-0.7)y, \; \dot{z} = 0.6 + 0.95z - z^3/3 - (x^2+y^2)(1+0.25z) + 0.1z x^3$.
+  * **Thomas (Labyrinthe cyclique)** : $\dot{x} = \sin(y) - bx, \; \dot{y} = \sin(z) - by, \; \dot{z} = \sin(x) - bz$ ($b = 0.208186$).
+  * **Rössler (Spirale repliée)** : $\dot{x} = -y - z, \; \dot{y} = x + ay, \; \dot{z} = b + z(x - c)$ ($a = 0.2, b = 0.2, c = 5.7$).
+  * **Halvorsen (Symétrie cyclique 3D)** : $\dot{x} = -ax - 4y - 4z - y^2, \; \dot{y} = -ay - 4z - 4x - z^2, \; \dot{z} = -az - 4x - 4y - x^2$ ($a = 1.89$).
+  * **Chen (Double vortex)** : $\dot{x} = a(y - x), \; \dot{y} = (c - a)x - xz + cy, \; \dot{z} = xy - bz$ ($a = 35, b = 3, c = 28$).
+  * **Chua (Double Scroll)** : Circuit non-linéaire avec fonction par morceaux $h(x)$.
+  * **Sprott (Sprott B)** : Modèle polynomial minimaliste $\dot{x} = yz, \; \dot{y} = x - y, \; \dot{z} = 1 - xy$.
+  * **Four-Wing (Quadruple lobe)** : $\dot{x} = ax + yz, \; \dot{y} = bx + cy - xz, \; \dot{z} = -z - xy$.
+* **Mode Custom (Formule Utilisateur)** :
+  * Permet d'écrire directement ses équations différentielles sous forme d'expressions mathématiques compilées JIT à 60 FPS :
+    * `dx / dt` : ex. `a * (y - x)`
+    * `dy / dt` : ex. `x * (b - z) - y`
+    * `dz / dt` : ex. `x * y - c * z`
+  * **Variables accessibles** : `x`, `y`, `z`, `t` (temps), `a`, `b`, `c` (paramètres numériques modulables ou câblables).
+  * **Fonctions mathématiques autorisées** : `sin`, `cos`, `tan`, `abs`, `sqrt`, `exp`, `pow`, `min`, `max`, `sign`, et opérateur puissance `^` ou `**`.
 * **Sortie** : Objet 3D (`geometry` Points ou Line) compatible Gizmo/Transform + liste de vecteurs (`points`) réinjectable dans `particles/emitter-from-points`.
 
 ---
