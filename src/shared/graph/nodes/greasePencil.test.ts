@@ -263,4 +263,49 @@ describe("greasePencil node", () => {
     const tinted = tintStrokesAtPosition(frames, 0, new THREE.Vector3(0, 0, 0), "#ffffff", 0.5, 0.5);
     expect(tinted[0].strokes[0].color).not.toBe("#000000");
   });
+
+  it("handles solid fill color fallback and material polygonOffset correctly", () => {
+    const node = { ...GREASE_PENCIL_NODE };
+    const frames = [
+      {
+        frame: 0,
+        strokes: [
+          {
+            id: "s1",
+            color: "#ff0000",
+            fill: true,
+            points: [
+              { x: 0, y: 0, z: 0, pressure: 1.0 },
+              { x: 1, y: 0, z: 0, pressure: 1.0 },
+              { x: 1, y: 1, z: 0, pressure: 1.0 },
+            ],
+          },
+        ],
+      },
+    ];
+
+    // Evaluate with red stroke and no explicit fill color -> fill should fallback to stroke color (#ff0000)
+    const ctx = { nodeId: "gp_test_fill", currentFrame: 0 } as any;
+    const res = node.evaluate(
+      {},
+      { ...GREASE_PENCIL_NODE.defaultParams, frames, activeColor: "#ff0000", fillColor: "" },
+      ctx,
+    );
+    expect(res.geometry).toBeInstanceOf(THREE.Group);
+    const group = res.geometry as THREE.Group;
+    const fillMesh = group.children.find((c) => (c as THREE.Mesh).renderOrder === 8) as THREE.Mesh;
+    expect(fillMesh).toBeDefined();
+    expect(fillMesh.visible).toBe(true);
+
+    const mat = fillMesh.material as THREE.MeshBasicMaterial;
+    expect(mat.polygonOffset).toBe(true);
+    expect(mat.polygonOffsetFactor).toBe(1);
+
+    const colors = fillMesh.geometry.getAttribute("color");
+    expect(colors).toBeDefined();
+    // Red color in Float32 (r=1, g=0, b=0)
+    expect(colors.getX(0)).toBeCloseTo(1.0);
+    expect(colors.getY(0)).toBeCloseTo(0.0);
+    expect(colors.getZ(0)).toBeCloseTo(0.0);
+  });
 });

@@ -392,7 +392,7 @@ export const GREASE_PENCIL_NODE: NodeDefinition = {
     brushSize: 4,
     brushType: "ink_pen" as GreaseBrushType,
     solidFill: false,
-    fillColor: "#38bdf8",
+    fillColor: "",
     smoothing: 0.2,
     onionSkin: true,
     onionSkinBefore: 1,
@@ -448,7 +448,10 @@ export const GREASE_PENCIL_NODE: NodeDefinition = {
     const brushSize = Number(params.brushSize) || 4;
     const nodeBrushType: GreaseBrushType = (params.brushType as GreaseBrushType) || "ink_pen";
     const nodeSolidFill = Boolean(params.solidFill);
-    const nodeFillColor = typeof params.fillColor === "string" ? params.fillColor : activeColorHex;
+    const nodeFillColor =
+      typeof params.fillColor === "string" && params.fillColor.trim() !== ""
+        ? params.fillColor
+        : activeColorHex;
     const onionSkinEnabled = Boolean(params.onionSkin ?? true);
 
     const onionSkinBefore = Number(params.onionSkinBefore) ?? 1;
@@ -463,7 +466,7 @@ export const GREASE_PENCIL_NODE: NodeDefinition = {
       for (let k = 0; k < s.points.length; k++) {
         pSum += s.points[k].pressure;
       }
-      strokeFingerprint += `${s.id}:${s.color}:${s.brushType}:${s.fill ? 1 : 0}:${s.points.length}:${pSum.toFixed(2)};`;
+      strokeFingerprint += `${s.id}:${s.color}:${s.fillColor || ""}:${s.brushType}:${s.fill ? 1 : 0}:${s.points.length}:${pSum.toFixed(2)};`;
     }
 
     // Signature for caching and fast path
@@ -490,7 +493,12 @@ export const GREASE_PENCIL_NODE: NodeDefinition = {
       const filledStrokes = strokes.map((s) => ({
         ...s,
         fill: s.fill ?? nodeSolidFill,
-        fillColor: s.fillColor ?? nodeFillColor,
+        fillColor:
+          typeof s.fillColor === "string" && s.fillColor.trim() !== ""
+            ? s.fillColor
+            : typeof s.color === "string" && s.color.trim() !== ""
+            ? s.color
+            : nodeFillColor,
       }));
       const fillGeo = buildStrokesFillGeometry(filledStrokes, nodeFillColor);
 
@@ -503,7 +511,10 @@ export const GREASE_PENCIL_NODE: NodeDefinition = {
             side: THREE.DoubleSide,
             vertexColors: true,
             depthTest: true,
-            depthWrite: true,
+            depthWrite: false,
+            polygonOffset: true,
+            polygonOffsetFactor: 1,
+            polygonOffsetUnits: 1,
           });
         }
 
@@ -536,6 +547,9 @@ export const GREASE_PENCIL_NODE: NodeDefinition = {
             vertexColors: true,
             depthTest: true,
             depthWrite: true,
+            polygonOffset: true,
+            polygonOffsetFactor: -1,
+            polygonOffsetUnits: -1,
           });
         }
 

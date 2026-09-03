@@ -1840,14 +1840,20 @@ export function Viewport({
           const finalPoints = (taperStart || taperEnd)
             ? applyStrokeTaper(gpActivePointsRef.current, taperStart, taperEnd)
             : gpActivePointsRef.current;
+          const strokeColor = typeof gpNode.params.activeColor === "string" ? gpNode.params.activeColor : "#38bdf8";
+          const fillColorVal =
+            typeof gpNode.params.fillColor === "string" && gpNode.params.fillColor.trim() !== ""
+              ? gpNode.params.fillColor
+              : strokeColor;
+
           const newStroke: GreaseStroke = {
             id: `stroke_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
             points: finalPoints,
-            color: typeof gpNode.params.activeColor === "string" ? gpNode.params.activeColor : "#38bdf8",
+            color: strokeColor,
             width: Number(gpNode.params.brushSize) || 4,
             brushType: gpBrushTypeRef.current,
             fill: gpSolidFillRef.current,
-            fillColor: typeof gpNode.params.fillColor === "string" ? gpNode.params.fillColor : undefined,
+            fillColor: gpSolidFillRef.current ? fillColorVal : undefined,
           };
 
           const currentFrames = (gpNode.params.frames as KeyframeDrawing[]) || [];
@@ -3892,7 +3898,7 @@ export function Viewport({
                 }}
               />
 
-              {/* Color picker */}
+              {/* Stroke Color picker */}
               <label
                 style={{
                   display: "flex",
@@ -3900,7 +3906,7 @@ export function Viewport({
                   gap: 4,
                   cursor: "pointer",
                 }}
-                title="Stroke color"
+                title="Stroke color (outline)"
               >
                 <input
                   type="color"
@@ -3914,6 +3920,39 @@ export function Viewport({
                     padding: 0,
                     border: "1px solid rgba(255,255,255,0.4)",
                     borderRadius: "50%",
+                    cursor: "pointer",
+                    backgroundColor: "transparent",
+                  }}
+                />
+              </label>
+
+              {/* Fill Color picker */}
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  cursor: "pointer",
+                  opacity: gpSolidFill ? 1 : 0.4,
+                }}
+                title={gpSolidFill ? "Fill color (interior shape color)" : "Fill color (enable Solid Fill to activate)"}
+              >
+                <input
+                  type="color"
+                  value={
+                    typeof gpNode.params.fillColor === "string" && gpNode.params.fillColor.trim() !== ""
+                      ? gpNode.params.fillColor
+                      : activeColor
+                  }
+                  onChange={(e) =>
+                    onParamChange?.("fillColor", e.target.value, gpNode.id)
+                  }
+                  style={{
+                    width: 18,
+                    height: 18,
+                    padding: 0,
+                    border: "1px solid rgba(255,255,255,0.4)",
+                    borderRadius: 4,
                     cursor: "pointer",
                     backgroundColor: "transparent",
                   }}
