@@ -550,6 +550,7 @@ export function Viewport({
   const gpActivePointsRef = useRef<StrokePoint[]>([]);
   const gpShiftAtStartRef = useRef(false);
   const gpCtrlAtStartRef = useRef(false);
+  const gpPressureModifierRef = useRef(1.0);
   const gpWorkingFramesRef = useRef<KeyframeDrawing[] | null>(null);
 
   const snapSelectedCameraToEditorRef = useRef<() => void>(() => {});
@@ -1669,6 +1670,7 @@ export function Viewport({
         setIsGpDrawing(true);
         gpShiftAtStartRef.current = e.shiftKey || Boolean(e.getModifierState && e.getModifierState("Shift"));
         gpCtrlAtStartRef.current = Boolean(e.getModifierState && e.getModifierState("Control"));
+        gpPressureModifierRef.current = gpShiftAtStartRef.current ? 0.45 : gpCtrlAtStartRef.current ? 1.75 : 1.0;
         controls.enabled = false;
         const rect = renderer.domElement.getBoundingClientRect();
         const screenX = e.clientX - rect.left;
@@ -1706,9 +1708,7 @@ export function Viewport({
             onParamChangeRef.current?.("frames", tinted, gpNode.id);
           } else {
             let basePr = calculateSimulatedPressure(null, { x: screenX, y: screenY, time: now }, e.pressure);
-            if (gpShiftAtStartRef.current) basePr *= 0.35;
-            else if (gpCtrlAtStartRef.current) basePr *= 2.2;
-            const pressure = Math.max(0.04, Math.min(2.5, basePr));
+            const pressure = Math.max(0.04, Math.min(2.5, basePr * gpPressureModifierRef.current));
             gpActivePointsRef.current = [{ x: worldPos.x, y: worldPos.y, z: worldPos.z, pressure }];
             gpLivePreviewRef.current = [{ screenX, screenY }];
             setGpLivePreview([{ screenX, screenY }]);
@@ -1790,10 +1790,10 @@ export function Viewport({
           } else {
             const isShift = e.shiftKey || Boolean(e.getModifierState && e.getModifierState("Shift"));
             const isCtrl = Boolean(e.getModifierState && e.getModifierState("Control"));
+            const targetMod = isShift ? 0.35 : isCtrl ? 1.85 : 1.0;
+            gpPressureModifierRef.current = THREE.MathUtils.lerp(gpPressureModifierRef.current, targetMod, 0.12);
             let basePr = calculateSimulatedPressure(gpPrevPointerRef.current, { x: screenX, y: screenY, time: now }, e.pressure);
-            if (isShift) basePr *= 0.35;
-            else if (isCtrl) basePr *= 2.2;
-            const pressure = Math.max(0.04, Math.min(2.5, basePr));
+            const pressure = Math.max(0.04, Math.min(2.5, basePr * gpPressureModifierRef.current));
             gpPrevPointerRef.current = { x: screenX, y: screenY, time: now };
 
             const lastPt = gpActivePointsRef.current[gpActivePointsRef.current.length - 1];

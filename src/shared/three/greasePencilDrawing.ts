@@ -57,19 +57,20 @@ export function applyStrokeTaper(
   const windowCount = Math.max(3, Math.min(24, Math.floor(result.length * 0.35)));
 
   // Attack taper / widening (entry)
+  const minTaperFactor = 0.20;
   if (taperStart) {
     for (let i = 0; i < windowCount; i++) {
       const t = i / windowCount;
       // Hermite smoothstep (f'(0)=0, f'(1)=0) ensures tangential blending with zero kink/step
       const ease = t * t * (3.0 - 2.0 * t);
-      const factor = 0.04 + 0.96 * ease;
-      result[i].pressure = Math.max(0.04, result[i].pressure * factor);
+      const factor = minTaperFactor + (1.0 - minTaperFactor) * ease;
+      result[i].pressure = Math.max(0.12, result[i].pressure * factor);
     }
   } else if (widenStart) {
     for (let i = 0; i < windowCount; i++) {
       const t = i / windowCount;
       const ease = t * t * (3.0 - 2.0 * t);
-      const factor = 2.0 - 1.0 * ease;
+      const factor = 1.0 + 0.85 * (1.0 - ease);
       result[i].pressure = Math.min(2.5, result[i].pressure * factor);
     }
   }
@@ -80,17 +81,27 @@ export function applyStrokeTaper(
       const idx = result.length - 1 - i;
       const t = i / windowCount;
       const ease = t * t * (3.0 - 2.0 * t);
-      const factor = 0.04 + 0.96 * ease;
-      result[idx].pressure = Math.max(0.04, result[idx].pressure * factor);
+      const factor = minTaperFactor + (1.0 - minTaperFactor) * ease;
+      result[idx].pressure = Math.max(0.12, result[idx].pressure * factor);
     }
   } else if (widenEnd) {
     for (let i = 0; i < windowCount; i++) {
       const idx = result.length - 1 - i;
       const t = i / windowCount;
       const ease = t * t * (3.0 - 2.0 * t);
-      const factor = 2.0 - 1.0 * ease;
+      const factor = 1.0 + 0.85 * (1.0 - ease);
       result[idx].pressure = Math.min(2.5, result[idx].pressure * factor);
     }
+  }
+
+  // Apply a 3-point smoothing pass over the pressure curve to ensure silky-smooth continuous width
+  if (result.length >= 3) {
+    const smoothed = result.map((p) => ({ ...p }));
+    for (let i = 1; i < result.length - 1; i++) {
+      smoothed[i].pressure =
+        result[i - 1].pressure * 0.25 + result[i].pressure * 0.5 + result[i + 1].pressure * 0.25;
+    }
+    return smoothed;
   }
 
   return result;

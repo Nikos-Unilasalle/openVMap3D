@@ -4,7 +4,7 @@ import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { NodeDefinition } from "../types";
 import { clearMeshWarning, findFirstMesh, warnMeshRequired } from "../meshRequired";
 import { createPRNG } from "../../math/random";
-import { primitiveOutputs } from "./object";
+import { applyMaterialParams, materialParamsFromValue, primitiveOutputs } from "./object";
 import { asVector3 } from "./transform";
 
 export type FaceSelectMode = "all" | "normal" | "height";
@@ -349,7 +349,52 @@ function getState(cache: typeof meshEditCache, nodeId: string): MeshEditState {
  * correctly needs new UV space for the cap and walls, which is real
  * additional work for a modifier whose job is silhouette, not
  * texture-mapped output. Normals are recomputed smooth.
+/**
+ * Applies the connected material or falls back to an adapted source material.
+ * If the source mesh relies on vertexColors (e.g. Grease Pencil ribbons),
+ * but the extruded geometry has no vertex colors, this assigns a standard
+ * shaded material with the source stroke color so it never renders pitch black.
  */
+function applyExtrudeMaterial(mesh: THREE.Mesh, srcMesh: THREE.Mesh, materialInput: unknown) {
+  const matParams = materialParamsFromValue(materialInput);
+  if (matParams) {
+    applyMaterialParams(mesh, matParams, THREE.DoubleSide);
+    return;
+  }
+
+  const srcMat = srcMesh.material;
+  const isVertexColored = srcMat && !Array.isArray(srcMat) && (srcMat as any).vertexColors;
+  if (isVertexColored) {
+    let col = new THREE.Color(0x38bdf8);
+    const colorAttr = srcMesh.geometry?.attributes?.color;
+    if (colorAttr && colorAttr.count > 0) {
+      col.setRGB(colorAttr.getX(0), colorAttr.getY(0), colorAttr.getZ(0));
+    }
+    if (!(mesh.material instanceof THREE.MeshStandardMaterial) || (mesh.material as any).__isSharedFromSrc) {
+      mesh.material = new THREE.MeshStandardMaterial({
+        color: col,
+        roughness: 0.4,
+        metalness: 0.1,
+        side: THREE.DoubleSide,
+      });
+      (mesh.material as any).__isSharedFromSrc = false;
+    } else {
+      (mesh.material as THREE.MeshStandardMaterial).color.copy(col);
+      mesh.material.side = THREE.DoubleSide;
+    }
+  } else if (srcMat instanceof THREE.Material) {
+    mesh.material = srcMat;
+    (mesh.material as any).__isSharedFromSrc = true;
+  } else if (!mesh.material) {
+    mesh.material = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.4,
+      metalness: 0.1,
+      side: THREE.DoubleSide,
+    });
+  }
+}
+
 export const EXTRUDE_MESH_NODE: NodeDefinition = {
   type: "modifier/extrude",
   label: "Extrude Mesh",
@@ -441,14 +486,11 @@ export const EXTRUDE_MESH_NODE: NodeDefinition = {
 
     const rawSelection = Array.isArray(inputs.selection) ? (inputs.selection as unknown[]).map((v) => Boolean(v)) : null;
 
-    const matInput = inputs.material instanceof THREE.Material ? inputs.material : null;
-    const activeMaterial = matInput || srcMesh.material;
-
     const state = getState(meshEditCache, ctx.nodeId);
     const transformPart = inputs.transform instanceof THREE.Matrix4
       ? `M${inputs.transform.elements.map((n) => n.toFixed(4)).join(",")}`
       : `${growRotation.toArray().map((n) => n.toFixed(4)).join(",")}:${growScale.toArray().map((n) => n.toFixed(4)).join(",")}:${growLocation.toArray().map((n) => n.toFixed(4)).join(",")}`;
-    const signature = `${distance}:${passes}:${transformPart}:${random}:${seed}:${selection.mode}:${selection.axis}:${selection.threshold}:${selection.invert}:${rawSelection ? rawSelection.map(Number).join("") : ""}:${srcGeom.attributes.position.count}:${srcGeom.index?.count ?? -1}:${matInput?.uuid ?? ""}`;
+    const signature = `${distance}:${passes}:${transformPart}:${random}:${seed}:${selection.mode}:${selection.axis}:${selection.threshold}:${selection.invert}:${rawSelection ? rawSelection.map(Number).join("") : ""}:${srcGeom.attributes.position.count}:${srcGeom.index?.count ?? -1}`;
     if (state.mesh && state.lastSignature === signature) {
       // srcMesh.matrix is only its LOCAL pose — correct for a mesh that
       // directly carries its own transform (Box, Sphere, ...), but wrong for
@@ -462,11 +504,7 @@ export const EXTRUDE_MESH_NODE: NodeDefinition = {
       inputObj.updateMatrixWorld(true);
       state.mesh.matrixAutoUpdate = false;
       state.mesh.matrix.copy(srcMesh.matrixWorld);
-      // The material is shared, not copied, so an upstream Material node (or a
-      // colour change in the source's panel) keeps driving the extruded mesh
-      // live — same refresh the build path does, just without rebuilding the
-      // geometry when the topology hasn't changed.
-      state.mesh.material = activeMaterial;
+      applyExtrudeMaterial(state.mesh, srcMesh, inputs.material);
       return primitiveOutputs(state.mesh);
     }
 
@@ -485,7 +523,9 @@ export const EXTRUDE_MESH_NODE: NodeDefinition = {
         : selectFaces(welded.positions, welded.indices, faceCount, selection);
 
     if (passes === 0 || distance === 0 || !selected.some(Boolean)) {
-      if (matInput) srcMesh.material = matInput;
+      if (inputs.material) {
+        applyExtrudeMaterial(srcMesh, srcMesh, inputs.material);
+      }
       return primitiveOutputs(inputObj);
     }
 
@@ -506,14 +546,15 @@ export const EXTRUDE_MESH_NODE: NodeDefinition = {
     geometry.computeBoundingSphere();
 
     if (!state.mesh) {
-      state.mesh = new THREE.Mesh(geometry, activeMaterial);
+      state.mesh = new THREE.Mesh(geometry);
       state.mesh.castShadow = true;
       state.mesh.receiveShadow = true;
     } else {
       state.mesh.geometry.dispose();
       state.mesh.geometry = geometry;
-      state.mesh.material = activeMaterial;
     }
+    applyExtrudeMaterial(state.mesh, srcMesh, inputs.material);
+
     // See the first occurrence above for why matrixWorld (not matrix) and
     // a forced-false matrixAutoUpdate.
     inputObj.updateMatrixWorld(true);
