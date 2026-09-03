@@ -359,6 +359,7 @@ export const EXTRUDE_MESH_NODE: NodeDefinition = {
     // A Face Selection node's `selection` output — booleans, one per face in
     // the source geometry's index order. Replaces the formula fields below.
     { id: "selection", label: "Face Selection", type: "list" },
+    { id: "material", label: "Material", type: "material" },
     { id: "distance", label: "Distance", type: "value" },
     { id: "passes", label: "Passes", type: "value" },
     // A matrix whose translation/rotation/scale becomes the per-pass
@@ -440,11 +441,14 @@ export const EXTRUDE_MESH_NODE: NodeDefinition = {
 
     const rawSelection = Array.isArray(inputs.selection) ? (inputs.selection as unknown[]).map((v) => Boolean(v)) : null;
 
+    const matInput = inputs.material instanceof THREE.Material ? inputs.material : null;
+    const activeMaterial = matInput || srcMesh.material;
+
     const state = getState(meshEditCache, ctx.nodeId);
     const transformPart = inputs.transform instanceof THREE.Matrix4
       ? `M${inputs.transform.elements.map((n) => n.toFixed(4)).join(",")}`
       : `${growRotation.toArray().map((n) => n.toFixed(4)).join(",")}:${growScale.toArray().map((n) => n.toFixed(4)).join(",")}:${growLocation.toArray().map((n) => n.toFixed(4)).join(",")}`;
-    const signature = `${distance}:${passes}:${transformPart}:${random}:${seed}:${selection.mode}:${selection.axis}:${selection.threshold}:${selection.invert}:${rawSelection ? rawSelection.map(Number).join("") : ""}:${srcGeom.attributes.position.count}:${srcGeom.index?.count ?? -1}`;
+    const signature = `${distance}:${passes}:${transformPart}:${random}:${seed}:${selection.mode}:${selection.axis}:${selection.threshold}:${selection.invert}:${rawSelection ? rawSelection.map(Number).join("") : ""}:${srcGeom.attributes.position.count}:${srcGeom.index?.count ?? -1}:${matInput?.uuid ?? ""}`;
     if (state.mesh && state.lastSignature === signature) {
       // srcMesh.matrix is only its LOCAL pose — correct for a mesh that
       // directly carries its own transform (Box, Sphere, ...), but wrong for
@@ -462,7 +466,7 @@ export const EXTRUDE_MESH_NODE: NodeDefinition = {
       // colour change in the source's panel) keeps driving the extruded mesh
       // live — same refresh the build path does, just without rebuilding the
       // geometry when the topology hasn't changed.
-      state.mesh.material = srcMesh.material;
+      state.mesh.material = activeMaterial;
       return primitiveOutputs(state.mesh);
     }
 
@@ -481,6 +485,7 @@ export const EXTRUDE_MESH_NODE: NodeDefinition = {
         : selectFaces(welded.positions, welded.indices, faceCount, selection);
 
     if (passes === 0 || distance === 0 || !selected.some(Boolean)) {
+      if (matInput) srcMesh.material = matInput;
       return primitiveOutputs(inputObj);
     }
 
@@ -501,13 +506,13 @@ export const EXTRUDE_MESH_NODE: NodeDefinition = {
     geometry.computeBoundingSphere();
 
     if (!state.mesh) {
-      state.mesh = new THREE.Mesh(geometry, srcMesh.material);
+      state.mesh = new THREE.Mesh(geometry, activeMaterial);
       state.mesh.castShadow = true;
       state.mesh.receiveShadow = true;
     } else {
       state.mesh.geometry.dispose();
       state.mesh.geometry = geometry;
-      state.mesh.material = srcMesh.material;
+      state.mesh.material = activeMaterial;
     }
     // See the first occurrence above for why matrixWorld (not matrix) and
     // a forced-false matrixAutoUpdate.

@@ -47,32 +47,49 @@ export function applyStrokeTaper(
   points: StrokePoint[],
   taperStart = true,
   taperEnd = true,
+  widenStart = false,
+  widenEnd = false,
 ): StrokePoint[] {
-  if (points.length < 2 || (!taperStart && !taperEnd)) return points;
+  if (points.length < 2 || (!taperStart && !taperEnd && !widenStart && !widenEnd)) return points;
 
   const result = points.map((p) => ({ ...p }));
   // Adaptive window proportional to stroke length (up to 35% of total points, capped between 4 and 24 points)
-  const taperCount = Math.max(3, Math.min(24, Math.floor(result.length * 0.35)));
+  const windowCount = Math.max(3, Math.min(24, Math.floor(result.length * 0.35)));
 
-  // Attack taper (entry)
+  // Attack taper / widening (entry)
   if (taperStart) {
-    for (let i = 0; i < taperCount; i++) {
-      const t = i / taperCount;
+    for (let i = 0; i < windowCount; i++) {
+      const t = i / windowCount;
       // Hermite smoothstep (f'(0)=0, f'(1)=0) ensures tangential blending with zero kink/step
       const ease = t * t * (3.0 - 2.0 * t);
       const factor = 0.04 + 0.96 * ease;
       result[i].pressure = Math.max(0.04, result[i].pressure * factor);
     }
+  } else if (widenStart) {
+    for (let i = 0; i < windowCount; i++) {
+      const t = i / windowCount;
+      const ease = t * t * (3.0 - 2.0 * t);
+      const factor = 2.0 - 1.0 * ease;
+      result[i].pressure = Math.min(2.5, result[i].pressure * factor);
+    }
   }
 
-  // Decay taper (exit)
+  // Decay taper / widening (exit)
   if (taperEnd) {
-    for (let i = 0; i < taperCount; i++) {
+    for (let i = 0; i < windowCount; i++) {
       const idx = result.length - 1 - i;
-      const t = i / taperCount;
+      const t = i / windowCount;
       const ease = t * t * (3.0 - 2.0 * t);
       const factor = 0.04 + 0.96 * ease;
       result[idx].pressure = Math.max(0.04, result[idx].pressure * factor);
+    }
+  } else if (widenEnd) {
+    for (let i = 0; i < windowCount; i++) {
+      const idx = result.length - 1 - i;
+      const t = i / windowCount;
+      const ease = t * t * (3.0 - 2.0 * t);
+      const factor = 2.0 - 1.0 * ease;
+      result[idx].pressure = Math.min(2.5, result[idx].pressure * factor);
     }
   }
 

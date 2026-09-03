@@ -374,6 +374,26 @@ export function strokesToCurves(strokes: GreaseStroke[]): THREE.CatmullRomCurve3
   return curves;
 }
 
+/**
+ * Safely parses color values (string, THREE.Color, or {r, g, b}) into hex format.
+ */
+export function parseColorHex(v: unknown, fallback = "#38bdf8"): string {
+  if (!v) return fallback;
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (!s) return fallback;
+    return s.startsWith("#") ? s : `#${s}`;
+  }
+  if (v instanceof THREE.Color) {
+    return `#${v.getHexString()}`;
+  }
+  if (typeof v === "object" && v !== null && "r" in v && "g" in v && "b" in v) {
+    const { r, g, b } = v as { r: number; g: number; b: number };
+    return `#${new THREE.Color(r, g, b).getHexString()}`;
+  }
+  return fallback;
+}
+
 export const GREASE_PENCIL_NODE: NodeDefinition = {
   type: "curve/grease-pencil",
   label: "Grease Pencil",
@@ -444,14 +464,12 @@ export const GREASE_PENCIL_NODE: NodeDefinition = {
     const activeDrawing = resolveActiveDrawing(frames, currentFrame);
     const strokes = activeDrawing?.strokes ?? [];
 
-    const activeColorHex = typeof params.activeColor === "string" ? params.activeColor : "#38bdf8";
+    const activeColorHex = parseColorHex(params.activeColor, "#38bdf8");
     const brushSize = Number(params.brushSize) || 4;
     const nodeBrushType: GreaseBrushType = (params.brushType as GreaseBrushType) || "ink_pen";
     const nodeSolidFill = Boolean(params.solidFill);
-    const nodeFillColor =
-      typeof params.fillColor === "string" && params.fillColor.trim() !== ""
-        ? params.fillColor
-        : activeColorHex;
+    const customFillColor = parseColorHex(params.fillColor, "");
+    const nodeFillColor = customFillColor || activeColorHex;
     const onionSkinEnabled = Boolean(params.onionSkin ?? true);
 
     const onionSkinBefore = Number(params.onionSkinBefore) ?? 1;

@@ -36,7 +36,7 @@ import { computeGizmoWriteback, TransformGizmoMode, TransformPatch } from "./giz
 // from the component they belong to, not from its internals.
 export type { TransformGizmoMode, TransformPatch };
 import { createElevationHUD, snapElevationValue } from "./elevationGizmo";
-import { GREASE_PENCIL_NODE, KeyframeDrawing, GreaseStroke, StrokePoint } from "../graph/nodes/greasePencil";
+import { GREASE_PENCIL_NODE, KeyframeDrawing, GreaseStroke, StrokePoint, parseColorHex } from "../graph/nodes/greasePencil";
 import {
   calculateSimulatedPressure,
   applyStrokeTaper,
@@ -549,6 +549,7 @@ export function Viewport({
   const gpPrevPointerRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const gpActivePointsRef = useRef<StrokePoint[]>([]);
   const gpShiftAtStartRef = useRef(false);
+  const gpCtrlAtStartRef = useRef(false);
   const gpWorkingFramesRef = useRef<KeyframeDrawing[] | null>(null);
 
   const snapSelectedCameraToEditorRef = useRef<() => void>(() => {});
@@ -1640,9 +1641,17 @@ export function Viewport({
     }
 
     function onCanvasPointerDown(e: PointerEvent) {
+      if (e.ctrlKey && !e.metaKey && e.button === 0) {
+        try {
+          Object.defineProperty(e, "ctrlKey", { get: () => false });
+        } catch {
+          // ignore
+        }
+      }
+
       pointerDownAt = { x: e.clientX, y: e.clientY };
 
-      const isMarqueeModifier = e.metaKey || e.ctrlKey;
+      const isMarqueeModifier = e.metaKey;
       const infActive = pointsInfluenceHandles.count() > 0 && !outputMode;
 
       const gpNode = selectedNodeIdRef.current
@@ -1658,7 +1667,8 @@ export function Viewport({
       if (gpNode && !outputMode && isDrawingOrModifying && e.button === 0 && !isMarqueeModifier && !e.altKey) {
         isGpDrawingRef.current = true;
         setIsGpDrawing(true);
-        gpShiftAtStartRef.current = e.shiftKey;
+        gpShiftAtStartRef.current = e.shiftKey || Boolean(e.getModifierState && e.getModifierState("Shift"));
+        gpCtrlAtStartRef.current = Boolean(e.getModifierState && e.getModifierState("Control"));
         controls.enabled = false;
         const rect = renderer.domElement.getBoundingClientRect();
         const screenX = e.clientX - rect.left;
@@ -1690,12 +1700,15 @@ export function Viewport({
             gpWorkingFramesRef.current = softErased;
             onParamChangeRef.current?.("frames", softErased, gpNode.id);
           } else if (gpToolRef.current === "tint") {
-            const activeColorHex = typeof gpNode.params.activeColor === "string" ? gpNode.params.activeColor : "#38bdf8";
+            const activeColorHex = parseColorHex(gpNode.params.activeColor, "#38bdf8");
             const tinted = tintStrokesAtPosition(currentFrames, targetFrame, worldPos, activeColorHex, toolRadius, 0.4);
             gpWorkingFramesRef.current = tinted;
             onParamChangeRef.current?.("frames", tinted, gpNode.id);
           } else {
-            const pressure = calculateSimulatedPressure(null, { x: screenX, y: screenY, time: now }, e.pressure);
+            let basePr = calculateSimulatedPressure(null, { x: screenX, y: screenY, time: now }, e.pressure);
+            if (gpShiftAtStartRef.current) basePr *= 0.35;
+            else if (gpCtrlAtStartRef.current) basePr *= 2.2;
+            const pressure = Math.max(0.04, Math.min(2.5, basePr));
             gpActivePointsRef.current = [{ x: worldPos.x, y: worldPos.y, z: worldPos.z, pressure }];
             gpLivePreviewRef.current = [{ screenX, screenY }];
             setGpLivePreview([{ screenX, screenY }]);
@@ -1770,12 +1783,17 @@ export function Viewport({
             gpWorkingFramesRef.current = softErased;
             onParamChangeRef.current?.("frames", softErased, gpNode.id);
           } else if (gpToolRef.current === "tint") {
-            const activeColorHex = typeof gpNode.params.activeColor === "string" ? gpNode.params.activeColor : "#38bdf8";
+            const activeColorHex = parseColorHex(gpNode.params.activeColor, "#38bdf8");
             const tinted = tintStrokesAtPosition(currentFrames, targetFrame, worldPos, activeColorHex, toolRadius, 0.35);
             gpWorkingFramesRef.current = tinted;
             onParamChangeRef.current?.("frames", tinted, gpNode.id);
           } else {
-            const pressure = calculateSimulatedPressure(gpPrevPointerRef.current, { x: screenX, y: screenY, time: now }, e.pressure);
+            const isShift = e.shiftKey || Boolean(e.getModifierState && e.getModifierState("Shift"));
+            const isCtrl = Boolean(e.getModifierState && e.getModifierState("Control"));
+            let basePr = calculateSimulatedPressure(gpPrevPointerRef.current, { x: screenX, y: screenY, time: now }, e.pressure);
+            if (isShift) basePr *= 0.35;
+            else if (isCtrl) basePr *= 2.2;
+            const pressure = Math.max(0.04, Math.min(2.5, basePr));
             gpPrevPointerRef.current = { x: screenX, y: screenY, time: now };
 
             const lastPt = gpActivePointsRef.current[gpActivePointsRef.current.length - 1];
@@ -1799,7 +1817,9 @@ export function Viewport({
       }
       if (isGradientDragging && gradientStartPos && host) {
         const rect = renderer.domElement.getBoundingClientRect();
-        setGradientLine({ x1: gradientStartPos.x, y1: gradientStartPos.y, x2: e.clientX - rect.left, y2: e.clientY - rect.top });
+        const x2 = e.clientX - rect.left;
+        const y2 = e.clientY - rect.top;
+        setGradientLine({ x1: gradientStartPos.x, y1: gradientStartPos.y, x2, y2 });
         return;
       }
       if (isMarqueeDragging && marqueeStartPos && host) {
@@ -1835,16 +1855,18 @@ export function Viewport({
             gpActivePointsRef.current.push({ x: p.x + 0.002, y: p.y, z: p.z + 0.002, pressure: p.pressure });
           }
           const taperStart = gpShiftAtStartRef.current;
-          const taperEnd = e.shiftKey;
+          const taperEnd = e.shiftKey || Boolean(e.getModifierState && e.getModifierState("Shift"));
+          const widenStart = gpCtrlAtStartRef.current;
+          const widenEnd = Boolean(e.getModifierState && e.getModifierState("Control"));
           gpShiftAtStartRef.current = false;
-          const finalPoints = (taperStart || taperEnd)
-            ? applyStrokeTaper(gpActivePointsRef.current, taperStart, taperEnd)
+          gpCtrlAtStartRef.current = false;
+
+          const finalPoints = (taperStart || taperEnd || widenStart || widenEnd)
+            ? applyStrokeTaper(gpActivePointsRef.current, taperStart, taperEnd, widenStart, widenEnd)
             : gpActivePointsRef.current;
-          const strokeColor = typeof gpNode.params.activeColor === "string" ? gpNode.params.activeColor : "#38bdf8";
-          const fillColorVal =
-            typeof gpNode.params.fillColor === "string" && gpNode.params.fillColor.trim() !== ""
-              ? gpNode.params.fillColor
-              : strokeColor;
+          const strokeColor = parseColorHex(gpNode.params.activeColor, "#38bdf8");
+          const customFillColor = parseColorHex(gpNode.params.fillColor, "");
+          const fillColorVal = customFillColor || strokeColor;
 
           const newStroke: GreaseStroke = {
             id: `stroke_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -3628,9 +3650,14 @@ export function Viewport({
             <polygon
               points={gpLivePreview.map((p) => `${p.screenX},${p.screenY}`).join(" ")}
               fill={
-                typeof graph.nodes.find((n) => n.id === selectedNodeId)?.params.activeColor === "string"
-                  ? (graph.nodes.find((n) => n.id === selectedNodeId)?.params.activeColor as string)
-                  : "#38bdf8"
+                parseColorHex(
+                  graph.nodes.find((n) => n.id === selectedNodeId)?.params.fillColor,
+                  "",
+                ) ||
+                parseColorHex(
+                  graph.nodes.find((n) => n.id === selectedNodeId)?.params.activeColor,
+                  "#38bdf8",
+                )
               }
               fillOpacity={0.35}
             />
@@ -3638,11 +3665,10 @@ export function Viewport({
           <polyline
             points={gpLivePreview.map((p) => `${p.screenX},${p.screenY}`).join(" ")}
             fill="none"
-            stroke={
-              typeof graph.nodes.find((n) => n.id === selectedNodeId)?.params.activeColor === "string"
-                ? (graph.nodes.find((n) => n.id === selectedNodeId)?.params.activeColor as string)
-                : "#38bdf8"
-            }
+            stroke={parseColorHex(
+              graph.nodes.find((n) => n.id === selectedNodeId)?.params.activeColor,
+              "#38bdf8",
+            )}
             strokeWidth={
               Number(graph.nodes.find((n) => n.id === selectedNodeId)?.params.brushSize) || 4
             }
@@ -3664,10 +3690,8 @@ export function Viewport({
             (n) => n.id === selectedNodeId && n.type === GREASE_PENCIL_NODE.type,
           );
           if (!gpNode) return null;
-          const activeColor =
-            typeof gpNode.params.activeColor === "string"
-              ? gpNode.params.activeColor
-              : "#38bdf8";
+          const activeColor = parseColorHex(gpNode.params.activeColor, "#38bdf8");
+          const fillColor = parseColorHex(gpNode.params.fillColor, "");
           const brushSize = Number(gpNode.params.brushSize) || 4;
           const onionSkin = Boolean(gpNode.params.onionSkin ?? true);
 
@@ -3939,11 +3963,7 @@ export function Viewport({
               >
                 <input
                   type="color"
-                  value={
-                    typeof gpNode.params.fillColor === "string" && gpNode.params.fillColor.trim() !== ""
-                      ? gpNode.params.fillColor
-                      : activeColor
-                  }
+                  value={fillColor || activeColor}
                   onChange={(e) =>
                     onParamChange?.("fillColor", e.target.value, gpNode.id)
                   }

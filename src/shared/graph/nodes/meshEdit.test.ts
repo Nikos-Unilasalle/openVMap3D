@@ -197,6 +197,18 @@ describe("EXTRUDE_MESH_NODE", () => {
     expect(mesh2).toBe(mesh); // cache hit, same mesh object
     expect(mesh2.material).toBe(replacement);
   });
+
+  it("applies wired material input over source material", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    box.material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    const customMat = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+    const ctx = { ...CTX, nodeId: "extrude-custom-mat" };
+    const params = { ...EXTRUDE_MESH_NODE.defaultParams, selectMode: "all" };
+
+    const res = EXTRUDE_MESH_NODE.evaluate({ geometry: box, distance: 0.2, material: customMat }, params, ctx);
+    const mesh = res.geometry as THREE.Mesh;
+    expect(mesh.material).toBe(customMat);
+  });
 });
 
 describe("EXTRUDE_MESH_NODE — grow passes", () => {
