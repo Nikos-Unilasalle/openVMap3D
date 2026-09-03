@@ -78,6 +78,7 @@ import {
 import { CURVE_ARRAY_NODE, CURVE_DEFORM_NODE, CURVE_FROM_POINTS_NODE, CURVE_PRIMITIVE_NODE, CURVE_TO_MESH_NODE, CURVES_TO_MESH_NODE, SAMPLE_CURVE_NODE } from "./curve";
 import { CURVE_TO_LINE_NODE } from "./line";
 import { CURVES_TO_LINES_NODE } from "./curvesToLines";
+import { GREASE_PENCIL_NODE } from "./greasePencil";
 import { CURVES_FROM_POINT_LISTS_NODE } from "./curveFromPointLists";
 import { CURVE_SUBDIVIDE_NODE } from "./curveSubdivide";
 import { CURVE_TO_POINTS_NODE } from "./curveToPoints";
@@ -293,6 +294,7 @@ export const STARTER_NODES = [
   SPAWN_NODE,
   CURVE_TO_LINE_NODE,
   CURVES_TO_LINES_NODE,
+  GREASE_PENCIL_NODE,
   CURVES_FROM_POINT_LISTS_NODE,
   CURVE_SUBDIVIDE_NODE,
   CURVE_TO_POINTS_NODE,

@@ -196,6 +196,28 @@
   color: #818cf8;
 }
 
+.top-bar-button-mode {
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.top-bar-button-mode:hover {
+  border-color: #38bdf8;
+  color: #38bdf8;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
+}
+
+.top-bar-button-mode-active {
+  background: rgba(56, 189, 248, 0.16);
+  border-color: #38bdf8;
+  color: #38bdf8;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.2);
+}
+
+.top-bar-button-mode-active svg {
+  color: #38bdf8;
+}
+
 .top-bar-button-export:hover:not(:disabled) {
   border-color: #f43f5e;
   color: #fb7185;

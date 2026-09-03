@@ -49,6 +49,9 @@ interface SplitViewportProps {
   onParamChange?: (paramId: string, value: unknown, targetNodeId?: string) => void;
   onUnpinParam?: (nodeId: string, paramId: string) => void;
   onRenameExposedParam?: (nodeId: string, paramId: string, label: string) => void;
+  mode2D?: boolean;
+  snapElevation?: boolean;
+  onToggleSnapElevation?: () => void;
 }
 
 export function SplitViewport({
@@ -77,8 +80,19 @@ export function SplitViewport({
   onParamChange,
   onUnpinParam,
   onRenameExposedParam,
+  mode2D = false,
+  snapElevation = false,
+  onToggleSnapElevation,
 }: SplitViewportProps) {
-  const [splitPercent, setSplitPercent] = useState(50);
+  const is2D = Boolean(mode2D);
+  const [splitPercent, setSplitPercent] = useState(is2D ? 72 : 50);
+
+  useEffect(() => {
+    if (is2D) {
+      setSplitPercent(72);
+    }
+  }, [is2D]);
+
   const isDraggingRef = useRef(false);
   // Held so an unmount while the splitter is pressed can remove the global
   // window listeners — otherwise they'd linger until the next mouseup and
@@ -105,9 +119,11 @@ export function SplitViewport({
       const container = document.getElementById("split-viewport-container");
       if (!container) return;
       const rect = container.getBoundingClientRect();
-      const relativeX = moveEvent.clientX - rect.left;
-      const newPercent = Math.max(20, Math.min(80, (relativeX / rect.width) * 100));
-      setSplitPercent(newPercent);
+      if (rect.width <= 0) return;
+
+      const newPercent = ((moveEvent.clientX - rect.left) / rect.width) * 100;
+      // Clamped so neither pane can be dragged to 0 width.
+      setSplitPercent(Math.max(15, Math.min(85, newPercent)));
     };
 
     const onMouseUp = () => {
@@ -122,40 +138,15 @@ export function SplitViewport({
     window.addEventListener("mouseup", onMouseUp);
   }, []);
 
-  // Both panes are *always* mounted — never conditionally rendered per
-  // viewMode — and hidden/suspended instead of unmounted. Each Viewport owns
-  // a real WebGLRenderer plus, indirectly, every GPU-compute particle
-  // simulation running through it (see particleRuntime.ts): a simulation is
-  // keyed to the specific renderer it was built against, and rebuilds from
-  // scratch the instant that renderer changes. Mounting/unmounting Viewport
-  // on every Shift+Tab used to do exactly that on every mode switch —
-  // "graph" chief among them, since it used to render nothing at all — so a
-  // particle system silently reset and re-trickled-in (over its own
-  // Lifetime) *every time the operator looked away from the 3D pane*. Kept
-  // mounted, the same renderer (and the same running simulations) survives
-  // every mode switch; only visibility and `suspended` (which freezes the
-  // render loop without tearing anything down — see Viewport's own
-  // `suspended` handling) change.
-  //
-  // Primary pane covers "viewport" (free orbit, outputMode false) and
-  // "camera" (output preview, outputMode true) by itself, toggling props on
-  // the *same* mounted instance — exactly what already happened before this
-  // refactor for that transition specifically, which is why it never
-  // exhibited the particle-reset bug. It doubles as split mode's left/editor
-  // pane. Secondary pane exists only for split mode's right/output pane;
-  // kept mounted-but-hidden after its first use for the same reason.
   const isGraph = viewMode === "graph";
   const isSplit = viewMode === "split";
   const isCamera = viewMode === "camera";
+  const isSplitActive = isSplit || is2D;
 
   const primaryVisible = !isGraph;
-  const secondaryVisible = isSplit;
-  // The secondary pane only exists for split mode's right/output side, so an
-  // operator who never opens split mode should never pay for a second
-  // WebGLRenderer + GL context — mount it lazily on first use, same "keep
-  // mounted forever after" reasoning as the rest of this file once it does.
-  const everSplitRef = useRef(isSplit);
-  if (isSplit) everSplitRef.current = true;
+  const secondaryVisible = isSplitActive;
+  const everSplitRef = useRef(isSplitActive);
+  if (isSplitActive) everSplitRef.current = true;
 
   return (
     <div
@@ -171,7 +162,7 @@ export function SplitViewport({
     >
       <div
         style={{
-          width: isSplit ? `${splitPercent}%` : "100%",
+          width: isSplitActive ? `${splitPercent}%` : "100%",
           height: "100%",
           position: "relative",
           minWidth: 0,
@@ -185,13 +176,15 @@ export function SplitViewport({
           renderNodeId={renderNodeId}
           epochMs={epochMs}
           outputMode={isCamera}
+          mode2D={is2D}
+          elevationView={false}
           selectedNodeId={selectedNodeId}
           onSelectNode={onSelectNode}
           onTransformChange={onTransformChange}
           onTransformStart={onTransformStart}
           onCameraChange={onCameraChange}
           previewCameraPose={previewCameraPose}
-          isSplitView={isSplit}
+          isSplitView={isSplitActive}
           onToggleSplitView={cycleMode}
           currentFrame={currentFrame}
           totalFrames={totalFrames}
@@ -211,23 +204,23 @@ export function SplitViewport({
         />
       </div>
 
-      {/* Draggable Splitter — only meaningful (and visible) in split mode */}
+      {/* Draggable Splitter — only meaningful (and visible) in split or 2D mode */}
       <div
         onMouseDown={handleMouseDown}
         style={{
           width: "2px",
           height: "100%",
           cursor: "col-resize",
-          backgroundColor: "#000000",
+          backgroundColor: is2D ? "#00f3ff" : "#000000",
           zIndex: 20,
           flexShrink: 0,
-          display: isSplit ? "block" : "none",
+          display: isSplitActive ? "block" : "none",
         }}
       />
 
       <div
         style={{
-          width: isSplit ? `${100 - splitPercent}%` : "100%",
+          width: isSplitActive ? `${100 - splitPercent}%` : "100%",
           height: "100%",
           position: "relative",
           minWidth: 0,
@@ -241,9 +234,15 @@ export function SplitViewport({
             registry={registry}
             renderNodeId={renderNodeId}
             epochMs={epochMs}
-            outputMode={true}
+            outputMode={!is2D}
+            mode2D={false}
+            elevationView={is2D}
+            snapElevation={snapElevation}
+            onToggleSnapElevation={onToggleSnapElevation}
             selectedNodeId={selectedNodeId}
             onSelectNode={onSelectNode}
+            onTransformChange={onTransformChange}
+            onTransformStart={onTransformStart}
             previewCameraPose={previewCameraPose}
             currentFrame={currentFrame}
             onEvaluatedResults={onEvaluatedResults}

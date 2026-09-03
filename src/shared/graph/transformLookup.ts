@@ -50,6 +50,7 @@ export const GIZMO_SELECTABLE_TYPES = [
   "particles/strange-attractor",
   "object/raccoon",
   "object/laser-beam",
+  "curve/grease-pencil",
 ];
 
 /**

@@ -10,6 +10,7 @@ import { TOGGLE_POINTS_KEYFRAME_ACTION } from "./shared/graph/nodes/curve";
 import { RESEED_MESH_POINTS_ACTION } from "./shared/graph/nodes/editMeshPoints";
 import { extractPointsFromMesh } from "./shared/graph/nodes/pointsGeometry";
 import { freezeObjectToGeometryData, OBJECT_FROZEN_NODE } from "./shared/graph/nodes/frozenGeometry";
+import type { KeyframeDrawing } from "./shared/graph/nodes/greasePencil";
 import { randomId } from "./shared/randomId";
 import { findRenderNodeId } from "./shared/graph/nodes/render";
 import { rehydrateFileNodesFromDisk } from "./shared/graph/rehydrateFiles";
@@ -20,6 +21,7 @@ import { isGraphZone } from "./shared/graph/inputZoneStore";
 import { disposeNodeCaches } from "./shared/graph/nodeCaches";
 import { AutosaveRecord, projectHasContent, readAutosave, writeAutosave } from "./shared/graph/autosave";
 import { rehydrateGraphParams } from "./shared/graph/rehydrateParams";
+import { createStarterGraph } from "./shared/graph/starterGraph";
 import { connectedSocketIds, paramPanelValues } from "./shared/graph/paramPanelValues";
 import {
   LATTICE_DEFORM_NODE,
@@ -28,7 +30,6 @@ import {
 } from "./shared/graph/nodes/lattice";
 import {
   CANVAS_COUNT,
-  Connection,
   EasingType,
   emptyGraph,
   Graph,
@@ -36,7 +37,6 @@ import {
   Keyframe,
   KeyframeStore,
   Marker,
-  NodeInstance,
   normalizeCanvases,
   ParamFieldDef,
   Project,
@@ -56,13 +56,6 @@ import { TimelineDrawer } from "./windows/TimelineDrawer";
 import { KeyframeClipboardItem } from "./windows/timelineUtils";
 import { TopBar } from "./windows/TopBar";
 
-function node(id: string, type: string, position: { x: number; y: number }, params: Record<string, unknown> = {}): NodeInstance {
-  return { id, type, params, position };
-}
-
-function edge(fromNode: string, fromSocket: string, toNode: string, toSocket: string): Connection {
-  return { id: `${fromNode}.${fromSocket}->${toNode}.${toSocket}`, fromNode, fromSocket, toNode, toSocket };
-}
 
 /**
  * Keyframe values are stored in the graph and round-trip through the .tsuji as
@@ -137,23 +130,6 @@ function applyKeyframedParamUpdate(
   return modified ? { ...keyframes, [nodeId]: updatedNodeKeys } : keyframes;
 }
 
-function buildSmokeTestGraph(): Graph {
-  return {
-    nodes: [
-      node("time", "time", { x: 40, y: 120 }),
-      node("rotationVector", "vector/compose", { x: 280, y: 120 }, { x: 0, z: 0 }),
-      node("boxTransform", "transform", { x: 540, y: 120 }),
-      node("box", "object/box", { x: 800, y: 120 }),
-      node("output", "render", { x: 1040, y: 120 }),
-    ],
-    connections: [
-      edge("time", "seconds", "rotationVector", "y"),
-      edge("rotationVector", "out", "boxTransform", "rotation"),
-      edge("boxTransform", "matrix", "box", "matrix"),
-      edge("box", "geometry", "output", "geometry"),
-    ],
-  };
-}
 
 /** Undo depth. */
 const HISTORY_LIMIT = 50;
@@ -200,7 +176,7 @@ function MainEditor() {
       ? normalizeCanvases(recovered.project.canvases).map((canvas) =>
           rehydrateGraphParams(canvas, DEFAULT_REGISTRY),
         )
-      : normalizeCanvases([buildSmokeTestGraph()]),
+      : normalizeCanvases([createStarterGraph()]),
   );
   const [activeCanvas, setActiveCanvas] = useState(recovered ? recovered.project.activeCanvas : 0);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -208,6 +184,10 @@ function MainEditor() {
   const [isTimelineDrawerOpen, setIsTimelineDrawerOpen] = useState(false);
   const [timelineDrawerHeight, setTimelineDrawerHeight] = useState(280);
   const [splitPercent, setSplitPercent] = useState(50);
+  const [is2DMode, setIs2DMode] = useState(false);
+  const [snapElevation, setSnapElevation] = useState(false);
+  const toggle2DMode = useCallback(() => setIs2DMode((prev) => !prev), []);
+  const toggleSnapElevation = useCallback(() => setSnapElevation((prev) => !prev), []);
   // Shift+Tab cycle — see SplitViewport.tsx's SplitViewMode doc comment for
   // why this lives here rather than inside SplitViewport itself.
   const [viewMode, setViewMode] = useState<SplitViewMode>("viewport");
@@ -844,10 +824,25 @@ function MainEditor() {
         paramId === "active" &&
         (value === true || value === 1);
 
-      const nextKeyframes =
-        keyframesEnabled && currentFrame >= 0 && nodeIdToUpdate
+      let nextKeyframes =
+        keyframesEnabled && currentFrame >= 0 && nodeIdToUpdate && paramId !== "frames"
           ? applyKeyframedParamUpdate(prevGraph.keyframes, nodeIdToUpdate, paramId, value, currentFrame)
           : prevGraph.keyframes;
+
+      if (nodeIdToUpdate && instance.type === "curve/grease-pencil" && paramId === "frames" && Array.isArray(value)) {
+        const gpFrames = value as KeyframeDrawing[];
+        const currentStore = nextKeyframes ? { ...nextKeyframes } : {};
+        const nodeStore = currentStore[nodeIdToUpdate] ? { ...currentStore[nodeIdToUpdate] } : {};
+        nodeStore["frames"] = gpFrames
+          .map((f) => ({
+            frame: f.frame,
+            value: f.frame,
+            easeIn: "hold" as const,
+          }))
+          .sort((a, b) => a.frame - b.frame);
+        currentStore[nodeIdToUpdate] = nodeStore;
+        nextKeyframes = currentStore;
+      }
 
       let nextParams = { ...instance.params };
       // Preserve THREE instances instead of JSON-round-tripping them: a
@@ -1271,27 +1266,53 @@ function MainEditor() {
       : {};
 
   const selectedKeyframesRecord = useMemo(() => {
-    const map: Record<number, { paramKeys: string[]; easeIn?: EasingType; easeStrength?: number; easeBezier?: [number, number, number, number] }> = {};
-    if (selectedNodeId && graph.keyframes?.[selectedNodeId]) {
-      for (const [paramKey, list] of Object.entries(graph.keyframes[selectedNodeId])) {
-        for (const kf of list) {
-          if (!map[kf.frame]) {
-            map[kf.frame] = {
-              paramKeys: [paramKey],
-              easeIn: kf.easeIn || "smooth",
-              easeStrength: kf.easeStrength,
-              easeBezier: kf.easeBezier,
-            };
-          } else {
-            if (!map[kf.frame].paramKeys.includes(paramKey)) {
-              map[kf.frame].paramKeys.push(paramKey);
+    const map: Record<
+      number,
+      {
+        paramKeys: string[];
+        easeIn?: EasingType;
+        easeStrength?: number;
+        easeBezier?: [number, number, number, number];
+      }
+    > = {};
+    if (selectedNodeId) {
+      if (graph.keyframes?.[selectedNodeId]) {
+        for (const [paramKey, list] of Object.entries(graph.keyframes[selectedNodeId])) {
+          for (const kf of list) {
+            if (!map[kf.frame]) {
+              map[kf.frame] = {
+                paramKeys: [paramKey],
+                easeIn: kf.easeIn || "smooth",
+                easeStrength: kf.easeStrength,
+                easeBezier: kf.easeBezier,
+              };
+            } else {
+              if (!map[kf.frame].paramKeys.includes(paramKey)) {
+                map[kf.frame].paramKeys.push(paramKey);
+              }
             }
+          }
+        }
+      }
+
+      // Also ensure any Grease Pencil keyframed drawings are directly reflected on the timeline
+      const selectedNode = graph.nodes.find((n) => n.id === selectedNodeId);
+      if (selectedNode?.type === "curve/grease-pencil") {
+        const frames = (selectedNode.params.frames as KeyframeDrawing[]) || [];
+        for (const f of frames) {
+          if (!map[f.frame]) {
+            map[f.frame] = {
+              paramKeys: ["frames"],
+              easeIn: "hold",
+            };
+          } else if (!map[f.frame].paramKeys.includes("frames")) {
+            map[f.frame].paramKeys.push("frames");
           }
         }
       }
     }
     return map;
-  }, [selectedNodeId, graph.keyframes]);
+  }, [selectedNodeId, graph.keyframes, graph.nodes]);
 
   // The first sound/player node with a loaded file drives the timeline
   // waveform strip (music sync).
@@ -1424,16 +1445,17 @@ function MainEditor() {
       setGraphWithHistory((prevGraph) => {
         const currentKeyframes = prevGraph.keyframes || {};
         const nodeKeys = currentKeyframes[selectedNodeId];
-        if (!nodeKeys) return prevGraph;
 
         const nextNodeKeys: Record<string, Keyframe[]> = {};
         let hasAny = false;
 
-        for (const [paramKey, list] of Object.entries(nodeKeys)) {
-          const filtered = list.filter((k) => k.frame !== frame);
-          if (filtered.length > 0) {
-            nextNodeKeys[paramKey] = filtered;
-            hasAny = true;
+        if (nodeKeys) {
+          for (const [paramKey, list] of Object.entries(nodeKeys)) {
+            const filtered = list.filter((k) => k.frame !== frame);
+            if (filtered.length > 0) {
+              nextNodeKeys[paramKey] = filtered;
+              hasAny = true;
+            }
           }
         }
 
@@ -1444,8 +1466,23 @@ function MainEditor() {
           delete nextStore[selectedNodeId];
         }
 
+        let nextNodes = prevGraph.nodes;
+        const targetNode = prevGraph.nodes.find((n) => n.id === selectedNodeId);
+        if (targetNode?.type === "curve/grease-pencil") {
+          const currentFrames = (targetNode.params.frames as KeyframeDrawing[]) || [];
+          const filteredFrames = currentFrames.filter((f) => f.frame !== frame);
+          if (filteredFrames.length !== currentFrames.length) {
+            nextNodes = prevGraph.nodes.map((n) =>
+              n.id === selectedNodeId
+                ? { ...n, params: { ...n.params, frames: filteredFrames } }
+                : n,
+            );
+          }
+        }
+
         return {
           ...prevGraph,
+          nodes: nextNodes,
           keyframes: nextStore,
         };
       }, `keyframe:delete:${frame}`);
@@ -1468,6 +1505,7 @@ function MainEditor() {
         }
 
         let modified = false;
+        let nextNodes = prevGraph.nodes;
         for (const [nodeId, paramsMap] of Object.entries(byNodeParam)) {
           const nodeKeys = nextStore[nodeId] ? { ...nextStore[nodeId] } : {};
           for (const [paramKey, moveList] of Object.entries(paramsMap)) {
@@ -1492,12 +1530,26 @@ function MainEditor() {
             const cleanRemaining = remainingKfs.filter((k) => !newFrames.has(k.frame));
             const combined = [...cleanRemaining, ...movingKfs].sort((a, b) => a.frame - b.frame);
             nodeKeys[paramKey] = combined;
+
+            if (paramKey === "frames") {
+              const targetNode = nextNodes.find((n) => n.id === nodeId);
+              if (targetNode?.type === "curve/grease-pencil") {
+                const currentFrames = (targetNode.params.frames as KeyframeDrawing[]) || [];
+                const updatedFrames = currentFrames
+                  .map((f) => (moveMap.has(f.frame) ? { ...f, frame: moveMap.get(f.frame)! } : f))
+                  .sort((a, b) => a.frame - b.frame);
+                nextNodes = nextNodes.map((n) =>
+                  n.id === nodeId ? { ...n, params: { ...n.params, frames: updatedFrames } } : n,
+                );
+                modified = true;
+              }
+            }
           }
           nextStore[nodeId] = nodeKeys;
         }
 
         if (!modified) return prevGraph;
-        return { ...prevGraph, keyframes: nextStore };
+        return { ...prevGraph, nodes: nextNodes, keyframes: nextStore };
       }, `keyframes:batch_move:${moves.length}`);
     },
     [setGraphWithHistory],
@@ -1782,6 +1834,8 @@ function MainEditor() {
         exportProgress={exportProgress}
         isTimelineOpen={isTimelineDrawerOpen}
         onToggleTimeline={() => setIsTimelineDrawerOpen((prev) => !prev)}
+        is2DMode={is2DMode}
+        onToggle2DMode={toggle2DMode}
       />
       {isExporting && (
         // Off-screen (not display:none, which some webviews suspend rAF
@@ -1809,7 +1863,7 @@ function MainEditor() {
           onTransformChange={onTransformChange}
           onTransformStart={onTransformStart}
           onCameraChange={onPreviewCameraChange}
-          currentFrame={keyframesEnabled ? currentFrame : -1}
+          currentFrame={currentFrame}
           totalFrames={totalFrames}
           onFrameChange={onViewportFrame}
           onEvaluatedResults={onEvaluatedResults}
@@ -1824,6 +1878,9 @@ function MainEditor() {
           onParamChange={onParamChange}
           onUnpinParam={onToggleExposed}
           onRenameExposedParam={onRenameExposed}
+          mode2D={is2DMode}
+          snapElevation={snapElevation}
+          onToggleSnapElevation={toggleSnapElevation}
         />
         {needsTransformHint && (
           <div className="viewport-hint">Wire a Transform node into this object's Matrix to move it</div>

@@ -6,13 +6,14 @@ import {
   saveProjectAsWithFilePicker,
   saveProjectToPath,
 } from "../shared/graph/storage";
-import { emptyProject, Project } from "../shared/graph/types";
+import { Project } from "../shared/graph/types";
 import { closeOutputWindow, listMonitors, onOutputClosed, openOutputWindow } from "../shared/ipc";
 import logoUrl from "../assets/logo.png";
 import { ShortcutsModal } from "./ShortcutsModal";
 import { DemosMenu } from "./DemosMenu";
 import { ShareMenu } from "./ShareMenu";
 import { DownloadMenu } from "./DownloadMenu";
+import { createStarterProject } from "../shared/graph/starterGraph";
 import "./top-bar.css";
 
 export interface TopBarProps {
@@ -33,6 +34,8 @@ export interface TopBarProps {
   exportProgress?: number;
   isTimelineOpen?: boolean;
   onToggleTimeline?: () => void;
+  is2DMode?: boolean;
+  onToggle2DMode?: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -49,6 +52,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   exportProgress = 0,
   isTimelineOpen = false,
   onToggleTimeline,
+  is2DMode = false,
+  onToggle2DMode,
 }) => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastError, setToastError] = useState(false);
@@ -110,9 +115,9 @@ export const TopBar: React.FC<TopBarProps> = ({
     ) {
       return;
     }
-    onLoadProject(emptyProject(), "project_v1.tsuji");
+    onLoadProject(createStarterProject(is2DMode ? "2d" : "3d"), "project_v1.tsuji");
     onFilenameChange("project_v1.tsuji", null);
-    showToast("Nouveau graph créé !");
+    showToast("Nouveau projet créé !");
   };
 
   // 1. LOAD GRAPH — native Tauri open dialog
@@ -284,6 +289,34 @@ export const TopBar: React.FC<TopBarProps> = ({
           </svg>
           Redo
         </button>
+
+        {onToggle2DMode && (
+          <>
+            <div className="top-bar-divider" />
+            <button
+              className={`top-bar-button top-bar-button-mode ${is2DMode ? "top-bar-button-mode-active" : ""}`}
+              onClick={onToggle2DMode}
+              title={is2DMode ? "Mode 2D actif (clic pour basculer en Mode 3D Libre)" : "Mode 3D actif (clic pour basculer en Mode 2D)"}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                {is2DMode ? (
+                  <>
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <line x1="3" y1="9" x2="21" y2="9" />
+                    <line x1="9" y1="21" x2="9" y2="9" />
+                  </>
+                ) : (
+                  <>
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                    <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+                    <line x1="12" y1="22.08" x2="12" y2="12" />
+                  </>
+                )}
+              </svg>
+              {is2DMode ? "2D" : "3D"}
+            </button>
+          </>
+        )}
       </div>
 
       {/* Right area: Toast + Timeline + Shortcuts + Filename + Download + Share */}
