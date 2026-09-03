@@ -197,6 +197,68 @@ describe("EXTRUDE_MESH_NODE", () => {
     expect(mesh2).toBe(mesh); // cache hit, same mesh object
     expect(mesh2.material).toBe(replacement);
   });
+
+  it("applies wired material input over source material", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    box.material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    const customMat = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+    const ctx = { ...CTX, nodeId: "extrude-custom-mat" };
+    const params = { ...EXTRUDE_MESH_NODE.defaultParams, selectMode: "all" };
+
+    const res = EXTRUDE_MESH_NODE.evaluate({ geometry: box, distance: 0.2, material: customMat }, params, ctx);
+    const mesh = res.geometry as THREE.Mesh;
+    expect(mesh.material).toBe(customMat);
+  });
+
+  it("applies MaterialParams input object (from MATERIAL_NODE) and adapts live", () => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const ctx = { ...CTX, nodeId: "extrude-mat-params" };
+    const params = { ...EXTRUDE_MESH_NODE.defaultParams, selectMode: "all" };
+
+    // Pass a MaterialParams object
+    const matParams = {
+      color: new THREE.Color(0x00ff00),
+      roughness: 0.2,
+      metalness: 0.8,
+      shadeless: false,
+      opacity: 1.0,
+    };
+    const res = EXTRUDE_MESH_NODE.evaluate({ geometry: box, distance: 0.2, material: matParams }, params, ctx);
+    const mesh = res.geometry as THREE.Mesh;
+    expect(mesh.material).toBeInstanceOf(THREE.MeshStandardMaterial);
+    expect((mesh.material as THREE.MeshStandardMaterial).color.getHex()).toBe(0x00ff00);
+
+    // Update color live without rebuilding geometry
+    const updatedParams = { ...matParams, color: new THREE.Color(0xff00ff) };
+    const res2 = EXTRUDE_MESH_NODE.evaluate({ geometry: box, distance: 0.2, material: updatedParams }, params, ctx);
+    const mesh2 = res2.geometry as THREE.Mesh;
+    expect(mesh2).toBe(mesh); // cache hit
+    expect((mesh2.material as THREE.MeshStandardMaterial).color.getHex()).toBe(0xff00ff);
+  });
+
+  it("adapts vertex-colored source mesh (e.g. Grease Pencil) to shaded material without rendering black", () => {
+    const geom = new THREE.BoxGeometry(1, 1, 1);
+    // Add vertex colors (e.g. blue)
+    const colors = new Float32Array(geom.attributes.position.count * 3);
+    for (let i = 0; i < geom.attributes.position.count; i++) {
+      colors[i * 3] = 0.2;
+      colors[i * 3 + 1] = 0.6;
+      colors[i * 3 + 2] = 0.9;
+    }
+    geom.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    const box = new THREE.Mesh(geom, new THREE.MeshBasicMaterial({ vertexColors: true }));
+    const ctx = { ...CTX, nodeId: "extrude-gp-fallback" };
+    const params = { ...EXTRUDE_MESH_NODE.defaultParams, selectMode: "all" };
+
+    const res = EXTRUDE_MESH_NODE.evaluate({ geometry: box, distance: 0.2 }, params, ctx);
+    const mesh = res.geometry as THREE.Mesh;
+    expect(mesh.material).toBeInstanceOf(THREE.MeshStandardMaterial);
+    // Should NOT have vertexColors: true since the extruded geometry lacks a color attribute
+    expect((mesh.material as any).vertexColors).toBeFalsy();
+    expect((mesh.material as THREE.MeshStandardMaterial).color.r).toBeCloseTo(0.2);
+    expect((mesh.material as THREE.MeshStandardMaterial).color.g).toBeCloseTo(0.6);
+    expect((mesh.material as THREE.MeshStandardMaterial).color.b).toBeCloseTo(0.9);
+  });
 });
 
 describe("EXTRUDE_MESH_NODE — grow passes", () => {

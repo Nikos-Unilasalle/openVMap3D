@@ -527,6 +527,7 @@ export function evaluateGraph(graph: Graph, registry: NodeRegistry, ctx: EvalCon
     const frame = ctx.currentFrame ?? -1;
     if (kfStore && frame >= 0 && kfStore[nodeId]) {
       for (const paramKey of Object.keys(params)) {
+        if (def.type === "curve/grease-pencil" && paramKey === "frames") continue;
         params[paramKey] = evaluateKeyframeValue(kfStore, nodeId, paramKey, frame, params[paramKey]);
       }
     }

@@ -35,6 +35,21 @@ import { computeGizmoWriteback, TransformGizmoMode, TransformPatch } from "./giz
 // Re-exported so call sites (App.tsx, SplitViewport) keep importing these
 // from the component they belong to, not from its internals.
 export type { TransformGizmoMode, TransformPatch };
+import { createElevationHUD, snapElevationValue } from "./elevationGizmo";
+import { GREASE_PENCIL_NODE, KeyframeDrawing, GreaseStroke, StrokePoint, parseColorHex } from "../graph/nodes/greasePencil";
+import {
+  calculateSimulatedPressure,
+  applyStrokeTaper,
+  projectScreenToDrawingPlane,
+  addStrokeToFrames,
+  duplicateDrawing,
+  createBlankDrawing,
+  clearDrawingAtFrame,
+  eraseStrokesAtPosition,
+  eraseStrokesSoft,
+  tintStrokesAtPosition,
+} from "./greasePencilDrawing";
+import type { GreaseBrushType } from "../graph/nodes/greasePencil";
 import { createBackgroundBlur } from "./backgroundBlur";
 import { applyEnvironment, resolveActiveEnvironment } from "./environmentSync";
 import {
@@ -391,6 +406,10 @@ interface ViewportProps {
   onParamChange?: (paramId: string, value: unknown, targetNodeId?: string) => void;
   onUnpinParam?: (nodeId: string, paramId: string) => void;
   onRenameExposedParam?: (nodeId: string, paramId: string, label: string) => void;
+  mode2D?: boolean;
+  elevationView?: boolean;
+  snapElevation?: boolean;
+  onToggleSnapElevation?: () => void;
 }
 
 export interface ViewportExportHandle {
@@ -428,6 +447,10 @@ export function Viewport({
   onParamChange,
   onUnpinParam,
   onRenameExposedParam,
+  mode2D = false,
+  elevationView = false,
+  snapElevation = false,
+  onToggleSnapElevation,
 }: ViewportProps) {
   const [showUiOverlay, setShowUiOverlay] = useState(true);
   const showUiOverlayRef = useRef(showUiOverlay);
@@ -505,6 +528,30 @@ export function Viewport({
 
   const [marqueeBox, setMarqueeBox] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [gradientLine, setGradientLine] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+
+  // Grease Pencil drawing state
+  const onParamChangeRef = useRef(onParamChange);
+  onParamChangeRef.current = onParamChange;
+  type GpToolMode = "pen" | "eraser_hard" | "eraser_soft" | "tint" | "select";
+  const [gpTool, setGpTool] = useState<GpToolMode>("pen");
+  const gpToolRef = useRef<GpToolMode>("pen");
+  gpToolRef.current = gpTool;
+  const [gpBrushType, setGpBrushType] = useState<GreaseBrushType>("ink_pen");
+  const gpBrushTypeRef = useRef<GreaseBrushType>("ink_pen");
+  gpBrushTypeRef.current = gpBrushType;
+  const [gpSolidFill, setGpSolidFill] = useState<boolean>(false);
+  const gpSolidFillRef = useRef<boolean>(false);
+  gpSolidFillRef.current = gpSolidFill;
+  const [isGpDrawing, setIsGpDrawing] = useState(false);
+  const isGpDrawingRef = useRef(false);
+  const [gpLivePreview, setGpLivePreview] = useState<{ screenX: number; screenY: number }[]>([]);
+  const gpLivePreviewRef = useRef<{ screenX: number; screenY: number }[]>([]);
+  const gpPrevPointerRef = useRef<{ x: number; y: number; time: number } | null>(null);
+  const gpActivePointsRef = useRef<StrokePoint[]>([]);
+  const gpShiftAtStartRef = useRef(false);
+  const gpCtrlAtStartRef = useRef(false);
+  const gpPressureModifierRef = useRef(1.0);
+  const gpWorkingFramesRef = useRef<KeyframeDrawing[] | null>(null);
 
   const snapSelectedCameraToEditorRef = useRef<() => void>(() => {});
   const cameraGuideRef = useRef<HTMLDivElement>(null);
@@ -613,10 +660,23 @@ export function Viewport({
   const [isViewLocked, setIsViewLocked] = useState(false);
   const isViewLockedRef = useRef(false);
   const setViewLockRef = useRef<(locked: boolean) => void>(() => {});
+  const setIsIsometricElevationRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     toggleCameraModeRef.current(isOrthographic);
   }, [isOrthographic]);
+
+  useEffect(() => {
+    if (mode2D) {
+      setAxisViewRef.current?.("y", 1);
+      setViewLockRef.current?.(true);
+      setIsViewLocked(true);
+    } else if (elevationView) {
+      setIsIsometricElevationRef.current?.();
+      setViewLockRef.current?.(false);
+      setIsViewLocked(false);
+    }
+  }, [mode2D, elevationView]);
 
   const toggleViewLock = () => {
     setIsViewLocked((prev) => {
@@ -672,6 +732,8 @@ export function Viewport({
       gridAndAxes = buildMainSceneGridAndAxes();
       editorUiScene.add(gridAndAxes);
     }
+    const elevationHUD = createElevationHUD();
+    editorUiScene.add(elevationHUD.group);
 
     const perspectiveCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
     perspectiveCamera.position.set(3, 3, 5);
@@ -846,6 +908,28 @@ export function Viewport({
       orthographicCamera.lookAt(target);
 
       setIsOrthographic(true);
+      controls.update();
+    };
+
+    setIsIsometricElevationRef.current = () => {
+      isAxisSnapped = false;
+      isAxisViewRef.current = false;
+      setIsAxisView(false);
+      const target = controls.target.clone();
+      const distance = 35;
+      const direction = new THREE.Vector3(1, 1, 1).normalize();
+      const upVector = new THREE.Vector3(0, 1, 0);
+
+      perspectiveCamera.up.copy(upVector);
+      perspectiveCamera.position.copy(target).addScaledVector(direction, distance);
+      perspectiveCamera.lookAt(target);
+
+      orthographicCamera.up.copy(upVector);
+      orthographicCamera.position.copy(target).addScaledVector(direction, distance);
+      orthographicCamera.lookAt(target);
+
+      setIsOrthographic(true);
+      controls.enableRotate = true;
       controls.update();
     };
 
@@ -1290,6 +1374,8 @@ export function Viewport({
             Math.round(object.position.y / TRANSLATION_SNAP) * TRANSLATION_SNAP,
             Math.round(object.position.z / TRANSLATION_SNAP) * TRANSLATION_SNAP,
           );
+        } else if (elevationView && snapElevation && transformModeRef.current === "translate") {
+          object.position.y = snapElevationValue(object.position.y, 0.5);
         }
 
         // object.ts sets matrixAutoUpdate = false on every graph-driven mesh
@@ -1464,6 +1550,10 @@ export function Viewport({
           ),
         });
 
+        if (elevationView && snapElevation && patch.location) {
+          patch.location.y = snapElevationValue(patch.location.y, 0.5);
+        }
+
         if (Object.keys(patch).length > 0) {
           onTransformChangeRef.current(targetNodeId, patch);
         }
@@ -1552,10 +1642,81 @@ export function Viewport({
     }
 
     function onCanvasPointerDown(e: PointerEvent) {
+      if (e.ctrlKey && !e.metaKey && e.button === 0) {
+        try {
+          Object.defineProperty(e, "ctrlKey", { get: () => false });
+        } catch {
+          // ignore
+        }
+      }
+
       pointerDownAt = { x: e.clientX, y: e.clientY };
 
-      const isMarqueeModifier = e.metaKey || e.ctrlKey;
+      const isMarqueeModifier = e.metaKey;
       const infActive = pointsInfluenceHandles.count() > 0 && !outputMode;
+
+      const gpNode = selectedNodeIdRef.current
+        ? graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current && n.type === GREASE_PENCIL_NODE.type)
+        : null;
+
+      const isDrawingOrModifying =
+        gpToolRef.current === "pen" ||
+        gpToolRef.current === "eraser_hard" ||
+        gpToolRef.current === "eraser_soft" ||
+        gpToolRef.current === "tint";
+
+      if (gpNode && !outputMode && isDrawingOrModifying && e.button === 0 && !isMarqueeModifier && !e.altKey) {
+        isGpDrawingRef.current = true;
+        setIsGpDrawing(true);
+        gpShiftAtStartRef.current = e.shiftKey || Boolean(e.getModifierState && e.getModifierState("Shift"));
+        gpCtrlAtStartRef.current = Boolean(e.getModifierState && e.getModifierState("Control"));
+        gpPressureModifierRef.current = gpShiftAtStartRef.current ? 0.45 : gpCtrlAtStartRef.current ? 1.75 : 1.0;
+        controls.enabled = false;
+        const rect = renderer.domElement.getBoundingClientRect();
+        const screenX = e.clientX - rect.left;
+        const screenY = e.clientY - rect.top;
+        const now = performance.now();
+        gpPrevPointerRef.current = { x: screenX, y: screenY, time: now };
+
+        const worldPos = projectScreenToDrawingPlane(e.clientX, e.clientY, {
+          camera,
+          domElement: renderer.domElement,
+          elevationY: gpNode.params.location instanceof THREE.Vector3 ? gpNode.params.location.y : 0,
+          mode2D,
+          objectPosition: gpNode.params.location instanceof THREE.Vector3 ? gpNode.params.location : undefined,
+        });
+
+        gpWorkingFramesRef.current = (gpNode.params.frames as KeyframeDrawing[]) || [];
+        const bSize = Number(gpNode.params.brushSize) || 4;
+        const toolRadius = Math.max(0.85, bSize * 0.1);
+
+        if (worldPos) {
+          const currentFrames = gpWorkingFramesRef.current;
+          const targetFrame = currentFrameRef.current >= 0 ? currentFrameRef.current : 0;
+          if (gpToolRef.current === "eraser_hard") {
+            const erased = eraseStrokesAtPosition(currentFrames, targetFrame, worldPos, toolRadius);
+            gpWorkingFramesRef.current = erased;
+            onParamChangeRef.current?.("frames", erased, gpNode.id);
+          } else if (gpToolRef.current === "eraser_soft") {
+            const softErased = eraseStrokesSoft(currentFrames, targetFrame, worldPos, toolRadius, 0.3);
+            gpWorkingFramesRef.current = softErased;
+            onParamChangeRef.current?.("frames", softErased, gpNode.id);
+          } else if (gpToolRef.current === "tint") {
+            const activeColorHex = parseColorHex(gpNode.params.activeColor, "#38bdf8");
+            const tinted = tintStrokesAtPosition(currentFrames, targetFrame, worldPos, activeColorHex, toolRadius, 0.4);
+            gpWorkingFramesRef.current = tinted;
+            onParamChangeRef.current?.("frames", tinted, gpNode.id);
+          } else {
+            let basePr = calculateSimulatedPressure(null, { x: screenX, y: screenY, time: now }, e.pressure);
+            const pressure = Math.max(0.04, Math.min(2.5, basePr * gpPressureModifierRef.current));
+            gpActivePointsRef.current = [{ x: worldPos.x, y: worldPos.y, z: worldPos.z, pressure }];
+            gpLivePreviewRef.current = [{ screenX, screenY }];
+            setGpLivePreview([{ screenX, screenY }]);
+          }
+        }
+        e.stopImmediatePropagation();
+        return;
+      }
 
       // Every Points Influence gesture is gated behind Cmd/Ctrl, same as
       // curve marquee and Points Selection marquee — a plain drag always
@@ -1590,6 +1751,63 @@ export function Viewport({
     }
 
     function onCanvasPointerMove(e: PointerEvent) {
+      const gpNode = selectedNodeIdRef.current
+        ? graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current && n.type === GREASE_PENCIL_NODE.type)
+        : null;
+
+      if (isGpDrawingRef.current && gpNode && host) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        const screenX = e.clientX - rect.left;
+        const screenY = e.clientY - rect.top;
+        const now = performance.now();
+
+        const worldPos = projectScreenToDrawingPlane(e.clientX, e.clientY, {
+          camera,
+          domElement: renderer.domElement,
+          elevationY: gpNode.params.location instanceof THREE.Vector3 ? gpNode.params.location.y : 0,
+          mode2D,
+          objectPosition: gpNode.params.location instanceof THREE.Vector3 ? gpNode.params.location : undefined,
+        });
+
+        if (worldPos) {
+          const currentFrames = gpWorkingFramesRef.current || (gpNode.params.frames as KeyframeDrawing[]) || [];
+          const targetFrame = currentFrameRef.current >= 0 ? currentFrameRef.current : 0;
+          const bSize = Number(gpNode.params.brushSize) || 4;
+          const toolRadius = Math.max(0.85, bSize * 0.1);
+          if (gpToolRef.current === "eraser_hard") {
+            const erased = eraseStrokesAtPosition(currentFrames, targetFrame, worldPos, toolRadius);
+            gpWorkingFramesRef.current = erased;
+            onParamChangeRef.current?.("frames", erased, gpNode.id);
+          } else if (gpToolRef.current === "eraser_soft") {
+            const softErased = eraseStrokesSoft(currentFrames, targetFrame, worldPos, toolRadius, 0.25);
+            gpWorkingFramesRef.current = softErased;
+            onParamChangeRef.current?.("frames", softErased, gpNode.id);
+          } else if (gpToolRef.current === "tint") {
+            const activeColorHex = parseColorHex(gpNode.params.activeColor, "#38bdf8");
+            const tinted = tintStrokesAtPosition(currentFrames, targetFrame, worldPos, activeColorHex, toolRadius, 0.35);
+            gpWorkingFramesRef.current = tinted;
+            onParamChangeRef.current?.("frames", tinted, gpNode.id);
+          } else {
+            const isShift = e.shiftKey || Boolean(e.getModifierState && e.getModifierState("Shift"));
+            const isCtrl = Boolean(e.getModifierState && e.getModifierState("Control"));
+            const targetMod = isShift ? 0.35 : isCtrl ? 1.85 : 1.0;
+            gpPressureModifierRef.current = THREE.MathUtils.lerp(gpPressureModifierRef.current, targetMod, 0.12);
+            let basePr = calculateSimulatedPressure(gpPrevPointerRef.current, { x: screenX, y: screenY, time: now }, e.pressure);
+            const pressure = Math.max(0.04, Math.min(2.5, basePr * gpPressureModifierRef.current));
+            gpPrevPointerRef.current = { x: screenX, y: screenY, time: now };
+
+            const lastPt = gpActivePointsRef.current[gpActivePointsRef.current.length - 1];
+            if (!lastPt || (Math.hypot(lastPt.x - worldPos.x, lastPt.y - worldPos.y, lastPt.z - worldPos.z) > 0.04)) {
+              gpActivePointsRef.current.push({ x: worldPos.x, y: worldPos.y, z: worldPos.z, pressure });
+              const nextPreview = [...gpLivePreviewRef.current, { screenX, screenY }];
+              gpLivePreviewRef.current = nextPreview;
+              setGpLivePreview(nextPreview);
+            }
+          }
+        }
+        return;
+      }
+
       if (isBrushPainting && host) {
         const rect = renderer.domElement.getBoundingClientRect();
         const radius = Number(graphRef.current.nodes.find((n) => n.id === pointsInfluenceNodeId)?.params.brushRadius) || 40;
@@ -1599,7 +1817,9 @@ export function Viewport({
       }
       if (isGradientDragging && gradientStartPos && host) {
         const rect = renderer.domElement.getBoundingClientRect();
-        setGradientLine({ x1: gradientStartPos.x, y1: gradientStartPos.y, x2: e.clientX - rect.left, y2: e.clientY - rect.top });
+        const x2 = e.clientX - rect.left;
+        const y2 = e.clientY - rect.top;
+        setGradientLine({ x1: gradientStartPos.x, y1: gradientStartPos.y, x2, y2 });
         return;
       }
       if (isMarqueeDragging && marqueeStartPos && host) {
@@ -1618,6 +1838,55 @@ export function Viewport({
     }
 
     function onCanvasPointerUp(e: PointerEvent) {
+      const gpNode = selectedNodeIdRef.current
+        ? graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current && n.type === GREASE_PENCIL_NODE.type)
+        : null;
+
+      if (isGpDrawingRef.current) {
+        isGpDrawingRef.current = false;
+        setIsGpDrawing(false);
+        controls.enabled = true;
+        setGpLivePreview([]);
+        gpLivePreviewRef.current = [];
+
+        if (gpToolRef.current === "pen" && gpActivePointsRef.current.length >= 1 && gpNode) {
+          if (gpActivePointsRef.current.length === 1) {
+            const p = gpActivePointsRef.current[0];
+            gpActivePointsRef.current.push({ x: p.x + 0.002, y: p.y, z: p.z + 0.002, pressure: p.pressure });
+          }
+          const taperStart = gpShiftAtStartRef.current;
+          const taperEnd = e.shiftKey || Boolean(e.getModifierState && e.getModifierState("Shift"));
+          const widenStart = gpCtrlAtStartRef.current;
+          const widenEnd = Boolean(e.getModifierState && e.getModifierState("Control"));
+          gpShiftAtStartRef.current = false;
+          gpCtrlAtStartRef.current = false;
+
+          const finalPoints = (taperStart || taperEnd || widenStart || widenEnd)
+            ? applyStrokeTaper(gpActivePointsRef.current, taperStart, taperEnd, widenStart, widenEnd)
+            : gpActivePointsRef.current;
+          const strokeColor = parseColorHex(gpNode.params.activeColor, "#38bdf8");
+          const customFillColor = parseColorHex(gpNode.params.fillColor, "");
+          const fillColorVal = customFillColor || strokeColor;
+
+          const newStroke: GreaseStroke = {
+            id: `stroke_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            points: finalPoints,
+            color: strokeColor,
+            width: Number(gpNode.params.brushSize) || 4,
+            brushType: gpBrushTypeRef.current,
+            fill: gpSolidFillRef.current,
+            fillColor: gpSolidFillRef.current ? fillColorVal : undefined,
+          };
+
+          const currentFrames = (gpNode.params.frames as KeyframeDrawing[]) || [];
+          const targetFrame = currentFrameRef.current >= 0 ? currentFrameRef.current : 0;
+          const nextFrames = addStrokeToFrames(currentFrames, targetFrame, newStroke);
+          onParamChangeRef.current?.("frames", nextFrames, gpNode.id);
+        }
+        gpActivePointsRef.current = [];
+        gpWorkingFramesRef.current = null;
+        return;
+      }
       if (isBrushPainting) {
         isBrushPainting = false;
         controls.enabled = true;
@@ -2781,6 +3050,7 @@ export function Viewport({
       // Move/rotate/scale gizmo: attach to selected mesh, Empty, Light,
       // to the picked control point / multi-point centroid proxy, or to the
       // pivot marker when a Pivot Transform is selected
+      let targetObject: THREE.Object3D | null = null;
       let pickedCurveHandle: THREE.Object3D | null = null;
       if (transformControls) {
         if (selectedPointIndices.size === 1) {
@@ -2802,13 +3072,13 @@ export function Viewport({
       }
 
       if (transformControls && !transformControls.dragging && pickedCurveHandle) {
+        targetObject = pickedCurveHandle;
         if (transformControls.object !== pickedCurveHandle) transformControls.attach(pickedCurveHandle);
         transformControls.setMode(transformModeRef.current);
         attachedObjectNodeId = null;
         attachedGizmoTarget = null;
         for (const parked of [...gizmoAnchorScene.children]) gizmoAnchorScene.remove(parked);
       } else if (transformControls && !transformControls.dragging) {
-        let targetObject: THREE.Object3D | null = null;
         if (selectedNodeIdRef.current) {
           // The selected node's own result first — it is the authoritative
           // answer to "which object does this node drive", and the only one
@@ -2822,22 +3092,28 @@ export function Viewport({
           // the params were written back to a node whose real object never
           // moved. They stay as fallbacks for nodes with no geometry output
           // of their own (lights, camera helpers).
-          const ownResult = results.get(selectedNodeIdRef.current);
-          if (ownResult?.geometry instanceof THREE.Object3D) {
-            targetObject = ownResult.geometry;
-          }
-          if (!targetObject) {
-            const light = activeLights.get(selectedNodeIdRef.current);
-            if (light) targetObject = light;
-          }
-          if (!targetObject) {
-            const camHelper = activeCameraHelpers.get(selectedNodeIdRef.current);
-            if (camHelper) targetObject = camHelper;
-          }
-          if (!targetObject) {
-            scene.traverse((obj) => {
-              if (!targetObject && obj.userData.nodeId === selectedNodeIdRef.current) targetObject = obj;
-            });
+          const isGp = graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current)?.type === GREASE_PENCIL_NODE.type;
+          if (isGp && gpToolRef.current !== "select") {
+            targetObject = null;
+            if (transformControls.object) transformControls.detach();
+          } else {
+            const ownResult = results.get(selectedNodeIdRef.current);
+            if (ownResult?.geometry instanceof THREE.Object3D) {
+              targetObject = ownResult.geometry;
+            }
+            if (!targetObject) {
+              const light = activeLights.get(selectedNodeIdRef.current);
+              if (light) targetObject = light;
+            }
+            if (!targetObject) {
+              const camHelper = activeCameraHelpers.get(selectedNodeIdRef.current);
+              if (camHelper) targetObject = camHelper;
+            }
+            if (!targetObject) {
+              scene.traverse((obj) => {
+                if (!targetObject && obj.userData.nodeId === selectedNodeIdRef.current) targetObject = obj;
+              });
+            }
           }
         }
         const gizmoTarget = targetObject ? resolveGizmoTarget(graphRef.current, selectedNodeIdRef.current!) : null;
@@ -2861,6 +3137,28 @@ export function Viewport({
           }
           attachedGizmoTarget = gizmoTarget;
           transformControls.setMode(transformModeRef.current);
+          if (mode2D) {
+            transformControls.showX = true;
+            transformControls.showY = false;
+            transformControls.showZ = true;
+            if (transformModeRef.current === "rotate") {
+              transformControls.showX = false;
+              transformControls.showY = true;
+              transformControls.showZ = false;
+            } else if (transformModeRef.current === "scale") {
+              transformControls.showX = true;
+              transformControls.showY = false;
+              transformControls.showZ = true;
+            }
+          } else if (elevationView) {
+            transformControls.showX = false;
+            transformControls.showY = true;
+            transformControls.showZ = false;
+          } else {
+            transformControls.showX = true;
+            transformControls.showY = true;
+            transformControls.showZ = true;
+          }
 
           // object.ts drives these meshes by `matrix.copy(...)` with
           // matrixAutoUpdate off, which never touches position/quaternion/
@@ -2908,6 +3206,10 @@ export function Viewport({
         for (const parked of [...gizmoAnchorScene.children]) {
           if (parked !== targetObject) gizmoAnchorScene.remove(parked);
         }
+      }
+
+      if (transformControls?.dragging && transformControls.object) {
+        targetObject = transformControls.object;
       }
 
       // Sync Environment & HDRI / Background Color
@@ -3082,6 +3384,7 @@ export function Viewport({
 
       // 1b. Render Editor UI Overlay (Grid, Transform Controls, Light Helpers) - isolated from Postprocess
       if (!outputMode && showUiOverlayRef.current) {
+        elevationHUD.update(targetObject, Boolean(elevationView));
         renderer.clearDepth();
         renderer.render(editorUiScene, camera);
       }
@@ -3160,6 +3463,7 @@ export function Viewport({
         window.removeEventListener("blur", onSnapWindowBlur);
       }
       transformControls?.dispose();
+      elevationHUD.dispose();
       curveHandles.clear();
       pointsSelectionHandles.clear();
       pointsInfluenceHandles.clear();
@@ -3335,10 +3639,555 @@ export function Viewport({
           <circle cx={gradientLine.x2} cy={gradientLine.y2} r={4} fill="#ef4444" />
         </svg>
       )}
+      {/* Grease Pencil live stroke drag preview */}
+      {!outputMode && isGpDrawing && gpLivePreview.length > 1 && (
+        <svg
+          style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 42 }}
+          width="100%"
+          height="100%"
+        >
+          {gpSolidFill && gpLivePreview.length >= 3 && (
+            <polygon
+              points={gpLivePreview.map((p) => `${p.screenX},${p.screenY}`).join(" ")}
+              fill={
+                parseColorHex(
+                  graph.nodes.find((n) => n.id === selectedNodeId)?.params.fillColor,
+                  "",
+                ) ||
+                parseColorHex(
+                  graph.nodes.find((n) => n.id === selectedNodeId)?.params.activeColor,
+                  "#38bdf8",
+                )
+              }
+              fillOpacity={0.35}
+            />
+          )}
+          <polyline
+            points={gpLivePreview.map((p) => `${p.screenX},${p.screenY}`).join(" ")}
+            fill="none"
+            stroke={parseColorHex(
+              graph.nodes.find((n) => n.id === selectedNodeId)?.params.activeColor,
+              "#38bdf8",
+            )}
+            strokeWidth={
+              Number(graph.nodes.find((n) => n.id === selectedNodeId)?.params.brushSize) || 4
+            }
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      )}
       {/* Passe-partout guide: target-output-aspect crop, shown while a Camera
           node is selected so "Aligner Caméra" reproduces what's actually
           framed — see the comment in tick() next to cameraGuideRef. */}
       {!outputMode && <div className="viewport-camera-guide" ref={cameraGuideRef} />}
+      {/* Grease Pencil Floating Toolbar */}
+      {!outputMode &&
+        !elevationView &&
+        selectedNodeId &&
+        (() => {
+          const gpNode = graph.nodes.find(
+            (n) => n.id === selectedNodeId && n.type === GREASE_PENCIL_NODE.type,
+          );
+          if (!gpNode) return null;
+          const activeColor = parseColorHex(gpNode.params.activeColor, "#38bdf8");
+          const fillColor = parseColorHex(gpNode.params.fillColor, "");
+          const brushSize = Number(gpNode.params.brushSize) || 4;
+          const onionSkin = Boolean(gpNode.params.onionSkin ?? true);
+
+          return (
+            <div
+              className="viewport-gp-hud"
+              style={{
+                position: "absolute",
+                bottom: 16,
+                left: "50%",
+                transform: "translateX(-50%)",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "5px 12px",
+                background: "rgba(24, 28, 38, 0.95)",
+                backdropFilter: "blur(12px)",
+                border: "1px solid rgba(56, 189, 248, 0.4)",
+                borderRadius: "8px",
+                boxShadow:
+                  "0 8px 24px rgba(0, 0, 0, 0.5), 0 0 16px rgba(56, 189, 248, 0.2)",
+                color: "#ffffff",
+                fontSize: "12px",
+                zIndex: 45,
+                pointerEvents: "auto",
+              }}
+            >
+              {/* Frame Indicator */}
+              <div
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  color: "#38bdf8",
+                  padding: "2px 8px",
+                  background: "rgba(56, 189, 248, 0.15)",
+                  borderRadius: "4px",
+                  letterSpacing: "0.02em",
+                  userSelect: "none",
+                }}
+                title="Current frame"
+              >
+                {currentFrame >= 0 ? currentFrame : 0}
+              </div>
+
+              <div
+                style={{
+                  width: 1,
+                  height: 16,
+                  background: "rgba(255, 255, 255, 0.15)",
+                }}
+              />
+
+              {/* Tool: Pen */}
+              <button
+                type="button"
+                className={`viewport-hud-button ${gpTool === "pen" ? "viewport-hud-button-active" : ""}`}
+                onClick={() => setGpTool("pen")}
+                title="Pen (freehand drawing — hold Shift at start/end to taper)"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                  <path d="m15 5 4 4" />
+                </svg>
+              </button>
+
+              {/* Brush Preset Selector */}
+              <select
+                value={gpBrushType}
+                onChange={(e) => {
+                  const b = e.target.value as GreaseBrushType;
+                  setGpBrushType(b);
+                  onParamChange?.("brushType", b, gpNode.id);
+                }}
+                style={{
+                  background: "rgba(255, 255, 255, 0.08)",
+                  color: "#f1f5f9",
+                  border: "1px solid rgba(255, 255, 255, 0.15)",
+                  borderRadius: 4,
+                  fontSize: "11px",
+                  height: 24,
+                  padding: "0 6px",
+                  outline: "none",
+                  cursor: "pointer",
+                }}
+                title="Brush preset: Ink Pen, Ink Pen Rough, Marker Bold, Airbrush"
+              >
+                <option value="ink_pen" style={{ background: "#1e293b", color: "#fff" }}>Ink Pen</option>
+                <option value="ink_pen_rough" style={{ background: "#1e293b", color: "#fff" }}>Ink Pen Rough</option>
+                <option value="marker_bold" style={{ background: "#1e293b", color: "#fff" }}>Marker Bold</option>
+                <option value="airbrush" style={{ background: "#1e293b", color: "#fff" }}>Airbrush</option>
+              </select>
+
+              {/* Solid Fill Toggle */}
+              <button
+                type="button"
+                className={`viewport-hud-button ${gpSolidFill ? "viewport-hud-button-active" : ""}`}
+                onClick={() => {
+                  const next = !gpSolidFill;
+                  setGpSolidFill(next);
+                  onParamChange?.("solidFill", next, gpNode.id);
+                }}
+                title="Solid Fill (toggle shape interior fill)"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill={gpSolidFill ? "currentColor" : "none"}
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polygon points="12 2 2 22 22 22" />
+                </svg>
+              </button>
+
+              {/* Tool: Hard Eraser */}
+              <button
+                type="button"
+                className={`viewport-hud-button ${gpTool === "eraser_hard" ? "viewport-hud-button-active" : ""}`}
+                onClick={() => setGpTool("eraser_hard")}
+                title="Hard Eraser (erase entire stroke on contact)"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21" />
+                  <path d="M22 21H7" />
+                  <path d="m5 11 9 9" />
+                </svg>
+              </button>
+
+              {/* Tool: Soft Eraser */}
+              <button
+                type="button"
+                className={`viewport-hud-button ${gpTool === "eraser_soft" ? "viewport-hud-button-active" : ""}`}
+                onClick={() => setGpTool("eraser_soft")}
+                title="Soft Eraser (gradually thin and fade strokes)"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeDasharray="2 2"
+                >
+                  <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21" />
+                  <path d="M22 21H7" strokeDasharray="none" />
+                  <path d="m5 11 9 9" />
+                </svg>
+              </button>
+
+              {/* Tool: Tint */}
+              <button
+                type="button"
+                className={`viewport-hud-button ${gpTool === "tint" ? "viewport-hud-button-active" : ""}`}
+                onClick={() => setGpTool("tint")}
+                title="Tint (paint over strokes to blend their color with active color)"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z" />
+                  <path d="m5 2 5 5" />
+                  <circle cx="19" cy="19" r="3" />
+                </svg>
+              </button>
+
+              {/* Tool: Select / Move */}
+              <button
+                type="button"
+                className={`viewport-hud-button ${gpTool === "select" ? "viewport-hud-button-active" : ""}`}
+                onClick={() => setGpTool("select")}
+                title="Select / Transform (move/rotate/scale layer)"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="5 9 2 12 5 15" />
+                  <polyline points="9 5 12 2 15 5" />
+                  <polyline points="15 19 12 22 9 19" />
+                  <polyline points="19 9 22 12 19 15" />
+                  <line x1="2" y1="12" x2="22" y2="12" />
+                  <line x1="12" y1="2" x2="12" y2="22" />
+                </svg>
+              </button>
+
+              <div
+                style={{
+                  width: 1,
+                  height: 16,
+                  background: "rgba(255, 255, 255, 0.15)",
+                }}
+              />
+
+              {/* Stroke Color picker */}
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  cursor: "pointer",
+                }}
+                title="Stroke color (outline)"
+              >
+                <input
+                  type="color"
+                  value={activeColor}
+                  onChange={(e) =>
+                    onParamChange?.("activeColor", e.target.value, gpNode.id)
+                  }
+                  style={{
+                    width: 18,
+                    height: 18,
+                    padding: 0,
+                    border: "1px solid rgba(255,255,255,0.4)",
+                    borderRadius: "50%",
+                    cursor: "pointer",
+                    backgroundColor: "transparent",
+                  }}
+                />
+              </label>
+
+              {/* Fill Color picker */}
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  cursor: "pointer",
+                  opacity: gpSolidFill ? 1 : 0.4,
+                }}
+                title={gpSolidFill ? "Fill color (interior shape color)" : "Fill color (enable Solid Fill to activate)"}
+              >
+                <input
+                  type="color"
+                  value={fillColor || activeColor}
+                  onChange={(e) =>
+                    onParamChange?.("fillColor", e.target.value, gpNode.id)
+                  }
+                  style={{
+                    width: 18,
+                    height: 18,
+                    padding: 0,
+                    border: "1px solid rgba(255,255,255,0.4)",
+                    borderRadius: 4,
+                    cursor: "pointer",
+                    backgroundColor: "transparent",
+                  }}
+                />
+              </label>
+
+              {/* Brush Size Slider */}
+              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <span
+                  style={{
+                    fontSize: "11px",
+                    color: "#94a3b8",
+                    minWidth: 24,
+                    textAlign: "right",
+                  }}
+                >
+                  {brushSize}px
+                </span>
+                <input
+                  type="range"
+                  min={1}
+                  max={32}
+                  value={brushSize}
+                  onChange={(e) =>
+                    onParamChange?.(
+                      "brushSize",
+                      Number(e.target.value),
+                      gpNode.id,
+                    )
+                  }
+                  style={{
+                    width: 56,
+                    accentColor: "#38bdf8",
+                    cursor: "pointer",
+                  }}
+                  title="Brush thickness"
+                />
+              </div>
+
+              <div
+                style={{
+                  width: 1,
+                  height: 16,
+                  background: "rgba(255, 255, 255, 0.15)",
+                }}
+              />
+
+              {/* Lock / Keyframe Button */}
+              <button
+                type="button"
+                className="viewport-hud-button"
+                onClick={() => {
+                  const currentFrames =
+                    (gpNode.params.frames as KeyframeDrawing[]) || [];
+                  const targetFrame =
+                    currentFrame >= 0 ? currentFrame : 0;
+                  const updated = duplicateDrawing(
+                    currentFrames,
+                    targetFrame,
+                    targetFrame,
+                  );
+                  onParamChange?.("frames", updated, gpNode.id);
+                }}
+                title="Insert keyframe at current frame"
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+              </button>
+
+              {/* Blank Next Button */}
+              <button
+                type="button"
+                className="viewport-hud-button"
+                onClick={() => {
+                  const targetFrame =
+                    (currentFrame >= 0 ? currentFrame : 0) + 1;
+                  const currentFrames =
+                    (gpNode.params.frames as KeyframeDrawing[]) || [];
+                  const updated = createBlankDrawing(
+                    currentFrames,
+                    targetFrame,
+                  );
+                  onParamChange?.("frames", updated, gpNode.id);
+                  onFrameChange?.(targetFrame);
+                }}
+                title="Blank keyframe at next frame"
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M5 12h14" />
+                  <path d="m12 5 7 7-7 7" />
+                </svg>
+              </button>
+
+              {/* Duplicate Next Button */}
+              <button
+                type="button"
+                className="viewport-hud-button"
+                onClick={() => {
+                  const curF = currentFrame >= 0 ? currentFrame : 0;
+                  const targetFrame = curF + 1;
+                  const currentFrames =
+                    (gpNode.params.frames as KeyframeDrawing[]) || [];
+                  const updated = duplicateDrawing(
+                    currentFrames,
+                    curF,
+                    targetFrame,
+                  );
+                  onParamChange?.("frames", updated, gpNode.id);
+                  onFrameChange?.(targetFrame);
+                }}
+                title="Duplicate drawing to next frame"
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                  <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                </svg>
+              </button>
+
+              {/* Clear Button */}
+              <button
+                type="button"
+                className="viewport-hud-button"
+                onClick={() => {
+                  const curF = currentFrame >= 0 ? currentFrame : 0;
+                  const currentFrames =
+                    (gpNode.params.frames as KeyframeDrawing[]) || [];
+                  const updated = clearDrawingAtFrame(currentFrames, curF);
+                  onParamChange?.("frames", updated, gpNode.id);
+                }}
+                title="Clear drawing at current frame"
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M3 6h18" />
+                  <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                  <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                </svg>
+              </button>
+
+              <div
+                style={{
+                  width: 1,
+                  height: 16,
+                  background: "rgba(255, 255, 255, 0.15)",
+                }}
+              />
+
+              {/* Onion Skin toggle */}
+              <button
+                type="button"
+                className={`viewport-hud-button ${onionSkin ? "viewport-hud-button-active" : ""}`}
+                onClick={() => {
+                  onParamChange?.("onionSkin", !onionSkin, gpNode.id);
+                }}
+                title={
+                  onionSkin
+                    ? "Disable onion skinning"
+                    : "Enable onion skinning (ghosting)"
+                }
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <circle cx="12" cy="12" r="6" />
+                  <circle cx="12" cy="12" r="2" />
+                </svg>
+              </button>
+            </div>
+          );
+        })()}
       {/* Top-Left Viewport HUD & Controls — editor-only, never shown in the output window */}
       {!outputMode && (
         <div className="viewport-hud">
@@ -3505,6 +4354,21 @@ export function Viewport({
               <path d="M3 3v5h5" />
             </svg>
           </button>
+          {elevationView && onToggleSnapElevation && (
+            <button
+              type="button"
+              className={`viewport-hud-button ${snapElevation ? "viewport-hud-button-active" : ""}`}
+              style={{ display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+              onClick={onToggleSnapElevation}
+              title={snapElevation ? "Aimantage élévation actif (0.5)" : "Activer l'aimantage d'élévation (0.5)"}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M6 3v7a6 6 0 0 0 12 0V3" />
+                <line x1="4" y1="3" x2="8" y2="3" />
+                <line x1="16" y1="3" x2="20" y2="3" />
+              </svg>
+            </button>
+          )}
           {onToggleSplitView && (
             <button
               type="button"

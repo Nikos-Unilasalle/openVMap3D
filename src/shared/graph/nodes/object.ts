@@ -256,7 +256,7 @@ export interface MaterialParams {
   customMaterial?: THREE.Material;
 }
 
-function materialParamsFromValue(v: unknown): MaterialParams | null {
+export function materialParamsFromValue(v: unknown): MaterialParams | null {
   if (typeof v !== "object" || v === null) return null;
   if (v instanceof THREE.Material) {
     return {
