@@ -487,9 +487,15 @@ export function Viewport({
     sessionIdRef.current = `viewport-${nextSessionOrdinal++}`;
   }
 
-  const [showEnvInEditor, setShowEnvInEditor] = useState(false);
+  const [showEnvInEditor, setShowEnvInEditor] = useState(Boolean(mode2D));
   const showEnvInEditorRef = useRef(showEnvInEditor);
   showEnvInEditorRef.current = showEnvInEditor;
+
+  useEffect(() => {
+    if (mode2D) {
+      setShowEnvInEditor(true);
+    }
+  }, [mode2D]);
 
   const [isCameraView, setIsCameraView] = useState(false);
   const isCameraViewRef = useRef(isCameraView);
@@ -4210,8 +4216,8 @@ export function Viewport({
             </div>
           );
         })()}
-      {/* Top-Left Viewport HUD & Controls — editor-only, never shown in the output window */}
-      {!outputMode && (
+      {/* Top-Left Viewport HUD & Controls — editor-only, never shown in the output window or elevation view */}
+      {!outputMode && !elevationView && (
         <div className="viewport-hud">
           {graph.nodes.some((n) => n.type === CAMERA_NODE.type) && (
             <>

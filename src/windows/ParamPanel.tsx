@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readFile, readTextFile } from "@tauri-apps/plugin-fs";
 import * as THREE from "three";
 import { isTauri } from "../shared/graph/storage";
+import { setInputZone } from "../shared/graph/inputZoneStore";
 import { CATEGORY_COLOR, NodeCategory, UNKNOWN_CATEGORY_COLOR } from "../shared/graph/categories";
 import { KeyframeStore, ParamFieldDef } from "../shared/graph/types";
 import { ColorPickerInput } from "./ColorPickerInput";
@@ -367,11 +368,109 @@ export function ParamPanel({
 
   const groups = Array.from(groupsMap.entries());
 
+  const [isHovered, setIsHovered] = useState(false);
+  const [isPinned, setIsPinned] = useState(false);
+  const [justSelected, setJustSelected] = useState(true);
+  const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const selectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setJustSelected(true);
+    if (selectTimerRef.current) clearTimeout(selectTimerRef.current);
+    selectTimerRef.current = setTimeout(() => {
+      setJustSelected(false);
+    }, 2500);
+    return () => {
+      if (selectTimerRef.current) clearTimeout(selectTimerRef.current);
+    };
+  }, [nodeId]);
+
+  useEffect(() => {
+    const handlePointerDown = (e: PointerEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setJustSelected(false);
+      }
+    };
+    window.addEventListener("pointerdown", handlePointerDown);
+    return () => window.removeEventListener("pointerdown", handlePointerDown);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
+      if (selectTimerRef.current) clearTimeout(selectTimerRef.current);
+      setInputZone(null);
+    };
+  }, []);
+
+  const handleMouseEnter = () => {
+    if (leaveTimerRef.current) {
+      clearTimeout(leaveTimerRef.current);
+      leaveTimerRef.current = null;
+    }
+    setIsHovered(true);
+    setInputZone("panel");
+  };
+
+  const handleMouseLeave = () => {
+    if (panelRef.current && panelRef.current.contains(document.activeElement)) {
+      return;
+    }
+    if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
+    leaveTimerRef.current = setTimeout(() => {
+      setIsHovered(false);
+      setJustSelected(false);
+      setInputZone(null);
+    }, 180);
+  };
+
+  const isVisible = isPinned || isHovered || justSelected;
+
   return (
-    <div className="param-panel">
-      <div className="param-panel-title" style={{ color: categoryColor }}>
-        {label}
-      </div>
+    <>
+      {!isVisible && (
+        <button
+          type="button"
+          className="param-panel-tab"
+          onMouseEnter={handleMouseEnter}
+          onClick={() => {
+            setIsHovered(true);
+            setInputZone("panel");
+          }}
+          title={`${label} — Ouvrir les paramètres`}
+        >
+          <span className="param-panel-tab-dot" style={{ backgroundColor: categoryColor }} />
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+          <span className="param-panel-tab-label">{label}</span>
+        </button>
+      )}
+
+      <div
+        ref={panelRef}
+        className={`param-panel ${!isVisible ? "param-panel-hidden" : ""}`}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+      >
+        <div className="param-panel-title" style={{ color: categoryColor }}>
+          <span className="param-panel-title-text">{label}</span>
+          <div className="param-panel-title-actions">
+            <button
+              type="button"
+              className={`param-panel-pin-btn-header ${isPinned ? "param-panel-pin-btn-header-active" : ""}`}
+              onClick={() => setIsPinned((p) => !p)}
+              title={isPinned ? "Auto-masquage désactivé (cliquer pour activer l'auto-masquage)" : "Épingler le panneau (reste visible)"}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill={isPinned ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="17" x2="12" y2="22" />
+                <path d="M5 17h14v-2l-2-2V5h1V3H6v2h1v8l-2 2v2z" />
+              </svg>
+            </button>
+          </div>
+        </div>
 
       {fields.length === 0 && <div className="param-panel-empty">No editable parameters.</div>}
 
@@ -532,5 +631,6 @@ export function ParamPanel({
         </button>
       )}
     </div>
+    </>
   );
 }
