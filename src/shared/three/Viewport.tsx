@@ -495,6 +495,10 @@ export function Viewport({
   const isCameraViewRef = useRef(isCameraView);
   isCameraViewRef.current = isCameraView;
 
+  const [lockCameraToView, setLockCameraToView] = useState(false);
+  const lockCameraToViewRef = useRef(lockCameraToView);
+  lockCameraToViewRef.current = lockCameraToView;
+
   const [hubElements, setHubElements] = useState<HubElement[]>([]);
   const hubSigRef = useRef<string>("");
   // The render node's output resolution — HUD elements are positioned in these
@@ -938,6 +942,9 @@ export function Viewport({
         position: [activeCamera.position.x, activeCamera.position.y, activeCamera.position.z],
         quaternion: [activeCamera.quaternion.x, activeCamera.quaternion.y, activeCamera.quaternion.z, activeCamera.quaternion.w],
       });
+      if (lockCameraToViewRef.current) {
+        snapSelectedCameraToEditorRef.current?.();
+      }
     }
 
     const handleOrbitStart = () => {
@@ -1262,6 +1269,14 @@ export function Viewport({
 
     function onViewportKeyDown(e: KeyboardEvent) {
       if (isInputElement(document.activeElement)) return;
+
+      // Blender-style shortcut: Ctrl+Alt+0 (or Cmd+Alt+0) to Align Active Camera to View
+      if ((e.ctrlKey || e.metaKey) && e.altKey && (e.code === "Numpad0" || e.code === "Digit0" || e.key === "0")) {
+        e.preventDefault();
+        snapSelectedCameraToEditorRef.current?.();
+        return;
+      }
+
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
       const key = e.key.toLowerCase();
@@ -2257,11 +2272,18 @@ export function Viewport({
         Math.round(targetPos.z * 100) / 100,
       );
 
+      const isOrtho = isOrthographicRef.current;
       const fov = activeCamera instanceof THREE.PerspectiveCamera ? Math.round(activeCamera.fov) : undefined;
 
       onTransformStartRef.current?.();
-      const patch: Record<string, unknown> = { location, rotation, target };
-      if (fov !== undefined) patch.fov = fov;
+      const patch: Record<string, unknown> = {
+        location,
+        rotation,
+        target,
+        up: activeCamera.up.clone(),
+        projectionType: isOrtho ? "orthographic" : "perspective",
+      };
+      if (fov !== undefined && !isOrtho) patch.fov = fov;
 
       onTransformChangeRef.current(targetNode.id, patch);
     };
@@ -4192,26 +4214,59 @@ export function Viewport({
       {!outputMode && (
         <div className="viewport-hud">
           {graph.nodes.some((n) => n.type === CAMERA_NODE.type) && (
-            <button
-              type="button"
-              className="viewport-hud-button viewport-hud-button-active"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "#38bdf8",
-                backgroundColor: "rgba(56, 189, 248, 0.15)",
-                borderColor: "#38bdf8",
-              }}
-              onClick={() => snapSelectedCameraToEditorRef.current?.()}
-              title="Aligner la caméra active sur la vue 3D actuelle (Align Active Camera to 3D View)"
-            >
+            <>
+              <button
+                type="button"
+                className="viewport-hud-button viewport-hud-button-active"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#38bdf8",
+                  backgroundColor: "rgba(56, 189, 248, 0.15)",
+                  borderColor: "#38bdf8",
+                }}
+                onClick={() => snapSelectedCameraToEditorRef.current?.()}
+                title="Aligner la caméra active sur la vue 3D actuelle (Align Active Camera to 3D View — Ctrl+Alt+0)"
+              >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
                   <circle cx="12" cy="13" r="4" />
                 </svg>
               </button>
-            )}
+              <button
+                type="button"
+                className={`viewport-hud-button ${lockCameraToView ? "viewport-hud-button-active" : ""}`}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: lockCameraToView ? "#f59e0b" : "#94a3b8",
+                  backgroundColor: lockCameraToView ? "rgba(245, 158, 11, 0.2)" : undefined,
+                  borderColor: lockCameraToView ? "#f59e0b" : undefined,
+                }}
+                onClick={() => {
+                  setLockCameraToView((prev) => {
+                    const next = !prev;
+                    if (next) {
+                      snapSelectedCameraToEditorRef.current?.();
+                    }
+                    return next;
+                  });
+                }}
+                title={
+                  lockCameraToView
+                    ? "Verrouillage Caméra actif : la caméra suit le viewport en temps réel (Lock Camera to View)"
+                    : "Verrouiller la caméra sur la vue 3D en continu (Lock Camera to View)"
+                }
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d={lockCameraToView ? "M7 11V7a5 5 0 0 1 10 0v4" : "M7 11V7a5 5 0 0 1 9.9-1"} />
+                </svg>
+              </button>
+            </>
+          )}
           <button
             type="button"
             className={`viewport-hud-button ${isCameraView ? "viewport-hud-button-active" : ""}`}

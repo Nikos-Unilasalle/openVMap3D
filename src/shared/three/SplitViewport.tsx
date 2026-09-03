@@ -93,6 +93,15 @@ export function SplitViewport({
     }
   }, [is2D]);
 
+  const [sharedCameraPose, setSharedCameraPose] = useState<PreviewCameraPose | null>(null);
+  const handlePrimaryCameraChange = useCallback(
+    (pose: PreviewCameraPose) => {
+      setSharedCameraPose(pose);
+      onCameraChange?.(pose);
+    },
+    [onCameraChange],
+  );
+
   const isDraggingRef = useRef(false);
   // Held so an unmount while the splitter is pressed can remove the global
   // window listeners — otherwise they'd linger until the next mouseup and
@@ -182,7 +191,7 @@ export function SplitViewport({
           onSelectNode={onSelectNode}
           onTransformChange={onTransformChange}
           onTransformStart={onTransformStart}
-          onCameraChange={onCameraChange}
+          onCameraChange={handlePrimaryCameraChange}
           previewCameraPose={previewCameraPose}
           isSplitView={isSplitActive}
           onToggleSplitView={cycleMode}
@@ -243,7 +252,7 @@ export function SplitViewport({
             onSelectNode={onSelectNode}
             onTransformChange={onTransformChange}
             onTransformStart={onTransformStart}
-            previewCameraPose={previewCameraPose}
+            previewCameraPose={previewCameraPose ?? sharedCameraPose}
             currentFrame={currentFrame}
             onEvaluatedResults={onEvaluatedResults}
             isPlaying={isPlaying}
