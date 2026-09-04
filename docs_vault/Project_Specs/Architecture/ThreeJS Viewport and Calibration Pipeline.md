@@ -30,7 +30,20 @@ Passe de rendu en espace écran combinant :
 
 ---
 
+## 4. Modes de Vue (2D / 3D) & Automatismes d'Ergonomie
+
+- **Transition 2D $\rightarrow$ 3D Automatisée** :
+  - Lorsqu'un utilisateur bascule de la vue 2D à la vue 3D dans le Viewport, l'application réinitialise dynamiquement l'état pour une reprise en main immédiate :
+    1. Déverrouillage de la caméra (`setIsViewLocked(false)`).
+    2. Désactivation du dôme d'environnement 3D (`setIsEnvEnabled(false)`).
+    3. Réinitialisation complète des coordonnées et de la cible de la caméra 3D (`resetCameraRef.current()`).
+- **Initialisation de la Timeline** :
+  - La timeline démarre en mode **Pause** par défaut (`isPlaying = false`) afin de préserver les cycles GPU/CPU lors de l'ouverture d'un projet volumineux ou de la conception d'un graphe complexe.
+
+---
+
 ## 🔗 Notes Associées
 - [[ThreeJS Optimization and Performance Guide]]
 - [[Projective Geometry and DLT Calibration]]
 - [[State Management and Multi-Canvas]]
+

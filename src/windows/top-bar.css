@@ -98,6 +98,13 @@
   outline: none;
 }
 
+.top-bar-button-icon-only {
+  width: 28px;
+  min-width: 28px;
+  padding: 0;
+  justify-content: center;
+}
+
 .top-bar-button svg {
   width: 14px;
   height: 14px;

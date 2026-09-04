@@ -252,32 +252,40 @@ export function TimelineBar({
   }, [isTimelineHovered, keyframesEnabled, currentFrame, hoveredMarkerFrame, onToggleMarker, easingPopover]);
 
   const handlePointerDownTrack = (e: React.MouseEvent) => {
-    if (e.metaKey || e.ctrlKey) {
+    // 1. Right click: scrub playhead (tête de lecture)
+    if (e.button === 2) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!keyframesEnabled || totalFrames <= 0) return;
+
+      setIsScrubbing(true);
+      const res = calculateFrameFromEvent(e);
+      if (res) onFrameChange(res.frame);
+
+      const onPointerMove = (moveEvent: MouseEvent) => {
+        const moveRes = calculateFrameFromEvent(moveEvent);
+        if (moveRes) onFrameChange(moveRes.frame);
+      };
+
+      const onPointerUp = (upEvent: MouseEvent) => {
+        if (upEvent.button === 2 || upEvent.buttons === 0) {
+          setIsScrubbing(false);
+          window.removeEventListener("mousemove", onPointerMove);
+          window.removeEventListener("mouseup", onPointerUp);
+        }
+      };
+
+      window.addEventListener("mousemove", onPointerMove);
+      window.addEventListener("mouseup", onPointerUp);
+      return;
+    }
+
+    // 2. Left click: resize split between canvas and viewports
+    if (e.button === 0) {
       e.preventDefault();
       onSplitHandleMouseDown(e);
       return;
     }
-    if (!keyframesEnabled || totalFrames <= 0) return;
-    if (e.button !== 0) return; // Only left click for scrubbing
-
-    e.stopPropagation();
-    setIsScrubbing(true);
-    const res = calculateFrameFromEvent(e);
-    if (res) onFrameChange(res.frame);
-
-    const onPointerMove = (moveEvent: MouseEvent) => {
-      const moveRes = calculateFrameFromEvent(moveEvent);
-      if (moveRes) onFrameChange(moveRes.frame);
-    };
-
-    const onPointerUp = () => {
-      setIsScrubbing(false);
-      window.removeEventListener("mousemove", onPointerMove);
-      window.removeEventListener("mouseup", onPointerUp);
-    };
-
-    window.addEventListener("mousemove", onPointerMove);
-    window.addEventListener("mouseup", onPointerUp);
   };
 
   const handleMarkerMouseDown = (e: React.MouseEvent, oldFrame: number) => {
@@ -432,12 +440,12 @@ export function TimelineBar({
         setIsTimelineHovered(false);
         setInputZone(null);
       }}
-      title={isCmdPressed ? "Hold and drag to resize canvas split height" : undefined}
+      title="Left click: drag to resize canvas/viewport split | Right click: drag to scrub playhead"
     >
       <div
         className="timeline-split-resize-handle"
         onMouseDown={onSplitHandleMouseDown}
-        title="Drag or Cmd+Drag to resize workspace viewports"
+        title="Drag to resize panels"
       />
 
       <div className="timeline-bar-inner">
@@ -457,6 +465,8 @@ export function TimelineBar({
           onMouseDown={handlePointerDownTrack}
           onMouseMove={handleMouseMoveTrack}
           onMouseLeave={handleMouseLeaveTrack}
+          onContextMenu={(e) => e.preventDefault()}
+          title="Left click: drag to resize split | Right click: drag to scrub playhead"
         >
           <div className="timeline-track-bg" />
           <WaveformCanvas

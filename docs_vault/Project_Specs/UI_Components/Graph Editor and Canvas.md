@@ -19,7 +19,20 @@ Ce document détaille l'implémentation de l'interface utilisateur de l'éditeur
 
 ---
 
+## 3. Barre Supérieure d'Actions (`TopBar.tsx`) & Menus Déroulants
+
+- **Épuration Visuelle (Boutons Icon-Only)** :
+  - Les commandes standards (`New`, `Load`, `Save`, `Demos`, `Undo`, `Redo`) utilisent une interface ultra-compacte sans étiquette textuelle (`.top-bar-button-icon-only`) avec infobulle native (`title`), libérant un maximum d'espace pour la visualisation et le panneau de canevas.
+- **Unification du Dialogue de Sauvegarde** :
+  - L'action `Save` déclenche nativement la boîte de dialogue de fichiers de l'OS (`showSaveFilePicker` ou sélecteur local). Les doublons d'interface "Save As..." et "Incremental Save" ont été retirés pour simplifier le flux utilisateur.
+- **Positionnement du Menu Démo (`DemosMenu.tsx`)** :
+  - Le panneau déroulant est ancré à gauche (`left: 0`) du bouton déclencheur, garantissant un déploiement complet vers la droite sans risque de rognage par le bord de l'écran.
+
+---
+
 ## 🔗 Notes Associées
 - [[Socket Type System and Ownership]]
 - [[Param Panel and Inspector]]
 - [[State Management and Multi-Canvas]]
+- [[ThreeJS Viewport and Calibration Pipeline]]
+

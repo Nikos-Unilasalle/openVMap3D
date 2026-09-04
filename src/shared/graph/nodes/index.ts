@@ -103,6 +103,7 @@ import {
   MATERIAL_XRAY_NODE,
   MATERIAL_ENERGY_SHIELD_NODE,
   MATERIAL_STYLIZED_FIRE_NODE,
+  MATERIAL_MIYAZAKI_CLOUD_NODE,
 } from "./materialShadersVol2";
 import {
   GEOMETRY_TWIST_BEND_TAPER_NODE,
@@ -321,6 +322,7 @@ export const STARTER_NODES = [
   MATERIAL_XRAY_NODE,
   MATERIAL_ENERGY_SHIELD_NODE,
   MATERIAL_STYLIZED_FIRE_NODE,
+  MATERIAL_MIYAZAKI_CLOUD_NODE,
   GEOMETRY_TWIST_BEND_TAPER_NODE,
   GEOMETRY_WAVE_RIPPLE_NODE,
   GEOMETRY_FACET_EXPLODE_NODE,
@@ -413,6 +415,8 @@ export * from "./meshEdit";
 export * from "./shade";
 export * from "./wiggle";
 export * from "./material";
+export * from "./materialShaders";
+export * from "./materialShadersVol2";
 export * from "./hub";
 export * from "./svg";
 export * from "./raycast";

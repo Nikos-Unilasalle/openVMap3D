@@ -277,7 +277,7 @@ function MainEditor() {
 
   const handleExportVideo = useCallback(async () => {
     if (!renderNodeInstance || totalFrames <= 0) {
-      alert("Ajoute un node Render avec au moins une frame avant d'exporter.");
+      alert("Add a Render node with at least one frame before exporting.");
       return;
     }
     exportCancelledRef.current = false;
@@ -288,7 +288,7 @@ function MainEditor() {
       // scene, first tick) finish before captureFrame is called on it.
       await new Promise((r) => setTimeout(r, 100));
       const handle = exportHandleRef.current;
-      if (!handle) throw new Error("La vue d'export n'est pas prête — réessaie.");
+      if (!handle) throw new Error("Export view is not ready — retry.");
 
       const blob = await exportVideo(handle, {
         totalFrames,
@@ -306,13 +306,13 @@ function MainEditor() {
       // errors this needs to surface (a failed writeFile/dialog call).
       console.error("Video export failed:", err);
       const message = err instanceof Error ? err.message : String(err);
-      alert("Échec de l'export vidéo : " + message);
+      alert("Video export failed: " + message);
     } finally {
       setIsExporting(false);
     }
   }, [renderNodeInstance, totalFrames, exportFps, currentFilename]);
 
-  const [isPlaying, setIsPlaying] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
   // Per canvas: each has its own Render node and so its own frame count, and
   // coming back to a canvas should find it where you left it rather than
   // wherever another canvas's playhead happens to be.

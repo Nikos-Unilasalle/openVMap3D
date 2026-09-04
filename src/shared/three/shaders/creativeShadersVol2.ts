@@ -212,12 +212,14 @@ export function createEnergyShieldMaterial(): THREE.ShaderMaterial {
         vec3 V = normalize(vViewDir);
         float fresnel = pow(1.0 - max(0.0, dot(N, V)), max(0.1, fresnelPower));
 
-        // Hex grid
+        // Hex grid with fwidth anti-aliasing
         float edge = 0.0;
         if (enableGrid > 0.5) {
           vec4 hc = hexCoords(vUv * hexScale);
           float hexDist = max(abs(hc.x) * 1.5 + abs(hc.y) * 0.866025, abs(hc.y) * 1.7320508);
-          edge = smoothstep(clamp(edgeSharpness, 0.5, 0.97), 0.98, hexDist);
+          float fwHex = fwidth(hexDist);
+          float edgeMin = min(0.97, max(clamp(edgeSharpness, 0.5, 0.97), 0.98 - max(fwHex * 2.0, 0.01)));
+          edge = smoothstep(edgeMin, 0.98, hexDist);
         }
 
         // Pulsating spherical wave
@@ -258,19 +260,19 @@ export function createStylizedFireMaterial(): THREE.ShaderMaterial {
       internalHoles: { value: 0.65 },
       coreSize: { value: 0.45 },
       coreOffsetY: { value: -0.04 },
-      coreBaseMask: { value: 0.9 },
+      coreBaseMask: { value: 0.55 },
       baseCurvature: { value: 1.0 },
-      outlineWidth: { value: 0.018 },
-      colorSoftness: { value: 0.02 },
-      enableCore: { value: 1.0 },
-      enableInner: { value: 1.0 },
+      colorSoftness: { value: 0.06 },
+      outlineWidth: { value: 0.015 },
+      bodyColor: { value: new THREE.Color(0xff3b14) },
+      innerColor: { value: new THREE.Color(0xffbf00) },
+      coreColor: { value: new THREE.Color(0xffffff) },
+      darkColor: { value: new THREE.Color(0x940a00) },
+      outlineColor: { value: new THREE.Color(0x4a0000) },
       enableDark: { value: 1.0 },
+      enableInner: { value: 1.0 },
+      enableCore: { value: 1.0 },
       enableOutline: { value: 1.0 },
-      coreColor: { value: new THREE.Color(0xfffde0) },
-      innerColor: { value: new THREE.Color(0xffcc00) },
-      bodyColor: { value: new THREE.Color(0xff5500) },
-      darkColor: { value: new THREE.Color(0xa82000) },
-      outlineColor: { value: new THREE.Color(0x1a0500) },
     },
     vertexShader: /* glsl */ `
       varying vec2 vUv;
@@ -297,127 +299,107 @@ export function createStylizedFireMaterial(): THREE.ShaderMaterial {
       uniform float coreOffsetY;
       uniform float coreBaseMask;
       uniform float baseCurvature;
-      uniform float outlineWidth;
       uniform float colorSoftness;
+      uniform float outlineWidth;
 
-      uniform float enableCore;
-      uniform float enableInner;
-      uniform float enableDark;
-      uniform float enableOutline;
-
-      uniform vec3 coreColor;
-      uniform vec3 innerColor;
       uniform vec3 bodyColor;
+      uniform vec3 innerColor;
+      uniform vec3 coreColor;
       uniform vec3 darkColor;
       uniform vec3 outlineColor;
 
-      varying vec2 vUv;
-      varying vec3 vNormal;
+      uniform float enableDark;
+      uniform float enableInner;
+      uniform float enableCore;
+      uniform float enableOutline;
 
-      // Inigo Quilez Smooth Subtraction with radius k
+      varying vec2 vUv;
+
+      // Smooth polynomial minimum/subtraction (Inigo Quilez smin/opSmoothSubtraction)
+      float smin(float a, float b, float k) {
+        float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+        return mix(b, a, h) - k * h * (1.0 - h);
+      }
+
       float opSmoothSubtraction(float d1, float d2, float k) {
-        float h = clamp(0.5 - 0.5 * (d2 + d1) / max(0.0001, k), 0.0, 1.0);
+        float h = clamp(0.5 - 0.5 * (d2 + d1) / k, 0.0, 1.0);
         return mix(d2, -d1, h) + k * h * (1.0 - h);
       }
 
-      // 2D Circle SDF
-      float sdCircle(vec2 p, vec2 c, float r) {
-        return length(p - c) - r;
+      // Exact 2D Circle SDF
+      float sdCircle(vec2 p, vec2 center, float r) {
+        return length(p - center) - r;
       }
 
-      // 2D Uneven Capsule / Teardrop SDF with parametric base curvature along Y
-      float sdFlameBody(vec2 p, float width, float height, float bCurve) {
-        float curve = max(0.05, bCurve);
-        float yNorm = clamp(p.y / max(0.001, height), 0.0, 1.0);
-        float shapeFactor = pow(yNorm, 0.5 / curve);
-        float r = width * sin(shapeFactor * 3.14159265) * (1.1 - 0.45 * yNorm);
-        if (p.y < 0.0) {
-          return length(vec2(p.x, p.y / curve)) - r * 0.5;
-        }
-        if (p.y > height) {
-          return length(vec2(p.x, p.y - height)) - 0.001;
-        }
-        return abs(p.x) - r;
+      // Tear/droplet flame body with parametric base curvature
+      float sdFlameBody(vec2 p, float width, float height, float curvature) {
+        float y = p.y;
+        float clampedY = clamp(y / height, 0.0, 1.0);
+        // Base curvature taper factor
+        float baseTaper = mix(1.0, 0.4 + 0.6 * curvature, (1.0 - clampedY) * (1.0 - clampedY));
+        float lateralW = width * (1.0 - clampedY * 0.95) * sqrt(max(0.001, clampedY)) * 2.2 * baseTaper;
+        return max(abs(p.x) - lateralW, max(-p.y, p.y - height));
       }
 
       void main() {
-        // Center coordinates: x in [-0.5, 0.5], y in [0.0, 1.0]
-        vec2 p = vec2(vUv.x - 0.5, vUv.y - 0.08);
+        // Center UV coordinates: (0,0) at lower base center
+        vec2 p = (vUv - vec2(0.5, 0.12));
 
         float t = time;
 
-        // Wave S-curve propagation
-        float wave = sin(p.y * waveFrequency - t * waveSpeed) * waveAmplitude * (p.y + 0.15);
-        wave += sin(p.y * waveFrequency * 2.3 - t * waveSpeed * 1.6) * (waveAmplitude * 0.35) * p.y;
-        vec2 pw = vec2(p.x - wave, p.y);
+        // 1. Upward Lateral Harmonic Waves
+        float wave1 = sin(p.y * waveFrequency - t * waveSpeed) * waveAmplitude * (p.y + 0.12);
+        float wave2 = cos(p.y * waveFrequency * 1.8 - t * waveSpeed * 1.4) * (waveAmplitude * 0.45) * (p.y + 0.1);
+        vec2 pw = vec2(p.x - (wave1 + wave2), p.y);
 
-        // 1. Base Flame Body SDF (Positive Shape)
+        // 2. Base Primary Body SDF
         float dBody = sdFlameBody(pw, flameWidth, flameHeight, baseCurvature);
 
-        // 2. Negative Cutters (Rising Bubbles)
-        // Base Arch Cutter (draws cool air in at bottom, shaped by baseCurvature along Y)
-        vec2 cBase = vec2(wave * 0.3 + sin(t * 2.2) * 0.03, 0.04 + sin(t * 1.8) * 0.02);
-        vec2 pBaseCut = vec2(pw.x - cBase.x, (pw.y - cBase.y) / max(0.1, baseCurvature));
-        float dCutBase = length(pBaseCut) - bubbleScale * 0.95;
+        // Animated Rising Cutters (Carving negative space to form dynamic flame tongues)
+        // Base Center Cutter (Arched notch at combustion base)
+        vec2 cBase = vec2(sin(t * 1.8) * 0.03, 0.015);
+        float rBase = bubbleScale * 0.45 + sin(t * 4.0) * 0.01;
+        float dCutBase = sdCircle(pw, cBase, rBase);
 
-        // Left Flank Notch / Tongue Cutter
+        // Left Rising Tongue Cutter
         float phaseL = fract(t * bubbleSpeed * 0.65);
-        float yL = phaseL * flameHeight * 1.25;
-        float wL = flameWidth * sin(sqrt(clamp(yL / flameHeight, 0.0, 1.0)) * 3.14159);
-        vec2 cL = vec2(-wL * 0.9 + sin(t * 3.1) * 0.02, yL);
-        float rL = bubbleScale * (0.65 + 0.45 * sin(phaseL * 3.14159));
+        float yL = 0.08 + phaseL * flameHeight * 0.95;
+        vec2 cL = vec2(-flameWidth * 0.42 + sin(t * 2.2) * 0.03, yL);
+        float rL = bubbleScale * (0.45 + phaseL * 0.55) * sin(phaseL * 3.14159);
         float dCutL = sdCircle(pw, cL, rL);
 
-        // Right Flank Notch / Tongue Cutter (Offset phase)
-        float phaseR = fract(t * bubbleSpeed * 0.65 + 0.48);
-        float yR = phaseR * flameHeight * 1.25;
-        float wR = flameWidth * sin(sqrt(clamp(yR / flameHeight, 0.0, 1.0)) * 3.14159);
-        vec2 cR = vec2(wR * 0.9 - cos(t * 2.9) * 0.02, yR);
-        float rR = bubbleScale * (0.7 + 0.4 * sin(phaseR * 3.14159));
+        // Right Rising Tongue Cutter
+        float phaseR = fract(t * bubbleSpeed * 0.72 + 0.48);
+        float yR = 0.08 + phaseR * flameHeight * 0.95;
+        vec2 cR = vec2(flameWidth * 0.44 + cos(t * 2.5) * 0.03, yR);
+        float rR = bubbleScale * (0.45 + phaseR * 0.55) * sin(phaseR * 3.14159);
         float dCutR = sdCircle(pw, cR, rR);
 
-        // Center/Internal Hole Bubble (produces internal negative void in flame body)
+        // Center Dissipation Bubble (Internal tear)
         float phaseC = fract(t * bubbleSpeed * 0.52 + 0.22);
         float yC = 0.15 + phaseC * flameHeight * 0.85;
         vec2 cC = vec2(sin(t * 2.4) * 0.04, yC);
         float rC = bubbleScale * 0.55 * sin(phaseC * 3.14159) * clamp(internalHoles, 0.0, 1.0);
         float dCutC = sdCircle(pw, cC, rC);
 
-        // Upper Dissipation Bubble
-        float phaseTop = fract(t * bubbleSpeed * 0.8 + 0.75);
-        float yTop = 0.35 + phaseTop * flameHeight * 0.8;
-        vec2 cTop = vec2(sin(t * 3.5 + 1.2) * 0.06, yTop);
-        float rTop = bubbleScale * 0.6 * sin(phaseTop * 3.14159);
-        float dCutTop = sdCircle(pw, cTop, rTop);
-
-        // 3. Apply Smooth Subtraction with variable k (smoothness)
+        // 3. Apply Smooth Subtraction
         float k = max(0.001, smoothness);
         float d = dBody;
         d = opSmoothSubtraction(dCutBase, d, k);
         d = opSmoothSubtraction(dCutL, d, k);
         d = opSmoothSubtraction(dCutR, d, k);
-        d = opSmoothSubtraction(dCutTop, d, k);
-        if (internalHoles > 0.05) {
-          d = opSmoothSubtraction(dCutC, d, k * 0.7);
-        }
+        if (internalHoles > 0.05) d = opSmoothSubtraction(dCutC, d, k * 0.7);
 
         // 4. Inner Flame & White Core SDF
         float waveCore = sin(p.y * waveFrequency * 1.2 - t * waveSpeed * 1.1) * (waveAmplitude * 0.6) * (p.y + 0.1);
-
-        // Yellow inner flame tongue:
         vec2 pwYellow = vec2(p.x - waveCore, p.y - coreOffsetY);
         float dYellow = sdFlameBody(pwYellow, flameWidth * (coreSize * 0.92), flameHeight * (coreSize * 1.25 + 0.05), baseCurvature);
         dYellow = opSmoothSubtraction(dCutBase, dYellow, k * 0.85);
         dYellow = opSmoothSubtraction(dCutL, dYellow, k * 0.5);
         dYellow = opSmoothSubtraction(dCutR, dYellow, k * 0.5);
 
-        // Incandescent white core: positioned lower at the combustion base
         vec2 pwWhite = vec2(p.x - waveCore * 0.65, p.y - (coreOffsetY - 0.05));
-        float whiteW = flameWidth * (coreSize * 0.52);
-        float whiteH = flameHeight * (coreSize * 0.75);
-        float dWhite = sdFlameBody(pwWhite, whiteW, whiteH, baseCurvature);
-
-        // Partially masked / eaten by the base arch cutter:
+        float dWhite = sdFlameBody(pwWhite, flameWidth * (coreSize * 0.52), flameHeight * (coreSize * 0.75), baseCurvature);
         if (coreBaseMask > 0.01) {
           vec2 pCoreBaseCut = vec2(pw.x - cBase.x, (pw.y - cBase.y) / max(0.1, baseCurvature));
           float dCutCoreBase = length(pCoreBaseCut) - bubbleScale * 0.95 * coreBaseMask;
@@ -426,7 +408,7 @@ export function createStylizedFireMaterial(): THREE.ShaderMaterial {
         dWhite = opSmoothSubtraction(dCutL, dWhite, k * 0.4);
         dWhite = opSmoothSubtraction(dCutR, dWhite, k * 0.4);
 
-        // 5. Pixel Alpha & Contour Clipping
+        // 5. Pixel Alpha & Contour Clipping with fwidth
         float aa = max(0.001, fwidth(d));
         float feather = max(aa, colorSoftness);
         float outW = enableOutline > 0.5 ? max(0.001, outlineWidth) : 0.0;
@@ -437,37 +419,23 @@ export function createStylizedFireMaterial(): THREE.ShaderMaterial {
 
         float alpha = 1.0 - smoothstep(outW - aa, outW, d);
 
-        // 6. Color Ramp Evaluation (Cel-Shading Bands & Soft Transitions)
+        // 6. Color Ramp Evaluation
         vec3 finalColor = bodyColor;
-
-        // Dark Shadow band
         if (enableDark > 0.5) {
           float darkEdge = -0.01;
-          float darkRange = max(0.005, feather * 1.5);
-          float isDark = 1.0 - smoothstep(darkEdge - darkRange, darkEdge, d);
+          float isDark = 1.0 - smoothstep(darkEdge - feather * 1.5, darkEdge, d);
           finalColor = mix(finalColor, darkColor, isDark * 0.75);
         }
-
-        // Inner Flame band (Yellow)
         if (enableInner > 0.5) {
-          float innerEdge = 0.005;
-          float innerRange = max(0.005, feather * 1.2);
-          float isInner = 1.0 - smoothstep(innerEdge - innerRange, innerEdge, dYellow);
+          float isInner = 1.0 - smoothstep(0.005 - feather * 1.2, 0.005, dYellow);
           finalColor = mix(finalColor, innerColor, isInner);
         }
-
-        // Incandescent Core White band (White, lower and partially masked)
         if (enableCore > 0.5) {
-          float coreEdge = 0.005;
-          float coreRange = max(0.005, feather * 1.2);
-          float isCoreWhite = 1.0 - smoothstep(coreEdge - coreRange, coreEdge, dWhite);
+          float isCoreWhite = 1.0 - smoothstep(0.005 - feather * 1.2, 0.005, dWhite);
           finalColor = mix(finalColor, coreColor, isCoreWhite);
         }
-
-        // Contour / Outline band
         if (enableOutline > 0.5) {
-          float outEdge = min(feather * 0.5, outW * 0.5);
-          float isOutline = smoothstep(-aa - outEdge, aa, d);
+          float isOutline = smoothstep(-aa - outW * 0.5, aa, d);
           finalColor = mix(finalColor, outlineColor, isOutline);
         }
 
@@ -479,3 +447,267 @@ export function createStylizedFireMaterial(): THREE.ShaderMaterial {
     side: THREE.DoubleSide,
   });
 }
+
+// --- 5. MIYAZAKI CLOUD SHADER (STUDIO GHIBLI STYLE) ---
+export function createMiyazakiCloudMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      seed: { value: 0.0 },
+      cumulusHeight: { value: 1.0 },
+      cloudWidth: { value: 1.0 },
+      baseFlatness: { value: 0.75 },
+      puffiness: { value: 1.2 },
+      detail: { value: 1.0 },
+      sunAngle: { value: 55.0 }, // Degrees (55° = top-right sunbeam)
+      sunElevation: { value: 0.75 },
+      shadowIntensity: { value: 0.85 },
+      bandSoftness: { value: 0.03 },
+      edgeSharpness: { value: 0.012 },
+      outlineWidth: { value: 0.012 },
+      highlightColor: { value: new THREE.Color(0xfffeee) },
+      bodyColor: { value: new THREE.Color(0xf6f0dd) },
+      shadowColor: { value: new THREE.Color(0xb7c7c5) },
+      deepShadowColor: { value: new THREE.Color(0x7a8da8) },
+      outlineColor: { value: new THREE.Color(0x566575) },
+      enableHighlight: { value: 1.0 },
+      enableDeepShadow: { value: 1.0 },
+      enableOutline: { value: 0.0 },
+      enablePuffs: { value: 1.0 },
+    },
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      varying vec3 vNormal;
+
+      void main() {
+        vUv = uv;
+        vNormal = normalize(normalMatrix * normal);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float seed;
+      uniform float cumulusHeight;
+      uniform float cloudWidth;
+      uniform float baseFlatness;
+      uniform float puffiness;
+      uniform float detail;
+      uniform float sunAngle;
+      uniform float sunElevation;
+      uniform float shadowIntensity;
+      uniform float bandSoftness;
+      uniform float edgeSharpness;
+      uniform float outlineWidth;
+
+      uniform vec3 highlightColor;
+      uniform vec3 bodyColor;
+      uniform vec3 shadowColor;
+      uniform vec3 deepShadowColor;
+      uniform vec3 outlineColor;
+
+      uniform float enableHighlight;
+      uniform float enableDeepShadow;
+      uniform float enableOutline;
+      uniform float enablePuffs;
+
+      varying vec2 vUv;
+      varying vec3 vNormal;
+
+      // 1D / 2D Pseudo-random hash functions
+      float hash1(float p) {
+        p = fract(p * 0.1031);
+        p *= p + 33.33;
+        p *= p + p;
+        return fract(p);
+      }
+
+      vec2 hash2(vec2 p) {
+        vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+        p3 += dot(p3, p3.yzx + 33.33);
+        return fract((p3.xx + p3.yz) * p3.zy);
+      }
+
+      // Smooth polynomial minimum
+      float smin(float a, float b, float k) {
+        float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+        return mix(b, a, h) - k * h * (1.0 - h);
+      }
+
+      // Cellular Voronoi distance field (Branchless formulation eliminating warp divergence)
+      float voronoiDist(vec2 x) {
+        vec2 n = floor(x);
+        vec2 f = fract(x);
+        float md = 8.0;
+        for (int j = -1; j <= 1; j++) {
+          for (int i = -1; i <= 1; i++) {
+            vec2 g = vec2(float(i), float(j));
+            vec2 o = hash2(n + g + vec2(seed * 0.17, seed * 0.31));
+            vec2 r = g + o - f;
+            md = min(md, dot(r, r));
+          }
+        }
+        return sqrt(md);
+      }
+
+      // Primary cumulus lobe definition (12 tiered spheres)
+      void getLobe(int i, out vec2 center, out float radius) {
+        if (i == 0) { center = vec2(0.0, -0.42); radius = 0.44; }
+        else if (i == 1) { center = vec2(-0.42, -0.40); radius = 0.36; }
+        else if (i == 2) { center = vec2(0.44, -0.38); radius = 0.38; }
+        else if (i == 3) { center = vec2(-0.70, -0.45); radius = 0.26; }
+        else if (i == 4) { center = vec2(0.68, -0.42); radius = 0.28; }
+        else if (i == 5) { center = vec2(-0.06, -0.02); radius = 0.42; }
+        else if (i == 6) { center = vec2(-0.38, 0.08); radius = 0.32; }
+        else if (i == 7) { center = vec2(0.32, 0.16); radius = 0.34; }
+        else if (i == 8) { center = vec2(-0.04, 0.44); radius = 0.36; }
+        else if (i == 9) { center = vec2(-0.24, 0.48); radius = 0.26; }
+        else if (i == 10) { center = vec2(0.20, 0.52); radius = 0.25; }
+        else { center = vec2(-0.02, 0.68); radius = 0.20; }
+      }
+
+      // Evaluates the 2D cloud signed distance field
+      float cloudSDF(vec2 p) {
+        float d = 1e5;
+
+        // 1. Primary foundation lobes
+        for (int i = 0; i < 12; i++) {
+          vec2 c;
+          float r;
+          getLobe(i, c, r);
+
+          float fi = float(i);
+          vec2 offset = (vec2(hash1(seed * 13.1 + fi * 7.7), hash1(seed * 17.3 + fi * 5.9)) - 0.5) * 0.12;
+          float rOffset = (hash1(seed * 19.3 + fi * 3.1) - 0.5) * 0.07;
+
+          float dCircle = length(p - (c + offset)) - (r + rOffset);
+          d = smin(d, dCircle, 0.14);
+        }
+
+        // 2. Base condensation plane (flatter underside)
+        if (baseFlatness > 0.01) {
+          float baseLevel = -0.68;
+          float cutPlane = -(p.y - baseLevel + sin(p.x * 5.5 + seed) * 0.025);
+          float kCut = 0.12 * (1.02 - baseFlatness);
+          float h = clamp(0.5 + 0.5 * (cutPlane - d) / kCut, 0.0, 1.0);
+          d = mix(d, cutPlane, h) + kCut * h * (1.0 - h);
+        }
+
+        // 3. Meso & micro scalloped puff modulation
+        if (enablePuffs > 0.5) {
+          float w1 = voronoiDist(p * 3.8);
+          float w2 = voronoiDist(p * 8.2);
+
+          float puff1 = (1.0 - clamp(w1 * 1.35, 0.0, 1.0)) * 0.08 * detail;
+          float puff2 = (1.0 - clamp(w2 * 1.45, 0.0, 1.0)) * 0.035 * detail;
+          d -= (puff1 + puff2);
+        }
+
+        return d;
+      }
+
+      // Evaluates surface dome height for normal mapping and shading
+      float cloudHeight(vec2 p) {
+        float d = cloudSDF(p);
+        if (d > 0.04) return 0.0;
+
+        float dome = sqrt(max(0.0, -d * 2.5));
+        if (enablePuffs > 0.5) {
+          float w1 = voronoiDist(p * 3.8);
+          float w2 = voronoiDist(p * 8.2);
+          float p1 = (1.0 - clamp(w1 * 1.35, 0.0, 1.0)) * 0.35 * puffiness;
+          float p2 = (1.0 - clamp(w2 * 1.45, 0.0, 1.0)) * 0.15 * puffiness;
+          dome += p1 + p2;
+        }
+        return dome;
+      }
+
+      void main() {
+        // Map UV coordinates: centered at cloud core, scaled by width and height
+        vec2 p = (vUv - vec2(0.5, 0.45)) * 2.0;
+        p.x /= max(0.2, cloudWidth);
+        p.y /= max(0.2, cumulusHeight);
+
+        float d = cloudSDF(p);
+
+        // Alpha silhouette with hardware derivative fwidth antialiasing (Nyquist clamping)
+        float fw = fwidth(d);
+        float aa = max(fw * 0.75, max(0.001, edgeSharpness));
+        float alpha = 1.0 - smoothstep(-aa, aa, d);
+        if (alpha <= 0.001) {
+          discard;
+        }
+
+        // Surface normal reconstruction from height gradient with hemispherical curvature
+        float eps = 0.006;
+        float hR = cloudHeight(p + vec2(eps, 0.0));
+        float hL = cloudHeight(p - vec2(eps, 0.0));
+        float hU = cloudHeight(p + vec2(0.0, eps));
+        float hD = cloudHeight(p - vec2(0.0, eps));
+
+        vec2 grad = vec2(hR - hL, hU - hD) / (2.0 * eps);
+        vec2 scaledGrad = grad * puffiness * 1.35;
+        float gradLenSq = dot(scaledGrad, scaledGrad);
+        float nz = sqrt(max(0.04, 1.0 - min(0.96, gradLenSq)));
+        vec3 localN = normalize(vec3(-scaledGrad.x, -scaledGrad.y, nz));
+
+        // Transform normal according to mesh orientation in view space
+        vec3 geomNormal = normalize(vNormal);
+        vec3 tangent = normalize(abs(geomNormal.y) < 0.999 ? cross(vec3(0.0, 1.0, 0.0), geomNormal) : cross(vec3(0.0, 0.0, 1.0), geomNormal));
+        vec3 bitangent = cross(geomNormal, tangent);
+        mat3 tbn = mat3(tangent, bitangent, geomNormal);
+        vec3 N = normalize(tbn * localN);
+
+        // Sun light direction vector
+        float rad = radians(sunAngle);
+        vec3 L = normalize(vec3(cos(rad), sin(rad), max(0.1, sunElevation)));
+        float NdotL = dot(N, L);
+
+        // Global vertical ambient illumination (sunlit cumulus crown)
+        float vertAmbient = clamp((p.y + 0.65) * 0.55, 0.0, 1.0);
+        float rawLight = NdotL * 0.5 + 0.5;
+        float light = mix(rawLight * 0.65, rawLight, vertAmbient * 0.8 + 0.2);
+
+        // Crevice / Ambient Occlusion
+        float crevice = clamp(dot(grad, grad), 0.0, 2.0) * 0.2;
+        light = clamp(light - crevice * shadowIntensity, 0.0, 1.0);
+
+        // Cel-Shading Bands (Miyazaki 4-tone palette)
+        float feather = max(0.002, bandSoftness);
+        vec3 col = shadowColor;
+
+        // 1. Deep Shadow (crevices and undercuts)
+        if (enableDeepShadow > 0.5) {
+          float deepMask = 1.0 - smoothstep(0.22 - feather, 0.26 + feather, light);
+          col = mix(col, deepShadowColor, deepMask * shadowIntensity);
+        }
+
+        // 2. Lit Body (warm ivory)
+        float bodyMask = smoothstep(0.42 - feather, 0.46 + feather, light);
+        col = mix(col, bodyColor, bodyMask);
+
+        // 3. Sunlit Rim / Highlight (warm solar cream crest)
+        if (enableHighlight > 0.5) {
+          float hlMask = smoothstep(0.68 - feather, 0.73 + feather, light);
+          // Sun-facing contour rim boost
+          float sunFacing = smoothstep(0.1, 0.9, dot(normalize(p + vec2(0.0, 0.2)), L.xy));
+          float edgeRim = pow(clamp(NdotL, 0.0, 1.0), 2.5) * smoothstep(-0.06, -0.01, d) * sunFacing;
+          hlMask = clamp(hlMask + edgeRim * 0.7, 0.0, 1.0);
+          col = mix(col, highlightColor, hlMask);
+        }
+
+        // 4. Optional Watercolor Outline with fwidth antialiasing
+        if (enableOutline > 0.5 && outlineWidth > 0.001) {
+          float outW = outlineWidth;
+          float fwEdge = max(0.001, fw * 0.75);
+          float isOutline = smoothstep(-outW - fwEdge, -outW + fwEdge, d) * (1.0 - smoothstep(-fwEdge, fwEdge, d));
+          col = mix(col, outlineColor, isOutline);
+        }
+
+        gl_FragColor = vec4(col, alpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+}
+

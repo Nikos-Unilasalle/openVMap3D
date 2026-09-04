@@ -342,28 +342,31 @@ export function createCelShadeMaterial(): THREE.ShaderMaterial {
         // Palette base
         vec3 shaded = mix(shadowColor, color, clamp(steppedLight, 0.0, 1.0));
 
-        // Comic Halftone Dots in shadow transitions
+        // Comic Halftone Dots in shadow transitions with fwidth antialiasing
         if (enableHalftone > 0.5 && halftone > 0.5) {
           vec2 screenCoord = (vScreenPos.xy / vScreenPos.w * 0.5 + 0.5) * vec2(800.0, 600.0);
           vec2 grid = fract(screenCoord / max(2.0, halftoneScale)) - 0.5;
           float dist = length(grid);
           float dotThreshold = (1.0 - steppedLight) * 0.45;
-          if (dist < dotThreshold) {
-            shaded = mix(shaded, halftoneDotColor, 0.7);
-          }
+          float dotDelta = max(0.005, fwidth(dist) * 1.5);
+          float dotAlpha = 1.0 - smoothstep(dotThreshold - dotDelta, dotThreshold + dotDelta, dist);
+          shaded = mix(shaded, halftoneDotColor, dotAlpha * 0.7);
         }
 
-        // Stepped specular glint
+        // Stepped specular glint with fwidth antialiasing
         if (enableSpecular > 0.5) {
           float NdotH = max(0.0, dot(N, H));
-          float spec = step(0.7, pow(NdotH, specularHardness)) * specularStrength;
+          float specPow = pow(NdotH, specularHardness);
+          float specDelta = max(0.005, fwidth(specPow) * 1.5);
+          float spec = smoothstep(0.7 - specDelta, 0.7 + specDelta, specPow) * specularStrength;
           shaded += vec3(spec * 0.9);
         }
 
-        // Rim Light
+        // Rim Light with fwidth antialiasing
         if (enableRim > 0.5) {
           float rim = pow(1.0 - max(0.0, dot(N, V)), max(0.5, rimPower));
-          float rimCut = step(0.65, rim);
+          float rimDelta = max(0.005, fwidth(rim) * 1.5);
+          float rimCut = smoothstep(0.65 - rimDelta, 0.65 + rimDelta, rim);
           shaded += rimColor * (rimCut * 0.7);
         }
 

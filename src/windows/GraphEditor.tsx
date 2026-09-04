@@ -1081,7 +1081,7 @@ function GraphEditorContent({
     >
       <NodePalette nodes={paletteNodes} onAddNode={addNode} />
       <div className="graph-editor-canvas">
-        <QuickAddToolbar onAddNode={addNode} />
+        <QuickAddToolbar onAddNode={addNode} onOpenSearch={() => setSearchModalOpen(true)} />
         <ReactFlow
           nodes={nodes}
           edges={edges}

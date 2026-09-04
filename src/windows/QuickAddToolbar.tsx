@@ -130,9 +130,10 @@ const QUICK_ADD_ITEMS: QuickAddItem[] = [
 
 interface QuickAddToolbarProps {
   onAddNode: (type: string) => void;
+  onOpenSearch?: () => void;
 }
 
-export function QuickAddToolbar({ onAddNode }: QuickAddToolbarProps) {
+export function QuickAddToolbar({ onAddNode, onOpenSearch }: QuickAddToolbarProps) {
   const [collapsed, setCollapsed] = useState(false);
 
   if (collapsed) {
@@ -164,6 +165,17 @@ export function QuickAddToolbar({ onAddNode }: QuickAddToolbarProps) {
           {item.icon}
         </button>
       ))}
+      <button
+        type="button"
+        className="quick-add-button"
+        onClick={onOpenSearch}
+        title="Search nodes (Cmd+Space)"
+      >
+        <svg {...ICON_PROPS}>
+          <circle cx="11" cy="11" r="8" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
+      </button>
       <div className="quick-add-divider" />
       <button
         type="button"

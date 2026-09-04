@@ -438,7 +438,7 @@ export function ParamPanel({
             setIsHovered(true);
             setInputZone("panel");
           }}
-          title={`${label} — Ouvrir les paramètres`}
+          title={`${label} — Open parameters`}
         >
           <span className="param-panel-tab-dot" style={{ backgroundColor: categoryColor }} />
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -462,7 +462,7 @@ export function ParamPanel({
               type="button"
               className={`param-panel-pin-btn-header ${isPinned ? "param-panel-pin-btn-header-active" : ""}`}
               onClick={() => setIsPinned((p) => !p)}
-              title={isPinned ? "Auto-masquage désactivé (cliquer pour activer l'auto-masquage)" : "Épingler le panneau (reste visible)"}
+              title={isPinned ? "Auto-hide disabled (click to enable auto-hide)" : "Pin panel (keep visible)"}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill={isPinned ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="12" y1="17" x2="12" y2="22" />
@@ -486,7 +486,7 @@ export function ParamPanel({
               type="button"
               className="param-group-header"
               onClick={() => toggleGroup(groupName)}
-              title={isOpen ? "Fermer la catégorie" : "Ouvrir la catégorie"}
+              title={isOpen ? "Collapse category" : "Expand category"}
             >
               <span className="param-group-arrow">{isOpen ? "▼" : "▶"}</span>
               <span className="param-group-title">{groupName}</span>

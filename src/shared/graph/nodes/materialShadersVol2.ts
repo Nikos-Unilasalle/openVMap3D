@@ -7,12 +7,14 @@ import {
   createXRayMaterial,
   createEnergyShieldMaterial,
   createStylizedFireMaterial,
+  createMiyazakiCloudMaterial,
 } from "../../three/shaders/creativeShadersVol2";
 
 const thermalCache = createNodeCache<THREE.ShaderMaterial>((m) => m.dispose());
 const xrayCache = createNodeCache<THREE.ShaderMaterial>((m) => m.dispose());
 const shieldCache = createNodeCache<THREE.ShaderMaterial>((m) => m.dispose());
 const stylizedFireCache = createNodeCache<THREE.ShaderMaterial>((m) => m.dispose());
+const miyazakiCloudCache = createNodeCache<THREE.ShaderMaterial>((m) => m.dispose());
 
 function toBool(val: unknown, fallback: boolean): boolean {
   if (val === undefined || val === null) return fallback;
@@ -354,4 +356,127 @@ export const MATERIAL_STYLIZED_FIRE_NODE: NodeDefinition = {
     };
   },
 };
+
+/** 5. Miyazaki Cloud Material Node (Studio Ghibli Style) */
+export const MATERIAL_MIYAZAKI_CLOUD_NODE: NodeDefinition = {
+  type: "material/miyazaki_cloud",
+  label: "Miyazaki Cloud (Ghibli)",
+  category: "texture",
+  inputs: [
+    { id: "seed", label: "Seed", type: "value" },
+    { id: "cumulusHeight", label: "Cumulus Height", type: "value" },
+    { id: "cloudWidth", label: "Cloud Width", type: "value" },
+    { id: "baseFlatness", label: "Base Flatness", type: "value" },
+    { id: "puffiness", label: "Puffiness", type: "value" },
+    { id: "detail", label: "Micro-Puffs Detail", type: "value" },
+    { id: "sunAngle", label: "Sun Angle (deg)", type: "value" },
+    { id: "sunElevation", label: "Sun Elevation", type: "value" },
+    { id: "shadowIntensity", label: "Shadow Intensity", type: "value" },
+    { id: "bandSoftness", label: "Band Softness", type: "value" },
+    { id: "edgeSharpness", label: "Edge Sharpness", type: "value" },
+    { id: "outlineWidth", label: "Outline Width", type: "value" },
+    { id: "highlightColor", label: "Highlight Color", type: "color" },
+    { id: "bodyColor", label: "Body Color", type: "color" },
+    { id: "shadowColor", label: "Shadow Color", type: "color" },
+    { id: "deepShadowColor", label: "Deep Shadow Color", type: "color" },
+    { id: "outlineColor", label: "Outline Color", type: "color" },
+    { id: "enableHighlight", label: "Show Highlight Rim", type: "value" },
+    { id: "enableDeepShadow", label: "Show Deep Shadow", type: "value" },
+    { id: "enableOutline", label: "Show Outline", type: "value" },
+    { id: "enablePuffs", label: "Show Puff Clusters", type: "value" },
+  ],
+  outputs: [{ id: "material", label: "Material", type: "material" }],
+  defaultParams: {
+    seed: 0.0,
+    cumulusHeight: 1.0,
+    cloudWidth: 1.0,
+    baseFlatness: 0.75,
+    puffiness: 1.2,
+    detail: 1.0,
+    sunAngle: 55.0,
+    sunElevation: 0.75,
+    shadowIntensity: 0.85,
+    bandSoftness: 0.03,
+    edgeSharpness: 0.012,
+    outlineWidth: 0.012,
+    highlightColor: new THREE.Color(0xfffeee),
+    bodyColor: new THREE.Color(0xf6f0dd),
+    shadowColor: new THREE.Color(0xb7c7c5),
+    deepShadowColor: new THREE.Color(0x7a8da8),
+    outlineColor: new THREE.Color(0x566575),
+    enableHighlight: true,
+    enableDeepShadow: true,
+    enableOutline: false,
+    enablePuffs: true,
+  },
+  paramFields: [
+    { id: "seed", label: "Seed", kind: "number", step: 1.0 },
+    { id: "cumulusHeight", label: "Cumulus Height", kind: "number", step: 0.05 },
+    { id: "cloudWidth", label: "Cloud Width", kind: "number", step: 0.05 },
+    { id: "baseFlatness", label: "Base Flatness", kind: "number", step: 0.05 },
+    { id: "puffiness", label: "Puffiness", kind: "number", step: 0.05 },
+    { id: "detail", label: "Micro-Puffs Detail", kind: "number", step: 0.05 },
+    { id: "sunAngle", label: "Sun Angle (°)", kind: "number", step: 5.0 },
+    { id: "sunElevation", label: "Sun Elevation", kind: "number", step: 0.05 },
+    { id: "shadowIntensity", label: "Shadow Intensity", kind: "number", step: 0.05 },
+    { id: "bandSoftness", label: "Band Softness", kind: "number", step: 0.005 },
+    { id: "edgeSharpness", label: "Edge Sharpness", kind: "number", step: 0.002 },
+    { id: "enableHighlight", label: "Show Sunlit Rim", kind: "boolean" },
+    { id: "enableDeepShadow", label: "Show Deep Shadow", kind: "boolean" },
+    { id: "enablePuffs", label: "Show Puff Detail", kind: "boolean" },
+    { id: "enableOutline", label: "Show Outline", kind: "boolean" },
+    { id: "outlineWidth", label: "Outline Width", kind: "number", step: 0.002 },
+    { id: "highlightColor", label: "Highlight Color", kind: "color" },
+    { id: "bodyColor", label: "Body Color", kind: "color" },
+    { id: "shadowColor", label: "Shadow Color", kind: "color" },
+    { id: "deepShadowColor", label: "Deep Shadow Color", kind: "color" },
+    { id: "outlineColor", label: "Outline Color", kind: "color" },
+  ],
+  evaluate: (inputs, params, ctx) => {
+    let mat = miyazakiCloudCache.get(ctx.nodeId);
+    if (!mat) {
+      mat = createMiyazakiCloudMaterial();
+      (mat as any).__isSharedCustom = true;
+      miyazakiCloudCache.set(ctx.nodeId, mat);
+    }
+
+    mat.uniforms.seed.value = numberInput(inputs.seed, params.seed, 0.0);
+    mat.uniforms.cumulusHeight.value = Math.max(0.2, numberInput(inputs.cumulusHeight, params.cumulusHeight, 1.0));
+    mat.uniforms.cloudWidth.value = Math.max(0.2, numberInput(inputs.cloudWidth, params.cloudWidth, 1.0));
+    mat.uniforms.baseFlatness.value = Math.min(1.0, Math.max(0.0, numberInput(inputs.baseFlatness, params.baseFlatness, 0.75)));
+    mat.uniforms.puffiness.value = Math.max(0.0, numberInput(inputs.puffiness, params.puffiness, 1.2));
+    mat.uniforms.detail.value = Math.max(0.0, numberInput(inputs.detail, params.detail, 1.0));
+    mat.uniforms.sunAngle.value = numberInput(inputs.sunAngle, params.sunAngle, 55.0);
+    mat.uniforms.sunElevation.value = numberInput(inputs.sunElevation, params.sunElevation, 0.75);
+    mat.uniforms.shadowIntensity.value = numberInput(inputs.shadowIntensity, params.shadowIntensity, 0.85);
+    mat.uniforms.bandSoftness.value = Math.max(0.001, numberInput(inputs.bandSoftness, params.bandSoftness, 0.03));
+    mat.uniforms.edgeSharpness.value = Math.max(0.001, numberInput(inputs.edgeSharpness, params.edgeSharpness, 0.012));
+    mat.uniforms.outlineWidth.value = Math.max(0.0, numberInput(inputs.outlineWidth, params.outlineWidth, 0.012));
+
+    mat.uniforms.enableHighlight.value = toBool(inputs.enableHighlight !== undefined ? inputs.enableHighlight : params.enableHighlight, true) ? 1.0 : 0.0;
+    mat.uniforms.enableDeepShadow.value = toBool(inputs.enableDeepShadow !== undefined ? inputs.enableDeepShadow : params.enableDeepShadow, true) ? 1.0 : 0.0;
+    mat.uniforms.enableOutline.value = toBool(inputs.enableOutline !== undefined ? inputs.enableOutline : params.enableOutline, false) ? 1.0 : 0.0;
+    mat.uniforms.enablePuffs.value = toBool(inputs.enablePuffs !== undefined ? inputs.enablePuffs : params.enablePuffs, true) ? 1.0 : 0.0;
+
+    const highlightColor = asColor(inputs.highlightColor, asColor(params.highlightColor, new THREE.Color(0xfffeee)));
+    const bodyColor = asColor(inputs.bodyColor, asColor(params.bodyColor, new THREE.Color(0xf6f0dd)));
+    const shadowColor = asColor(inputs.shadowColor, asColor(params.shadowColor, new THREE.Color(0xb7c7c5)));
+    const deepShadowColor = asColor(inputs.deepShadowColor, asColor(params.deepShadowColor, new THREE.Color(0x7a8da8)));
+    const outlineColor = asColor(inputs.outlineColor, asColor(params.outlineColor, new THREE.Color(0x566575)));
+
+    mat.uniforms.highlightColor.value.copy(highlightColor);
+    mat.uniforms.bodyColor.value.copy(bodyColor);
+    mat.uniforms.shadowColor.value.copy(shadowColor);
+    mat.uniforms.deepShadowColor.value.copy(deepShadowColor);
+    mat.uniforms.outlineColor.value.copy(outlineColor);
+
+    return {
+      material: {
+        customMaterial: mat,
+        color: bodyColor,
+      },
+    };
+  },
+};
+
 

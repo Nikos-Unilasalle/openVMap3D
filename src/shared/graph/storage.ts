@@ -215,7 +215,7 @@ export async function openProjectWithFilePicker(): Promise<{ project: Project; f
           const project = deserializeProject(text);
           resolve({ project, filename: file.name });
         } catch (e) {
-          alert("Erreur lors de la lecture du fichier : " + (e as Error).message);
+          alert("Error reading file: " + (e as Error).message);
           resolve(null);
         }
       };

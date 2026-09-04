@@ -184,7 +184,8 @@ export function SplitViewport({
           registry={registry}
           renderNodeId={renderNodeId}
           epochMs={epochMs}
-          outputMode={isCamera}
+          outputMode={false}
+          cameraView={isCamera}
           mode2D={is2D}
           elevationView={false}
           selectedNodeId={selectedNodeId}

@@ -410,6 +410,7 @@ interface ViewportProps {
   elevationView?: boolean;
   snapElevation?: boolean;
   onToggleSnapElevation?: () => void;
+  cameraView?: boolean;
 }
 
 export interface ViewportExportHandle {
@@ -436,7 +437,7 @@ export function Viewport({
   onToggleSplitView,
   currentFrame = -1,
   onEvaluatedResults,
-  isPlaying = true,
+  isPlaying = false,
   totalFrames = 0,
   onFrameChange,
   exportHandleRef,
@@ -451,6 +452,7 @@ export function Viewport({
   elevationView = false,
   snapElevation = false,
   onToggleSnapElevation,
+  cameraView = false,
 }: ViewportProps) {
   const [showUiOverlay, setShowUiOverlay] = useState(true);
   const showUiOverlayRef = useRef(showUiOverlay);
@@ -491,15 +493,13 @@ export function Viewport({
   const showEnvInEditorRef = useRef(showEnvInEditor);
   showEnvInEditorRef.current = showEnvInEditor;
 
-  useEffect(() => {
-    if (mode2D) {
-      setShowEnvInEditor(true);
-    }
-  }, [mode2D]);
-
-  const [isCameraView, setIsCameraView] = useState(false);
+  const [isCameraView, setIsCameraView] = useState(Boolean(cameraView));
   const isCameraViewRef = useRef(isCameraView);
   isCameraViewRef.current = isCameraView;
+
+  useEffect(() => {
+    setIsCameraView(Boolean(cameraView));
+  }, [cameraView]);
 
   const [lockCameraToView, setLockCameraToView] = useState(false);
   const lockCameraToViewRef = useRef(lockCameraToView);
@@ -676,16 +676,35 @@ export function Viewport({
     toggleCameraModeRef.current(isOrthographic);
   }, [isOrthographic]);
 
+  const prevMode2DRef = useRef(mode2D);
   useEffect(() => {
     if (mode2D) {
+      setShowEnvInEditor(true);
+      showEnvInEditorRef.current = true;
       setAxisViewRef.current?.("y", 1);
       setViewLockRef.current?.(true);
       setIsViewLocked(true);
+    } else if (prevMode2DRef.current) {
+      // Returning from 2D mode to 3D mode:
+      // 1. unlock view
+      setViewLockRef.current?.(false);
+      setIsViewLocked(false);
+      setLockCameraToView(false);
+      setIsCameraView(false);
+      isAxisViewRef.current = false;
+      setIsAxisView(false);
+      // 2. toggle environnement OFF
+      setShowEnvInEditor(false);
+      showEnvInEditorRef.current = false;
+      // 3. Reset 3D camera view
+      setIsOrthographic(false);
+      resetCameraRef.current?.();
     } else if (elevationView) {
       setIsIsometricElevationRef.current?.();
       setViewLockRef.current?.(false);
       setIsViewLocked(false);
     }
+    prevMode2DRef.current = mode2D;
   }, [mode2D, elevationView]);
 
   const toggleViewLock = () => {
@@ -3253,10 +3272,9 @@ export function Viewport({
       );
 
       // Toggle helper visibility (AxesHelper / Empty crosshairs / camera
-      // frustums / Light target helpers). Hidden in the output window *and* in
-      // the editor's camera view, so a camera isn't rendered into the film and
-      // the "look through camera" preview matches exactly what gets recorded.
-      const hideSceneHelpers = outputMode || isCameraViewRef.current || !showUiOverlayRef.current;
+      // frustums / Light target helpers). Controlled by showUiOverlay (Tab),
+      // and always hidden in the physical output window.
+      const hideSceneHelpers = outputMode || !showUiOverlayRef.current;
       scene.traverse((obj) => {
         if (obj.userData?.isHelper || obj instanceof THREE.AxesHelper || obj instanceof THREE.CameraHelper) {
           obj.visible = !hideSceneHelpers;
@@ -3274,7 +3292,7 @@ export function Viewport({
 
       const targetAspect = typeof renderResult?.aspect === "number" && renderResult.aspect > 0 ? (renderResult.aspect as number) : null;
 
-      if (outputMode && targetAspect && targetAspect > 0) {
+      if ((outputMode || isCameraViewRef.current) && targetAspect && targetAspect > 0) {
         const containerAspect = width / height;
         if (containerAspect > targetAspect) {
           viewHeight = height;
@@ -3312,7 +3330,7 @@ export function Viewport({
         const selectedIsCamera =
           !!selectedNodeIdRef.current &&
           graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current)?.type === CAMERA_NODE.type;
-        if (!outputMode && selectedIsCamera && targetAspect && targetAspect > 0) {
+        if (!outputMode && !isCameraViewRef.current && selectedIsCamera && targetAspect && targetAspect > 0) {
           const containerAspect = width / height;
           let guideWidth = width;
           let guideHeight = height;
@@ -3335,7 +3353,7 @@ export function Viewport({
 
       renderer.setViewport(viewX, viewY, viewWidth, viewHeight);
       renderer.setScissor(viewX, viewY, viewWidth, viewHeight);
-      renderer.setScissorTest(outputMode && targetAspect !== null);
+      renderer.setScissorTest((outputMode || isCameraViewRef.current) && targetAspect !== null);
 
       // The HUD must map onto the actual rendered frame. When a render node
       // defines a target aspect, that region (possibly letterboxed) is the
@@ -4233,7 +4251,7 @@ export function Viewport({
                   borderColor: "#38bdf8",
                 }}
                 onClick={() => snapSelectedCameraToEditorRef.current?.()}
-                title="Aligner la caméra active sur la vue 3D actuelle (Align Active Camera to 3D View — Ctrl+Alt+0)"
+                title="Align Active Camera to current 3D View (Ctrl+Alt+0)"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
@@ -4262,8 +4280,8 @@ export function Viewport({
                 }}
                 title={
                   lockCameraToView
-                    ? "Verrouillage Caméra actif : la caméra suit le viewport en temps réel (Lock Camera to View)"
-                    : "Verrouiller la caméra sur la vue 3D en continu (Lock Camera to View)"
+                    ? "Camera lock active: camera tracks viewport in real-time (Lock Camera to View)"
+                    : "Lock camera to 3D viewport continuously (Lock Camera to View)"
                 }
               >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -4275,25 +4293,34 @@ export function Viewport({
           )}
           <button
             type="button"
-            className={`viewport-hud-button ${isCameraView ? "viewport-hud-button-active" : ""}`}
+            className={`viewport-hud-button ${showUiOverlay ? "viewport-hud-button-active" : ""}`}
             style={{
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
-              color: isCameraView ? "#38bdf8" : "#cbd5e1",
-              backgroundColor: isCameraView ? "rgba(56, 189, 248, 0.15)" : undefined,
-              borderColor: isCameraView ? "#38bdf8" : undefined,
+              color: showUiOverlay ? "#38bdf8" : "#cbd5e1",
+              backgroundColor: showUiOverlay ? "rgba(56, 189, 248, 0.15)" : undefined,
+              borderColor: showUiOverlay ? "#38bdf8" : undefined,
             }}
-            onClick={() => setIsCameraView((prev) => !prev)}
+            onClick={() => setShowUiOverlay((prev) => !prev)}
             title={
-              isCameraView
-                ? "Camera View Active (click to switch to Free Orbit View)"
-                : "Look through Active Camera / Fly To (Camera View)"
+              showUiOverlay
+                ? "Hide construction elements / helpers (Tab)"
+                : "Show construction elements / helpers (Tab)"
             }
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
-              <circle cx="12" cy="13" r="3" />
+              {showUiOverlay ? (
+                <>
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                  <circle cx="12" cy="12" r="3" />
+                </>
+              ) : (
+                <>
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                  <line x1="1" y1="1" x2="23" y2="23" />
+                </>
+              )}
             </svg>
           </button>
           <button
@@ -4421,7 +4448,7 @@ export function Viewport({
               className={`viewport-hud-button ${snapElevation ? "viewport-hud-button-active" : ""}`}
               style={{ display: "inline-flex", alignItems: "center", justifyContent: "center" }}
               onClick={onToggleSnapElevation}
-              title={snapElevation ? "Aimantage élévation actif (0.5)" : "Activer l'aimantage d'élévation (0.5)"}
+              title={snapElevation ? "Elevation snapping active (0.5)" : "Enable elevation snapping (0.5)"}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M6 3v7a6 6 0 0 0 12 0V3" />

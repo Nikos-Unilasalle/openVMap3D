@@ -6,6 +6,7 @@ import {
   MATERIAL_XRAY_NODE,
   MATERIAL_ENERGY_SHIELD_NODE,
   MATERIAL_STYLIZED_FIRE_NODE,
+  MATERIAL_MIYAZAKI_CLOUD_NODE,
 } from "./materialShadersVol2";
 import { OBJECT_PLANE_NODE, OBJECT_SPHERE_NODE } from "./object";
 
@@ -175,3 +176,85 @@ describe("MATERIAL_STYLIZED_FIRE_NODE", () => {
     expect(uniforms.baseCurvature.value).toBe(1.6);
   });
 });
+
+describe("MATERIAL_MIYAZAKI_CLOUD_NODE", () => {
+  it("evaluates Miyazaki cloud material with default and custom uniforms", () => {
+    const res = MATERIAL_MIYAZAKI_CLOUD_NODE.evaluate(
+      {
+        seed: 42.0,
+        cumulusHeight: 1.25,
+        cloudWidth: 0.9,
+        baseFlatness: 0.85,
+        puffiness: 1.5,
+        sunAngle: 45.0,
+        sunElevation: 0.8,
+        shadowIntensity: 0.9,
+        bandSoftness: 0.05,
+        highlightColor: new THREE.Color(0xfff5ea),
+        bodyColor: new THREE.Color(0xf5efe0),
+        shadowColor: new THREE.Color(0xb5c5c0),
+        deepShadowColor: new THREE.Color(0x708098),
+      },
+      MATERIAL_MIYAZAKI_CLOUD_NODE.defaultParams,
+      CTX,
+    ) as any;
+
+    expect(res.material.customMaterial).toBeInstanceOf(THREE.ShaderMaterial);
+    const uniforms = res.material.customMaterial.uniforms;
+    expect(uniforms.seed.value).toBe(42.0);
+    expect(uniforms.cumulusHeight.value).toBe(1.25);
+    expect(uniforms.cloudWidth.value).toBe(0.9);
+    expect(uniforms.baseFlatness.value).toBe(0.85);
+    expect(uniforms.puffiness.value).toBe(1.5);
+    expect(uniforms.sunAngle.value).toBe(45.0);
+    expect(uniforms.sunElevation.value).toBe(0.8);
+    expect(uniforms.shadowIntensity.value).toBe(0.9);
+    expect(uniforms.bandSoftness.value).toBe(0.05);
+    expect(uniforms.highlightColor.value.getHex()).toBe(0xfff5ea);
+    expect(uniforms.bodyColor.value.getHex()).toBe(0xf5efe0);
+    expect(uniforms.shadowColor.value.getHex()).toBe(0xb5c5c0);
+    expect(uniforms.deepShadowColor.value.getHex()).toBe(0x708098);
+  });
+
+  it("configures transparent background and attaches to OBJECT_PLANE_NODE", () => {
+    const res = MATERIAL_MIYAZAKI_CLOUD_NODE.evaluate(
+      {},
+      MATERIAL_MIYAZAKI_CLOUD_NODE.defaultParams,
+      CTX,
+    ) as any;
+
+    const mat = res.material.customMaterial as THREE.ShaderMaterial;
+    expect(mat.transparent).toBe(true);
+    expect(mat.side).toBe(THREE.DoubleSide);
+
+    const plane = OBJECT_PLANE_NODE.evaluate(
+      { material: res.material },
+      OBJECT_PLANE_NODE.defaultParams,
+      { ...CTX, nodeId: "cloud-plane" },
+    );
+
+    expect((plane.geometry as THREE.Mesh).material).toBe(mat);
+  });
+
+  it("handles toggles for highlights, deep shadow, outline and micro-puffs", () => {
+    const res = MATERIAL_MIYAZAKI_CLOUD_NODE.evaluate(
+      {
+        enableHighlight: false,
+        enableDeepShadow: false,
+        enableOutline: true,
+        enablePuffs: false,
+        outlineWidth: 0.02,
+      },
+      MATERIAL_MIYAZAKI_CLOUD_NODE.defaultParams,
+      CTX,
+    ) as any;
+
+    const uniforms = res.material.customMaterial.uniforms;
+    expect(uniforms.enableHighlight.value).toBe(0.0);
+    expect(uniforms.enableDeepShadow.value).toBe(0.0);
+    expect(uniforms.enableOutline.value).toBe(1.0);
+    expect(uniforms.enablePuffs.value).toBe(0.0);
+    expect(uniforms.outlineWidth.value).toBe(0.02);
+  });
+});
+

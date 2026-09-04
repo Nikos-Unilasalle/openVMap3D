@@ -50,6 +50,7 @@ Bienvenue dans le coffre de connaissances (Obsidian Vault). Ce système est stru
 - [[Post-Processing Uber-Shader Passes]] — Compilation fusionnée d'effets plein écran.
 - [[Creative WebGL Shaders and Distortion Techniques]] — Distorsions liquides, aberrations chromatiques, Voronoi et ondes de choc.
 - [[Optical Glass Refraction and Dispersion Shaders]] — Réfraction physique de verre, dispersion de Cauchy et passes FBO.
+- [[Stylized Procedural SDFs and NPR Anime Rendering]] — Champs de distance signés (SDF), soustraction lissée polynomiale, flammes cartoon et nuages Ghibli.
 - [[Shadow Map Optimization and Baking]] — Gestion et caching des ombres portées.
 - [[WebGPU Architecture and TSL Shaders]] — Moteur WebGPU et shaders TSL.
 
@@ -81,7 +82,9 @@ Bienvenue dans le coffre de connaissances (Obsidian Vault). Ce système est stru
 ### 🧩 Nœuds & Création
 - [[Node Creation Guide]] — Guide auteur et contrat de développement.
 - [[Node Catalog]] — Inventaire des plus de 100 nœuds disponibles.
+- [[Creative FX and Stage Nodes]] — Shaders créatifs (Hologram, Iridescent, Cel-Shade, Fire SDF, Ghibli Clouds) et nœuds scéniques.
 - [[Parametric Geometry and Modifiers]] — Modificateurs de maillage (Lattice, Subdivide, Boolean CSG).
+
 
 ### 🖥️ Composants UI & UX
 - [[Graph Editor and Canvas]] — Éditeur de graphe `@xyflow/react` et câblage SVG.

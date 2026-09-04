@@ -83,7 +83,7 @@
   height: 20px;
   display: flex;
   align-items: center;
-  cursor: ew-resize;
+  cursor: row-resize;
   z-index: 26;
 }
 

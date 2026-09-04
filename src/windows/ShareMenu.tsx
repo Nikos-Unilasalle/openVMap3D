@@ -52,7 +52,7 @@ export const ShareMenu: React.FC<ShareMenuProps> = ({
       <button
         className={`top-bar-button top-bar-button-share${isOpen || isOutputOpen ? " top-bar-button-output-active" : ""}`}
         onClick={() => setIsOpen((v) => !v)}
-        title="Sortie plein écran et export vidéo"
+        title="Fullscreen output and video export"
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="18" cy="5" r="3" />
@@ -76,7 +76,7 @@ export const ShareMenu: React.FC<ShareMenuProps> = ({
           >
             <span className="share-menu-item-label">{isOutputOpen ? "Close Output" : "Output"}</span>
             <span className="share-menu-item-desc">
-              {isOutputOpen ? "Ferme la fenêtre de sortie." : "Plein écran sur le deuxième écran."}
+              {isOutputOpen ? "Closes the external output window." : "Fullscreen projection on external monitor or projector."}
             </span>
           </button>
 
@@ -94,7 +94,7 @@ export const ShareMenu: React.FC<ShareMenuProps> = ({
                 {isExporting ? `Export… ${Math.round(exportProgress * 100)}%` : "Export Video"}
               </span>
               <span className="share-menu-item-desc">
-                Rend la timeline image par image (MP4, sinon WebM).
+                Render the timeline frame-by-frame (MP4, fallback to WebM).
               </span>
             </button>
           )}

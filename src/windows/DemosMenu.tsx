@@ -79,7 +79,7 @@ export const DemosMenu: React.FC<DemosMenuProps> = ({ onLoadDemo, onError }) => 
       setIsOpen(false);
     } catch (err: unknown) {
       const error = err as Error;
-      onError(`Erreur démo : ${error.message}`);
+      onError(`Demo error: ${error.message}`);
     } finally {
       setLoadingFile(null);
     }
@@ -88,14 +88,13 @@ export const DemosMenu: React.FC<DemosMenuProps> = ({ onLoadDemo, onError }) => 
   return (
     <div className="demos-menu-root" ref={rootRef}>
       <button
-        className={`top-bar-button top-bar-button-demos${isOpen ? " top-bar-button-output-active" : ""}`}
+        className={`top-bar-button top-bar-button-demos top-bar-button-icon-only${isOpen ? " top-bar-button-output-active" : ""}`}
         onClick={() => setIsOpen((v) => !v)}
-        title="Parcourir les démos"
+        title="Browse Demos"
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
         </svg>
-        Demos
       </button>
 
       {isOpen && (
@@ -104,11 +103,11 @@ export const DemosMenu: React.FC<DemosMenuProps> = ({ onLoadDemo, onError }) => 
             className="demos-menu-search"
             autoFocus
             value={query}
-            placeholder="Filtrer les démos…"
+            placeholder="Filter demos…"
             onChange={(e) => setQuery(e.target.value)}
           />
 
-          {filtered.length === 0 && <div className="demos-menu-empty">Aucune démo pour « {query} »</div>}
+          {filtered.length === 0 && <div className="demos-menu-empty">No demos found for "{query}"</div>}
 
           {filtered.map((category) => {
             // A search already narrows things down — keep every hit visible
@@ -145,7 +144,7 @@ export const DemosMenu: React.FC<DemosMenuProps> = ({ onLoadDemo, onError }) => 
             );
           })}
 
-          <div className="demos-menu-footer">{total} démos</div>
+          <div className="demos-menu-footer">{total} demos</div>
         </div>
       )}
     </div>

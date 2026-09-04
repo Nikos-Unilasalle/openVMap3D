@@ -187,8 +187,8 @@ flowchart TD
   <ul style="font-size: 12px; padding-left: 16px; margin: 0; color: #93c5fd; line-height: 1.6;">
     <li>🌟 [[ThreeJS GPU Optimization Synthesis and Production Playbook]]</li>
     <li>🌟 [[ThreeJS Creative Showcase Synthesis and Node Ideas]]</li>
-    <li>🌟 [[Browser Memory Management, Caching and WebGL Performance]]</li>
-    <li>⚡ [[Draw Call Reduction Strategies]]</li>
+    <li>🎨 [[Stylized Procedural SDFs and NPR Anime Rendering]]</li>
+    <li>⚡ [[GLSL Branchless Programming and Optimization]]</li>
     <li>📦 [[KTX2 and Basis Universal Texture Compression]]</li>
   </ul>
 </div>
@@ -198,9 +198,10 @@ flowchart TD
   <h4 style="color: #4ade80; margin: 0 0 8px 0;">🛠️ Spécifications Tsuji</h4>
   <ul style="font-size: 12px; padding-left: 16px; margin: 0; color: #86efac; line-height: 1.6;">
     <li>⚙️ [[Graph Evaluation Runtime]]</li>
+    <li>✨ [[Creative FX and Stage Nodes]]</li>
     <li>🎨 [[Socket Type System and Ownership]]</li>
-    <li>🖥️ [[State Management and Multi-Canvas]]</li>
-    <li>🧩 [[Node Creation Guide]]</li>
+    <li>🖥️ [[ThreeJS Viewport and Calibration Pipeline]]</li>
+    <li>🧩 [[Node Catalog]]</li>
   </ul>
 </div>
 
