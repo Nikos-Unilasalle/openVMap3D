@@ -15,7 +15,17 @@ const CTX: EvalContext = { time: 1.5, step: 0.016, nodeId: "test-node" };
 describe("MATERIAL_HOLOGRAM_NODE", () => {
   it("outputs a custom hologram material descriptor with updated uniforms", () => {
     const res = MATERIAL_HOLOGRAM_NODE.evaluate(
-      { color: new THREE.Color(0xff00ff), scanlinesFrequency: 40.0, glitchStrength: 0.1 },
+      {
+        color: new THREE.Color(0xff00ff),
+        rimColor: new THREE.Color(0x00ff88),
+        scanlinesFrequency: 40.0,
+        glitchStrength: 0.1,
+        glitchFrequency: 18.0,
+        enableScanlines: false,
+        enableGlitch: true,
+        enableNoise: false,
+        enableFlicker: true,
+      },
       MATERIAL_HOLOGRAM_NODE.defaultParams,
       CTX,
     ) as { material: { customMaterial: THREE.ShaderMaterial } };
@@ -23,8 +33,14 @@ describe("MATERIAL_HOLOGRAM_NODE", () => {
     expect(res.material).toBeDefined();
     expect(res.material.customMaterial).toBeInstanceOf(THREE.ShaderMaterial);
     expect(res.material.customMaterial.uniforms.color.value.getHex()).toBe(0xff00ff);
+    expect(res.material.customMaterial.uniforms.rimColor.value.getHex()).toBe(0x00ff88);
     expect(res.material.customMaterial.uniforms.scanlinesFrequency.value).toBe(40.0);
     expect(res.material.customMaterial.uniforms.glitchStrength.value).toBe(0.1);
+    expect(res.material.customMaterial.uniforms.glitchFrequency.value).toBe(18.0);
+    expect(res.material.customMaterial.uniforms.enableScanlines.value).toBe(0.0);
+    expect(res.material.customMaterial.uniforms.enableGlitch.value).toBe(1.0);
+    expect(res.material.customMaterial.uniforms.enableNoise.value).toBe(0.0);
+    expect(res.material.customMaterial.uniforms.enableFlicker.value).toBe(1.0);
     expect(res.material.customMaterial.uniforms.time.value).toBe(1.5);
   });
 
@@ -44,15 +60,25 @@ describe("MATERIAL_HOLOGRAM_NODE", () => {
 describe("MATERIAL_LIQUID_METAL_NODE", () => {
   it("outputs liquid metal shader and configures fluid warp parameters", () => {
     const res = MATERIAL_LIQUID_METAL_NODE.evaluate(
-      { baseColor: new THREE.Color(0x112233), speed: 2.0, warpScale: 5.0 },
+      {
+        baseColor: new THREE.Color(0x112233),
+        specularColor: new THREE.Color(0xffeedd),
+        speed: 2.0,
+        warpScale: 5.0,
+        fresnelPower: 4.5,
+        enableDisplacement: false,
+      },
       MATERIAL_LIQUID_METAL_NODE.defaultParams,
       CTX,
     ) as { material: { customMaterial: THREE.ShaderMaterial } };
 
     expect(res.material.customMaterial).toBeInstanceOf(THREE.ShaderMaterial);
     expect(res.material.customMaterial.uniforms.baseColor.value.getHex()).toBe(0x112233);
+    expect(res.material.customMaterial.uniforms.specularColor.value.getHex()).toBe(0xffeedd);
     expect(res.material.customMaterial.uniforms.speed.value).toBe(2.0);
     expect(res.material.customMaterial.uniforms.warpScale.value).toBe(5.0);
+    expect(res.material.customMaterial.uniforms.fresnelPower.value).toBe(4.5);
+    expect(res.material.customMaterial.uniforms.enableDisplacement.value).toBe(0.0);
     expect(res.material.customMaterial.uniforms.time.value).toBe(1.5);
   });
 
@@ -71,22 +97,43 @@ describe("MATERIAL_LIQUID_METAL_NODE", () => {
 describe("MATERIAL_CEL_SHADE_NODE", () => {
   it("outputs toon/cel-shading shader with halftone toggle and stepped bands", () => {
     const res = MATERIAL_CEL_SHADE_NODE.evaluate(
-      { color: new THREE.Color(0x00ff88), bands: 4.0, halftone: 0 },
+      {
+        color: new THREE.Color(0x00ff88),
+        halftoneDotColor: new THREE.Color(0x002211),
+        bands: 4.0,
+        bandSoftness: 0.08,
+        halftone: 0,
+        enableHalftone: false,
+        enableRim: false,
+        enableSpecular: true,
+      },
       MATERIAL_CEL_SHADE_NODE.defaultParams,
       CTX,
     ) as { material: { customMaterial: THREE.ShaderMaterial } };
 
     expect(res.material.customMaterial).toBeInstanceOf(THREE.ShaderMaterial);
     expect(res.material.customMaterial.uniforms.color.value.getHex()).toBe(0x00ff88);
+    expect(res.material.customMaterial.uniforms.halftoneDotColor.value.getHex()).toBe(0x002211);
     expect(res.material.customMaterial.uniforms.bands.value).toBe(4.0);
-    expect(res.material.customMaterial.uniforms.halftone.value).toBe(0.0);
+    expect(res.material.customMaterial.uniforms.bandSoftness.value).toBe(0.08);
+    expect(res.material.customMaterial.uniforms.enableHalftone.value).toBe(0.0);
+    expect(res.material.customMaterial.uniforms.enableRim.value).toBe(0.0);
+    expect(res.material.customMaterial.uniforms.enableSpecular.value).toBe(1.0);
   });
 });
 
 describe("MATERIAL_IRIDESCENT_NODE", () => {
   it("outputs thin-film optical interference shader", () => {
     const res = MATERIAL_IRIDESCENT_NODE.evaluate(
-      { filmThickness: 600.0, refractiveIndex: 1.6, boost: 2.0 },
+      {
+        filmThickness: 600.0,
+        refractiveIndex: 1.6,
+        boost: 2.0,
+        specularColor: new THREE.Color(0xffd700),
+        rippleSpeed: 1.2,
+        rippleFrequency: 8.0,
+        rainbowMix: 0.9,
+      },
       MATERIAL_IRIDESCENT_NODE.defaultParams,
       CTX,
     ) as { material: { customMaterial: THREE.ShaderMaterial } };
@@ -95,13 +142,25 @@ describe("MATERIAL_IRIDESCENT_NODE", () => {
     expect(res.material.customMaterial.uniforms.filmThickness.value).toBe(600.0);
     expect(res.material.customMaterial.uniforms.refractiveIndex.value).toBe(1.6);
     expect(res.material.customMaterial.uniforms.boost.value).toBe(2.0);
+    expect(res.material.customMaterial.uniforms.specularColor.value.getHex()).toBe(0xffd700);
+    expect(res.material.customMaterial.uniforms.rippleSpeed.value).toBe(1.2);
+    expect(res.material.customMaterial.uniforms.rippleFrequency.value).toBe(8.0);
+    expect(res.material.customMaterial.uniforms.rainbowMix.value).toBe(0.9);
   });
 });
 
 describe("MATERIAL_WIREFRAME_PULSE_NODE", () => {
   it("outputs barycentric pulse shader with traveling wave velocity", () => {
     const res = MATERIAL_WIREFRAME_PULSE_NODE.evaluate(
-      { edgeColor: new THREE.Color(0xffaa00), pulseSpeed: 5.0, pulseLength: 2.5 },
+      {
+        edgeColor: new THREE.Color(0xffaa00),
+        pulseSpeed: 5.0,
+        pulseLength: 2.5,
+        pulseFrequency: 6.0,
+        glowIntensity: 2.2,
+        enableFill: false,
+        enablePulse: true,
+      },
       MATERIAL_WIREFRAME_PULSE_NODE.defaultParams,
       CTX,
     ) as { material: { customMaterial: THREE.ShaderMaterial } };
@@ -110,6 +169,10 @@ describe("MATERIAL_WIREFRAME_PULSE_NODE", () => {
     expect(res.material.customMaterial.uniforms.edgeColor.value.getHex()).toBe(0xffaa00);
     expect(res.material.customMaterial.uniforms.pulseSpeed.value).toBe(5.0);
     expect(res.material.customMaterial.uniforms.pulseLength.value).toBe(2.5);
+    expect(res.material.customMaterial.uniforms.pulseFrequency.value).toBe(6.0);
+    expect(res.material.customMaterial.uniforms.glowIntensity.value).toBe(2.2);
+    expect(res.material.customMaterial.uniforms.enableFill.value).toBe(0.0);
+    expect(res.material.customMaterial.uniforms.enablePulse.value).toBe(1.0);
     expect(res.material.customMaterial.uniforms.time.value).toBe(1.5);
   });
 });

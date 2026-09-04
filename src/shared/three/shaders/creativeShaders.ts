@@ -6,18 +6,26 @@ export function createHologramMaterial(): THREE.ShaderMaterial {
     uniforms: {
       time: { value: 0 },
       color: { value: new THREE.Color(0x00f3ff) },
+      rimColor: { value: new THREE.Color(0xff00d4) },
       scanlinesFrequency: { value: 20.0 },
       scanlinesSpeed: { value: 2.0 },
       fresnelPower: { value: 2.5 },
       glitchStrength: { value: 0.05 },
+      glitchFrequency: { value: 12.0 },
       flickerIntensity: { value: 0.2 },
       opacity: { value: 0.85 },
       noiseIntensity: { value: 0.15 },
       stripeSharpness: { value: 0.5 },
+      enableScanlines: { value: 1.0 },
+      enableGlitch: { value: 1.0 },
+      enableNoise: { value: 1.0 },
+      enableFlicker: { value: 1.0 },
     },
     vertexShader: /* glsl */ `
       uniform float time;
       uniform float glitchStrength;
+      uniform float glitchFrequency;
+      uniform float enableGlitch;
       varying vec3 vWorldPosition;
       varying vec3 vNormal;
       varying vec3 vViewDir;
@@ -33,11 +41,13 @@ export function createHologramMaterial(): THREE.ShaderMaterial {
         vec4 worldPos = modelMatrix * vec4(position, 1.0);
         
         // Random horizontal slice glitch
-        float sliceTime = floor(time * 12.0);
-        float sliceY = floor(worldPos.y * 4.0);
-        float trigger = step(0.92, hash(sliceTime + sliceY * 17.3));
-        float glitchOffset = (hash(sliceTime * 3.1 + sliceY) - 0.5) * 2.0 * glitchStrength * trigger;
-        worldPos.x += glitchOffset;
+        if (enableGlitch > 0.5) {
+          float sliceTime = floor(time * max(1.0, glitchFrequency));
+          float sliceY = floor(worldPos.y * 4.0);
+          float trigger = step(0.92, hash(sliceTime + sliceY * 17.3));
+          float glitchOffset = (hash(sliceTime * 3.1 + sliceY) - 0.5) * 2.0 * glitchStrength * trigger;
+          worldPos.x += glitchOffset;
+        }
 
         vWorldPosition = worldPos.xyz;
         vec4 mvPosition = viewMatrix * worldPos;
@@ -48,6 +58,7 @@ export function createHologramMaterial(): THREE.ShaderMaterial {
     fragmentShader: /* glsl */ `
       uniform float time;
       uniform vec3 color;
+      uniform vec3 rimColor;
       uniform float scanlinesFrequency;
       uniform float scanlinesSpeed;
       uniform float fresnelPower;
@@ -55,6 +66,9 @@ export function createHologramMaterial(): THREE.ShaderMaterial {
       uniform float opacity;
       uniform float noiseIntensity;
       uniform float stripeSharpness;
+      uniform float enableScanlines;
+      uniform float enableNoise;
+      uniform float enableFlicker;
 
       varying vec3 vWorldPosition;
       varying vec3 vNormal;
@@ -70,26 +84,34 @@ export function createHologramMaterial(): THREE.ShaderMaterial {
         float fresnel = pow(1.0 - NdotV, max(0.1, fresnelPower));
 
         // 3D world-space moving scanlines
-        float scanline = sin(vWorldPosition.y * scanlinesFrequency - time * scanlinesSpeed * 3.14159);
-        scanline = smoothstep(-0.2, 0.8, scanline);
-        scanline = pow(scanline, 1.0 + stripeSharpness * 3.0);
-
-        // Fine secondary grid / scanline
-        float fineScan = sin(vWorldPosition.y * scanlinesFrequency * 3.0 + time * scanlinesSpeed * 1.5) * 0.15;
+        float scanline = 0.0;
+        float fineScan = 0.0;
+        if (enableScanlines > 0.5) {
+          scanline = sin(vWorldPosition.y * scanlinesFrequency - time * scanlinesSpeed * 3.14159);
+          scanline = smoothstep(-0.2, 0.8, scanline);
+          scanline = pow(scanline, 1.0 + stripeSharpness * 3.0);
+          fineScan = sin(vWorldPosition.y * scanlinesFrequency * 3.0 + time * scanlinesSpeed * 1.5) * 0.15;
+        }
 
         // Cathode TV noise grain
-        float noise = fract(sin(dot(vWorldPosition.xy + time * 12.3, vec2(12.9898, 78.233))) * 43758.5453);
+        float noise = 0.0;
+        if (enableNoise > 0.5) {
+          noise = (fract(sin(dot(vWorldPosition.xy + time * 12.3, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * noiseIntensity;
+        }
 
         // Subtle high-speed flicker
-        float flicker = 1.0 - flickerIntensity * 0.2 * (
-          sin(time * 45.0) * 0.5 + sin(time * 23.3) * 0.5
-        );
+        float flicker = 1.0;
+        if (enableFlicker > 0.5) {
+          flicker = 1.0 - flickerIntensity * 0.2 * (
+            sin(time * 45.0) * 0.5 + sin(time * 23.3) * 0.5
+          );
+        }
 
-        // Chromatic split on fresnel edge
-        vec3 rimColor = color * (1.0 + fresnel * 1.5);
-        vec3 finalColor = (rimColor * fresnel + color * (scanline * 0.7 + fineScan + 0.15)) * flicker;
-        finalColor += color * (noise - 0.5) * noiseIntensity;
-        float alpha = opacity * clamp(fresnel * 1.2 + scanline * 0.4 + 0.15 + noise * noiseIntensity * 0.3, 0.0, 1.0);
+        // Dual-tone chromatic rim
+        vec3 activeRim = mix(color, rimColor, 0.75) * (1.0 + fresnel * 1.5);
+        vec3 finalColor = (activeRim * fresnel + color * (scanline * 0.7 + fineScan + 0.15)) * flicker;
+        finalColor += color * noise;
+        float alpha = opacity * clamp(fresnel * 1.2 + scanline * 0.4 + 0.15 + abs(noise) * 0.3, 0.0, 1.0);
 
         gl_FragColor = vec4(finalColor, alpha);
       }
@@ -108,6 +130,7 @@ export function createLiquidMetalMaterial(): THREE.ShaderMaterial {
       time: { value: 0 },
       baseColor: { value: new THREE.Color(0xd0d8e8) },
       reflectionColor: { value: new THREE.Color(0xffffff) },
+      specularColor: { value: new THREE.Color(0xffffff) },
       warpScale: { value: 2.5 },
       warpIntensity: { value: 1.0 },
       speed: { value: 0.8 },
@@ -115,12 +138,15 @@ export function createLiquidMetalMaterial(): THREE.ShaderMaterial {
       roughness: { value: 0.15 },
       metalness: { value: 0.8 },
       iridescence: { value: 0.3 },
+      fresnelPower: { value: 3.0 },
+      enableDisplacement: { value: 1.0 },
     },
     vertexShader: /* glsl */ `
       uniform float time;
       uniform float speed;
       uniform float warpScale;
       uniform float warpIntensity;
+      uniform float enableDisplacement;
       varying vec3 vWorldPosition;
       varying vec3 vNormal;
       varying vec3 vViewDir;
@@ -185,7 +211,9 @@ export function createLiquidMetalMaterial(): THREE.ShaderMaterial {
         vec3 q = vec3(snoise(p), snoise(p + vec3(4.3, 1.2, 7.8)), snoise(p + vec3(1.7, 8.4, 3.1)));
         float displacement = snoise(p + q * warpIntensity) * 0.12;
 
-        pos += normal * displacement;
+        if (enableDisplacement > 0.5) {
+          pos += normal * displacement;
+        }
 
         vec4 worldPos = modelMatrix * vec4(pos, 1.0);
         vWorldPosition = worldPos.xyz;
@@ -198,8 +226,10 @@ export function createLiquidMetalMaterial(): THREE.ShaderMaterial {
     fragmentShader: /* glsl */ `
       uniform vec3 baseColor;
       uniform vec3 reflectionColor;
+      uniform vec3 specularColor;
       uniform float roughness;
       uniform float viscosity;
+      uniform float fresnelPower;
 
       varying vec3 vWorldPosition;
       varying vec3 vNormal;
@@ -223,8 +253,8 @@ export function createLiquidMetalMaterial(): THREE.ShaderMaterial {
         float spec = pow(NdotH, (1.0 - roughness) * 128.0 + 8.0);
 
         // Fresnel reflection boost
-        float fresnel = pow(1.0 - max(0.0, dot(N, V)), 3.0);
-        vec3 finalColor = mix(envLight, reflectionColor, fresnel * 0.7 + spec);
+        float fresnel = pow(1.0 - max(0.0, dot(N, V)), max(0.1, fresnelPower));
+        vec3 finalColor = mix(envLight, reflectionColor, fresnel * 0.7) + specularColor * spec;
 
         gl_FragColor = vec4(finalColor, 1.0);
       }
@@ -238,13 +268,18 @@ export function createCelShadeMaterial(): THREE.ShaderMaterial {
     uniforms: {
       color: { value: new THREE.Color(0xff4444) },
       shadowColor: { value: new THREE.Color(0x1a0525) },
+      halftoneDotColor: { value: new THREE.Color(0x1a0525) },
       bands: { value: 3.0 },
+      bandSoftness: { value: 0.02 },
       halftone: { value: 1.0 },
       halftoneScale: { value: 8.0 },
       rimColor: { value: new THREE.Color(0xffffff) },
       rimPower: { value: 3.0 },
       specularHardness: { value: 32.0 },
       specularStrength: { value: 1.0 },
+      enableHalftone: { value: 1.0 },
+      enableRim: { value: 1.0 },
+      enableSpecular: { value: 1.0 },
       lightDirection: { value: new THREE.Vector3(1.0, 2.0, 1.5).normalize() },
     },
     vertexShader: /* glsl */ `
@@ -265,13 +300,18 @@ export function createCelShadeMaterial(): THREE.ShaderMaterial {
     fragmentShader: /* glsl */ `
       uniform vec3 color;
       uniform vec3 shadowColor;
+      uniform vec3 halftoneDotColor;
       uniform float bands;
+      uniform float bandSoftness;
       uniform float halftone;
       uniform float halftoneScale;
       uniform vec3 rimColor;
       uniform float rimPower;
       uniform float specularHardness;
       uniform float specularStrength;
+      uniform float enableHalftone;
+      uniform float enableRim;
+      uniform float enableSpecular;
       uniform vec3 lightDirection;
 
       varying vec3 vNormal;
@@ -285,35 +325,47 @@ export function createCelShadeMaterial(): THREE.ShaderMaterial {
         vec3 L = normalize(lightDirection);
         vec3 H = normalize(L + V);
 
-        // Quantized lighting (Cel bands)
+        // Quantized lighting (Cel bands with optional softness)
         float NdotL = max(0.0, dot(N, L));
         float b = max(1.0, bands);
-        float steppedLight = floor(NdotL * b + 0.1) / b;
+        float steppedLight = 0.0;
+        if (bandSoftness > 0.001) {
+          float scaled = NdotL * b;
+          float fl = floor(scaled);
+          float fr = fract(scaled);
+          float smoothFr = smoothstep(0.5 - max(0.001, bandSoftness), 0.5 + max(0.001, bandSoftness), fr);
+          steppedLight = (fl + smoothFr) / b;
+        } else {
+          steppedLight = floor(NdotL * b + 0.1) / b;
+        }
+
+        // Palette base
+        vec3 shaded = mix(shadowColor, color, clamp(steppedLight, 0.0, 1.0));
 
         // Comic Halftone Dots in shadow transitions
-        float htFactor = 1.0;
-        if (halftone > 0.5) {
+        if (enableHalftone > 0.5 && halftone > 0.5) {
           vec2 screenCoord = (vScreenPos.xy / vScreenPos.w * 0.5 + 0.5) * vec2(800.0, 600.0);
           vec2 grid = fract(screenCoord / max(2.0, halftoneScale)) - 0.5;
           float dist = length(grid);
           float dotThreshold = (1.0 - steppedLight) * 0.45;
           if (dist < dotThreshold) {
-            htFactor = 0.4;
+            shaded = mix(shaded, halftoneDotColor, 0.7);
           }
         }
 
         // Stepped specular glint
-        float NdotH = max(0.0, dot(N, H));
-        float spec = step(0.7, pow(NdotH, specularHardness)) * specularStrength;
+        if (enableSpecular > 0.5) {
+          float NdotH = max(0.0, dot(N, H));
+          float spec = step(0.7, pow(NdotH, specularHardness)) * specularStrength;
+          shaded += vec3(spec * 0.9);
+        }
 
         // Rim Light
-        float rim = pow(1.0 - max(0.0, dot(N, V)), max(0.5, rimPower));
-        float rimCut = step(0.65, rim);
-
-        // Palette composition
-        vec3 shaded = mix(shadowColor, color, steppedLight * htFactor);
-        shaded += rimColor * (rimCut * 0.7);
-        shaded += vec3(spec * 0.9);
+        if (enableRim > 0.5) {
+          float rim = pow(1.0 - max(0.0, dot(N, V)), max(0.5, rimPower));
+          float rimCut = step(0.65, rim);
+          shaded += rimColor * (rimCut * 0.7);
+        }
 
         gl_FragColor = vec4(shaded, 1.0);
       }
@@ -327,10 +379,14 @@ export function createIridescentMaterial(): THREE.ShaderMaterial {
     uniforms: {
       time: { value: 0 },
       baseColor: { value: new THREE.Color(0x222226) },
-      filmThickness: { value: 450.0 }, // nanometers (typical 200-800)
+      specularColor: { value: new THREE.Color(0xffffff) },
+      filmThickness: { value: 450.0 },
       refractiveIndex: { value: 1.45 },
       boost: { value: 1.5 },
       roughness: { value: 0.2 },
+      rippleSpeed: { value: 0.5 },
+      rippleFrequency: { value: 6.28 },
+      rainbowMix: { value: 0.75 },
     },
     vertexShader: /* glsl */ `
       varying vec3 vNormal;
@@ -348,10 +404,14 @@ export function createIridescentMaterial(): THREE.ShaderMaterial {
     fragmentShader: /* glsl */ `
       uniform float time;
       uniform vec3 baseColor;
+      uniform vec3 specularColor;
       uniform float filmThickness;
       uniform float refractiveIndex;
       uniform float boost;
       uniform float roughness;
+      uniform float rippleSpeed;
+      uniform float rippleFrequency;
+      uniform float rainbowMix;
 
       varying vec3 vNormal;
       varying vec3 vViewDir;
@@ -359,16 +419,12 @@ export function createIridescentMaterial(): THREE.ShaderMaterial {
 
       // Optical thin film interference calculation
       vec3 thinFilmColor(float cosTheta, float d, float n) {
-        // Snell's law inside the thin film
         float sin2Theta2 = (1.0 - cosTheta * cosTheta) / (n * n);
         float cosTheta2 = sqrt(max(0.0, 1.0 - sin2Theta2));
-        float opd = 2.0 * n * d * cosTheta2; // Optical Path Difference in nm
+        float opd = 2.0 * n * d * cosTheta2;
 
-        // RGB central wavelengths in nm: Red=650nm, Green=530nm, Blue=440nm
         vec3 lambda = vec3(650.0, 530.0, 440.0);
         vec3 phase = 6.2831853 * opd / lambda;
-        
-        // Constructive / destructive interference intensity
         vec3 intensity = 0.5 + 0.5 * cos(phase);
         return intensity;
       }
@@ -378,8 +434,8 @@ export function createIridescentMaterial(): THREE.ShaderMaterial {
         vec3 V = normalize(vViewDir);
         float cosTheta = max(0.0, dot(N, V));
 
-        // Dynamically modulate film thickness with UVs or subtle time ripple
-        float d = filmThickness + sin(vUv.x * 6.28 + time * 0.5) * 40.0;
+        // Dynamically modulate film thickness with UVs or time ripple
+        float d = filmThickness + sin(vUv.x * rippleFrequency + time * rippleSpeed) * 40.0;
         vec3 rainbow = thinFilmColor(cosTheta, d, refractiveIndex) * boost;
 
         // Metallic reflection highlight
@@ -387,7 +443,7 @@ export function createIridescentMaterial(): THREE.ShaderMaterial {
         vec3 H = normalize(lightDir + V);
         float spec = pow(max(0.0, dot(N, H)), (1.0 - roughness) * 96.0 + 8.0);
 
-        vec3 finalColor = mix(baseColor, rainbow, 0.75) + vec3(spec * 0.6);
+        vec3 finalColor = mix(baseColor, rainbow, clamp(rainbowMix, 0.0, 1.0)) + specularColor * (spec * 0.6);
         gl_FragColor = vec4(finalColor, 1.0);
       }
     `,
@@ -406,6 +462,10 @@ export function createWireframePulseMaterial(): THREE.ShaderMaterial {
       pulseColor: { value: new THREE.Color(0xff007f) },
       pulseSpeed: { value: 2.0 },
       pulseLength: { value: 1.2 },
+      pulseFrequency: { value: 3.0 },
+      glowIntensity: { value: 1.5 },
+      enableFill: { value: 1.0 },
+      enablePulse: { value: 1.0 },
     },
     vertexShader: /* glsl */ `
       varying vec3 vWorldPosition;
@@ -432,6 +492,10 @@ export function createWireframePulseMaterial(): THREE.ShaderMaterial {
       uniform vec3 pulseColor;
       uniform float pulseSpeed;
       uniform float pulseLength;
+      uniform float pulseFrequency;
+      uniform float glowIntensity;
+      uniform float enableFill;
+      uniform float enablePulse;
 
       varying vec3 vWorldPosition;
       varying vec3 vNormal;
@@ -447,17 +511,21 @@ export function createWireframePulseMaterial(): THREE.ShaderMaterial {
 
         // Travelling spherical pulse wave
         float dist = length(vWorldPosition);
-        float wavePos = mod(time * pulseSpeed, 10.0);
-        float wave = smoothstep(pulseLength, 0.0, abs(dist - wavePos));
+        float wavePos = mod(time * pulseSpeed, max(1.0, 10.0 / max(0.1, pulseFrequency)));
+        float wave = 0.0;
+        if (enablePulse > 0.5) {
+          wave = smoothstep(pulseLength, 0.0, abs(dist - wavePos)) * glowIntensity;
+        }
 
         // Active edge color
-        vec3 glowingEdge = mix(edgeColor, pulseColor, wave);
+        vec3 glowingEdge = mix(edgeColor, pulseColor, clamp(wave, 0.0, 1.0));
 
         if (isEdge > 0.05) {
           float edgeAlpha = clamp(isEdge * (1.0 + wave * 1.5), 0.0, 1.0);
           gl_FragColor = vec4(glowingEdge * (1.2 + wave * 2.0), edgeAlpha);
         } else {
-          gl_FragColor = vec4(fillColor, fillOpacity);
+          float finalAlpha = enableFill > 0.5 ? fillOpacity : 0.0;
+          gl_FragColor = vec4(fillColor, finalAlpha);
         }
       }
     `,
