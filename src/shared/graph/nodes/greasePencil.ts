@@ -423,6 +423,8 @@ export const GREASE_PENCIL_NODE: NodeDefinition = {
     location: new THREE.Vector3(0, 0, 0),
     rotation: new THREE.Vector3(0, 0, 0),
     scale: new THREE.Vector3(1, 1, 1),
+    showPivot: false,
+    pivot: new THREE.Vector3(0, 0, 0),
   },
   paramFields: [
     { id: "activeColor", label: "Color", kind: "color" },
@@ -440,10 +442,12 @@ export const GREASE_PENCIL_NODE: NodeDefinition = {
     { id: "onionSkinBefore", label: "Ghost Before", kind: "number", step: 1 },
     { id: "onionSkinAfter", label: "Ghost After", kind: "number", step: 1 },
     { id: "onionSkinOpacity", label: "Ghost Opacity", kind: "number", step: 0.05 },
-    { id: "location", label: "Location", kind: "vector" },
-    { id: "rotation", label: "Rotation", kind: "vector" },
-    { id: "scale", label: "Scale", kind: "vector" },
-    { id: "visible", label: "Visible", kind: "boolean" },
+    { id: "visible", label: "Visible", kind: "boolean", group: "Transform" },
+    { id: "location", label: "Location", kind: "vector", group: "Transform" },
+    { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true, group: "Transform" },
+    { id: "scale", label: "Scale", kind: "vector", group: "Transform" },
+    { id: "showPivot", label: "Show Pivot", kind: "boolean", group: "Transform" },
+    { id: "pivot", label: "Pivot Offset", kind: "vector", group: "Transform" },
   ],
   evaluate: (inputs, params, ctx) => {
     const isVis = inputs.visible !== undefined ? Boolean(inputs.visible) : Boolean(params.visible ?? true);
@@ -671,7 +675,23 @@ export const GREASE_PENCIL_NODE: NodeDefinition = {
     );
     state.group.matrix.copy(matrix);
     state.group.matrixAutoUpdate = false;
+    matrix.decompose(state.group.position, state.group.quaternion, state.group.scale);
     state.group.updateMatrixWorld(true);
+
+    // Ensure all active meshes remain parented to state.group even if downstream nodes
+    // reparented them during evaluation
+    if (state.activeMesh && state.activeMesh.parent !== state.group) {
+      state.group.add(state.activeMesh);
+    }
+    if (state.fillMesh && state.fillMesh.parent !== state.group) {
+      state.group.add(state.fillMesh);
+    }
+    if (state.onionPrevMesh && state.onionPrevMesh.parent !== state.group) {
+      state.group.add(state.onionPrevMesh);
+    }
+    if (state.onionNextMesh && state.onionNextMesh.parent !== state.group) {
+      state.group.add(state.onionNextMesh);
+    }
 
     const curves = strokesToCurves(strokes);
 

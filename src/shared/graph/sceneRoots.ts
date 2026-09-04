@@ -74,7 +74,22 @@ function isOwnedDownstream(
     if (!socket) return false;
 
     // Direct ownership claim on the receiving socket
-    if (socket.owns) return true;
+    if (socket.owns) {
+      const producer = graph.nodes.find((n) => n.id === connection.fromNode);
+      const producerDef = producer ? registry.get(producer.type) : undefined;
+      const fromSocket = producerDef?.outputs.find((s) => s.id === connection.fromSocket);
+      if (
+        fromSocket &&
+        (fromSocket.type === "curve" ||
+          fromSocket.type === "matrix" ||
+          fromSocket.type === "value" ||
+          fromSocket.type === "color" ||
+          fromSocket.type === "texture")
+      ) {
+        return false;
+      }
+      return true;
+    }
 
     // Multi-hop ownership: if the consumer is a pass-through/grouping node without
     // standalone rendering (like List Group or Reroute), propagate downstream.

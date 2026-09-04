@@ -1,22 +1,34 @@
 import * as THREE from "three";
-import { createNodeCache, disposeObject3D } from "../nodeCaches";
+import { createNodeCache } from "../nodeCaches";
 import { NodeDefinition } from "../types";
-import { clearMeshWarning, findFirstMesh, warnMeshRequired } from "../meshRequired";
-import { primitiveOutputs } from "./object";
+import { clearMeshWarning, collectMeshes, warnMeshRequired } from "../meshRequired";
 import { numberInput } from "./object";
 
 interface DeformState {
-  mesh?: THREE.Mesh;
+  object?: THREE.Object3D;
+}
+
+/**
+ * Disposes only the geometries owned by this deformer.
+ * NEVER dispose materials: they are shared with and owned by upstream nodes.
+ */
+function disposeDeformedObject(obj?: THREE.Object3D) {
+  if (!obj) return;
+  obj.traverse((child: any) => {
+    if (child.geometry && typeof child.geometry.dispose === "function") {
+      child.geometry.dispose();
+    }
+  });
 }
 
 const twistCache = createNodeCache<DeformState>((s) => {
-  if (s.mesh) disposeObject3D(s.mesh);
+  if (s.object) disposeDeformedObject(s.object);
 });
 const waveCache = createNodeCache<DeformState>((s) => {
-  if (s.mesh) disposeObject3D(s.mesh);
+  if (s.object) disposeDeformedObject(s.object);
 });
 const explodeCache = createNodeCache<DeformState>((s) => {
-  if (s.mesh) disposeObject3D(s.mesh);
+  if (s.object) disposeDeformedObject(s.object);
 });
 
 function pseudoRandom(seed: number): number {
@@ -42,21 +54,21 @@ function resolveObjectMatrix(
 }
 
 /**
- * Applies transform and metadata to the deformed result mesh.
+ * Applies transform and metadata to the deformed result object (Mesh or Group).
  */
 function applyResultTransform(
-  resultMesh: THREE.Mesh,
+  resultObj: THREE.Object3D,
   matrix: THREE.Matrix4,
   nodeId: string,
-  srcMesh: THREE.Mesh,
+  srcObj: THREE.Object3D,
 ) {
-  resultMesh.castShadow = srcMesh.castShadow;
-  resultMesh.receiveShadow = srcMesh.receiveShadow;
-  resultMesh.userData = { ...srcMesh.userData, nodeId };
-  resultMesh.matrixAutoUpdate = false;
-  resultMesh.matrix.copy(matrix);
-  matrix.decompose(resultMesh.position, resultMesh.quaternion, resultMesh.scale);
-  resultMesh.matrixWorldNeedsUpdate = true;
+  resultObj.castShadow = srcObj.castShadow;
+  resultObj.receiveShadow = srcObj.receiveShadow;
+  resultObj.userData = { ...srcObj.userData, nodeId };
+  resultObj.matrixAutoUpdate = false;
+  resultObj.matrix.copy(matrix);
+  matrix.decompose(resultObj.position, resultObj.quaternion, resultObj.scale);
+  resultObj.matrixWorldNeedsUpdate = true;
 }
 
 /**
@@ -96,23 +108,26 @@ export const GEOMETRY_TWIST_BEND_TAPER_NODE: NodeDefinition = {
   ],
   evaluate: (inputs, params, ctx) => {
     const raw = inputs.geometry;
-    const srcMesh = raw instanceof THREE.Object3D ? findFirstMesh(raw) : null;
-    if (!srcMesh) {
-      if (raw) warnMeshRequired(ctx.nodeId, "Twist/Bend/Taper", raw instanceof THREE.Object3D ? raw : null);
+    if (!(raw instanceof THREE.Object3D)) {
+      if (raw) warnMeshRequired(ctx.nodeId, "Twist/Bend/Taper", null);
+      return { geometry: raw, matrix: (raw as any)?.matrix };
+    }
+    const meshes = collectMeshes(raw);
+    if (meshes.length === 0) {
+      warnMeshRequired(ctx.nodeId, "Twist/Bend/Taper", raw);
       return { geometry: raw, matrix: (raw as any)?.matrix };
     }
     clearMeshWarning(ctx.nodeId);
 
-    const objMatrix = resolveObjectMatrix(inputs, raw, srcMesh);
+    const objMatrix = resolveObjectMatrix(inputs, raw, meshes[0]);
     const twistDeg = numberInput(inputs.twist, params.twist, 0);
     const bendDeg = numberInput(inputs.bend, params.bend, 0);
     const taperVal = numberInput(inputs.taper, params.taper, 0);
     const axis = String(params.axis || "y").toLowerCase();
 
-    // Fast pass-through if no deformation is requested
+    // Fast pass-through if no deformation is requested — leaves upstream hierarchy untouched
     if (Math.abs(twistDeg) < 1e-4 && Math.abs(bendDeg) < 1e-4 && Math.abs(taperVal) < 1e-4) {
-      applyResultTransform(srcMesh, objMatrix, ctx.nodeId, srcMesh);
-      return primitiveOutputs(srcMesh);
+      return { geometry: raw, matrix: objMatrix };
     }
 
     let state = twistCache.get(ctx.nodeId);
@@ -120,79 +135,111 @@ export const GEOMETRY_TWIST_BEND_TAPER_NODE: NodeDefinition = {
       state = {};
       twistCache.set(ctx.nodeId, state);
     }
-    if (state.mesh) {
-      disposeObject3D(state.mesh);
-      state.mesh = undefined;
+    if (state.object) {
+      disposeDeformedObject(state.object);
+      state.object = undefined;
     }
-
-    const srcGeom = srcMesh.geometry;
-    const geom = srcGeom.clone();
-    const pos = geom.attributes.position;
-    const count = pos.count;
 
     const twistRad = (twistDeg * Math.PI) / 180;
     const bendRad = (bendDeg * Math.PI) / 180;
 
-    // Determine bounds along chosen axis
     const axisIdx = axis === "x" ? 0 : axis === "z" ? 2 : 1;
     const uIdx = (axisIdx + 1) % 3;
     const vIdx = (axisIdx + 2) % 3;
 
+    // Determine overall bounds along chosen axis
     let minAxis = Infinity;
     let maxAxis = -Infinity;
-    for (let i = 0; i < count; i++) {
-      const val = pos.getComponent(i, axisIdx);
-      if (val < minAxis) minAxis = val;
-      if (val > maxAxis) maxAxis = val;
+    for (const mesh of meshes) {
+      const pos = mesh.geometry?.attributes?.position;
+      if (!pos) continue;
+      for (let i = 0; i < pos.count; i++) {
+        const val = pos.getComponent(i, axisIdx);
+        if (val < minAxis) minAxis = val;
+        if (val > maxAxis) maxAxis = val;
+      }
     }
-    const height = Math.max(1e-4, maxAxis - minAxis);
+    if (!Number.isFinite(minAxis) || !Number.isFinite(maxAxis)) {
+      return { geometry: raw, matrix: objMatrix };
+    }
+    const diff = maxAxis - minAxis;
+    const height = Math.max(1e-4, diff);
 
-    for (let i = 0; i < count; i++) {
-      let hVal = pos.getComponent(i, axisIdx);
-      let uVal = pos.getComponent(i, uIdx);
-      let vVal = pos.getComponent(i, vIdx);
+    function deformMesh(srcMesh: THREE.Mesh): THREE.Mesh {
+      const geom = srcMesh.geometry.clone();
+      const pos = geom.attributes.position;
+      const count = pos.count;
 
-      const normH = (hVal - minAxis) / height; // 0..1
+      for (let i = 0; i < count; i++) {
+        let hVal = pos.getComponent(i, axisIdx);
+        let uVal = pos.getComponent(i, uIdx);
+        let vVal = pos.getComponent(i, vIdx);
 
-      // 1. Taper: scale cross-section
-      if (Math.abs(taperVal) > 1e-4) {
-        const s = Math.max(0.001, 1.0 + taperVal * normH);
-        uVal *= s;
-        vVal *= s;
+        const normH = diff > 1e-6 ? (hVal - minAxis) / height : 0.5;
+
+        // 1. Taper: scale cross-section
+        if (Math.abs(taperVal) > 1e-4) {
+          const s = Math.max(0.001, 1.0 + taperVal * normH);
+          uVal *= s;
+          vVal *= s;
+        }
+
+        // 2. Twist: rotate cross-section
+        if (Math.abs(twistRad) > 1e-4) {
+          const angle = twistRad * normH;
+          const cosA = Math.cos(angle);
+          const sinA = Math.sin(angle);
+          const nextU = uVal * cosA - vVal * sinA;
+          const nextV = uVal * sinA + vVal * cosA;
+          uVal = nextU;
+          vVal = nextV;
+        }
+
+        // 3. Bend: curve along axis
+        if (Math.abs(bendRad) > 1e-4 && diff > 1e-6) {
+          const radius = height / bendRad;
+          const alpha = bendRad * normH;
+          hVal = minAxis + radius * Math.sin(alpha);
+          uVal += radius * (1.0 - Math.cos(alpha));
+        }
+
+        if (!Number.isFinite(hVal)) hVal = 0;
+        if (!Number.isFinite(uVal)) uVal = 0;
+        if (!Number.isFinite(vVal)) vVal = 0;
+
+        pos.setComponent(i, axisIdx, hVal);
+        pos.setComponent(i, uIdx, uVal);
+        pos.setComponent(i, vIdx, vVal);
       }
 
-      // 2. Twist: rotate cross-section
-      if (Math.abs(twistRad) > 1e-4) {
-        const angle = twistRad * normH;
-        const cosA = Math.cos(angle);
-        const sinA = Math.sin(angle);
-        const nextU = uVal * cosA - vVal * sinA;
-        const nextV = uVal * sinA + vVal * cosA;
-        uVal = nextU;
-        vVal = nextV;
-      }
+      pos.needsUpdate = true;
+      geom.computeVertexNormals();
 
-      // 3. Bend: curve along axis
-      if (Math.abs(bendRad) > 1e-4) {
-        const radius = height / bendRad;
-        const alpha = bendRad * normH;
-        hVal = minAxis + radius * Math.sin(alpha);
-        uVal += radius * (1.0 - Math.cos(alpha));
-      }
-
-      pos.setComponent(i, axisIdx, hVal);
-      pos.setComponent(i, uIdx, uVal);
-      pos.setComponent(i, vIdx, vVal);
+      const outMesh = new THREE.Mesh(geom, srcMesh.material);
+      outMesh.castShadow = srcMesh.castShadow;
+      outMesh.receiveShadow = srcMesh.receiveShadow;
+      outMesh.renderOrder = srcMesh.renderOrder;
+      return outMesh;
     }
 
-    pos.needsUpdate = true;
-    geom.computeVertexNormals();
+    let resultObject: THREE.Object3D;
+    if (raw instanceof THREE.Mesh) {
+      resultObject = deformMesh(raw);
+    } else {
+      const group = new THREE.Group();
+      for (const mesh of meshes) {
+        group.add(deformMesh(mesh));
+      }
+      resultObject = group;
+    }
 
-    const resultMesh = new THREE.Mesh(geom, srcMesh.material);
-    applyResultTransform(resultMesh, objMatrix, ctx.nodeId, srcMesh);
-    state.mesh = resultMesh;
+    applyResultTransform(resultObject, objMatrix, ctx.nodeId, raw);
+    state.object = resultObject;
 
-    return primitiveOutputs(resultMesh);
+    return {
+      geometry: resultObject,
+      matrix: resultObject.matrix,
+    };
   },
 };
 
@@ -231,12 +278,12 @@ export const GEOMETRY_WAVE_RIPPLE_NODE: NodeDefinition = {
     { id: "amplitude", label: "Amplitude", kind: "number", step: 0.05 },
     { id: "frequency", label: "Frequency", kind: "number", step: 0.2 },
     { id: "speed", label: "Speed", kind: "number", step: 0.2 },
-    { id: "decay", label: "Decay", kind: "number", step: 0.05 },
-    { id: "centerX", label: "Center X", kind: "number", step: 0.2 },
-    { id: "centerZ", label: "Center Z", kind: "number", step: 0.2 },
+    { id: "decay", label: "Decay (Ripple)", kind: "number", step: 0.05 },
+    { id: "centerX", label: "Center X", kind: "number", step: 0.5 },
+    { id: "centerZ", label: "Center Z", kind: "number", step: 0.5 },
     {
       id: "mode",
-      label: "Wave Mode",
+      label: "Pattern Mode",
       kind: "select",
       options: ["ripple", "linear"],
     },
@@ -249,14 +296,18 @@ export const GEOMETRY_WAVE_RIPPLE_NODE: NodeDefinition = {
   ],
   evaluate: (inputs, params, ctx) => {
     const raw = inputs.geometry;
-    const srcMesh = raw instanceof THREE.Object3D ? findFirstMesh(raw) : null;
-    if (!srcMesh) {
-      if (raw) warnMeshRequired(ctx.nodeId, "Wave/Ripple", raw instanceof THREE.Object3D ? raw : null);
+    if (!(raw instanceof THREE.Object3D)) {
+      if (raw) warnMeshRequired(ctx.nodeId, "Wave/Ripple", null);
+      return { geometry: raw, matrix: (raw as any)?.matrix };
+    }
+    const meshes = collectMeshes(raw);
+    if (meshes.length === 0) {
+      warnMeshRequired(ctx.nodeId, "Wave/Ripple", raw);
       return { geometry: raw, matrix: (raw as any)?.matrix };
     }
     clearMeshWarning(ctx.nodeId);
 
-    const objMatrix = resolveObjectMatrix(inputs, raw, srcMesh);
+    const objMatrix = resolveObjectMatrix(inputs, raw, meshes[0]);
     const objScale = new THREE.Vector3();
     const objQuat = new THREE.Quaternion();
     const objPos = new THREE.Vector3();
@@ -272,70 +323,93 @@ export const GEOMETRY_WAVE_RIPPLE_NODE: NodeDefinition = {
     const space = String(params.space || "local").toLowerCase();
     const time = ctx.time ?? 0;
 
+    // Fast pass-through if amplitude is negligible
+    if (Math.abs(amp) < 1e-4) {
+      return { geometry: raw, matrix: objMatrix };
+    }
+
     let state = waveCache.get(ctx.nodeId);
     if (!state) {
       state = {};
       waveCache.set(ctx.nodeId, state);
     }
-    if (state.mesh) {
-      disposeObject3D(state.mesh);
-      state.mesh = undefined;
+    if (state.object) {
+      disposeDeformedObject(state.object);
+      state.object = undefined;
     }
-
-    const srcGeom = srcMesh.geometry;
-    const geom = srcGeom.clone();
-    const pos = geom.attributes.position;
-    const count = pos.count;
 
     const invMatrix = space === "world" ? objMatrix.clone().invert() : null;
     const sx = Math.abs(objScale.x) > 1e-4 ? objScale.x : 1;
     const sz = Math.abs(objScale.z) > 1e-4 ? objScale.z : 1;
 
-    for (let i = 0; i < count; i++) {
-      const x = pos.getX(i);
-      const y = pos.getY(i);
-      const z = pos.getZ(i);
+    function deformMesh(srcMesh: THREE.Mesh): THREE.Mesh {
+      const geom = srcMesh.geometry.clone();
+      const pos = geom.attributes.position;
+      const count = pos.count;
 
-      if (space === "world") {
-        // Evaluates ripple in world coordinates taking object's full matrix into account
-        const worldPt = new THREE.Vector3(x, y, z).applyMatrix4(objMatrix);
-        let displacement = 0;
-        if (mode === "ripple") {
-          const dx = worldPt.x - cx;
-          const dz = worldPt.z - cz;
-          const dist = Math.sqrt(dx * dx + dz * dz);
-          const attenuation = Math.exp(-dist * decay);
-          displacement = amp * Math.sin(dist * freq - time * speed) * attenuation;
+      for (let i = 0; i < count; i++) {
+        const x = pos.getX(i);
+        const y = pos.getY(i);
+        const z = pos.getZ(i);
+
+        if (space === "world") {
+          const worldPt = new THREE.Vector3(x, y, z).applyMatrix4(objMatrix);
+          let displacement = 0;
+          if (mode === "ripple") {
+            const dx = worldPt.x - cx;
+            const dz = worldPt.z - cz;
+            const dist = Math.sqrt(dx * dx + dz * dz);
+            const attenuation = Math.exp(-dist * decay);
+            displacement = amp * Math.sin(dist * freq - time * speed) * attenuation;
+          } else {
+            displacement = amp * Math.sin(worldPt.x * freq - time * speed);
+          }
+          worldPt.y += displacement;
+          const localPt = worldPt.applyMatrix4(invMatrix!);
+          pos.setXYZ(i, localPt.x, localPt.y, localPt.z);
         } else {
-          displacement = amp * Math.sin(worldPt.x * freq - time * speed);
+          let displacement = 0;
+          if (mode === "ripple") {
+            const dx = x * sx - cx;
+            const dz = z * sz - cz;
+            const dist = Math.sqrt(dx * dx + dz * dz);
+            const attenuation = Math.exp(-dist * decay);
+            displacement = amp * Math.sin(dist * freq - time * speed) * attenuation;
+          } else {
+            displacement = amp * Math.sin(x * sx * freq - time * speed);
+          }
+          pos.setY(i, y + displacement);
         }
-        worldPt.y += displacement;
-        const localPt = worldPt.applyMatrix4(invMatrix!);
-        pos.setXYZ(i, localPt.x, localPt.y, localPt.z);
-      } else {
-        // Local space: takes matrix scaling into account so ripples remain isotropic
-        let displacement = 0;
-        if (mode === "ripple") {
-          const dx = x * sx - cx;
-          const dz = z * sz - cz;
-          const dist = Math.sqrt(dx * dx + dz * dz);
-          const attenuation = Math.exp(-dist * decay);
-          displacement = amp * Math.sin(dist * freq - time * speed) * attenuation;
-        } else {
-          displacement = amp * Math.sin(x * sx * freq - time * speed);
-        }
-        pos.setY(i, y + displacement);
       }
+
+      pos.needsUpdate = true;
+      geom.computeVertexNormals();
+
+      const outMesh = new THREE.Mesh(geom, srcMesh.material);
+      outMesh.castShadow = srcMesh.castShadow;
+      outMesh.receiveShadow = srcMesh.receiveShadow;
+      outMesh.renderOrder = srcMesh.renderOrder;
+      return outMesh;
     }
 
-    pos.needsUpdate = true;
-    geom.computeVertexNormals();
+    let resultObject: THREE.Object3D;
+    if (raw instanceof THREE.Mesh) {
+      resultObject = deformMesh(raw);
+    } else {
+      const group = new THREE.Group();
+      for (const mesh of meshes) {
+        group.add(deformMesh(mesh));
+      }
+      resultObject = group;
+    }
 
-    const resultMesh = new THREE.Mesh(geom, srcMesh.material);
-    applyResultTransform(resultMesh, objMatrix, ctx.nodeId, srcMesh);
-    state.mesh = resultMesh;
+    applyResultTransform(resultObject, objMatrix, ctx.nodeId, raw);
+    state.object = resultObject;
 
-    return primitiveOutputs(resultMesh);
+    return {
+      geometry: resultObject,
+      matrix: resultObject.matrix,
+    };
   },
 };
 
@@ -369,83 +443,105 @@ export const GEOMETRY_FACET_EXPLODE_NODE: NodeDefinition = {
   ],
   evaluate: (inputs, params, ctx) => {
     const raw = inputs.geometry;
-    const srcMesh = raw instanceof THREE.Object3D ? findFirstMesh(raw) : null;
-    if (!srcMesh) {
-      if (raw) warnMeshRequired(ctx.nodeId, "Facet Explode", raw instanceof THREE.Object3D ? raw : null);
+    if (!(raw instanceof THREE.Object3D)) {
+      if (raw) warnMeshRequired(ctx.nodeId, "Facet Explode", null);
+      return { geometry: raw, matrix: (raw as any)?.matrix };
+    }
+    const meshes = collectMeshes(raw);
+    if (meshes.length === 0) {
+      warnMeshRequired(ctx.nodeId, "Facet Explode", raw);
       return { geometry: raw, matrix: (raw as any)?.matrix };
     }
     clearMeshWarning(ctx.nodeId);
 
-    const objMatrix = resolveObjectMatrix(inputs, raw, srcMesh);
+    const objMatrix = resolveObjectMatrix(inputs, raw, meshes[0]);
     const dist = numberInput(inputs.distance, params.distance, 0.5);
     const randFactor = numberInput(inputs.randomFactor, params.randomFactor, 0.5);
     const scale = numberInput(inputs.scale, params.scale, 0.9);
+
+    if (dist < 1e-4 && Math.abs(scale - 1.0) < 1e-4) {
+      return { geometry: raw, matrix: objMatrix };
+    }
 
     let state = explodeCache.get(ctx.nodeId);
     if (!state) {
       state = {};
       explodeCache.set(ctx.nodeId, state);
     }
-    if (state.mesh) {
-      disposeObject3D(state.mesh);
-      state.mesh = undefined;
+    if (state.object) {
+      disposeDeformedObject(state.object);
+      state.object = undefined;
     }
 
-    const srcGeom = srcMesh.geometry;
-    // To separate each triangle, we ensure non-indexed geometry
-    const nonIndexed = srcGeom.index ? srcGeom.toNonIndexed() : srcGeom.clone();
-    const pos = nonIndexed.attributes.position;
-    const faceCount = Math.floor(pos.count / 3);
+    function deformMesh(srcMesh: THREE.Mesh): THREE.Mesh {
+      const srcGeom = srcMesh.geometry;
+      const nonIndexed = srcGeom.index ? srcGeom.toNonIndexed() : srcGeom.clone();
+      const pos = nonIndexed.attributes.position;
+      const faceCount = Math.floor(pos.count / 3);
 
-    const vA = new THREE.Vector3();
-    const vB = new THREE.Vector3();
-    const vC = new THREE.Vector3();
-    const centroid = new THREE.Vector3();
-    const normal = new THREE.Vector3();
-    const edge1 = new THREE.Vector3();
-    const edge2 = new THREE.Vector3();
+      const vA = new THREE.Vector3();
+      const vB = new THREE.Vector3();
+      const vC = new THREE.Vector3();
+      const centroid = new THREE.Vector3();
+      const normal = new THREE.Vector3();
+      const edge1 = new THREE.Vector3();
+      const edge2 = new THREE.Vector3();
 
-    for (let f = 0; f < faceCount; f++) {
-      const idxA = f * 3;
-      const idxB = f * 3 + 1;
-      const idxC = f * 3 + 2;
+      for (let f = 0; f < faceCount; f++) {
+        const idxA = f * 3;
+        const idxB = f * 3 + 1;
+        const idxC = f * 3 + 2;
 
-      vA.fromBufferAttribute(pos, idxA);
-      vB.fromBufferAttribute(pos, idxB);
-      vC.fromBufferAttribute(pos, idxC);
+        vA.fromBufferAttribute(pos, idxA);
+        vB.fromBufferAttribute(pos, idxB);
+        vC.fromBufferAttribute(pos, idxC);
 
-      // Face Centroid
-      centroid.set(0, 0, 0).add(vA).add(vB).add(vC).divideScalar(3);
+        centroid.set(0, 0, 0).add(vA).add(vB).add(vC).divideScalar(3);
 
-      // Face Normal
-      edge1.subVectors(vB, vA);
-      edge2.subVectors(vC, vA);
-      normal.crossVectors(edge1, edge2).normalize();
+        edge1.subVectors(vB, vA);
+        edge2.subVectors(vC, vA);
+        normal.crossVectors(edge1, edge2).normalize();
 
-      // Deterministic pseudo-random variation per face
-      const r = pseudoRandom(f + 1);
-      const faceDist = dist * (1.0 + (r - 0.5) * randFactor);
+        const r = pseudoRandom(f + 1);
+        const faceDist = dist * (1.0 + (r - 0.5) * randFactor);
+        const displacement = normal.clone().multiplyScalar(faceDist);
 
-      // Displacement
-      const displacement = normal.clone().multiplyScalar(faceDist);
+        vA.sub(centroid).multiplyScalar(scale).add(centroid).add(displacement);
+        vB.sub(centroid).multiplyScalar(scale).add(centroid).add(displacement);
+        vC.sub(centroid).multiplyScalar(scale).add(centroid).add(displacement);
 
-      // Apply scale relative to centroid + displacement
-      vA.sub(centroid).multiplyScalar(scale).add(centroid).add(displacement);
-      vB.sub(centroid).multiplyScalar(scale).add(centroid).add(displacement);
-      vC.sub(centroid).multiplyScalar(scale).add(centroid).add(displacement);
+        pos.setXYZ(idxA, vA.x, vA.y, vA.z);
+        pos.setXYZ(idxB, vB.x, vB.y, vB.z);
+        pos.setXYZ(idxC, vC.x, vC.y, vC.z);
+      }
 
-      pos.setXYZ(idxA, vA.x, vA.y, vA.z);
-      pos.setXYZ(idxB, vB.x, vB.y, vB.z);
-      pos.setXYZ(idxC, vC.x, vC.y, vC.z);
+      pos.needsUpdate = true;
+      nonIndexed.computeVertexNormals();
+
+      const outMesh = new THREE.Mesh(nonIndexed, srcMesh.material);
+      outMesh.castShadow = srcMesh.castShadow;
+      outMesh.receiveShadow = srcMesh.receiveShadow;
+      outMesh.renderOrder = srcMesh.renderOrder;
+      return outMesh;
     }
 
-    pos.needsUpdate = true;
-    nonIndexed.computeVertexNormals();
+    let resultObject: THREE.Object3D;
+    if (raw instanceof THREE.Mesh) {
+      resultObject = deformMesh(raw);
+    } else {
+      const group = new THREE.Group();
+      for (const mesh of meshes) {
+        group.add(deformMesh(mesh));
+      }
+      resultObject = group;
+    }
 
-    const resultMesh = new THREE.Mesh(nonIndexed, srcMesh.material);
-    applyResultTransform(resultMesh, objMatrix, ctx.nodeId, srcMesh);
-    state.mesh = resultMesh;
+    applyResultTransform(resultObject, objMatrix, ctx.nodeId, raw);
+    state.object = resultObject;
 
-    return primitiveOutputs(resultMesh);
+    return {
+      geometry: resultObject,
+      matrix: resultObject.matrix,
+    };
   },
 };

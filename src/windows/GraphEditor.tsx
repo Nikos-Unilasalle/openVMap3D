@@ -443,6 +443,70 @@ function GraphEditorContent({
     [commit, edges, graph.nodes, nodes, registry, setEdges, setNodes],
   );
 
+  const edgeReconnectSuccessful = useRef(true);
+
+  const onReconnectStart = useCallback(() => {
+    edgeReconnectSuccessful.current = false;
+  }, []);
+
+  const onReconnect = useCallback(
+    (oldEdge: Edge, newConnection: FlowConnection) => {
+      edgeReconnectSuccessful.current = true;
+      if (!newConnection.source || !newConnection.target || !newConnection.sourceHandle || !newConnection.targetHandle) return;
+      const withoutConflict = edges.filter(
+        (e) => e.id !== oldEdge.id && !(e.target === newConnection.target && e.targetHandle === newConnection.targetHandle),
+      );
+      const newEdge: Edge = {
+        id: `${newConnection.source}.${newConnection.sourceHandle}->${newConnection.target}.${newConnection.targetHandle}`,
+        source: newConnection.source!,
+        sourceHandle: newConnection.sourceHandle,
+        target: newConnection.target!,
+        targetHandle: newConnection.targetHandle,
+        style: { stroke: edgeColor(nodes, newConnection.source!, newConnection.sourceHandle!), strokeWidth: EDGE_STROKE_WIDTH },
+      };
+      let nextEdges = [...withoutConflict, newEdge];
+      const nextNodes = refreshDynamicSockets(nodes, nextEdges, graph.nodes, registry);
+
+      nextEdges = nextEdges.filter((e) => {
+        const srcNode = nextNodes.find((n) => n.id === e.source);
+        const tgtNode = nextNodes.find((n) => n.id === e.target);
+        if (!srcNode || !tgtNode) return false;
+        const srcHasSocket = srcNode.data.outputs.some((s) => s.id === e.sourceHandle);
+        const tgtHasSocket = tgtNode.data.inputs.some((s) => s.id === e.targetHandle);
+        return srcHasSocket && tgtHasSocket;
+      });
+
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      commit(nextNodes, nextEdges);
+    },
+    [commit, edges, graph.nodes, nodes, registry, setEdges, setNodes],
+  );
+
+  const onReconnectEnd = useCallback(
+    (_: any, edge: Edge) => {
+      if (!edgeReconnectSuccessful.current) {
+        let nextEdges = edges.filter((e) => e.id !== edge.id);
+        const nextNodes = refreshDynamicSockets(nodes, nextEdges, graph.nodes, registry);
+
+        nextEdges = nextEdges.filter((e) => {
+          const srcNode = nextNodes.find((n) => n.id === e.source);
+          const tgtNode = nextNodes.find((n) => n.id === e.target);
+          if (!srcNode || !tgtNode) return false;
+          const srcHasSocket = srcNode.data.outputs.some((s) => s.id === e.sourceHandle);
+          const tgtHasSocket = tgtNode.data.inputs.some((s) => s.id === e.targetHandle);
+          return srcHasSocket && tgtHasSocket;
+        });
+
+        setNodes(nextNodes);
+        setEdges(nextEdges);
+        commit(nextNodes, nextEdges);
+      }
+      edgeReconnectSuccessful.current = true;
+    },
+    [commit, edges, graph.nodes, nodes, registry, setEdges, setNodes],
+  );
+
   const [searchModalOpen, setSearchModalOpen] = useState(false);
 
   const onConnectEnd = useCallback(
@@ -1090,6 +1154,9 @@ function GraphEditorContent({
           onEdgesChange={onEdgesChange}
           onNodesDelete={onNodesDelete}
           onEdgesDelete={onEdgesDelete}
+          onReconnectStart={onReconnectStart}
+          onReconnect={onReconnect}
+          onReconnectEnd={onReconnectEnd}
           onConnectStart={onConnectStart}
           onConnectEnd={onConnectEnd}
           onConnect={onConnect}

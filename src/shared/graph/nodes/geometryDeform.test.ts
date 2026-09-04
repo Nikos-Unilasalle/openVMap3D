@@ -51,6 +51,39 @@ describe("GEOMETRY_TWIST_BEND_TAPER_NODE", () => {
     ) as any;
     expect(res.geometry).toBeInstanceOf(THREE.Mesh);
   });
+
+  it("safely deforms a group like Grease Pencil without mutating or stealing its children", () => {
+    const group = new THREE.Group();
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0, 1, 1, 0, 2, 2, 0], 3));
+    const mat = new THREE.MeshBasicMaterial();
+    const childMesh = new THREE.Mesh(geo, mat);
+    group.add(childMesh);
+
+    // 1. Pass-through test
+    const passRes = GEOMETRY_TWIST_BEND_TAPER_NODE.evaluate(
+      { geometry: group },
+      { ...GEOMETRY_TWIST_BEND_TAPER_NODE.defaultParams, twist: 0, bend: 0, taper: 0 },
+      CTX,
+    ) as any;
+    expect(passRes.geometry).toBe(group);
+    expect(group.children.length).toBe(1);
+    expect(childMesh.parent).toBe(group);
+
+    // 2. Deformation test
+    const deformRes = GEOMETRY_TWIST_BEND_TAPER_NODE.evaluate(
+      { geometry: group },
+      { ...GEOMETRY_TWIST_BEND_TAPER_NODE.defaultParams, twist: 45 },
+      CTX,
+    ) as any;
+    expect(deformRes.geometry).toBeInstanceOf(THREE.Group);
+    expect(deformRes.geometry).not.toBe(group);
+    // Original group's child must NOT be detached
+    expect(group.children.length).toBe(1);
+    expect(childMesh.parent).toBe(group);
+    // Material must not be disposed
+    expect(mat).toBeDefined();
+  });
 });
 
 describe("GEOMETRY_WAVE_RIPPLE_NODE", () => {

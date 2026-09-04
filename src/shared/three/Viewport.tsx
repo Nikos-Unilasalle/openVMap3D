@@ -2149,6 +2149,7 @@ export function Viewport({
       renderer.domElement.addEventListener("pointerdown", onCanvasPointerDown, { capture: true });
       window.addEventListener("pointermove", onCanvasPointerMove);
       window.addEventListener("pointerup", onCanvasPointerUp);
+      window.addEventListener("pointercancel", onCanvasPointerUp);
       // No browser context menu over the 3D view, ever. OrbitControls already
       // suppresses it — but only while `controls.enabled` is true, and tick()
       // turns that off whenever a Camera node drives the view. Every such gap
@@ -2323,7 +2324,22 @@ export function Viewport({
       projectionOverridden = false;
     }
 
+    let isDisposed = false;
+
     function tick() {
+      if (isDisposed) return;
+      try {
+        tickInner();
+      } catch (err) {
+        console.error("Viewport tick uncaught error:", err);
+      } finally {
+        if (!isDisposed) {
+          frameId = requestAnimationFrame(tick);
+        }
+      }
+    }
+
+    function tickInner() {
       // Frozen while this pane is hidden (SplitViewport keeps every pane
       // mounted now rather than unmounting on a view-mode switch — see its
       // own comment — so this can stay true for as long as the operator is
@@ -2340,7 +2356,6 @@ export function Viewport({
       // of one export's worth of frames.
       if (suspendedRef.current) {
         clock = { epochMs: Date.now() - clock.time * 1000, step: clock.step, time: clock.time };
-        frameId = requestAnimationFrame(tick);
         return;
       }
 
@@ -2449,7 +2464,6 @@ export function Viewport({
           pendingCaptureRef.current = null;
           capture.resolve();
         }
-        frameId = requestAnimationFrame(tick);
         return;
       }
       latestResults = results;
@@ -2681,8 +2695,25 @@ export function Viewport({
         // frame regardless of pointer state, and would otherwise flip
         // `enabled` back to true mid-drag within one frame of the
         // 'dragging-changed' listener turning it off.
-        if (!transformControls?.dragging && !isMarqueeDragging) {
+        const selectedGpNode = graphRef.current.nodes.find(
+          (n) => n.id === selectedNodeIdRef.current && n.type === GREASE_PENCIL_NODE.type,
+        );
+        if (!selectedGpNode && isGpDrawingRef.current) {
+          isGpDrawingRef.current = false;
+          setIsGpDrawing(false);
           controls.enabled = true;
+        }
+
+        if (!transformControls?.dragging && !isMarqueeDragging) {
+          if (!isGpDrawingRef.current) {
+            controls.enabled = true;
+          }
+          if (!Number.isFinite(controls.target.x) || !Number.isFinite(controls.target.y) || !Number.isFinite(controls.target.z)) {
+            controls.target.set(0, 0, 0);
+          }
+          if (!Number.isFinite(camera.position.x) || !Number.isFinite(camera.position.y) || !Number.isFinite(camera.position.z)) {
+            camera.position.set(0, 5, 10);
+          }
           controls.update();
         }
         restoreProjection();
@@ -3453,7 +3484,6 @@ export function Viewport({
         // can never wedge the export.
         capture.waited = (capture.waited ?? 0) + 1;
         if (capture.waited < MAX_CAPTURE_WAIT_TICKS && !hubImagesReady(collectedHub)) {
-          frameId = requestAnimationFrame(tick);
           return;
         }
         // Composite the WebGL frame + the 2D HUD overlay onto the export
@@ -3485,13 +3515,12 @@ export function Viewport({
         pendingCaptureRef.current = null;
         capture.resolve();
       }
-
-      frameId = requestAnimationFrame(tick);
     }
 
     frameId = requestAnimationFrame(tick);
 
     return () => {
+      isDisposed = true;
       cancelAnimationFrame(frameId);
       disposeEvalSession(sessionIdRef.current);
       unregisterPointerViewport();
@@ -3500,6 +3529,7 @@ export function Viewport({
         renderer.domElement.removeEventListener("pointerdown", onCanvasPointerDown, { capture: true });
         window.removeEventListener("pointermove", onCanvasPointerMove);
         window.removeEventListener("pointerup", onCanvasPointerUp);
+        window.removeEventListener("pointercancel", onCanvasPointerUp);
         removeContextMenu?.();
         controls.removeEventListener("start", handleOrbitStart);
         controls.removeEventListener("change", emitCameraPose);
@@ -3934,32 +3964,6 @@ export function Viewport({
                 </svg>
               </button>
 
-              {/* Tool: Select / Move */}
-              <button
-                type="button"
-                className={`viewport-hud-button ${gpTool === "select" ? "viewport-hud-button-active" : ""}`}
-                onClick={() => setGpTool("select")}
-                title="Select / Transform (move/rotate/scale layer)"
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polyline points="5 9 2 12 5 15" />
-                  <polyline points="9 5 12 2 15 5" />
-                  <polyline points="15 19 12 22 9 19" />
-                  <polyline points="19 9 22 12 19 15" />
-                  <line x1="2" y1="12" x2="22" y2="12" />
-                  <line x1="12" y1="2" x2="12" y2="22" />
-                </svg>
-              </button>
-
               <div
                 style={{
                   width: 1,
@@ -4227,8 +4231,48 @@ export function Viewport({
                   strokeLinejoin="round"
                 >
                   <circle cx="12" cy="12" r="10" />
-                  <circle cx="12" cy="12" r="6" />
-                  <circle cx="12" cy="12" r="2" />
+                  <circle cx="12" cy="6" r="6" />
+                  <circle cx="12" cy="2" r="2" />
+                </svg>
+              </button>
+
+              <div
+                style={{
+                  width: 1,
+                  height: 16,
+                  background: "rgba(255, 255, 255, 0.15)",
+                }}
+              />
+
+              {/* Tool: Gizmo / Transform */}
+              <button
+                type="button"
+                className={`viewport-hud-button ${gpTool === "select" ? "viewport-hud-button-active" : ""}`}
+                onClick={() =>
+                  setGpTool((prev) => (prev === "select" ? "pen" : "select"))
+                }
+                title={
+                  gpTool === "select"
+                    ? "Gizmo active (modify object transform, drawing disabled — click to return to Pen)"
+                    : "Gizmo (transform object in 3D without drawing)"
+                }
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="5 9 2 12 5 15" />
+                  <polyline points="9 5 12 2 15 5" />
+                  <polyline points="15 19 12 22 9 19" />
+                  <polyline points="19 9 22 12 19 15" />
+                  <line x1="2" y1="12" x2="22" y2="12" />
+                  <line x1="12" y1="2" x2="12" y2="22" />
                 </svg>
               </button>
             </div>

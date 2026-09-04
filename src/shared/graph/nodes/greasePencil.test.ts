@@ -308,4 +308,40 @@ describe("greasePencil node", () => {
     expect(colors.getY(0)).toBeCloseTo(0.0);
     expect(colors.getZ(0)).toBeCloseTo(0.0);
   });
+
+  it("supports showPivot and pivot offset transform options", () => {
+    expect(GREASE_PENCIL_NODE.defaultParams.showPivot).toBe(false);
+    expect(GREASE_PENCIL_NODE.defaultParams.pivot).toBeInstanceOf(THREE.Vector3);
+
+    const showPivotField = GREASE_PENCIL_NODE.paramFields?.find((f) => f.id === "showPivot");
+    expect(showPivotField).toBeDefined();
+    expect(showPivotField?.kind).toBe("boolean");
+    expect(showPivotField?.group).toBe("Transform");
+
+    const pivotField = GREASE_PENCIL_NODE.paramFields?.find((f) => f.id === "pivot");
+    expect(pivotField).toBeDefined();
+    expect(pivotField?.kind).toBe("vector");
+    expect(pivotField?.group).toBe("Transform");
+
+    // Evaluation with pivot offset rotates around the pivot
+    const ctx = { nodeId: "gp_test_pivot", currentFrame: 0 } as any;
+    const res = GREASE_PENCIL_NODE.evaluate(
+      {},
+      {
+        ...GREASE_PENCIL_NODE.defaultParams,
+        location: new THREE.Vector3(10, 0, 0),
+        rotation: new THREE.Vector3(0, 0, Math.PI), // 180 deg
+        pivot: new THREE.Vector3(5, 0, 0),
+      },
+      ctx,
+    );
+
+    expect(res.matrix).toBeInstanceOf(THREE.Matrix4);
+    const origin = new THREE.Vector3(0, 0, 0).applyMatrix4(res.matrix as THREE.Matrix4);
+    // Rotating (0,0,0) with pivot (5,0,0) by 180 deg:
+    // point relative to pivot: -5, rotated 180: +5, back from pivot: 10, plus loc(10): 20
+    expect(origin.x).toBeCloseTo(20, 4);
+    expect(origin.y).toBeCloseTo(0, 4);
+  });
 });
+

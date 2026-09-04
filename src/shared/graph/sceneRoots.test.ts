@@ -176,4 +176,18 @@ describe("resolveSceneRoots", () => {
 
     expect(result).toEqual(["render1"]);
   });
+
+  test("connecting curves socket to an owning input does not strip geometry root of producer", () => {
+    const result = roots(
+      [
+        node("gp1", "curve/grease-pencil"),
+        node("twist1", "geometry/twist-bend-taper"),
+      ],
+      [
+        wire("gp1", "curves", "twist1", "geometry"),
+      ],
+    );
+
+    expect(result).toContain("gp1");
+  });
 });
