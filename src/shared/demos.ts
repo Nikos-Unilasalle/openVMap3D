@@ -144,6 +144,11 @@ export const DEMO_CATALOG: DemoCategory[] = [
         label: "Squash & Stretch",
         description: "A bobbing ball squashes and stretches with its own velocity.",
       },
+      {
+        file: "demo_delay.tsuji",
+        label: "Matrix Delay",
+        description: "A transform buffer delaying motion into echoes and trails.",
+      },
     ],
   },
   {
@@ -198,6 +203,11 @@ export const DEMO_CATALOG: DemoCategory[] = [
         file: "demo_curve_primitive.tsuji",
         label: "Curve Primitive",
         description: "One node, a ready-made helix curve.",
+      },
+      {
+        file: "demo_grease_pencil.tsuji",
+        label: "Grease Pencil & Paint",
+        description: "Hand-drawn strokes and painting directly onto 3D geometry.",
       },
     ],
   },

@@ -207,8 +207,8 @@
           "id": "src",
           "type": "object/sphere",
           "position": {
-            "x": -1320,
-            "y": 300
+            "x": -1549,
+            "y": 286
           },
           "params": {
             "location": {
@@ -228,8 +228,8 @@
           "id": "emit",
           "type": "particles/emitter-from-surface",
           "position": {
-            "x": -1060,
-            "y": 300
+            "x": -1090,
+            "y": 324
           },
           "params": {
             "spawnRate": 300,
@@ -242,34 +242,11 @@
           }
         },
         {
-          "id": "pull",
-          "type": "particles/force-field",
-          "position": {
-            "x": -1060,
-            "y": 60
-          },
-          "params": {
-            "fieldType": "vortex",
-            "position": {
-              "x": 0,
-              "y": 1.2,
-              "z": 0
-            },
-            "axis": {
-              "x": 0,
-              "y": 1,
-              "z": 0
-            },
-            "strength": 4,
-            "radius": 6
-          }
-        },
-        {
           "id": "floor",
           "type": "particles/ground",
           "position": {
-            "x": -1060,
-            "y": 500
+            "x": -1118,
+            "y": 512
           },
           "params": {
             "enabled": 1,
@@ -296,8 +273,8 @@
           "id": "shape",
           "type": "object/box",
           "position": {
-            "x": -760,
-            "y": 560
+            "x": -727,
+            "y": -326
           },
           "params": {
             "scale": {
@@ -308,21 +285,219 @@
             "color": 15485081,
             "emissive": 15485081,
             "emissiveIntensity": 0.25,
-            "visible": 0
+            "visible": 0,
+            "location": {
+              "x": 0.0632181958401068,
+              "y": 1.8490157209757885,
+              "z": 6.47551680506658
+            }
           }
         },
         {
           "id": "draw",
           "type": "particles/render-instances",
           "position": {
-            "x": -460,
-            "y": 300
+            "x": -339,
+            "y": 340
+          },
+          "params": {
+            "instanceScale": 0.07,
+            "color": 440020,
+            "roughness": 0.25,
+            "metalness": 0.4
+          }
+        },
+        {
+          "id": "f6363e7f-1188-4472-b637-2d1d618ef1aa",
+          "type": "particles/force-field",
+          "position": {
+            "x": -1117,
+            "y": 644
+          },
+          "params": {
+            "fieldType": "attractor",
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 2.0229296399937784
+            },
+            "axis": {
+              "x": 0,
+              "y": 1,
+              "z": 0
+            },
+            "strength": 13.5,
+            "radius": 0,
+            "scale": 1,
+            "speed": 0.1
+          }
+        },
+        {
+          "id": "cc9eba36-a58d-4345-adf2-8097c3b3be5b",
+          "type": "animation/wiggle",
+          "position": {
+            "x": -1547,
+            "y": 519
+          },
+          "params": {
+            "speed": 1,
+            "amplitude": 8.95,
+            "amplitudeVector": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "rotationAmplitude": {
+              "x": 45,
+              "y": 45,
+              "z": 45
+            },
+            "scaleAmplitude": {
+              "x": 0.2,
+              "y": 0.2,
+              "z": 0.2
+            },
+            "seed": 0,
+            "octaves": 3,
+            "persistance": 0.5,
+            "lacunarity": 2,
+            "offset": 0,
+            "baseVector": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "079f768e-bc79-400d-8216-7fdc22670f2f",
+          "type": "particles/simulate",
+          "position": {
+            "x": -741,
+            "y": -83
+          },
+          "params": {
+            "gravity": 2.2,
+            "lifetime": 3.2,
+            "lifetimeVariance": 30,
+            "count": 1024
+          }
+        },
+        {
+          "id": "c9b86f72-6977-4fb1-bfa8-f220b72adf9c",
+          "type": "particles/render-instances",
+          "position": {
+            "x": -334,
+            "y": -50
           },
           "params": {
             "instanceScale": 0.07,
             "color": 15485081,
             "roughness": 0.25,
             "metalness": 0.4
+          }
+        },
+        {
+          "id": "8ba6ee69-af44-4787-b971-e329bf5dadfd",
+          "type": "particles/force-field",
+          "position": {
+            "x": -1112,
+            "y": 58
+          },
+          "params": {
+            "fieldType": "attractor",
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": -2.1280454302357725
+            },
+            "axis": {
+              "x": 0,
+              "y": 1,
+              "z": 0
+            },
+            "strength": 13.5,
+            "radius": 0,
+            "scale": 1,
+            "speed": 0.1
+          }
+        },
+        {
+          "id": "e61807c7-e612-4655-b613-3cbe2aa15230",
+          "type": "animation/wiggle",
+          "position": {
+            "x": -1530,
+            "y": -50
+          },
+          "params": {
+            "speed": 1,
+            "amplitude": 8.95,
+            "amplitudeVector": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "rotationAmplitude": {
+              "x": 45,
+              "y": 45,
+              "z": 45
+            },
+            "scaleAmplitude": {
+              "x": 0.2,
+              "y": 0.2,
+              "z": 0.2
+            },
+            "seed": 0,
+            "octaves": 3,
+            "persistance": 0.5,
+            "lacunarity": 2,
+            "offset": 0,
+            "baseVector": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "08e2dae3-9e30-4f83-b98a-c88f09c8f5b1",
+          "type": "object/box",
+          "position": {
+            "x": -809,
+            "y": 964
+          },
+          "params": {
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "color": 440020,
+            "emissive": 440020,
+            "emissiveIntensity": 0.25,
+            "visible": 0,
+            "location": {
+              "x": 0.0632181958401068,
+              "y": 1.8490157209757885,
+              "z": 6.47551680506658
+            }
+          }
+        },
+        {
+          "id": "bb8b2959-bcb1-4042-8dc4-b9b56d0e6baa",
+          "type": "particles/emitter-from-surface",
+          "position": {
+            "x": -1085,
+            "y": -129
+          },
+          "params": {
+            "spawnRate": 300,
+            "points": 400,
+            "velocity": {
+              "x": 0,
+              "y": 0.6,
+              "z": 0
+            }
           }
         }
       ],
@@ -356,13 +531,6 @@
           "toSocket": "emitter"
         },
         {
-          "id": "pull.field->sim.field0",
-          "fromNode": "pull",
-          "fromSocket": "field",
-          "toNode": "sim",
-          "toSocket": "field0"
-        },
-        {
           "id": "floor.ground->sim.ground",
           "fromNode": "floor",
           "fromSocket": "ground",
@@ -391,11 +559,74 @@
           "toSocket": "lifetime"
         },
         {
-          "id": "shape.geometry->draw.shape",
-          "fromNode": "shape",
+          "id": "f6363e7f-1188-4472-b637-2d1d618ef1aa.field->sim.field0",
+          "fromNode": "f6363e7f-1188-4472-b637-2d1d618ef1aa",
+          "fromSocket": "field",
+          "toNode": "sim",
+          "toSocket": "field0"
+        },
+        {
+          "id": "cc9eba36-a58d-4345-adf2-8097c3b3be5b.matrix->f6363e7f-1188-4472-b637-2d1d618ef1aa.matrix",
+          "fromNode": "cc9eba36-a58d-4345-adf2-8097c3b3be5b",
+          "fromSocket": "matrix",
+          "toNode": "f6363e7f-1188-4472-b637-2d1d618ef1aa",
+          "toSocket": "matrix"
+        },
+        {
+          "id": "079f768e-bc79-400d-8216-7fdc22670f2f.positions->c9b86f72-6977-4fb1-bfa8-f220b72adf9c.positions",
+          "fromNode": "079f768e-bc79-400d-8216-7fdc22670f2f",
+          "fromSocket": "positions",
+          "toNode": "c9b86f72-6977-4fb1-bfa8-f220b72adf9c",
+          "toSocket": "positions"
+        },
+        {
+          "id": "079f768e-bc79-400d-8216-7fdc22670f2f.count->c9b86f72-6977-4fb1-bfa8-f220b72adf9c.count",
+          "fromNode": "079f768e-bc79-400d-8216-7fdc22670f2f",
+          "fromSocket": "count",
+          "toNode": "c9b86f72-6977-4fb1-bfa8-f220b72adf9c",
+          "toSocket": "count"
+        },
+        {
+          "id": "079f768e-bc79-400d-8216-7fdc22670f2f.lifetime->c9b86f72-6977-4fb1-bfa8-f220b72adf9c.lifetime",
+          "fromNode": "079f768e-bc79-400d-8216-7fdc22670f2f",
+          "fromSocket": "lifetime",
+          "toNode": "c9b86f72-6977-4fb1-bfa8-f220b72adf9c",
+          "toSocket": "lifetime"
+        },
+        {
+          "id": "floor.ground->079f768e-bc79-400d-8216-7fdc22670f2f.ground",
+          "fromNode": "floor",
+          "fromSocket": "ground",
+          "toNode": "079f768e-bc79-400d-8216-7fdc22670f2f",
+          "toSocket": "ground"
+        },
+        {
+          "id": "e61807c7-e612-4655-b613-3cbe2aa15230.matrix->8ba6ee69-af44-4787-b971-e329bf5dadfd.matrix",
+          "fromNode": "e61807c7-e612-4655-b613-3cbe2aa15230",
+          "fromSocket": "matrix",
+          "toNode": "8ba6ee69-af44-4787-b971-e329bf5dadfd",
+          "toSocket": "matrix"
+        },
+        {
+          "id": "8ba6ee69-af44-4787-b971-e329bf5dadfd.field->079f768e-bc79-400d-8216-7fdc22670f2f.field0",
+          "fromNode": "8ba6ee69-af44-4787-b971-e329bf5dadfd",
+          "fromSocket": "field",
+          "toNode": "079f768e-bc79-400d-8216-7fdc22670f2f",
+          "toSocket": "field0"
+        },
+        {
+          "id": "bb8b2959-bcb1-4042-8dc4-b9b56d0e6baa.emitter->079f768e-bc79-400d-8216-7fdc22670f2f.emitter",
+          "fromNode": "bb8b2959-bcb1-4042-8dc4-b9b56d0e6baa",
+          "fromSocket": "emitter",
+          "toNode": "079f768e-bc79-400d-8216-7fdc22670f2f",
+          "toSocket": "emitter"
+        },
+        {
+          "id": "src.geometry->bb8b2959-bcb1-4042-8dc4-b9b56d0e6baa.geometry",
+          "fromNode": "src",
           "fromSocket": "geometry",
-          "toNode": "draw",
-          "toSocket": "shape"
+          "toNode": "bb8b2959-bcb1-4042-8dc4-b9b56d0e6baa",
+          "toSocket": "geometry"
         }
       ],
       "keyframes": {},
