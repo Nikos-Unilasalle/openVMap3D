@@ -295,7 +295,10 @@ function getCurvePreviewLine(state: CurveNodeState, nodeId: string, curve: THREE
     // An editing aid — hidden in the camera/output view (see Viewport.tsx).
     state.previewLine.userData.isHelper = true;
   }
-  const points = curve.getPoints(128);
+  const curvePointsCount = (curve as any).points?.length;
+  const curveCurvesCount = (curve as any).curves?.length;
+  const sampleCount = Math.max(128, curvePointsCount ?? (curveCurvesCount ? curveCurvesCount * 2 : 128));
+  const points = curve.getPoints(sampleCount);
   const sig = JSON.stringify(points.map((p) => [p.x, p.y, p.z]));
   if (sig !== state.previewSignature) {
     state.previewSignature = sig;

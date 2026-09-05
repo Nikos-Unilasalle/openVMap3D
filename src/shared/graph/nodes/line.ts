@@ -66,7 +66,11 @@ interface LineState {
 }
 
 const lineCache = createNodeCache<LineState>((s) => {
-  if (s.line) disposeObject3D(s.line);
+  if (s.line) {
+    if (s.line.geometry) s.line.geometry.dispose();
+    disposeObject3D(s.line);
+  }
+  if (s.material) s.material.dispose();
 });
 
 function getState(nodeId: string): LineState {
@@ -163,16 +167,25 @@ export const CURVE_TO_LINE_NODE: NodeDefinition = {
     const material = state.material;
     const line = state.line;
 
-    // Rebuild geometry only when the sampled points change. Fixed sampling —
-    // the line is a polyline, and the number of points doesn't change its
-    // extent (a "segments" knob only confused: more samples should never
-    // truncate the curve).
-    const points = curve.getPoints(256);
+    // Rebuild geometry only when the sampled points change.
+    // Adaptive sampling: use at least 256 samples, or the full point count
+    // if the curve was constructed from more control points (e.g. Strange Attractor).
+    const curvePointsCount = (curve as any).points?.length;
+    const curveCurvesCount = (curve as any).curves?.length;
+    const sampleCount = Math.max(256, curvePointsCount ?? (curveCurvesCount ? curveCurvesCount * 2 : 256));
+    const points = curve.getPoints(sampleCount);
     const signature = JSON.stringify(points.map((p) => [p.x, p.y, p.z]));
-    if (signature !== state.geometrySignature) {
+    if (signature !== state.geometrySignature || !line.geometry) {
       state.geometrySignature = signature;
-      (line.geometry as LineGeometry).setFromPoints(points);
-      computeLineDistances(line.geometry as LineGeometry);
+      if (line.geometry) {
+        line.geometry.dispose();
+      }
+      const newGeom = new LineGeometry();
+      newGeom.setFromPoints(points);
+      computeLineDistances(newGeom);
+      line.geometry = newGeom;
+      delete (newGeom as any)._maxInstanceCount;
+      delete (line as any)._maxInstanceCount;
     }
 
     // Material: a wired Material node wins (color/emissive/opacity, …). The

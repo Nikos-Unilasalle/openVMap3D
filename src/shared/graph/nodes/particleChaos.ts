@@ -405,7 +405,8 @@ export const PARTICLE_STRANGE_ATTRACTOR_NODE: NodeDefinition = {
       colors[i * 3 + 1] = color.g * (0.6 + 0.4 * Math.sin(t * Math.PI));
       colors[i * 3 + 2] = color.b * (1.0 - 0.5 * t);
 
-      if (i % 5 === 0) {
+      const stride = steps > 10000 ? Math.ceil(steps / 10000) : 1;
+      if (i % stride === 0) {
         pointsList.push(new THREE.Vector3(px, py, pz));
       }
     }

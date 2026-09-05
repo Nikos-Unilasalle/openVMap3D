@@ -75,7 +75,7 @@ const EXTRA_FIELDS = [
  */
 export const CURVES_FROM_POINT_LISTS_NODE: NodeDefinition = {
   type: "curve/from_point_lists",
-  label: "Curve from Points",
+  label: "Curves from Point Lists",
   category: "curve",
   inputs: [{ id: "pointLists", label: "Point Lists (List of Lists)", type: "list" }, ...COMMON_PRIMITIVE_INPUTS],
   outputs: [...COMMON_PRIMITIVE_OUTPUTS],

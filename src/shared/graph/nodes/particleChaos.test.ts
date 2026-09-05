@@ -2,6 +2,8 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { EvalContext } from "../types";
 import { PARTICLE_CURL_NOISE_NODE, PARTICLE_STRANGE_ATTRACTOR_NODE } from "./particleChaos";
+import { CURVE_FROM_POINTS_NODE } from "./curve";
+import { CURVE_TO_LINE_NODE } from "./line";
 
 const CTX: EvalContext = { time: 0.5, step: 0.016, nodeId: "chaos-test" };
 
@@ -106,5 +108,48 @@ describe("PARTICLE_STRANGE_ATTRACTOR_NODE", () => {
     expect(obj.position.x).toBe(5);
     expect(obj.position.y).toBe(10);
     expect(obj.position.z).toBe(15);
+  });
+
+  it("attractor -> curve from points -> curve to line renders full trajectory", () => {
+    // 1. Initial evaluate of Curve from Points (4 points) -> Curve to Line
+    const crv1 = CURVE_FROM_POINTS_NODE.evaluate(
+      {},
+      CURVE_FROM_POINTS_NODE.defaultParams,
+      { ...CTX, nodeId: "crv-test" },
+    ) as any;
+    const line1 = CURVE_TO_LINE_NODE.evaluate(
+      { curve: crv1.curve },
+      CURVE_TO_LINE_NODE.defaultParams,
+      { ...CTX, nodeId: "line-test" },
+    ) as any;
+    const geom1 = line1.geometry.geometry;
+    expect(geom1.instanceCount).toBe(256);
+    // Simulate ThreeJS WebGLBindingStates after rendering geom1:
+    geom1._maxInstanceCount = geom1.attributes.instanceStart.count;
+
+    // 2. Now user connects Strange Attractor to Curve from Points
+    const att = PARTICLE_STRANGE_ATTRACTOR_NODE.evaluate(
+      {},
+      PARTICLE_STRANGE_ATTRACTOR_NODE.defaultParams,
+      { ...CTX, nodeId: "att-test" },
+    ) as any;
+    expect(att.points.length).toBe(2500);
+
+    const crv2 = CURVE_FROM_POINTS_NODE.evaluate(
+      { points: att.points },
+      CURVE_FROM_POINTS_NODE.defaultParams,
+      { ...CTX, nodeId: "crv-test" },
+    ) as any;
+    expect(crv2.curve.points.length).toBe(2500);
+
+    const line2 = CURVE_TO_LINE_NODE.evaluate(
+      { curve: crv2.curve },
+      CURVE_TO_LINE_NODE.defaultParams,
+      { ...CTX, nodeId: "line-test" },
+    ) as any;
+    const geom2 = line2.geometry.geometry;
+    expect(geom2).not.toBe(geom1);
+    expect(geom2.instanceCount).toBe(2500);
+    expect(geom2._maxInstanceCount).toBeUndefined();
   });
 });

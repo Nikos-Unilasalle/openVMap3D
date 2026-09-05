@@ -117,7 +117,12 @@ export const CURVES_TO_LINES_NODE: NodeDefinition = {
       // entirely (typed-array writes past the end are silently dropped, not
       // an error) — "not all curves are there". Sampling first, then sizing
       // from the real point counts, fixes both.
-      const perCurvePoints = curves.map((curve) => curve.getPoints(SAMPLES_PER_CURVE));
+      const perCurvePoints = curves.map((curve) => {
+        const curvePointsCount = (curve as any).points?.length;
+        const curveCurvesCount = (curve as any).curves?.length;
+        const samples = Math.max(SAMPLES_PER_CURVE, curvePointsCount ?? (curveCurvesCount ? curveCurvesCount * 2 : SAMPLES_PER_CURVE));
+        return curve.getPoints(samples);
+      });
       const segmentCount = perCurvePoints.reduce((sum, points) => sum + Math.max(0, points.length - 1), 0);
       const positions = new Float32Array(segmentCount * 6);
       const distStart = new Float32Array(segmentCount);
@@ -150,9 +155,12 @@ export const CURVES_TO_LINES_NODE: NodeDefinition = {
       // (shared across every segment) breaks dashing.
       lineGeometry.setAttribute("instanceDistanceStart", new THREE.InstancedBufferAttribute(distStart, 1));
       lineGeometry.setAttribute("instanceDistanceEnd", new THREE.InstancedBufferAttribute(distEnd, 1));
+      delete (lineGeometry as any)._maxInstanceCount;
       state.lineGeometry = lineGeometry;
 
       if (state.line) {
+        if (state.line.geometry) state.line.geometry.dispose();
+        delete (state.line as any)._maxInstanceCount;
         state.line.geometry = lineGeometry;
       } else {
         state.line = new LineSegments2(lineGeometry, material);
