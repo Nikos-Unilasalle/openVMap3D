@@ -34,6 +34,8 @@ export interface TransformPatch {
   /** Force Field position & axis — written directly by its dedicated viewport proxy (see Viewport.tsx). */
   position?: THREE.Vector3;
   axis?: THREE.Vector3;
+  /** Particle Emitter velocity — written directly by its dedicated viewport proxy. */
+  velocity?: THREE.Vector3;
 }
 
 export interface GizmoWritebackInput {
@@ -50,6 +52,8 @@ export interface GizmoWritebackInput {
   upstreamMatrix: THREE.Matrix4 | null;
   /** Socket ids with a wire into the node being written — those are read-only. */
   wiredSockets: ReadonlySet<string>;
+  /** The object's own pivot offset, subtracted when solving for native location. */
+  pivot?: THREE.Vector3;
 }
 
 /**
@@ -72,7 +76,7 @@ export interface GizmoWritebackInput {
  *    animation happened to be showing that frame.
  */
 export function computeGizmoWriteback(input: GizmoWritebackInput): TransformPatch {
-  const { target, mode, object, upstreamMatrix, wiredSockets } = input;
+  const { target, mode, object, upstreamMatrix, wiredSockets, pivot } = input;
   const patch: TransformPatch = {};
 
   if (target.kind === "absolute") {
@@ -103,6 +107,10 @@ export function computeGizmoWriteback(input: GizmoWritebackInput): TransformPatc
   const quaternion = new THREE.Quaternion();
   const scale = new THREE.Vector3();
   solved.decompose(location, quaternion, scale);
+
+  if (target.kind === "native" && pivot) {
+    location.sub(pivot);
+  }
 
   assign(patch, mode, wiredSockets, location, quaternion, scale);
   return patch;

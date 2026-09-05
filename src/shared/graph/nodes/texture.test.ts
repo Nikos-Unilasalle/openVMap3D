@@ -46,6 +46,31 @@ describe("TEXTURE NODES", () => {
     expect(mesh.castShadow).toBe(true);
     expect(mesh.receiveShadow).toBe(true);
     expect((mesh.material as THREE.MeshStandardMaterial).color.r).toBe(1);
+
+    // Default rotation is horizontal (-90 deg around X), matching Plane primitive
+    const defaultRot = TEXTURE_PLANE_NODE.defaultParams.rotation as THREE.Vector3;
+    expect(defaultRot.x).toBeCloseTo(-Math.PI / 2);
+    expect(defaultRot.y).toBe(0);
+    expect(defaultRot.z).toBe(0);
+
+    expect(TEXTURE_PLANE_NODE.inputs.some((i) => i.id === "visible")).toBe(true);
+    expect(TEXTURE_PLANE_NODE.defaultParams.visible).toBe(1);
+    expect(mesh.visible).toBe(true);
+    expect(mesh.renderOrder).toBe(0);
+
+    const hiddenRes = TEXTURE_PLANE_NODE.evaluate(
+      { texture: tex },
+      { ...TEXTURE_PLANE_NODE.defaultParams, visible: 0 },
+      CTX
+    );
+    expect((hiddenRes.geometry as THREE.Mesh).visible).toBe(false);
+
+    const wiredRes = TEXTURE_PLANE_NODE.evaluate(
+      { texture: tex, visible: 1 },
+      { ...TEXTURE_PLANE_NODE.defaultParams, visible: 0 },
+      CTX
+    );
+    expect((wiredRes.geometry as THREE.Mesh).visible).toBe(true);
   });
 
   it("TEXTURE_TRANSFORM_NODE modifies texture repeat and rotation", () => {

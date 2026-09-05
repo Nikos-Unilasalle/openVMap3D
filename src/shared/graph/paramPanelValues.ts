@@ -82,7 +82,7 @@ export function paramPanelValues(
     const nodeKeyframes = graph.keyframes[instance.id];
     if (nodeKeyframes) {
       for (const paramKey of Object.keys(merged)) {
-        if (def.type === "curve/grease-pencil" && paramKey === "frames") continue;
+        if ((def.type === "curve/grease-pencil" || def.type === "curve/paint-on-geometry") && paramKey === "frames") continue;
         merged[paramKey] = evaluateKeyframeValue(
           graph.keyframes,
           instance.id,

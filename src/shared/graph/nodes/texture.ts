@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { NodeDefinition } from "../types";
+import { toBoolean } from "../sockets";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { composeNativeMatrix } from "./transform";
 import { COMMON_PRIMITIVE_OUTPUTS, primitiveOutputs } from "./object";
@@ -191,6 +192,7 @@ export const TEXTURE_PLANE_NODE: NodeDefinition = {
   label: "Texture to Plane",
   category: "texture",
   inputs: [
+    { id: "visible", label: "Visible", type: "value" },
     { id: "texture", label: "Texture", type: "texture" },
     { id: "matrix", label: "Matrix", type: "matrix" },
     { id: "uvScale", label: "UV Scale", type: "vector" },
@@ -198,8 +200,9 @@ export const TEXTURE_PLANE_NODE: NodeDefinition = {
   ],
   outputs: [...COMMON_PRIMITIVE_OUTPUTS],
   defaultParams: {
+    visible: 1,
     location: new THREE.Vector3(0, 0, 0),
-    rotation: new THREE.Vector3(0, 0, 0),
+    rotation: new THREE.Vector3(-Math.PI / 2, 0, 0),
     scale: new THREE.Vector3(1, 1, 1),
     filePath: "",
     color: new THREE.Color(0xffffff),
@@ -211,9 +214,10 @@ export const TEXTURE_PLANE_NODE: NodeDefinition = {
     metalness: 0.1,
   },
   dynamicParamFields: () => [
-    { id: "location", label: "Location", kind: "vector" },
-    { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true },
-    { id: "scale", label: "Scale", kind: "vector" },
+    { id: "visible", label: "Visible", kind: "boolean", group: "Transform" },
+    { id: "location", label: "Location", kind: "vector", group: "Transform" },
+    { id: "rotation", label: "Rotation (°)", kind: "vector", step: 1, degrees: true, group: "Transform" },
+    { id: "scale", label: "Scale", kind: "vector", group: "Transform" },
     {
       id: "filePath",
       label: "Image File (Fallback)",
@@ -273,6 +277,7 @@ export const TEXTURE_PLANE_NODE: NodeDefinition = {
         alphaTest: 0.001,
       });
       const mesh = new THREE.Mesh(geom, mat);
+      mesh.renderOrder = 0;
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       mesh.userData.nodeId = ctx.nodeId;
@@ -280,6 +285,9 @@ export const TEXTURE_PLANE_NODE: NodeDefinition = {
     }
 
     const mesh = state.mesh;
+    mesh.renderOrder = 0;
+    const isVisible = inputs.visible !== undefined ? toBoolean(inputs.visible) : toBoolean(params.visible ?? 1);
+    mesh.visible = isVisible;
 
     // Determine active texture (from input socket or param file fallback)
     const inputTexture = inputs.texture instanceof THREE.Texture ? inputs.texture : null;

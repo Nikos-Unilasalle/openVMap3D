@@ -18,15 +18,24 @@ function formatValue(v: number, integer: boolean): string {
 
 export type KeyframeStatus = "none" | "exact" | "interpolated";
 
+export interface DragNumberChangeMeta {
+  shiftKey?: boolean;
+  startValue?: number;
+  isDrag?: boolean;
+}
+
 interface DragNumberInputProps {
   value: number;
-  onChange: (value: number) => void;
+  onChange: (value: number, meta?: DragNumberChangeMeta) => void;
   step?: number;
   status?: KeyframeStatus;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
   min?: number;
   max?: number;
+  isVector?: boolean;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
 }
 
 export function DragNumberInput({
@@ -38,6 +47,9 @@ export function DragNumberInput({
   onMouseLeave,
   min,
   max,
+  isVector = false,
+  onDragStart,
+  onDragEnd,
 }: DragNumberInputProps) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState("");
@@ -67,7 +79,7 @@ export function DragNumberInput({
   const commitEdit = (raw: string) => {
     const parsed = Number.parseFloat(raw);
     const next = Number.isFinite(parsed) ? parsed : value;
-    onChange(clamp(integer ? Math.round(next) : next));
+    onChange(clamp(integer ? Math.round(next) : next), { isDrag: false });
     setEditing(false);
   };
 
@@ -98,6 +110,7 @@ export function DragNumberInput({
       if (!dragged) {
         if (Math.abs(accumulatedDy) < DRAG_THRESHOLD_PX) return;
         dragged = true;
+        onDragStart?.();
         // Deferred until a real drag is confirmed — requesting it on every
         // plain click would fire the browser's "press Esc to exit" toast
         // for what's supposed to be an ordinary click-to-edit.
@@ -115,11 +128,11 @@ export function DragNumberInput({
         }
       }
 
-      const currentStep = ev.shiftKey ? (step || 0.1) * 0.1 : (step || 0.1);
+      const currentStep = (isVector || !ev.shiftKey) ? (step || 0.1) : (step || 0.1) * 0.1;
       const raw = startValue + (accumulatedDy / PIXELS_PER_STEP) * currentStep;
       const newValue = clamp(integer ? Math.round(raw) : Math.round(raw * 1000) / 1000);
       liveValueRef.current = newValue;
-      onChange(newValue);
+      onChange(newValue, { shiftKey: ev.shiftKey, startValue, isDrag: true });
     };
 
     const handleMouseUp = () => {
@@ -127,6 +140,9 @@ export function DragNumberInput({
       window.removeEventListener("mouseup", handleMouseUp);
       if (document.pointerLockElement === el) document.exitPointerLock();
       justDraggedRef.current = dragged;
+      if (dragged) {
+        onDragEnd?.();
+      }
     };
 
     window.addEventListener("mousemove", handleMouseMove);

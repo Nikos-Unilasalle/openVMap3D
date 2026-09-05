@@ -3,7 +3,6 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { readFile, readTextFile } from "@tauri-apps/plugin-fs";
 import * as THREE from "three";
 import { isTauri } from "../shared/graph/storage";
-import { setInputZone } from "../shared/graph/inputZoneStore";
 import { CATEGORY_COLOR, NodeCategory, UNKNOWN_CATEGORY_COLOR } from "../shared/graph/categories";
 import { KeyframeStore, ParamFieldDef } from "../shared/graph/types";
 import { ColorPickerInput } from "./ColorPickerInput";
@@ -234,18 +233,50 @@ export function parseVector3(value: unknown): THREE.Vector3 {
   return new THREE.Vector3(0, 0, 0);
 }
 
-export function vectorField(
-  field: ParamFieldDef & { kind: "vector" },
-  value: unknown,
-  onChange: (v: unknown) => void,
-  nodeId: string,
-  keyframes: KeyframeStore | undefined,
-  currentFrame: number | undefined,
-  keyframesEnabled: boolean,
-  onHoverKey: (key: string | null) => void,
-) {
+interface VectorFieldControlProps {
+  field: ParamFieldDef & { kind: "vector" };
+  value: unknown;
+  onChange: (v: unknown) => void;
+  nodeId: string;
+  keyframes: KeyframeStore | undefined;
+  currentFrame: number | undefined;
+  keyframesEnabled: boolean;
+  onHoverKey: (key: string | null) => void;
+}
+
+export function VectorFieldControl({
+  field,
+  value,
+  onChange,
+  nodeId,
+  keyframes,
+  currentFrame,
+  keyframesEnabled,
+  onHoverKey,
+}: VectorFieldControlProps) {
+  const is2D =
+    (value instanceof THREE.Vector2) ||
+    (value && typeof value === "object" && "x" in value && "y" in value && !("z" in value)) ||
+    (Array.isArray(value) && value.length === 2);
+
+  const axes: ("x" | "y" | "z")[] = is2D ? ["x", "y"] : ["x", "y", "z"];
   const v = parseVector3(value);
-  const axes: ("x" | "y" | "z")[] = ["x", "y", "z"];
+
+  // Snapshot of vector components in display units captured when dragging begins
+  const startVectorRef = useRef<Record<string, number> | null>(null);
+
+  const handleDragStart = () => {
+    const snap: Record<string, number> = {};
+    for (const k of axes) {
+      snap[k] = toDisplayUnit(v[k], field.degrees);
+    }
+    startVectorRef.current = snap;
+  };
+
+  const handleDragEnd = () => {
+    startVectorRef.current = null;
+  };
+
   return (
     <div className="param-vector">
       {axes.map((axisKey) => {
@@ -257,17 +288,85 @@ export function vectorField(
             value={toDisplayUnit(v[axisKey], field.degrees)}
             step={field.step}
             status={status}
+            isVector={true}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
             onMouseEnter={() => onHoverKey(fullKey)}
             onMouseLeave={() => onHoverKey(null)}
-            onChange={(next) => {
-              const updated = v.clone();
-              updated[axisKey] = toStoredUnit(next, field.degrees);
-              onChange(updated);
+            onChange={(next, meta) => {
+              if (meta?.isDrag && meta.shiftKey) {
+                const startSnap = startVectorRef.current ?? {
+                  x: toDisplayUnit(v.x, field.degrees),
+                  y: toDisplayUnit(v.y, field.degrees),
+                  z: toDisplayUnit(v.z, field.degrees),
+                };
+                const startVal = startSnap[axisKey] ?? 0;
+                const updated = v.clone();
+
+                if (Math.abs(startVal) > 1e-7) {
+                  // Proportional scale to preserve ratio
+                  const factor = next / startVal;
+                  for (const k of axes) {
+                    const disp = k === axisKey ? next : startSnap[k] * factor;
+                    updated[k] = toStoredUnit(disp, field.degrees);
+                  }
+                } else {
+                  // Start value was 0: apply delta uniformly
+                  const delta = next - startVal;
+                  for (const k of axes) {
+                    const disp = k === axisKey ? next : startSnap[k] + delta;
+                    updated[k] = toStoredUnit(disp, field.degrees);
+                  }
+                }
+
+                if (is2D) {
+                  if (value instanceof THREE.Vector2) onChange(new THREE.Vector2(updated.x, updated.y));
+                  else if (Array.isArray(value)) onChange([updated.x, updated.y]);
+                  else onChange({ x: updated.x, y: updated.y });
+                } else {
+                  onChange(updated);
+                }
+              } else {
+                const updated = v.clone();
+                updated[axisKey] = toStoredUnit(next, field.degrees);
+                if (is2D) {
+                  if (value instanceof THREE.Vector2) onChange(new THREE.Vector2(updated.x, updated.y));
+                  else if (Array.isArray(value)) onChange([updated.x, updated.y]);
+                  else onChange({ x: updated.x, y: updated.y });
+                } else {
+                  onChange(updated);
+                }
+              }
             }}
           />
         );
       })}
     </div>
+  );
+}
+
+export function vectorField(
+  field: ParamFieldDef & { kind: "vector" },
+  value: unknown,
+  onChange: (v: unknown) => void,
+  nodeId: string,
+  keyframes: KeyframeStore | undefined,
+  currentFrame: number | undefined,
+  keyframesEnabled: boolean,
+  onHoverKey: (key: string | null) => void,
+) {
+  return (
+    <VectorFieldControl
+      key={field.id}
+      field={field}
+      value={value}
+      onChange={onChange}
+      nodeId={nodeId}
+      keyframes={keyframes}
+      currentFrame={currentFrame}
+      keyframesEnabled={keyframesEnabled}
+      onHoverKey={onHoverKey}
+    />
   );
 }
 
@@ -400,7 +499,6 @@ export function ParamPanel({
     return () => {
       if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
       if (selectTimerRef.current) clearTimeout(selectTimerRef.current);
-      setInputZone(null);
     };
   }, []);
 
@@ -410,7 +508,6 @@ export function ParamPanel({
       leaveTimerRef.current = null;
     }
     setIsHovered(true);
-    setInputZone("panel");
   };
 
   const handleMouseLeave = () => {
@@ -421,7 +518,6 @@ export function ParamPanel({
     leaveTimerRef.current = setTimeout(() => {
       setIsHovered(false);
       setJustSelected(false);
-      setInputZone(null);
     }, 180);
   };
 
@@ -436,7 +532,6 @@ export function ParamPanel({
           onMouseEnter={handleMouseEnter}
           onClick={() => {
             setIsHovered(true);
-            setInputZone("panel");
           }}
           title={`${label} — Open parameters`}
         >
@@ -472,7 +567,22 @@ export function ParamPanel({
           </div>
         </div>
 
-      {fields.length === 0 && <div className="param-panel-empty">No editable parameters.</div>}
+        <div className="param-name-section">
+          <div className="param-row">
+            <label title="Custom name displayed under the node on the canvas">
+              <span>Name</span>
+            </label>
+            <input
+              type="text"
+              className="param-text-input"
+              placeholder=""
+              value={String(params.name ?? "")}
+              onChange={(e) => onChange("name", e.target.value)}
+            />
+          </div>
+        </div>
+
+        {fields.length === 0 && <div className="param-panel-empty">No other editable parameters.</div>}
 
       {groups.map(([groupName, groupFields]) => {
         const isOpen =

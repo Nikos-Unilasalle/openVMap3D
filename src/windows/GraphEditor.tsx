@@ -22,7 +22,7 @@ import { DEFAULT_PICKS } from "../shared/graph/calibration/picks";
 import { getGraphClipboard, setGraphClipboard } from "../shared/graph/clipboard";
 import { cloneKeyframes, cloneParams, cloneParamValue } from "../shared/graph/cloneGraph";
 import { findCompatibleSocket, segmentIntersectsRect } from "../shared/graph/insertOnWire";
-import { isGraphZone, setInputZone } from "../shared/graph/inputZoneStore";
+import { getInputZone, isGraphZone, isTimelineZone, isViewportZone, setInputZone } from "../shared/graph/inputZoneStore";
 import { randomId } from "../shared/randomId";
 import { SOCKET_COLOR } from "../shared/graph/sockets";
 import { Connection, ExposedParamRef, Graph, KeyframeStore, Marker, NodeInstance, NodeRegistry } from "../shared/graph/types";
@@ -67,17 +67,19 @@ const EDGE_STROKE_WIDTH = 3;
 const DEFAULT_NODE_WIDTH = 160;
 const DEFAULT_NODE_HEIGHT = 90;
 
-function toFlowNodes(graph: Graph, registry: NodeRegistry): Node<GraphNodeData>[] {
+function toFlowNodes(graph: Graph, registry: NodeRegistry, selectedIds?: Set<string>): Node<GraphNodeData>[] {
   return graph.nodes.map((instance) => {
     const def = registry.get(instance.type);
     return {
       id: instance.id,
       type: "graphNode",
       position: instance.position,
+      selected: selectedIds ? selectedIds.has(instance.id) : false,
       data: {
         nodeId: instance.id,
         nodeType: instance.type,
         label: def?.label ?? `${instance.type} (unknown)`,
+        customName: typeof instance.params?.name === "string" ? instance.params.name : "",
         category: def?.category,
         inputs: def?.inputs ?? [],
         outputs: def?.outputs ?? [],
@@ -223,10 +225,20 @@ function GraphEditorContent({
 }: GraphEditorProps) {
   const { screenToFlowPosition } = useReactFlow();
 
+  const initialSelectedIds = useMemo(() => {
+    const set = new Set<string>();
+    if (_selectedNodeIds && _selectedNodeIds.length > 0) {
+      _selectedNodeIds.forEach((id) => set.add(id));
+    } else if (selectedNodeId) {
+      set.add(selectedNodeId);
+    }
+    return set;
+  }, [selectedNodeId, _selectedNodeIds]);
+
   const initialNodes = useMemo(() => {
-    const raw = toFlowNodes(graph, registry);
+    const raw = toFlowNodes(graph, registry, initialSelectedIds);
     return refreshDynamicSockets(raw, toFlowEdges(graph, raw), graph.nodes, registry);
-  }, [graph, registry]);
+  }, [graph, registry, initialSelectedIds]);
   const [nodes, setNodes] = useNodesState(initialNodes);
   const [edges, setEdges] = useEdgesState(useMemo(() => toFlowEdges(graph, initialNodes), [graph, initialNodes]));
 
@@ -243,7 +255,17 @@ function GraphEditorContent({
    * had just computed. Updated synchronously in onNodesChange, so it is
    * never behind the change that produced it.
    */
-  const selectedIdsRef = useRef<Set<string>>(new Set());
+  const selectedIdsRef = useRef<Set<string>>(new Set(initialSelectedIds));
+
+  useEffect(() => {
+    if (_selectedNodeIds && _selectedNodeIds.length > 0) {
+      selectedIdsRef.current = new Set(_selectedNodeIds);
+    } else if (selectedNodeId) {
+      selectedIdsRef.current = new Set([selectedNodeId]);
+    } else {
+      selectedIdsRef.current = new Set();
+    }
+  }, [selectedNodeId, _selectedNodeIds]);
 
   const connectingHandleRef = useRef<{
     nodeId: string;
@@ -260,7 +282,7 @@ function GraphEditorContent({
   } | null>(null);
 
   useEffect(() => {
-    const rawNodes = toFlowNodes(graph, registry);
+    const rawNodes = toFlowNodes(graph, registry, selectedIdsRef.current);
     const flowEdges = toFlowEdges(graph, rawNodes);
     const nextNodes = refreshDynamicSockets(rawNodes, flowEdges, graph.nodes, registry);
 
@@ -287,6 +309,7 @@ function GraphEditorContent({
           data: {
             ...fn.data,
             params: graphNode.params,
+            customName: typeof graphNode.params?.name === "string" ? graphNode.params.name : "",
           },
         };
       });
@@ -690,9 +713,18 @@ function GraphEditorContent({
     [commit, edges, graph.keyframes, graph.markers, graph.nodes, nodes, onGraphChange, registry, setEdges, setNodes],
   );
 
+  const isMountedRef = useRef(false);
+  useEffect(() => {
+    isMountedRef.current = true;
+  }, []);
+
   const onSelectionChange = useCallback(
     ({ nodes: selectedNodes }: { nodes: Node<GraphNodeData>[] }) => {
       const ids = selectedNodes.map((n) => n.id);
+      if (!isMountedRef.current && ids.length === 0 && selectedIdsRef.current.size > 0) {
+        return;
+      }
+      selectedIdsRef.current = new Set(ids);
       onSelectNodes?.(ids);
       if (selectedNodes.length === 1) {
         onSelectNode(selectedNodes[0].id);
@@ -710,6 +742,7 @@ function GraphEditorContent({
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node<GraphNodeData>) => {
+      selectedIdsRef.current = new Set([node.id]);
       onSelectNode(node.id);
       onSelectNodes?.([node.id]);
     },
@@ -717,6 +750,7 @@ function GraphEditorContent({
   );
   const onPaneClick = useCallback(
     (event: React.MouseEvent) => {
+      selectedIdsRef.current = new Set();
       onSelectNode(null);
       onSelectNodes?.([]);
       if (event && typeof event.clientX === "number") {
@@ -1027,11 +1061,6 @@ function GraphEditorContent({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Node-tree shortcuts only apply while the cursor is over the canvas —
-      // otherwise a Delete aimed at the timeline's keyframes would also eat a
-      // selected node (and vice-versa). See inputZoneStore.ts.
-      if (!isGraphZone()) return;
-
       const activeEl = document.activeElement;
       const isInput =
         activeEl &&
@@ -1045,10 +1074,35 @@ function GraphEditorContent({
       const isShift = e.shiftKey;
       const code = e.code;
 
+      // Cmd+Space (or Ctrl+Space) opens the node search modal everywhere in the app,
+      // as long as the user is not typing in a text field.
       if (isCmdOrCtrl && (code === "Space" || e.key === " ")) {
         e.preventDefault();
         setSearchModalOpen(true);
-      } else if (isCmdOrCtrl && isShift && code === "KeyM") {
+        return;
+      }
+
+      // Delete / Backspace: timeline shortcuts own Delete when the cursor is over the timeline.
+      // Otherwise, Delete / Backspace deletes selected nodes or edges in the graph.
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (isTimelineZone()) return;
+
+        const selNodes = nodes.filter(
+          (n) => n.selected || selectedIdsRef.current.has(n.id) || (selectedNodeId && n.id === selectedNodeId),
+        );
+        const selEdges = edges.filter((ed) => ed.selected);
+        if (selNodes.length > 0 || selEdges.length > 0) {
+          e.preventDefault();
+          if (selNodes.length > 0) onNodesDelete(selNodes);
+          if (selEdges.length > 0) onEdgesDelete(selEdges);
+        }
+        return;
+      }
+
+      // Node shortcuts only apply when not over the timeline
+      if (isTimelineZone()) return;
+
+      if (isCmdOrCtrl && isShift && code === "KeyM") {
         e.preventDefault();
         addNode("merge");
       } else if (isCmdOrCtrl && isShift && code === "KeyT") {
@@ -1076,15 +1130,9 @@ function GraphEditorContent({
         e.preventDefault();
         pasteClipboard();
       } else if (isCmdOrCtrl && !isShift && e.key.toLowerCase() === "a") {
-        e.preventDefault();
-        setNodes((nds) => nds.map((n) => ({ ...n, selected: true })));
-      } else if (e.key === "Delete" || e.key === "Backspace") {
-        const selNodes = nodes.filter((n) => n.selected);
-        const selEdges = edges.filter((ed) => ed.selected);
-        if (selNodes.length > 0 || selEdges.length > 0) {
+        if (!isViewportZone()) {
           e.preventDefault();
-          if (selNodes.length > 0) onNodesDelete(selNodes);
-          if (selEdges.length > 0) onEdgesDelete(selEdges);
+          setNodes((nds) => nds.map((n) => ({ ...n, selected: true })));
         }
       }
     };
@@ -1099,6 +1147,7 @@ function GraphEditorContent({
     onEdgesDelete,
     onNodesDelete,
     pasteClipboard,
+    selectedNodeId,
     setNodes,
   ]);
 
@@ -1141,7 +1190,15 @@ function GraphEditorContent({
     <div
       className="graph-editor"
       onMouseEnter={() => setInputZone("graph")}
-      onMouseLeave={() => setInputZone(null)}
+      onMouseMove={() => {
+        if (getInputZone() !== "graph") setInputZone("graph");
+      }}
+      onPointerDown={() => {
+        if (getInputZone() !== "graph") setInputZone("graph");
+      }}
+      onMouseLeave={() => {
+        if (getInputZone() === "graph") setInputZone(null);
+      }}
     >
       <NodePalette nodes={paletteNodes} onAddNode={addNode} />
       <div className="graph-editor-canvas">

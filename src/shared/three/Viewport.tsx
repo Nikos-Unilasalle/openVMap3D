@@ -6,14 +6,13 @@ import { ClockState, createClock, STEP_SECONDS, tickClock } from "../graph/clock
 import { EvalResult, disposeEvalSession, evaluateGraph } from "../graph/evaluate";
 import { CAMERA_FLY_TO_NODE, CAMERA_NODE } from "../graph/nodes/camera";
 import { HubElement } from "../graph/nodes/hub";
-import { asVector3 } from "../graph/nodes/transform";
+import { asVector3, composeNativeMatrixWithPivot, PIVOT_TRANSFORM_NODE } from "../graph/nodes/transform";
 import { resetAllParticleSimulations } from "../graph/particleRuntime";
 import { resolveCurveEditTarget } from "../graph/curveLookup";
 import { resolveSceneRoots } from "../graph/sceneRoots";
 import { findFirstMesh } from "../graph/meshRequired";
 import { insertCurvePointAfter, removeCurvePoint } from "../graph/curvePoints";
 import { GizmoTarget, resolveGizmoTarget } from "../graph/transformLookup";
-import { PIVOT_TRANSFORM_NODE } from "../graph/nodes/transform";
 import { CLIP_BOX_NODE, VISUAL_SLICE_NODE } from "../graph/nodes/visualSlice";
 import { DECAL_NODE } from "../graph/nodes/decal";
 import { createCurvePointHandles } from "./curveHandles";
@@ -35,12 +34,15 @@ import { computeGizmoWriteback, TransformGizmoMode, TransformPatch } from "./giz
 // Re-exported so call sites (App.tsx, SplitViewport) keep importing these
 // from the component they belong to, not from its internals.
 export type { TransformGizmoMode, TransformPatch };
+export type GpToolMode = "pen" | "eraser_hard" | "eraser_soft" | "tint" | "select";
 import { createElevationHUD, snapElevationValue } from "./elevationGizmo";
 import { GREASE_PENCIL_NODE, KeyframeDrawing, GreaseStroke, StrokePoint, parseColorHex } from "../graph/nodes/greasePencil";
+import { PAINT_ON_GEOMETRY_NODE } from "../graph/nodes/paintOnGeometry";
 import {
   calculateSimulatedPressure,
   applyStrokeTaper,
   projectScreenToDrawingPlane,
+  projectScreenToTargetGeometry,
   addStrokeToFrames,
   duplicateDrawing,
   createBlankDrawing,
@@ -48,8 +50,62 @@ import {
   eraseStrokesAtPosition,
   eraseStrokesSoft,
   tintStrokesAtPosition,
+  smoothStrokePoints,
 } from "./greasePencilDrawing";
 import type { GreaseBrushType } from "../graph/nodes/greasePencil";
+
+function isPaintOrGreaseNode(node: { type: string } | null | undefined): boolean {
+  if (!node) return false;
+  return node.type === GREASE_PENCIL_NODE.type || node.type === PAINT_ON_GEOMETRY_NODE.type;
+}
+
+function getTargetGeometryForNode(
+  node: { id: string; type: string },
+  graph: Graph,
+  latestResults: Map<string, Record<string, unknown>> | null | undefined,
+): THREE.Object3D | null {
+  if (node.type !== PAINT_ON_GEOMETRY_NODE.type) return null;
+  const incoming = graph.connections.find((c) => c.toNode === node.id && c.toSocket === "geometry");
+  if (!incoming) return null;
+  const res = latestResults?.get(incoming.fromNode);
+  if (res?.geometry instanceof THREE.Object3D) {
+    return res.geometry;
+  }
+  return null;
+}
+
+function resolvePointerPoint(
+  clientX: number,
+  clientY: number,
+  node: NodeInstance,
+  graph: Graph,
+  latestResults: Map<string, Record<string, unknown>> | null | undefined,
+  camera: THREE.Camera,
+  domElement: HTMLElement,
+  mode2D: boolean,
+): { pos: THREE.Vector3; normal?: THREE.Vector3 } | null {
+  if (node.type === PAINT_ON_GEOMETRY_NODE.type) {
+    const targetObj = getTargetGeometryForNode(node, graph, latestResults);
+    const paintGroup = (latestResults?.get(node.id)?.geometry as THREE.Object3D) || null;
+    if (targetObj) {
+      const hit = projectScreenToTargetGeometry(clientX, clientY, camera, domElement, targetObj, paintGroup);
+      if (hit) {
+        return { pos: hit.point, normal: hit.normal };
+      }
+      return null;
+    }
+  }
+
+  const worldPos = projectScreenToDrawingPlane(clientX, clientY, {
+    camera,
+    domElement,
+    elevationY: node.params.location instanceof THREE.Vector3 ? node.params.location.y : 0,
+    mode2D,
+    objectPosition: node.params.location instanceof THREE.Vector3 ? node.params.location : undefined,
+  });
+
+  return worldPos ? { pos: worldPos } : null;
+}
 import { createBackgroundBlur } from "./backgroundBlur";
 import { applyEnvironment, resolveActiveEnvironment } from "./environmentSync";
 import {
@@ -71,7 +127,7 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { createMotionBlur } from "./motionBlur";
 import { advancePlayhead, IDLE_PLAYHEAD, PlayheadState } from "./playhead";
 import { PostProcessConfig } from "../graph/nodes/postprocessing";
-import { Graph, KeyframeStore, NodeRegistry } from "../graph/types";
+import { Graph, KeyframeStore, NodeInstance, NodeRegistry } from "../graph/types";
 import { isViewportZone, setInputZone } from "../graph/inputZoneStore";
 import { isTauri } from "../ipc";
 import type { PreviewCameraPose } from "../ipc";
@@ -411,6 +467,10 @@ interface ViewportProps {
   snapElevation?: boolean;
   onToggleSnapElevation?: () => void;
   cameraView?: boolean;
+  gpTool?: GpToolMode;
+  onGpToolChange?: (mode: GpToolMode) => void;
+  transformMode?: TransformGizmoMode;
+  onTransformModeChange?: (mode: TransformGizmoMode) => void;
 }
 
 export interface ViewportExportHandle {
@@ -453,6 +513,10 @@ export function Viewport({
   snapElevation = false,
   onToggleSnapElevation,
   cameraView = false,
+  gpTool: gpToolProp,
+  onGpToolChange,
+  transformMode: transformModeProp,
+  onTransformModeChange,
 }: ViewportProps) {
   const [showUiOverlay, setShowUiOverlay] = useState(true);
   const showUiOverlayRef = useRef(showUiOverlay);
@@ -542,9 +606,14 @@ export function Viewport({
   // Grease Pencil drawing state
   const onParamChangeRef = useRef(onParamChange);
   onParamChangeRef.current = onParamChange;
-  type GpToolMode = "pen" | "eraser_hard" | "eraser_soft" | "tint" | "select";
-  const [gpTool, setGpTool] = useState<GpToolMode>("pen");
-  const gpToolRef = useRef<GpToolMode>("pen");
+  const [internalGpTool, setInternalGpTool] = useState<GpToolMode>("pen");
+  const gpTool = gpToolProp !== undefined ? gpToolProp : internalGpTool;
+  const setGpTool = (action: React.SetStateAction<GpToolMode>) => {
+    const next = typeof action === "function" ? action(gpTool) : action;
+    setInternalGpTool(next);
+    onGpToolChange?.(next);
+  };
+  const gpToolRef = useRef<GpToolMode>(gpTool);
   gpToolRef.current = gpTool;
   const [gpBrushType, setGpBrushType] = useState<GreaseBrushType>("ink_pen");
   const gpBrushTypeRef = useRef<GreaseBrushType>("ink_pen");
@@ -562,6 +631,7 @@ export function Viewport({
   const gpCtrlAtStartRef = useRef(false);
   const gpPressureModifierRef = useRef(1.0);
   const gpWorkingFramesRef = useRef<KeyframeDrawing[] | null>(null);
+  const gpSmoothedWorldPosRef = useRef<THREE.Vector3 | null>(null);
 
   const snapSelectedCameraToEditorRef = useRef<() => void>(() => {});
   const cameraGuideRef = useRef<HTMLDivElement>(null);
@@ -657,7 +727,13 @@ export function Viewport({
   onCameraChangeRef.current = onCameraChange;
   const previewCameraPoseRef = useRef(previewCameraPose);
   previewCameraPoseRef.current = previewCameraPose;
-  const [transformMode, setTransformMode] = useState<TransformGizmoMode>("translate");
+  const [internalTransformMode, setInternalTransformMode] = useState<TransformGizmoMode>("translate");
+  const transformMode = transformModeProp !== undefined ? transformModeProp : internalTransformMode;
+  const setTransformMode = (action: React.SetStateAction<TransformGizmoMode>) => {
+    const next = typeof action === "function" ? action(transformMode) : action;
+    setInternalTransformMode(next);
+    onTransformModeChange?.(next);
+  };
   const transformModeRef = useRef(transformMode);
   transformModeRef.current = transformMode;
 
@@ -1175,6 +1251,27 @@ export function Viewport({
     forceFieldProxy.visible = false;
     let forceFieldProxyNodeId: string | null = null;
 
+    // Particle Emitter proxy: translate moves position, rotate directs velocity
+    const emitterProxy = new THREE.Object3D();
+    const emitterCoreGeo = new THREE.SphereGeometry(0.18, 16, 16);
+    const emitterCoreMat = new THREE.MeshBasicMaterial({ color: 0x06b6d4, depthWrite: false });
+    const emitterCore = new THREE.Mesh(emitterCoreGeo, emitterCoreMat);
+    const emitterRingGeo = new THREE.RingGeometry(0.35, 0.4, 32);
+    const emitterRingMat = new THREE.MeshBasicMaterial({ color: 0x06b6d4, side: THREE.DoubleSide, depthWrite: false });
+    const emitterRing = new THREE.Mesh(emitterRingGeo, emitterRingMat);
+    emitterRing.rotation.x = Math.PI / 2;
+    const emitterArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 0), 1.0, 0x06b6d4, 0.25, 0.12);
+    emitterProxy.add(emitterCore, emitterRing, emitterArrow);
+    emitterProxy.visible = false;
+    let emitterProxyNodeId: string | null = null;
+    let emitterVelocityLength = 1;
+
+    // Pivot proxy for native objects: anchors TransformControls directly on the pivot point
+    const gizmoPivotProxy = new THREE.Object3D();
+    gizmoPivotProxy.visible = false;
+    let gizmoPivotProxyNodeId: string | null = null;
+    let gizmoPivotProxyRealObject: THREE.Object3D | null = null;
+
     // Yellow Pivot Cross Helper: displayed above geometry (depthTest: false) for objects with showPivot === true
     const pivotCrossGroup = new THREE.Group();
     const PIVOT_CROSS_SIZE = 0.35;
@@ -1202,6 +1299,8 @@ export function Viewport({
       editorUiScene.add(clipBoxProxy);
       editorUiScene.add(decalProxy);
       editorUiScene.add(forceFieldProxy);
+      editorUiScene.add(emitterProxy);
+      editorUiScene.add(gizmoPivotProxy);
       editorUiScene.add(pivotCrossGroup);
       // The face-selection highlight lives in the *main* scene (not the
       // editor overlay, which clears depth and would show every selected face
@@ -1483,6 +1582,73 @@ export function Viewport({
           return;
         }
 
+        // Particle Emitter's 3D proxy: translate moves `position`, rotate turns `velocity`
+        if (object === emitterProxy && emitterProxyNodeId && onTransformChangeRef.current) {
+          const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(object.quaternion).normalize();
+          const newVelocity = dir.multiplyScalar(emitterVelocityLength);
+          onTransformChangeRef.current(emitterProxyNodeId, {
+            position: object.position.clone(),
+            velocity: newVelocity,
+          });
+          return;
+        }
+
+        // Native object gizmo anchored directly at the pivot point
+        if (object === gizmoPivotProxy && gizmoPivotProxyNodeId && gizmoPivotProxyRealObject && onTransformChangeRef.current) {
+          const node = graphRef.current.nodes.find((n) => n.id === gizmoPivotProxyNodeId);
+          if (!node) return;
+          const piv = asVector3(node.params.pivot, new THREE.Vector3());
+          const targetNodeId = gizmoPivotProxyNodeId;
+          const deltaConn = graphRef.current.connections.find((c) => c.toNode === targetNodeId && c.toSocket === "matrix");
+          const upstreamNodeId = deltaConn ? deltaConn.fromNode : null;
+          const upstreamResult = upstreamNodeId ? latestResults?.get(upstreamNodeId)?.matrix : undefined;
+          const upstream = upstreamResult instanceof THREE.Matrix4 ? upstreamResult : new THREE.Matrix4();
+          const upstreamInv = upstream.clone().invert();
+
+          const worldMatrix = new THREE.Matrix4().compose(gizmoPivotProxy.position, gizmoPivotProxy.quaternion, gizmoPivotProxy.scale);
+          const parentMatrix = upstreamInv.clone().multiply(worldMatrix);
+
+          const parentPos = new THREE.Vector3();
+          const parentQuat = new THREE.Quaternion();
+          const parentScale = new THREE.Vector3();
+          parentMatrix.decompose(parentPos, parentQuat, parentScale);
+
+          const solvedLocation = parentPos.clone().sub(piv);
+          const euler = new THREE.Euler().setFromQuaternion(parentQuat);
+          const solvedRotation = new THREE.Vector3(euler.x, euler.y, euler.z);
+          const solvedScale = parentScale.clone();
+
+          const wiredSockets = new Set(
+            graphRef.current.connections.filter((c) => c.toNode === targetNodeId).map((c) => c.toSocket),
+          );
+
+          const patch: TransformPatch = {};
+          if (transformModeRef.current === "translate" && !wiredSockets.has("location")) {
+            if (elevationView && snapElevation) {
+              solvedLocation.y = snapElevationValue(solvedLocation.y, 0.5);
+            }
+            patch.location = solvedLocation;
+          }
+          if (transformModeRef.current === "rotate" && !wiredSockets.has("rotation")) {
+            patch.rotation = solvedRotation;
+          }
+          if (transformModeRef.current === "scale" && !wiredSockets.has("scale")) {
+            patch.scale = solvedScale;
+          }
+
+          const loc = patch.location ?? asVector3(node.params.location, new THREE.Vector3());
+          const rot = patch.rotation ?? asVector3(node.params.rotation, new THREE.Vector3());
+          const scl = patch.scale ?? asVector3(node.params.scale, new THREE.Vector3(1, 1, 1));
+          const localMatrix = composeNativeMatrixWithPivot(undefined, loc, rot, scl, piv, node.params);
+          gizmoPivotProxyRealObject.matrix.multiplyMatrices(upstream, localMatrix);
+          gizmoPivotProxyRealObject.updateMatrixWorld(true);
+
+          if (Object.keys(patch).length > 0) {
+            onTransformChangeRef.current(targetNodeId, patch);
+          }
+          return;
+        }
+
         // A single curve control point drag: `object.position` is already
         // in the curve's own space (the handles' group carries the drawing
         // object's world matrix — see curveHandles.ts), which is exactly what
@@ -1580,6 +1746,7 @@ export function Viewport({
               : null;
         const upstreamResult = upstreamNodeId ? latestResults?.get(upstreamNodeId)?.matrix : undefined;
 
+        const nodeForPivot = graphRef.current.nodes.find((n) => n.id === targetNodeId);
         const patch = computeGizmoWriteback({
           target: attachedGizmoTarget,
           mode: transformModeRef.current,
@@ -1588,6 +1755,7 @@ export function Viewport({
           wiredSockets: new Set(
             graphRef.current.connections.filter((c) => c.toNode === targetNodeId).map((c) => c.toSocket),
           ),
+          pivot: nodeForPivot ? asVector3(nodeForPivot.params?.pivot, new THREE.Vector3()) : undefined,
         });
 
         if (elevationView && snapElevation && patch.location) {
@@ -1696,7 +1864,7 @@ export function Viewport({
       const infActive = pointsInfluenceHandles.count() > 0 && !outputMode;
 
       const gpNode = selectedNodeIdRef.current
-        ? graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current && n.type === GREASE_PENCIL_NODE.type)
+        ? graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current && isPaintOrGreaseNode(n))
         : null;
 
       const isDrawingOrModifying =
@@ -1705,7 +1873,7 @@ export function Viewport({
         gpToolRef.current === "eraser_soft" ||
         gpToolRef.current === "tint";
 
-      if (gpNode && !outputMode && isDrawingOrModifying && e.button === 0 && !isMarqueeModifier && !e.altKey) {
+      if (gpNode && !outputMode && !elevationView && isDrawingOrModifying && e.button === 0 && !isMarqueeModifier && !e.altKey) {
         isGpDrawingRef.current = true;
         setIsGpDrawing(true);
         gpShiftAtStartRef.current = e.shiftKey || Boolean(e.getModifierState && e.getModifierState("Shift"));
@@ -1718,13 +1886,17 @@ export function Viewport({
         const now = performance.now();
         gpPrevPointerRef.current = { x: screenX, y: screenY, time: now };
 
-        const worldPos = projectScreenToDrawingPlane(e.clientX, e.clientY, {
+        const ptData = resolvePointerPoint(
+          e.clientX,
+          e.clientY,
+          gpNode,
+          graphRef.current,
+          latestResultsRef.current,
           camera,
-          domElement: renderer.domElement,
-          elevationY: gpNode.params.location instanceof THREE.Vector3 ? gpNode.params.location.y : 0,
+          renderer.domElement,
           mode2D,
-          objectPosition: gpNode.params.location instanceof THREE.Vector3 ? gpNode.params.location : undefined,
-        });
+        );
+        const worldPos = ptData?.pos ?? null;
 
         gpWorkingFramesRef.current = (gpNode.params.frames as KeyframeDrawing[]) || [];
         const bSize = Number(gpNode.params.brushSize) || 4;
@@ -1749,7 +1921,18 @@ export function Viewport({
           } else {
             let basePr = calculateSimulatedPressure(null, { x: screenX, y: screenY, time: now }, e.pressure);
             const pressure = Math.max(0.04, Math.min(2.5, basePr * gpPressureModifierRef.current));
-            gpActivePointsRef.current = [{ x: worldPos.x, y: worldPos.y, z: worldPos.z, pressure }];
+            gpActivePointsRef.current = [
+              {
+                x: worldPos.x,
+                y: worldPos.y,
+                z: worldPos.z,
+                pressure,
+                nx: ptData?.normal?.x,
+                ny: ptData?.normal?.y,
+                nz: ptData?.normal?.z,
+              },
+            ];
+            gpSmoothedWorldPosRef.current = worldPos.clone();
             gpLivePreviewRef.current = [{ screenX, screenY }];
             setGpLivePreview([{ screenX, screenY }]);
           }
@@ -1792,7 +1975,7 @@ export function Viewport({
 
     function onCanvasPointerMove(e: PointerEvent) {
       const gpNode = selectedNodeIdRef.current
-        ? graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current && n.type === GREASE_PENCIL_NODE.type)
+        ? graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current && isPaintOrGreaseNode(n))
         : null;
 
       if (isGpDrawingRef.current && gpNode && host) {
@@ -1801,13 +1984,17 @@ export function Viewport({
         const screenY = e.clientY - rect.top;
         const now = performance.now();
 
-        const worldPos = projectScreenToDrawingPlane(e.clientX, e.clientY, {
+        const ptData = resolvePointerPoint(
+          e.clientX,
+          e.clientY,
+          gpNode,
+          graphRef.current,
+          latestResultsRef.current,
           camera,
-          domElement: renderer.domElement,
-          elevationY: gpNode.params.location instanceof THREE.Vector3 ? gpNode.params.location.y : 0,
+          renderer.domElement,
           mode2D,
-          objectPosition: gpNode.params.location instanceof THREE.Vector3 ? gpNode.params.location : undefined,
-        });
+        );
+        const worldPos = ptData?.pos ?? null;
 
         if (worldPos) {
           const currentFrames = gpWorkingFramesRef.current || (gpNode.params.frames as KeyframeDrawing[]) || [];
@@ -1834,11 +2021,66 @@ export function Viewport({
             gpPressureModifierRef.current = THREE.MathUtils.lerp(gpPressureModifierRef.current, targetMod, 0.12);
             let basePr = calculateSimulatedPressure(gpPrevPointerRef.current, { x: screenX, y: screenY, time: now }, e.pressure);
             const pressure = Math.max(0.04, Math.min(2.5, basePr * gpPressureModifierRef.current));
+
+            // Sub-stepping for Paint on geometry to wrap smoothly around curved surfaces / sharp corners
+            if (gpPrevPointerRef.current && gpNode.type === PAINT_ON_GEOMETRY_NODE.type) {
+              const dx = screenX - gpPrevPointerRef.current.x;
+              const dy = screenY - gpPrevPointerRef.current.y;
+              const dist = Math.hypot(dx, dy);
+              if (dist > 8) {
+                const steps = Math.min(6, Math.floor(dist / 6));
+                for (let s = 1; s < steps; s++) {
+                  const t = s / steps;
+                  const subClientX = e.clientX - (1 - t) * dx;
+                  const subClientY = e.clientY - (1 - t) * dy;
+                  const subPt = resolvePointerPoint(
+                    subClientX,
+                    subClientY,
+                    gpNode,
+                    graphRef.current,
+                    latestResultsRef.current,
+                    camera,
+                    renderer.domElement,
+                    mode2D,
+                  );
+                  if (subPt) {
+                    gpActivePointsRef.current.push({
+                      x: subPt.pos.x,
+                      y: subPt.pos.y,
+                      z: subPt.pos.z,
+                      pressure,
+                      nx: subPt.normal?.x,
+                      ny: subPt.normal?.y,
+                      nz: subPt.normal?.z,
+                    });
+                  }
+                }
+              }
+            }
+
             gpPrevPointerRef.current = { x: screenX, y: screenY, time: now };
 
+            const smoothing = Math.max(0, Math.min(1, Number(gpNode.params.smoothing ?? 0.2)));
+            let ptPos = worldPos;
+            if (smoothing > 0.01 && gpSmoothedWorldPosRef.current) {
+              const alpha = Math.max(0.15, 1.0 - smoothing * 0.75);
+              gpSmoothedWorldPosRef.current.lerp(worldPos, alpha);
+              ptPos = gpSmoothedWorldPosRef.current.clone();
+            } else {
+              gpSmoothedWorldPosRef.current = worldPos.clone();
+            }
+
             const lastPt = gpActivePointsRef.current[gpActivePointsRef.current.length - 1];
-            if (!lastPt || (Math.hypot(lastPt.x - worldPos.x, lastPt.y - worldPos.y, lastPt.z - worldPos.z) > 0.04)) {
-              gpActivePointsRef.current.push({ x: worldPos.x, y: worldPos.y, z: worldPos.z, pressure });
+            if (!lastPt || (Math.hypot(lastPt.x - ptPos.x, lastPt.y - ptPos.y, lastPt.z - ptPos.z) > 0.02)) {
+              gpActivePointsRef.current.push({
+                x: ptPos.x,
+                y: ptPos.y,
+                z: ptPos.z,
+                pressure,
+                nx: ptData?.normal?.x,
+                ny: ptData?.normal?.y,
+                nz: ptData?.normal?.z,
+              });
               const nextPreview = [...gpLivePreviewRef.current, { screenX, screenY }];
               gpLivePreviewRef.current = nextPreview;
               setGpLivePreview(nextPreview);
@@ -1879,7 +2121,7 @@ export function Viewport({
 
     function onCanvasPointerUp(e: PointerEvent) {
       const gpNode = selectedNodeIdRef.current
-        ? graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current && n.type === GREASE_PENCIL_NODE.type)
+        ? graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current && isPaintOrGreaseNode(n))
         : null;
 
       if (isGpDrawingRef.current) {
@@ -1901,9 +2143,12 @@ export function Viewport({
           gpShiftAtStartRef.current = false;
           gpCtrlAtStartRef.current = false;
 
+          const smoothing = Math.max(0, Math.min(1, Number(gpNode.params.smoothing ?? 0.2)));
+          const smoothedPoints = smoothStrokePoints(gpActivePointsRef.current, smoothing);
+
           const finalPoints = (taperStart || taperEnd || widenStart || widenEnd)
-            ? applyStrokeTaper(gpActivePointsRef.current, taperStart, taperEnd, widenStart, widenEnd)
-            : gpActivePointsRef.current;
+            ? applyStrokeTaper(smoothedPoints, taperStart, taperEnd, widenStart, widenEnd)
+            : smoothedPoints;
           const strokeColor = parseColorHex(gpNode.params.activeColor, "#38bdf8");
           const customFillColor = parseColorHex(gpNode.params.fillColor, "");
           const fillColorVal = customFillColor || strokeColor;
@@ -2696,7 +2941,7 @@ export function Viewport({
         // `enabled` back to true mid-drag within one frame of the
         // 'dragging-changed' listener turning it off.
         const selectedGpNode = graphRef.current.nodes.find(
-          (n) => n.id === selectedNodeIdRef.current && n.type === GREASE_PENCIL_NODE.type,
+          (n) => n.id === selectedNodeIdRef.current && isPaintOrGreaseNode(n),
         );
         if (!selectedGpNode && isGpDrawingRef.current) {
           isGpDrawingRef.current = false;
@@ -3089,6 +3334,24 @@ export function Viewport({
         forceFieldProxyNodeId = null;
       }
 
+      // Particle Emitter proxy — position and velocity gizmo
+      if (!outputMode && selectedNodeForPivot?.type === "particles/emitter") {
+        emitterProxyNodeId = selectedNodeForPivot.id;
+        emitterProxy.visible = true;
+        if (!transformControls?.dragging || transformControls.object !== emitterProxy) {
+          const pos = asVector3(selectedNodeForPivot.params.position, new THREE.Vector3());
+          const vel = asVector3(selectedNodeForPivot.params.velocity, new THREE.Vector3());
+          const velLen = vel.length();
+          emitterVelocityLength = velLen > 1e-4 ? velLen : 1;
+          const dir = velLen > 1e-4 ? vel.clone().normalize() : new THREE.Vector3(0, 1, 0);
+          emitterProxy.position.copy(pos);
+          emitterProxy.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+        }
+      } else if (emitterProxyNodeId) {
+        emitterProxy.visible = false;
+        emitterProxyNodeId = null;
+      }
+
       // Update yellow pivot crosses for any object with showPivot === true
       if (!outputMode) {
         let activeCrossCount = 0;
@@ -3146,6 +3409,8 @@ export function Viewport({
           pickedCurveHandle = decalProxy;
         } else if (forceFieldProxyNodeId) {
           pickedCurveHandle = forceFieldProxy;
+        } else if (emitterProxyNodeId) {
+          pickedCurveHandle = emitterProxy;
         }
       }
 
@@ -3157,6 +3422,9 @@ export function Viewport({
         attachedGizmoTarget = null;
         for (const parked of [...gizmoAnchorScene.children]) gizmoAnchorScene.remove(parked);
       } else if (transformControls && !transformControls.dragging) {
+        const isGp = selectedNodeIdRef.current
+          ? isPaintOrGreaseNode(graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current))
+          : false;
         if (selectedNodeIdRef.current) {
           // The selected node's own result first — it is the authoritative
           // answer to "which object does this node drive", and the only one
@@ -3170,10 +3438,14 @@ export function Viewport({
           // the params were written back to a node whose real object never
           // moved. They stay as fallbacks for nodes with no geometry output
           // of their own (lights, camera helpers).
-          const isGp = graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current)?.type === GREASE_PENCIL_NODE.type;
           if (isGp && gpToolRef.current !== "select") {
             targetObject = null;
             if (transformControls.object) transformControls.detach();
+            if (gizmoPivotProxyNodeId) {
+              gizmoPivotProxy.visible = false;
+              gizmoPivotProxyNodeId = null;
+              gizmoPivotProxyRealObject = null;
+            }
           } else {
             const ownResult = results.get(selectedNodeIdRef.current);
             if (ownResult?.geometry instanceof THREE.Object3D) {
@@ -3197,23 +3469,52 @@ export function Viewport({
         const gizmoTarget = targetObject ? resolveGizmoTarget(graphRef.current, selectedNodeIdRef.current!) : null;
 
         if (targetObject && gizmoTarget) {
-          // Give a parentless target a home before attaching — see
-          // gizmoAnchorScene's own comment for why TransformControls cannot
-          // work with one that has no parent.
-          if (!targetObject.parent) {
-            gizmoAnchorScene.add(targetObject);
-          }
+          if (gizmoTarget.kind === "native") {
+            gizmoPivotProxyNodeId = selectedNodeIdRef.current;
+            gizmoPivotProxyRealObject = targetObject;
+            gizmoPivotProxy.visible = true;
 
-          // Re-attach when the *object* changes too, not just the selection:
-          // a node that rebuilds its mesh (Text on an edit, Line Graph on a
-          // new point count) hands back a different instance under the same
-          // node id, and the gizmo would otherwise stay bound to the
-          // discarded one and appear to drag nothing.
-          if (attachedObjectNodeId !== selectedNodeIdRef.current || transformControls.object !== targetObject) {
-            transformControls.attach(targetObject);
-            attachedObjectNodeId = selectedNodeIdRef.current;
+            if (!transformControls?.dragging || transformControls.object !== gizmoPivotProxy) {
+              targetObject.updateWorldMatrix(true, false);
+              const node = graphRef.current.nodes.find((n) => n.id === selectedNodeIdRef.current);
+              const pivOffset = asVector3(node?.params?.pivot, new THREE.Vector3());
+              const worldPivot = pivOffset.clone().applyMatrix4(targetObject.matrixWorld);
+              gizmoPivotProxy.position.copy(worldPivot);
+              targetObject.getWorldQuaternion(gizmoPivotProxy.quaternion);
+              targetObject.getWorldScale(gizmoPivotProxy.scale);
+              gizmoPivotProxy.updateMatrixWorld(true);
+            }
+
+            if (attachedObjectNodeId !== selectedNodeIdRef.current || transformControls.object !== gizmoPivotProxy) {
+              transformControls.attach(gizmoPivotProxy);
+              attachedObjectNodeId = selectedNodeIdRef.current;
+            }
+            attachedGizmoTarget = gizmoTarget;
+            targetObject = gizmoPivotProxy;
+          } else {
+            if (gizmoPivotProxyNodeId) {
+              gizmoPivotProxy.visible = false;
+              gizmoPivotProxyNodeId = null;
+              gizmoPivotProxyRealObject = null;
+            }
+            // Give a parentless target a home before attaching — see
+            // gizmoAnchorScene's own comment for why TransformControls cannot
+            // work with one that has no parent.
+            if (!targetObject.parent) {
+              gizmoAnchorScene.add(targetObject);
+            }
+
+            // Re-attach when the *object* changes too, not just the selection:
+            // a node that rebuilds its mesh (Text on an edit, Line Graph on a
+            // new point count) hands back a different instance under the same
+            // node id, and the gizmo would otherwise stay bound to the
+            // discarded one and appear to drag nothing.
+            if (attachedObjectNodeId !== selectedNodeIdRef.current || transformControls.object !== targetObject) {
+              transformControls.attach(targetObject);
+              attachedObjectNodeId = selectedNodeIdRef.current;
+            }
+            attachedGizmoTarget = gizmoTarget;
           }
-          attachedGizmoTarget = gizmoTarget;
           transformControls.setMode(transformModeRef.current);
           if (mode2D) {
             transformControls.showX = true;
@@ -3229,9 +3530,15 @@ export function Viewport({
               transformControls.showZ = true;
             }
           } else if (elevationView) {
-            transformControls.showX = false;
-            transformControls.showY = true;
-            transformControls.showZ = false;
+            if (isGp) {
+              transformControls.showX = true;
+              transformControls.showY = true;
+              transformControls.showZ = true;
+            } else {
+              transformControls.showX = false;
+              transformControls.showY = true;
+              transformControls.showZ = false;
+            }
           } else {
             transformControls.showX = true;
             transformControls.showY = true;
@@ -3253,7 +3560,7 @@ export function Viewport({
           // being animated by the graph is still handed the pose it actually
           // has the moment a drag begins. This block only runs while the
           // gizmo is *not* dragging, so it can never fight the drag itself.
-          if (!targetObject.matrixAutoUpdate) {
+          if (targetObject !== gizmoPivotProxy && !targetObject.matrixAutoUpdate) {
             targetObject.matrix.decompose(targetObject.position, targetObject.quaternion, targetObject.scale);
           }
 
@@ -3274,6 +3581,11 @@ export function Viewport({
           transformControls.detach();
           attachedObjectNodeId = null;
           attachedGizmoTarget = null;
+          if (gizmoPivotProxyNodeId) {
+            gizmoPivotProxy.visible = false;
+            gizmoPivotProxyNodeId = null;
+            gizmoPivotProxyRealObject = null;
+          }
         }
 
         // Release anything left parked once it is no longer the gizmo's
@@ -3565,6 +3877,12 @@ export function Viewport({
       forceFieldCoreMat.dispose();
       forceFieldRingGeo.dispose();
       forceFieldRingMat.dispose();
+      emitterProxy.removeFromParent();
+      emitterCoreGeo.dispose();
+      emitterCoreMat.dispose();
+      emitterRingGeo.dispose();
+      emitterRingMat.dispose();
+      gizmoPivotProxy.removeFromParent();
       pivotCrossGroup.removeFromParent();
       pivotCrossGeo.dispose();
       pivotCrossMat.dispose();
@@ -3763,7 +4081,7 @@ export function Viewport({
         selectedNodeId &&
         (() => {
           const gpNode = graph.nodes.find(
-            (n) => n.id === selectedNodeId && n.type === GREASE_PENCIL_NODE.type,
+            (n) => n.id === selectedNodeId && isPaintOrGreaseNode(n),
           );
           if (!gpNode) return null;
           const activeColor = parseColorHex(gpNode.params.activeColor, "#38bdf8");
@@ -4070,6 +4388,49 @@ export function Viewport({
                 }}
               />
 
+              {/* Stroke Smoothing Slider */}
+              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <span
+                  style={{
+                    fontSize: "11px",
+                    color: "#94a3b8",
+                    minWidth: 42,
+                    textAlign: "right",
+                  }}
+                  title="Stroke smoothing to remove involuntary hand tremors"
+                >
+                  Smooth {Math.round(Math.max(0, Math.min(1, Number(gpNode.params.smoothing ?? 0.2))) * 100)}%
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={Math.max(0, Math.min(1, Number(gpNode.params.smoothing ?? 0.2)))}
+                  onChange={(e) =>
+                    onParamChange?.(
+                      "smoothing",
+                      Number(e.target.value),
+                      gpNode.id,
+                    )
+                  }
+                  style={{
+                    width: 50,
+                    accentColor: "#38bdf8",
+                    cursor: "pointer",
+                  }}
+                  title="Stroke smoothing (eliminates involuntary hand tremors during drawing)"
+                />
+              </div>
+
+              <div
+                style={{
+                  width: 1,
+                  height: 16,
+                  background: "rgba(255, 255, 255, 0.15)",
+                }}
+              />
+
               {/* Lock / Keyframe Button */}
               <button
                 type="button"
@@ -4278,9 +4639,11 @@ export function Viewport({
             </div>
           );
         })()}
-      {/* Top-Left Viewport HUD & Controls — editor-only, never shown in the output window or elevation view */}
-      {!outputMode && !elevationView && (
+      {/* Top-Left Viewport HUD & Controls — editor-only, never shown in the output window */}
+      {!outputMode && (
         <div className="viewport-hud">
+          {!elevationView && (
+            <>
           {graph.nodes.some((n) => n.type === CAMERA_NODE.type) && (
             <>
               <button
@@ -4474,6 +4837,8 @@ export function Viewport({
               </svg>
             </button>
           )}
+          </>
+          )}
           <button
             type="button"
             className="viewport-hud-button"
@@ -4501,7 +4866,7 @@ export function Viewport({
               </svg>
             </button>
           )}
-          {onToggleSplitView && (
+          {!elevationView && onToggleSplitView && (
             <button
               type="button"
               className={`viewport-hud-button ${isSplitView ? "viewport-hud-button-active" : ""}`}

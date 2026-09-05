@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { CAMERA_FLY_TO_NODE, CAMERA_NODE } from "./shared/graph/nodes/camera";
+import { asVector3, composeTransform } from "./shared/graph/nodes/transform";
 import { DEFAULT_REGISTRY } from "./shared/graph/nodes";
 import { toBoolean } from "./shared/graph/sockets";
 import { BAKE_INSTANCES_ACTION, bakeInstancesToGeometryData } from "./shared/graph/nodes/particleInstances";
@@ -181,6 +182,10 @@ function MainEditor() {
   const [activeCanvas, setActiveCanvas] = useState(recovered ? recovered.project.activeCanvas : 0);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+  const selectedNodeIdRef = useRef<string | null>(null);
+  selectedNodeIdRef.current = selectedNodeId;
+  const selectedNodeIdsRef = useRef<string[]>([]);
+  selectedNodeIdsRef.current = selectedNodeIds;
   const [isTimelineDrawerOpen, setIsTimelineDrawerOpen] = useState(false);
   const [timelineDrawerHeight, setTimelineDrawerHeight] = useState(280);
   const [splitPercent, setSplitPercent] = useState(50);
@@ -583,13 +588,19 @@ function MainEditor() {
     broadcastGraph({ graph: graphRef.current, epochMs, calibratingNodeId, previewCamera: pose });
   };
 
+  interface HistoryEntry {
+    graph: Graph;
+    selectedNodeId: string | null;
+    selectedNodeIds: string[];
+  }
+
   /**
    * Undo history per canvas, keyed by canvas index. Cmd+Z after switching
    * canvases undoes the last edit made *in the canvas you're looking at* —
    * a single shared stack would have reached back into a tree that isn't on
    * screen, undoing something invisible.
    */
-  const historyRef = useRef<Record<number, { past: Graph[]; future: Graph[] }>>({});
+  const historyRef = useRef<Record<number, { past: HistoryEntry[]; future: HistoryEntry[] }>>({});
   const canvasHistory = useCallback(() => {
     const index = activeCanvasRef.current;
     return (historyRef.current[index] ??= { past: [], future: [] });
@@ -636,7 +647,11 @@ function MainEditor() {
     if (lastSnapshotSourceRef.current === graphRef.current) return;
 
     const history = canvasHistory();
-    const snapshot = cloneGraph(graphRef.current);
+    const snapshot: HistoryEntry = {
+      graph: cloneGraph(graphRef.current),
+      selectedNodeId: selectedNodeIdRef.current,
+      selectedNodeIds: [...selectedNodeIdsRef.current],
+    };
     history.past.push(snapshot);
     if (history.past.length > HISTORY_LIMIT) history.past.shift();
     history.future = [];
@@ -654,22 +669,68 @@ function MainEditor() {
   const undo = useCallback(() => {
     const history = canvasHistory();
     if (history.past.length === 0) return;
+    const currentSelectedId = selectedNodeIdRef.current;
+    const currentSelectedIds = [...selectedNodeIdsRef.current];
     const previous = history.past.pop()!;
-    history.future.unshift(cloneGraph(graphRef.current));
+    history.future.unshift({
+      graph: cloneGraph(graphRef.current),
+      selectedNodeId: currentSelectedId,
+      selectedNodeIds: currentSelectedIds,
+    });
     coalesceRef.current = null;
-    setGraph(previous);
+    setGraph(previous.graph);
+
+    let targetId: string | null = null;
+    let targetIds: string[] = [];
+    if (currentSelectedId && previous.graph.nodes.some((n) => n.id === currentSelectedId)) {
+      targetId = currentSelectedId;
+      targetIds = currentSelectedIds.filter((id) => previous.graph.nodes.some((n) => n.id === id));
+      if (targetIds.length === 0) targetIds = [currentSelectedId];
+    } else if (previous.selectedNodeId && previous.graph.nodes.some((n) => n.id === previous.selectedNodeId)) {
+      targetId = previous.selectedNodeId;
+      targetIds = previous.selectedNodeIds.filter((id) => previous.graph.nodes.some((n) => n.id === id));
+      if (targetIds.length === 0) targetIds = [targetId];
+    }
+
+    handleSelectNode(targetId);
+    if (targetIds.length > 0) {
+      handleSelectNodes(targetIds);
+    }
     setEditorKey((k) => k + 1);
-  }, [canvasHistory, setGraph]);
+  }, [canvasHistory, handleSelectNode, handleSelectNodes, setGraph]);
 
   const redo = useCallback(() => {
     const history = canvasHistory();
     if (history.future.length === 0) return;
+    const currentSelectedId = selectedNodeIdRef.current;
+    const currentSelectedIds = [...selectedNodeIdsRef.current];
     const next = history.future.shift()!;
-    history.past.push(cloneGraph(graphRef.current));
+    history.past.push({
+      graph: cloneGraph(graphRef.current),
+      selectedNodeId: currentSelectedId,
+      selectedNodeIds: currentSelectedIds,
+    });
     coalesceRef.current = null;
-    setGraph(next);
+    setGraph(next.graph);
+
+    let targetId: string | null = null;
+    let targetIds: string[] = [];
+    if (currentSelectedId && next.graph.nodes.some((n) => n.id === currentSelectedId)) {
+      targetId = currentSelectedId;
+      targetIds = currentSelectedIds.filter((id) => next.graph.nodes.some((n) => n.id === id));
+      if (targetIds.length === 0) targetIds = [currentSelectedId];
+    } else if (next.selectedNodeId && next.graph.nodes.some((n) => n.id === next.selectedNodeId)) {
+      targetId = next.selectedNodeId;
+      targetIds = next.selectedNodeIds.filter((id) => next.graph.nodes.some((n) => n.id === id));
+      if (targetIds.length === 0) targetIds = [targetId];
+    }
+
+    handleSelectNode(targetId);
+    if (targetIds.length > 0) {
+      handleSelectNodes(targetIds);
+    }
     setEditorKey((k) => k + 1);
-  }, [canvasHistory, setGraph]);
+  }, [canvasHistory, handleSelectNode, handleSelectNodes, setGraph]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -829,7 +890,12 @@ function MainEditor() {
           ? applyKeyframedParamUpdate(prevGraph.keyframes, nodeIdToUpdate, paramId, value, currentFrame)
           : prevGraph.keyframes;
 
-      if (nodeIdToUpdate && instance.type === "curve/grease-pencil" && paramId === "frames" && Array.isArray(value)) {
+      if (
+        nodeIdToUpdate &&
+        (instance.type === "curve/grease-pencil" || instance.type === "curve/paint-on-geometry") &&
+        paramId === "frames" &&
+        Array.isArray(value)
+      ) {
         const gpFrames = value as KeyframeDrawing[];
         const currentStore = nextKeyframes ? { ...nextKeyframes } : {};
         const nodeStore = currentStore[nodeIdToUpdate] ? { ...currentStore[nodeIdToUpdate] } : {};
@@ -850,8 +916,38 @@ function MainEditor() {
       // ...) flattened to a plain {r,g,b} fails every node's `instanceof`
       // guard and silently falls back to its default (white for the Color
       // node). cloneParamValue clones the same classes the undo/clipboard
-      // path already protects (Vector3, Color, Quaternion, Matrix4, Euler).
       nextParams[paramId] = cloneParamValue(value);
+
+      // When the pivot is moved, compensate location so that the geometry remains
+      // completely stationary in world space.
+      // local = T(piv + loc) * (R * S) * T(-piv) = T(loc + (I - R * S) * piv) * (R * S)
+      // Maintaining geometry position across deltaPiv = newPiv - oldPiv requires:
+      // deltaLoc = (R * S) * deltaPiv - deltaPiv
+      if (paramId === "pivot" && "location" in instance.params) {
+        const oldPiv = asVector3(instance.params.pivot, new THREE.Vector3());
+        const newPiv = asVector3(value, new THREE.Vector3());
+        const deltaPiv = new THREE.Vector3().subVectors(newPiv, oldPiv);
+        if (deltaPiv.lengthSq() > 0) {
+          const rot = asVector3(instance.params.rotation, new THREE.Vector3());
+          const scl = asVector3(instance.params.scale, new THREE.Vector3(1, 1, 1));
+          const mRotScale = composeTransform(new THREE.Vector3(), rot, scl);
+          const deltaPivRotScaled = deltaPiv.clone().applyMatrix4(mRotScale);
+          const deltaLoc = new THREE.Vector3().subVectors(deltaPivRotScaled, deltaPiv);
+          const oldLoc = asVector3(instance.params.location, new THREE.Vector3());
+          const newLoc = oldLoc.clone().add(deltaLoc);
+          nextParams.location = newLoc;
+
+          if (nodeIdToUpdate && keyframesEnabled && currentFrame >= 0 && nextKeyframes?.[nodeIdToUpdate]?.["location"]) {
+            nextKeyframes = applyKeyframedParamUpdate(
+              nextKeyframes,
+              nodeIdToUpdate,
+              "location",
+              newLoc,
+              currentFrame,
+            );
+          }
+        }
+      }
 
       // A lattice's control points are stored as absolute positions, so the
       // grid they describe has to be rebuilt when its dimensions change —
@@ -1191,6 +1287,25 @@ function MainEditor() {
 
   const onTransformChange = (transformNodeId: string, patch: TransformPatch) => {
     setGraph((prevGraph) => {
+      let fullPatch = { ...patch };
+      if (fullPatch.pivot && !fullPatch.location) {
+        const node = prevGraph.nodes.find((n) => n.id === transformNodeId);
+        if (node && "location" in node.params) {
+          const oldPiv = asVector3(node.params.pivot, new THREE.Vector3());
+          const newPiv = asVector3(fullPatch.pivot, new THREE.Vector3());
+          const deltaPiv = new THREE.Vector3().subVectors(newPiv, oldPiv);
+          if (deltaPiv.lengthSq() > 0) {
+            const rot = asVector3(node.params.rotation, new THREE.Vector3());
+            const scl = asVector3(node.params.scale, new THREE.Vector3(1, 1, 1));
+            const mRotScale = composeTransform(new THREE.Vector3(), rot, scl);
+            const deltaPivRotScaled = deltaPiv.clone().applyMatrix4(mRotScale);
+            const deltaLoc = new THREE.Vector3().subVectors(deltaPivRotScaled, deltaPiv);
+            const oldLoc = asVector3(node.params.location, new THREE.Vector3());
+            fullPatch.location = oldLoc.clone().add(deltaLoc);
+          }
+        }
+      }
+
       // Same keyframe-track-if-one-already-exists rule as onParamChange —
       // otherwise a gizmo drag (or "Aligner Caméra", which reuses this same
       // path) always wrote straight to the base param, which keyframe
@@ -1201,7 +1316,7 @@ function MainEditor() {
       // the align button) is checked independently.
       let nextKeyframes = prevGraph.keyframes;
       if (keyframesEnabled && currentFrame >= 0) {
-        for (const [key, value] of Object.entries(patch)) {
+        for (const [key, value] of Object.entries(fullPatch)) {
           nextKeyframes = applyKeyframedParamUpdate(nextKeyframes, transformNodeId, key, value, currentFrame);
         }
       }
@@ -1210,7 +1325,7 @@ function MainEditor() {
         ...prevGraph,
         keyframes: nextKeyframes,
         nodes: prevGraph.nodes.map((n) =>
-          n.id === transformNodeId ? { ...n, params: { ...n.params, ...patch } } : n,
+          n.id === transformNodeId ? { ...n, params: { ...n.params, ...fullPatch } } : n,
         ),
       };
     });
@@ -1226,6 +1341,7 @@ function MainEditor() {
   };
 
   const onSplitHandleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.shiftKey) return;
     e.preventDefault();
     draggingSplit.current = true;
   }, []);
@@ -1297,7 +1413,7 @@ function MainEditor() {
 
       // Also ensure any Grease Pencil keyframed drawings are directly reflected on the timeline
       const selectedNode = graph.nodes.find((n) => n.id === selectedNodeId);
-      if (selectedNode?.type === "curve/grease-pencil") {
+      if (selectedNode?.type === "curve/grease-pencil" || selectedNode?.type === "curve/paint-on-geometry") {
         const frames = (selectedNode.params.frames as KeyframeDrawing[]) || [];
         for (const f of frames) {
           if (!map[f.frame]) {
@@ -1468,7 +1584,7 @@ function MainEditor() {
 
         let nextNodes = prevGraph.nodes;
         const targetNode = prevGraph.nodes.find((n) => n.id === selectedNodeId);
-        if (targetNode?.type === "curve/grease-pencil") {
+        if (targetNode?.type === "curve/grease-pencil" || targetNode?.type === "curve/paint-on-geometry") {
           const currentFrames = (targetNode.params.frames as KeyframeDrawing[]) || [];
           const filteredFrames = currentFrames.filter((f) => f.frame !== frame);
           if (filteredFrames.length !== currentFrames.length) {
@@ -1533,7 +1649,7 @@ function MainEditor() {
 
             if (paramKey === "frames") {
               const targetNode = nextNodes.find((n) => n.id === nodeId);
-              if (targetNode?.type === "curve/grease-pencil") {
+              if (targetNode?.type === "curve/grease-pencil" || targetNode?.type === "curve/paint-on-geometry") {
                 const currentFrames = (targetNode.params.frames as KeyframeDrawing[]) || [];
                 const updatedFrames = currentFrames
                   .map((f) => (moveMap.has(f.frame) ? { ...f, frame: moveMap.get(f.frame)! } : f))

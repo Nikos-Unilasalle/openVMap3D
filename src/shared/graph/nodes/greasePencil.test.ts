@@ -12,6 +12,7 @@ import {
   applyStrokeTaper,
   duplicateDrawing,
   createBlankDrawing,
+  smoothStrokePoints,
 } from "../../three/greasePencilDrawing";
 
 describe("greasePencil node", () => {
@@ -299,7 +300,10 @@ describe("greasePencil node", () => {
 
     const mat = fillMesh.material as THREE.MeshBasicMaterial;
     expect(mat.polygonOffset).toBe(true);
-    expect(mat.polygonOffsetFactor).toBe(1);
+    expect(mat.polygonOffsetFactor).toBe(-1);
+    expect(mat.polygonOffsetUnits).toBe(-1);
+    expect(mat.depthWrite).toBe(false);
+    expect(mat.transparent).toBe(true);
 
     const colors = fillMesh.geometry.getAttribute("color");
     expect(colors).toBeDefined();
@@ -342,6 +346,68 @@ describe("greasePencil node", () => {
     // point relative to pivot: -5, rotated 180: +5, back from pivot: 10, plus loc(10): 20
     expect(origin.x).toBeCloseTo(20, 4);
     expect(origin.y).toBeCloseTo(0, 4);
+  });
+
+  describe("smoothStrokePoints", () => {
+    it("returns unchanged points when smoothing is 0 or points length <= 2", () => {
+      const rawPoints = [
+        { x: 0, y: 0, z: 0, pressure: 1.0 },
+        { x: 1, y: 10, z: 0, pressure: 1.0 },
+      ];
+      expect(smoothStrokePoints(rawPoints, 0.5)).toEqual(rawPoints);
+
+      const threePoints = [
+        { x: 0, y: 0, z: 0, pressure: 1.0 },
+        { x: 1, y: 10, z: 0, pressure: 1.0 },
+        { x: 2, y: 0, z: 0, pressure: 1.0 },
+      ];
+      expect(smoothStrokePoints(threePoints, 0)).toEqual(threePoints);
+    });
+
+    it("smooths involuntary hand tremor while anchoring start and end points", () => {
+      // Straight horizontal stroke with jitter in the middle point: (0,0), (1, 10), (2, 0)
+      const jitteryPoints = [
+        { x: 0, y: 0, z: 0, pressure: 1.0 },
+        { x: 1, y: 10, z: 0, pressure: 1.0 },
+        { x: 2, y: 0, z: 0, pressure: 1.0 },
+      ];
+
+      const smoothed = smoothStrokePoints(jitteryPoints, 0.5);
+
+      // Anchors: first and last point must stay exactly where drawn
+      expect(smoothed[0].x).toBe(0);
+      expect(smoothed[0].y).toBe(0);
+      expect(smoothed[2].x).toBe(2);
+      expect(smoothed[2].y).toBe(0);
+
+      // Middle point should have its extreme jitter smoothed down significantly (< 10)
+      expect(smoothed[1].y).toBeLessThan(10);
+      expect(smoothed[1].y).toBeGreaterThan(0);
+    });
+  });
+
+  it("tags evaluated group and stroke meshes with userData.nodeId for 3D selection", () => {
+    const ctx = { nodeId: "gp_test_selection", currentFrame: 0 } as any;
+    const res = GREASE_PENCIL_NODE.evaluate(
+      {},
+      {
+        ...GREASE_PENCIL_NODE.defaultParams,
+        frames: sampleFrames,
+        solidFill: true,
+      },
+      ctx,
+    );
+
+    expect(res.geometry).toBeInstanceOf(THREE.Group);
+    const group = res.geometry as THREE.Group;
+    expect(group.userData.nodeId).toBe("gp_test_selection");
+
+    // All active child meshes (strokes ribbon, solid fill) must carry the nodeId
+    const childMeshes = group.children.filter((c) => c instanceof THREE.Mesh);
+    expect(childMeshes.length).toBeGreaterThan(0);
+    for (const mesh of childMeshes) {
+      expect(mesh.userData.nodeId).toBe("gp_test_selection");
+    }
   });
 });
 

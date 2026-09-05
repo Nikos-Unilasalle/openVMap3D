@@ -17,6 +17,11 @@
   cursor: row-resize !important;
 }
 
+.timeline-bar-container.shift-active,
+.timeline-bar-container.shift-active * {
+  cursor: ew-resize !important;
+}
+
 /* 3px black line acts as resize handle */
 .timeline-split-resize-handle {
   width: 100%;
@@ -197,7 +202,7 @@
   background: #ffffff;
   box-shadow: 0 0 4px rgba(255, 255, 255, 0.9);
   pointer-events: auto;
-  cursor: ew-resize;
+  cursor: row-resize;
   z-index: 28;
 }
 
@@ -210,7 +215,7 @@
   width: 24px;
   height: 24px;
   background: transparent;
-  cursor: ew-resize;
+  cursor: row-resize;
 }
 
 /* Hover Frame Badge Tooltip with gray text */

@@ -2,41 +2,20 @@ import * as THREE from "three";
 import { NodeDefinition } from "../types";
 import { createNodeCache, disposeObject3D } from "../nodeCaches";
 import { composeNativeMatrix } from "./transform";
+import {
+  GreaseBrushType,
+  KeyframeDrawing,
+  buildStrokesFillGeometry,
+  buildStrokesRibbonGeometry,
+  parseColorHex,
+  resolveActiveDrawing,
+  resolveOnionSkinDrawings,
+  strokesToCurves,
+} from "./greasePencil";
 
-export interface StrokePoint {
-  x: number;
-  y: number;
-  z: number;
-  pressure: number; // 0.0 to 1.0
-  nx?: number;
-  ny?: number;
-  nz?: number;
-}
-
-export type GreaseBrushType =
-  | "ink_pen"
-  | "ink_pen_rough"
-  | "marker_bold"
-  | "airbrush";
-
-export interface GreaseStroke {
-  id: string;
-  points: StrokePoint[];
-  color?: string; // hex string, e.g. "#38bdf8"
-  width?: number; // base stroke width in px
-  brushType?: GreaseBrushType;
-  fill?: boolean;
-  fillColor?: string;
-  closed?: boolean;
-}
-
-export interface KeyframeDrawing {
-  frame: number;
-  strokes: GreaseStroke[];
-}
-
-export interface GreasePencilState {
+export interface PaintOnGeometryState {
   group?: THREE.Group;
+  currentInputObj?: THREE.Object3D | null;
   activeMesh?: THREE.Mesh;
   activeGeo?: THREE.BufferGeometry;
   activeMat?: THREE.MeshBasicMaterial;
@@ -52,7 +31,7 @@ export interface GreasePencilState {
   lastSignature?: string;
 }
 
-const greasePencilCache = createNodeCache<GreasePencilState>((s) => {
+const paintOnGeometryCache = createNodeCache<PaintOnGeometryState>((s) => {
   if (s.activeGeo) s.activeGeo.dispose();
   if (s.activeMat) s.activeMat.dispose();
   if (s.fillGeo) s.fillGeo.dispose();
@@ -64,353 +43,21 @@ const greasePencilCache = createNodeCache<GreasePencilState>((s) => {
   if (s.group) disposeObject3D(s.group);
 });
 
-function getState(nodeId: string): GreasePencilState {
-  let state = greasePencilCache.get(nodeId);
+function getState(nodeId: string): PaintOnGeometryState {
+  let state = paintOnGeometryCache.get(nodeId);
   if (!state) {
     state = {};
-    greasePencilCache.set(nodeId, state);
+    paintOnGeometryCache.set(nodeId, state);
   }
   return state;
 }
 
-/**
- * Finds the drawing corresponding to the active frame (holding the latest keyframe <= currentFrame).
- */
-export function resolveActiveDrawing(frames: KeyframeDrawing[], currentFrame: number): KeyframeDrawing | null {
-  if (!frames || frames.length === 0) return null;
-  const sorted = [...frames].sort((a, b) => a.frame - b.frame);
-  let active: KeyframeDrawing | null = null;
-  for (const f of sorted) {
-    if (f.frame <= currentFrame) {
-      active = f;
-    } else {
-      break;
-    }
-  }
-  return active || sorted[0];
-}
-
-/**
- * Resolves adjacent drawings for Onion Skinning.
- */
-export function resolveOnionSkinDrawings(
-  frames: KeyframeDrawing[],
-  currentFrame: number,
-  beforeCount = 1,
-  afterCount = 1,
-): { prev: KeyframeDrawing[]; next: KeyframeDrawing[] } {
-  if (!frames || frames.length === 0) return { prev: [], next: [] };
-  const sorted = [...frames].sort((a, b) => a.frame - b.frame);
-  const prev: KeyframeDrawing[] = [];
-  const next: KeyframeDrawing[] = [];
-
-  for (const f of sorted) {
-    if (f.frame < currentFrame) {
-      prev.push(f);
-    } else if (f.frame > currentFrame) {
-      next.push(f);
-    }
-  }
-
-  return {
-    prev: beforeCount > 0 ? prev.slice(-beforeCount) : [],
-    next: afterCount > 0 ? next.slice(0, afterCount) : [],
-  };
-}
-
-/**
- * Builds a variable-width polygonal ribbon geometry for grease strokes.
- * Each vertex width along the stroke is directly scaled by the recorded pressure (speed/stylus),
- * yielding an authentic calligraphic stroke with natural thickness dynamics.
- */
-/**
- * Builds solid fill mesh geometry for strokes that have solid fill enabled.
- * Triangulates the interior polygon of each closed or open stroke loop using native ear-clipping.
- */
-export function buildStrokesFillGeometry(
-  strokes: GreaseStroke[],
-  defaultFillColor: string,
-): THREE.BufferGeometry {
-  const positions: number[] = [];
-  const colors: number[] = [];
-  const indices: number[] = [];
-  const tmpColor = new THREE.Color();
-  let vertexOffset = 0;
-
-  for (const stroke of strokes) {
-    if (!stroke.fill || !stroke.points || stroke.points.length < 3) continue;
-
-    tmpColor.set(stroke.fillColor || stroke.color || defaultFillColor);
-    const pts = stroke.points;
-
-    // Newell's method for normal of 3D polygon
-    const normal = new THREE.Vector3();
-    for (let i = 0; i < pts.length; i++) {
-      const p1 = pts[i];
-      const p2 = pts[(i + 1) % pts.length];
-      normal.x += (p1.y - p2.y) * (p1.z + p2.z);
-      normal.y += (p1.z - p2.z) * (p1.x + p2.x);
-      normal.z += (p1.x - p2.x) * (p1.y + p2.y);
-    }
-    if (normal.lengthSq() < 1e-6) {
-      normal.set(0, 1, 0);
-    } else {
-      normal.normalize();
-    }
-
-    // Build orthonormal 2D basis (U, V) on the polygon plane
-    let u = new THREE.Vector3();
-    if (Math.abs(normal.y) < 0.9) {
-      u.crossVectors(normal, new THREE.Vector3(0, 1, 0)).normalize();
-    } else {
-      u.crossVectors(normal, new THREE.Vector3(1, 0, 0)).normalize();
-    }
-    const v = new THREE.Vector3().crossVectors(normal, u).normalize();
-    const origin = new THREE.Vector3(pts[0].x, pts[0].y, pts[0].z);
-
-    // Project points into 2D plane coordinates
-    const pts2D: THREE.Vector2[] = [];
-    for (const p of pts) {
-      const diff = new THREE.Vector3(p.x, p.y, p.z).sub(origin);
-      pts2D.push(new THREE.Vector2(diff.dot(u), diff.dot(v)));
-    }
-
-    // Triangulate using Three.js built-in ShapeUtils ear-clipping
-    const triangles = THREE.ShapeUtils.triangulateShape(pts2D, []);
-    if (!triangles || triangles.length === 0) continue;
-
-    const startV = vertexOffset;
-    for (const p of pts) {
-      positions.push(p.x, p.y, p.z);
-      colors.push(tmpColor.r, tmpColor.g, tmpColor.b);
-      vertexOffset++;
-    }
-
-    for (const tri of triangles) {
-      indices.push(startV + tri[0], startV + tri[1], startV + tri[2]);
-    }
-  }
-
-  const geo = new THREE.BufferGeometry();
-  if (positions.length > 0) {
-    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-    geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-    geo.setIndex(indices);
-    geo.computeVertexNormals();
-  }
-  return geo;
-}
-
-/**
- * Builds a variable-width polygonal ribbon geometry for grease strokes.
- * Supports distinct brush presets:
- * - "ink_pen": Smooth, clean vector calligraphy ribbon.
- * - "ink_pen_rough": Hand-drawn rough ink texture with micro-jittered edges.
- * - "marker_bold": Chisel-angled bold marker stroke.
- * - "airbrush": Soft stippled spray micro-droplets along trajectory.
- */
-export function buildStrokesRibbonGeometry(
-  strokes: GreaseStroke[],
-  defaultColorHex: string,
-  baseBrushSize = 4,
-  overrideColorHex?: string,
-  _overrideOpacity?: number,
-): THREE.BufferGeometry {
-  const positions: number[] = [];
-  const colors: number[] = [];
-  const indices: number[] = [];
-  const tmpColor = new THREE.Color();
-  let vertexOffset = 0;
-
-  for (const stroke of strokes) {
-    const pts = stroke.points;
-    if (!pts || pts.length < 2) continue;
-
-    tmpColor.set(overrideColorHex || stroke.color || defaultColorHex);
-    const strokeWidth = stroke.width || baseBrushSize;
-    const baseRadius = strokeWidth * 0.02;
-    const brushType: GreaseBrushType = stroke.brushType || "ink_pen";
-
-    // 1. Airbrush Preset: Soft Stippled Particle Spray
-    if (brushType === "airbrush") {
-      const sprayCountPerPoint = 6;
-      for (let i = 0; i < pts.length; i++) {
-        const p = pts[i];
-        const pr = Math.max(0.04, Math.min(1.0, p.pressure ?? 0.6));
-        const sprayRadius = baseRadius * pr * 1.8;
-        const dotSize = Math.max(0.002, baseRadius * 0.12 * pr);
-
-        for (let s = 0; s < sprayCountPerPoint; s++) {
-          const hash = Math.sin(i * 37.17 + s * 13.51) * 43758.5453;
-          const hash2 = Math.sin(i * 19.33 + s * 91.13) * 23421.631;
-          const angle = (hash - Math.floor(hash)) * Math.PI * 2;
-          const dist = Math.sqrt(hash2 - Math.floor(hash2)) * sprayRadius;
-
-          const cx = p.x + Math.cos(angle) * dist;
-          const cz = p.z + Math.sin(angle) * dist;
-          const cy = p.y;
-
-          const startV = vertexOffset;
-          positions.push(cx - dotSize, cy, cz - dotSize);
-          colors.push(tmpColor.r, tmpColor.g, tmpColor.b);
-          vertexOffset++;
-
-          positions.push(cx + dotSize, cy, cz - dotSize);
-          colors.push(tmpColor.r, tmpColor.g, tmpColor.b);
-          vertexOffset++;
-
-          positions.push(cx + dotSize, cy, cz + dotSize);
-          colors.push(tmpColor.r, tmpColor.g, tmpColor.b);
-          vertexOffset++;
-
-          positions.push(cx - dotSize, cy, cz + dotSize);
-          colors.push(tmpColor.r, tmpColor.g, tmpColor.b);
-          vertexOffset++;
-
-          indices.push(startV, startV + 1, startV + 2);
-          indices.push(startV, startV + 2, startV + 3);
-        }
-      }
-      continue;
-    }
-
-    // Detect if this stroke is primarily horizontal (2D mode) or vertical/slanted (3D mode)
-    let yDelta = 0;
-    for (let k = 1; k < pts.length; k++) {
-      yDelta += Math.abs(pts[k].y - pts[0].y);
-    }
-    const upVector = yDelta < 0.1 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1);
-
-    const leftVerts: THREE.Vector3[] = [];
-    const rightVerts: THREE.Vector3[] = [];
-
-    for (let i = 0; i < pts.length; i++) {
-      const p = pts[i];
-      const pVec = new THREE.Vector3(p.x, p.y, p.z);
-      const pr = Math.max(0.03, Math.min(1.0, p.pressure ?? 0.6));
-      const radius = Math.max(0.001, baseRadius * pr);
-
-      let tangent = new THREE.Vector3();
-      if (i === 0) {
-        tangent.subVectors(new THREE.Vector3(pts[1].x, pts[1].y, pts[1].z), pVec);
-      } else if (i === pts.length - 1) {
-        tangent.subVectors(pVec, new THREE.Vector3(pts[i - 1].x, pts[i - 1].y, pts[i - 1].z));
-      } else {
-        tangent.subVectors(
-          new THREE.Vector3(pts[i + 1].x, pts[i + 1].y, pts[i + 1].z),
-          new THREE.Vector3(pts[i - 1].x, pts[i - 1].y, pts[i - 1].z),
-        );
-      }
-      if (tangent.lengthSq() < 1e-6) tangent.set(1, 0, 0);
-      else tangent.normalize();
-
-      let side: THREE.Vector3;
-      if (p.nx !== undefined && p.ny !== undefined && p.nz !== undefined) {
-        const pNorm = new THREE.Vector3(p.nx, p.ny, p.nz).normalize();
-        side = new THREE.Vector3().crossVectors(tangent, pNorm);
-        if (side.lengthSq() < 1e-4) {
-          side = new THREE.Vector3().crossVectors(tangent, upVector);
-        }
-      } else {
-        side = new THREE.Vector3().crossVectors(tangent, upVector);
-      }
-      if (side.lengthSq() < 1e-4) {
-        side.set(-tangent.z, tangent.y, tangent.x);
-        if (side.lengthSq() < 1e-4) side.set(0, 0, 1);
-      }
-      side.normalize();
-
-      // 2. Marker Bold: Chisel tip slant (~45 deg)
-      if (brushType === "marker_bold") {
-        const chiselDir = new THREE.Vector3(0.7071, 0, 0.7071);
-        if (yDelta >= 0.1) chiselDir.set(0.7071, 0.7071, 0);
-        side.lerp(chiselDir, 0.6).normalize();
-      }
-
-      // 3. Ink Pen Rough: Micro-jittered edges
-      let rL = radius;
-      let rR = radius;
-      if (brushType === "ink_pen_rough") {
-        const nL = Math.sin(i * 12.9898 + p.x * 37.1) * 43758.5453;
-        const nR = Math.sin(i * 27.6543 + p.z * 51.3) * 43758.5453;
-        rL = radius * (0.7 + 0.6 * (nL - Math.floor(nL)));
-        rR = radius * (0.7 + 0.6 * (nR - Math.floor(nR)));
-      }
-
-      leftVerts.push(pVec.clone().addScaledVector(side, -rL));
-      rightVerts.push(pVec.clone().addScaledVector(side, rR));
-    }
-
-    const startV = vertexOffset;
-    for (let i = 0; i < pts.length; i++) {
-      const l = leftVerts[i];
-      const r = rightVerts[i];
-
-      positions.push(l.x, l.y, l.z);
-      colors.push(tmpColor.r, tmpColor.g, tmpColor.b);
-      vertexOffset++;
-
-      positions.push(r.x, r.y, r.z);
-      colors.push(tmpColor.r, tmpColor.g, tmpColor.b);
-      vertexOffset++;
-    }
-
-    for (let i = 0; i < pts.length - 1; i++) {
-      const baseIdx = startV + i * 2;
-      indices.push(baseIdx, baseIdx + 1, baseIdx + 2);
-      indices.push(baseIdx + 1, baseIdx + 3, baseIdx + 2);
-    }
-  }
-
-  const geo = new THREE.BufferGeometry();
-  if (positions.length > 0) {
-    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-    geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-    geo.setIndex(indices);
-    geo.computeVertexNormals();
-  }
-  return geo;
-}
-
-/**
- * Converts strokes into standard THREE.CatmullRomCurve3 curves for node chaining.
- */
-export function strokesToCurves(strokes: GreaseStroke[]): THREE.CatmullRomCurve3[] {
-  const curves: THREE.CatmullRomCurve3[] = [];
-  for (const stroke of strokes) {
-    if (!stroke.points || stroke.points.length < 2) continue;
-    const vectors = stroke.points.map((p) => new THREE.Vector3(p.x, p.y, p.z));
-    const curve = new THREE.CatmullRomCurve3(vectors, Boolean(stroke.closed), "centripetal");
-    curves.push(curve);
-  }
-  return curves;
-}
-
-/**
- * Safely parses color values (string, THREE.Color, or {r, g, b}) into hex format.
- */
-export function parseColorHex(v: unknown, fallback = "#38bdf8"): string {
-  if (!v) return fallback;
-  if (typeof v === "string") {
-    const s = v.trim();
-    if (!s) return fallback;
-    return s.startsWith("#") ? s : `#${s}`;
-  }
-  if (v instanceof THREE.Color) {
-    return `#${v.getHexString()}`;
-  }
-  if (typeof v === "object" && v !== null && "r" in v && "g" in v && "b" in v) {
-    const { r, g, b } = v as { r: number; g: number; b: number };
-    return `#${new THREE.Color(r, g, b).getHexString()}`;
-  }
-  return fallback;
-}
-
-export const GREASE_PENCIL_NODE: NodeDefinition = {
-  type: "curve/grease-pencil",
-  label: "Grease Pencil",
+export const PAINT_ON_GEOMETRY_NODE: NodeDefinition = {
+  type: "curve/paint-on-geometry",
+  label: "Paint on geometry",
   category: "curve",
   inputs: [
+    { id: "geometry", label: "Geometry", type: "geometry", owns: true },
     { id: "matrix", label: "Matrix", type: "matrix" },
     { id: "visible", label: "Visible", type: "value" },
   ],
@@ -470,9 +117,22 @@ export const GREASE_PENCIL_NODE: NodeDefinition = {
     const state = getState(ctx.nodeId);
     if (!state.group) {
       state.group = new THREE.Group();
-      state.group.name = `GreasePencil_${ctx.nodeId}`;
+      state.group.name = `PaintOnGeometry_${ctx.nodeId}`;
     }
     state.group.userData.nodeId = ctx.nodeId;
+
+    // Handle connected target geometry
+    const inputObj = inputs.geometry instanceof THREE.Object3D ? inputs.geometry : null;
+    if (state.currentInputObj && state.currentInputObj !== inputObj) {
+      state.group.remove(state.currentInputObj);
+      state.currentInputObj = null;
+    }
+    if (inputObj && inputObj.parent !== state.group) {
+      state.group.add(inputObj);
+      state.currentInputObj = inputObj;
+    } else if (inputObj) {
+      state.currentInputObj = inputObj;
+    }
 
     const frames = (Array.isArray(params.frames) ? params.frames : []) as KeyframeDrawing[];
     const rawFrame = ctx.currentFrame ?? 0;
@@ -492,7 +152,7 @@ export const GREASE_PENCIL_NODE: NodeDefinition = {
     const onionSkinAfter = Number(params.onionSkinAfter) ?? 1;
     const onionSkinOpacity = Number(params.onionSkinOpacity) ?? 0.35;
 
-    // Fingerprint of strokes contents (tracks additions, point counts, colors, fills, and pressures)
+    // Fingerprint of strokes contents
     let strokeFingerprint = "";
     for (let i = 0; i < strokes.length; i++) {
       const s = strokes[i];
@@ -503,7 +163,6 @@ export const GREASE_PENCIL_NODE: NodeDefinition = {
       strokeFingerprint += `${s.id}:${s.color}:${s.fillColor || ""}:${s.brushType}:${s.fill ? 1 : 0}:${s.points.length}:${pSum.toFixed(2)};`;
     }
 
-    // Signature for caching and fast path
     const signature = JSON.stringify({
       currentFrame,
       drawingFrame: activeDrawing?.frame ?? -1,
@@ -565,11 +224,13 @@ export const GREASE_PENCIL_NODE: NodeDefinition = {
           state.fillMesh = new THREE.Mesh(state.fillGeo, state.fillMat);
           state.fillMesh.renderOrder = 8;
           state.fillMesh.userData.nodeId = ctx.nodeId;
+          state.fillMesh.userData.isStrokeMesh = true;
           state.group.add(state.fillMesh);
         } else {
           state.fillMesh.geometry = state.fillGeo;
           state.fillMesh.renderOrder = 8;
           state.fillMesh.userData.nodeId = ctx.nodeId;
+          state.fillMesh.userData.isStrokeMesh = true;
         }
         state.fillMesh.visible = true;
       } else if (state.fillMesh) {
@@ -612,18 +273,20 @@ export const GREASE_PENCIL_NODE: NodeDefinition = {
           state.activeMesh = new THREE.Mesh(state.activeGeo, state.activeMat);
           state.activeMesh.renderOrder = 10;
           state.activeMesh.userData.nodeId = ctx.nodeId;
+          state.activeMesh.userData.isStrokeMesh = true;
           state.group.add(state.activeMesh);
         } else {
           state.activeMesh.geometry = state.activeGeo;
           state.activeMesh.renderOrder = 10;
           state.activeMesh.userData.nodeId = ctx.nodeId;
+          state.activeMesh.userData.isStrokeMesh = true;
         }
         state.activeMesh.visible = true;
       } else if (state.activeMesh) {
         state.activeMesh.visible = false;
       }
 
-      // 2. Render Onion Skinning (if enabled)
+      // 3. Render Onion Skinning (if enabled)
       if (onionSkinEnabled && frames.length > 1) {
         const { prev, next } = resolveOnionSkinDrawings(
           frames,
@@ -656,9 +319,11 @@ export const GREASE_PENCIL_NODE: NodeDefinition = {
           if (!state.onionPrevMesh) {
             state.onionPrevMesh = new THREE.Mesh(state.onionPrevGeo, state.onionPrevMat);
             state.onionPrevMesh.renderOrder = 5;
+            state.onionPrevMesh.userData.isStrokeMesh = true;
             state.group.add(state.onionPrevMesh);
           } else {
             state.onionPrevMesh.geometry = state.onionPrevGeo;
+            state.onionPrevMesh.userData.isStrokeMesh = true;
           }
           state.onionPrevMesh.visible = true;
         } else if (state.onionPrevMesh) {
@@ -687,9 +352,11 @@ export const GREASE_PENCIL_NODE: NodeDefinition = {
           if (!state.onionNextMesh) {
             state.onionNextMesh = new THREE.Mesh(state.onionNextGeo, state.onionNextMat);
             state.onionNextMesh.renderOrder = 5;
+            state.onionNextMesh.userData.isStrokeMesh = true;
             state.group.add(state.onionNextMesh);
           } else {
             state.onionNextMesh.geometry = state.onionNextGeo;
+            state.onionNextMesh.userData.isStrokeMesh = true;
           }
           state.onionNextMesh.visible = true;
         } else if (state.onionNextMesh) {
@@ -719,8 +386,7 @@ export const GREASE_PENCIL_NODE: NodeDefinition = {
     if (state.onionPrevMesh) state.onionPrevMesh.userData.nodeId = ctx.nodeId;
     if (state.onionNextMesh) state.onionNextMesh.userData.nodeId = ctx.nodeId;
 
-    // Ensure all active meshes remain parented to state.group even if downstream nodes
-    // reparented them during evaluation
+    // Ensure all active meshes remain parented to state.group
     if (state.activeMesh && state.activeMesh.parent !== state.group) {
       state.group.add(state.activeMesh);
     }

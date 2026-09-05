@@ -207,10 +207,12 @@ export function TimelineBar({
   );
 
   const [isCmdPressed, setIsCmdPressed] = useState(false);
+  const [isShiftPressed, setIsShiftPressed] = useState(false);
 
   useEffect(() => {
     function handleKeyChange(e: KeyboardEvent) {
       setIsCmdPressed(e.metaKey || e.ctrlKey);
+      setIsShiftPressed(e.shiftKey);
     }
     window.addEventListener("keydown", handleKeyChange);
     window.addEventListener("keyup", handleKeyChange);
@@ -219,6 +221,46 @@ export function TimelineBar({
       window.removeEventListener("keyup", handleKeyChange);
     };
   }, []);
+
+  const startScrubbing = useCallback(
+    (e: React.MouseEvent | MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!keyframesEnabled || totalFrames <= 0) return;
+
+      setIsScrubbing(true);
+      document.body.style.cursor = "ew-resize";
+      document.body.style.userSelect = "none";
+
+      const res = calculateFrameFromEvent(e);
+      if (res) {
+        onFrameChange(res.frame);
+        setHoverFrame(res.frame);
+        setHoverX(res.x);
+      }
+
+      const onPointerMove = (moveEvent: MouseEvent) => {
+        const moveRes = calculateFrameFromEvent(moveEvent);
+        if (moveRes) {
+          onFrameChange(moveRes.frame);
+          setHoverFrame(moveRes.frame);
+          setHoverX(moveRes.x);
+        }
+      };
+
+      const onPointerUp = () => {
+        setIsScrubbing(false);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        window.removeEventListener("mousemove", onPointerMove);
+        window.removeEventListener("mouseup", onPointerUp);
+      };
+
+      window.addEventListener("mousemove", onPointerMove);
+      window.addEventListener("mouseup", onPointerUp);
+    },
+    [calculateFrameFromEvent, keyframesEnabled, onFrameChange, totalFrames],
+  );
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -252,35 +294,13 @@ export function TimelineBar({
   }, [isTimelineHovered, keyframesEnabled, currentFrame, hoveredMarkerFrame, onToggleMarker, easingPopover]);
 
   const handlePointerDownTrack = (e: React.MouseEvent) => {
-    // 1. Right click: scrub playhead (tête de lecture)
-    if (e.button === 2) {
-      e.preventDefault();
-      e.stopPropagation();
-      if (!keyframesEnabled || totalFrames <= 0) return;
-
-      setIsScrubbing(true);
-      const res = calculateFrameFromEvent(e);
-      if (res) onFrameChange(res.frame);
-
-      const onPointerMove = (moveEvent: MouseEvent) => {
-        const moveRes = calculateFrameFromEvent(moveEvent);
-        if (moveRes) onFrameChange(moveRes.frame);
-      };
-
-      const onPointerUp = (upEvent: MouseEvent) => {
-        if (upEvent.button === 2 || upEvent.buttons === 0) {
-          setIsScrubbing(false);
-          window.removeEventListener("mousemove", onPointerMove);
-          window.removeEventListener("mouseup", onPointerUp);
-        }
-      };
-
-      window.addEventListener("mousemove", onPointerMove);
-      window.addEventListener("mouseup", onPointerUp);
+    // 1. Right click OR Shift + Left click: scrub playhead (tête de lecture)
+    if (e.button === 2 || (e.button === 0 && e.shiftKey)) {
+      startScrubbing(e);
       return;
     }
 
-    // 2. Left click: resize split between canvas and viewports
+    // 2. Left click (without Shift): resize split between canvas and viewports
     if (e.button === 0) {
       e.preventDefault();
       onSplitHandleMouseDown(e);
@@ -289,6 +309,10 @@ export function TimelineBar({
   };
 
   const handleMarkerMouseDown = (e: React.MouseEvent, oldFrame: number) => {
+    if (e.shiftKey) {
+      startScrubbing(e);
+      return;
+    }
     e.stopPropagation();
     if (e.button !== 0) return;
     if (!keyframesEnabled || !onMoveMarker) return;
@@ -318,6 +342,10 @@ export function TimelineBar({
   };
 
   const handleKeyframeMouseDown = (e: React.MouseEvent, oldFrame: number) => {
+    if (e.shiftKey) {
+      startScrubbing(e);
+      return;
+    }
     e.stopPropagation();
     if (e.button !== 0) return; // Left button only for drag / select
     if (!keyframesEnabled) return;
@@ -425,9 +453,11 @@ export function TimelineBar({
 
   return (
     <div
-      className={`timeline-bar-container ${isCmdPressed ? "cmd-active" : ""}`}
+      className={`timeline-bar-container ${isCmdPressed ? "cmd-active" : ""} ${isShiftPressed ? "shift-active" : ""}`}
       onMouseDown={(e) => {
-        if (e.metaKey || e.ctrlKey) {
+        if (e.shiftKey) {
+          startScrubbing(e);
+        } else if (e.metaKey || e.ctrlKey) {
           e.preventDefault();
           onSplitHandleMouseDown(e);
         }
@@ -440,12 +470,18 @@ export function TimelineBar({
         setIsTimelineHovered(false);
         setInputZone(null);
       }}
-      title="Left click: drag to resize canvas/viewport split | Right click: drag to scrub playhead"
+      title="Click and drag to resize panels | Shift + click and drag to scrub playhead"
     >
       <div
         className="timeline-split-resize-handle"
-        onMouseDown={onSplitHandleMouseDown}
-        title="Drag to resize panels"
+        onMouseDown={(e) => {
+          if (e.shiftKey) {
+            startScrubbing(e);
+          } else {
+            onSplitHandleMouseDown(e);
+          }
+        }}
+        title="Drag to resize panels (Shift+drag to scrub playhead)"
       />
 
       <div className="timeline-bar-inner">
@@ -466,7 +502,7 @@ export function TimelineBar({
           onMouseMove={handleMouseMoveTrack}
           onMouseLeave={handleMouseLeaveTrack}
           onContextMenu={(e) => e.preventDefault()}
-          title="Left click: drag to resize split | Right click: drag to scrub playhead"
+          title="Drag to resize split | Shift + drag to scrub playhead"
         >
           <div className="timeline-track-bg" />
           <WaveformCanvas
@@ -552,7 +588,7 @@ export function TimelineBar({
             <div
               className="timeline-playhead-cursor"
               style={{ left: `${progressPct}%` }}
-              title={`Frame ${currentFrame}`}
+              title={`Frame ${currentFrame} (Shift+drag to scrub)`}
             />
           )}
         </div>

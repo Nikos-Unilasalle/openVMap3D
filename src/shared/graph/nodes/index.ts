@@ -79,6 +79,7 @@ import { CURVE_ARRAY_NODE, CURVE_DEFORM_NODE, CURVE_FROM_POINTS_NODE, CURVE_PRIM
 import { CURVE_TO_LINE_NODE } from "./line";
 import { CURVES_TO_LINES_NODE } from "./curvesToLines";
 import { GREASE_PENCIL_NODE } from "./greasePencil";
+import { PAINT_ON_GEOMETRY_NODE } from "./paintOnGeometry";
 import { CURVES_FROM_POINT_LISTS_NODE } from "./curveFromPointLists";
 import { CURVE_SUBDIVIDE_NODE } from "./curveSubdivide";
 import { CURVE_TO_POINTS_NODE } from "./curveToPoints";
@@ -297,6 +298,7 @@ export const STARTER_NODES = [
   CURVE_TO_LINE_NODE,
   CURVES_TO_LINES_NODE,
   GREASE_PENCIL_NODE,
+  PAINT_ON_GEOMETRY_NODE,
   CURVES_FROM_POINT_LISTS_NODE,
   CURVE_SUBDIVIDE_NODE,
   CURVE_TO_POINTS_NODE,
@@ -433,4 +435,5 @@ export * from "./forceField";
 export * from "./ground";
 export * from "./particleTrails";
 export * from "./distance";
+export * from "./paintOnGeometry";
 

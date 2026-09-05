@@ -108,6 +108,47 @@ export function applyStrokeTaper(
 }
 
 /**
+ * Smooths stroke points to eliminate involuntary hand tremors and jagged vertices.
+ * Performs a multi-pass weighted Laplacian filter along the 3D stroke path,
+ * anchoring the stroke endpoints (first and last points) to preserve the exact start and release locations.
+ *
+ * @param points Raw stroke points with { x, y, z, pressure }
+ * @param smoothing Smoothing intensity factor [0..1]
+ */
+export function smoothStrokePoints(points: StrokePoint[], smoothing: number): StrokePoint[] {
+  if (points.length <= 2 || !smoothing || smoothing <= 0.01) {
+    return points;
+  }
+
+  const s = Math.max(0, Math.min(1, smoothing));
+  // Determine number of iterations (1 to 6 passes depending on smoothing intensity)
+  const passes = Math.max(1, Math.min(6, Math.round(s * 5) + 1));
+  const weight = Math.min(0.7, s * 0.65);
+
+  let current = points.map((p) => ({ ...p }));
+
+  for (let pass = 0; pass < passes; pass++) {
+    const next = current.map((p) => ({ ...p }));
+    for (let i = 1; i < current.length - 1; i++) {
+      const prev = current[i - 1];
+      const curr = current[i];
+      const fwd = current[i + 1];
+
+      // Smooth position (weighted average with neighbours)
+      next[i].x = curr.x * (1 - weight) + (prev.x + fwd.x) * 0.5 * weight;
+      next[i].y = curr.y * (1 - weight) + (prev.y + fwd.y) * 0.5 * weight;
+      next[i].z = curr.z * (1 - weight) + (prev.z + fwd.z) * 0.5 * weight;
+
+      // Also gently smooth pressure to prevent sudden thickness pops
+      next[i].pressure = curr.pressure * (1 - weight * 0.5) + (prev.pressure + fwd.pressure) * 0.5 * (weight * 0.5);
+    }
+    current = next;
+  }
+
+  return current;
+}
+
+/**
  * Projects a screen pointer position (clientX, clientY) into 3D world coordinates on the drawing plane.
  */
 export function projectScreenToDrawingPlane(
@@ -429,4 +470,73 @@ export function tintStrokesAtPosition(
   });
 
   return frames.map((f) => (f.frame === activeFrame ? { ...f, strokes: nextStrokes } : f));
+}
+
+export interface GeometryHitResult {
+  point: THREE.Vector3;
+  normal: THREE.Vector3;
+  mesh: THREE.Mesh;
+}
+
+/**
+ * Projects a screen pointer position (clientX, clientY) onto a 3D target geometry (e.g. Box, Sphere, Mesh),
+ * returning the surface intersection point (slightly offset along the normal) and surface normal.
+ * If paintGroup is provided, coordinates are expressed in paintGroup's local coordinate system.
+ */
+export function projectScreenToTargetGeometry(
+  clientX: number,
+  clientY: number,
+  camera: THREE.Camera,
+  domElement: HTMLElement,
+  targetObj: THREE.Object3D,
+  paintGroup?: THREE.Object3D | null,
+): GeometryHitResult | null {
+  const rect = domElement.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return null;
+  const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
+  const ndcY = -(((clientY - rect.top) / rect.height) * 2 - 1);
+
+  const raycaster = new THREE.Raycaster();
+  raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+
+  // Update target transforms
+  targetObj.updateMatrixWorld(true);
+
+  // Intersect with meshes in targetObj, ignoring stroke overlay meshes
+  const hits = raycaster.intersectObject(targetObj, true).filter((h) => {
+    if (!(h.object instanceof THREE.Mesh)) return false;
+    if (h.object.userData?.isStrokeMesh) return false;
+    return true;
+  });
+
+  if (hits.length === 0) return null;
+
+  const hit = hits[0];
+  const hitMesh = hit.object as THREE.Mesh;
+
+  let normal = new THREE.Vector3(0, 1, 0);
+  if (hit.face) {
+    normal.copy(hit.face.normal);
+    const normalMatrix = new THREE.Matrix3().getNormalMatrix(hitMesh.matrixWorld);
+    normal.applyMatrix3(normalMatrix).normalize();
+  }
+
+  // Slight surface offset along normal (0.003) to prevent Z-fighting with coplanar triangles
+  const worldPoint = hit.point.clone().addScaledVector(normal, 0.003);
+
+  let localPoint = worldPoint;
+  let localNormal = normal;
+
+  if (paintGroup) {
+    paintGroup.updateMatrixWorld(true);
+    localPoint = paintGroup.worldToLocal(worldPoint.clone());
+    const invMat = new THREE.Matrix4().copy(paintGroup.matrixWorld).invert();
+    localNormal = normal.clone().transformDirection(invMat).normalize();
+  }
+
+  return {
+    point: localPoint,
+    normal: localNormal,
+    mesh: hitMesh,
+  };
 }

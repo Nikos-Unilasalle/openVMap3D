@@ -54,6 +54,7 @@ input, textarea, [contenteditable="true"], .drag-number-editing, .param-text-inp
 }
 
 .graph-node {
+  position: relative;
   min-width: 160px;
   background: var(--canvas-node);
   border: 1px solid var(--chrome-border);
@@ -62,6 +63,22 @@ input, textarea, [contenteditable="true"], .drag-number-editing, .param-text-inp
   font-family: "Roboto", system-ui, sans-serif;
   font-size: 12px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.graph-node-custom-name {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  color: #ffffff;
+  text-align: center;
+  text-transform: uppercase;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
 }
 
 .graph-node-title {

@@ -210,9 +210,11 @@ describe("GIZMO_SELECTABLE_TYPES", () => {
       "particles/force-field",
       "particles/curl-noise",
       "particles/strange-attractor",
+      "particles/emitter",
       "object/raccoon",
       "object/laser-beam",
       "curve/grease-pencil",
+      "curve/paint-on-geometry",
     ]);
   });
 });

@@ -144,6 +144,11 @@
   color: #38bdf8;
 }
 
+.param-name-section {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
 .param-panel-empty {
   padding: 14px 12px;
   color: #9aa4b2;

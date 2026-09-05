@@ -9,6 +9,7 @@ export interface GraphNodeData {
   nodeId?: string;
   nodeType?: string;
   label: string;
+  customName?: string;
   category?: NodeCategory;
   inputs: SocketDef[];
   outputs: SocketDef[];
@@ -178,6 +179,9 @@ export function GraphNode({ data, selected }: { data: GraphNodeData; selected?: 
       </div>
       {data.nodeType === "io/inspector" && (
         <div className="graph-node-inspector">{renderValuePreview(inspectorVal)}</div>
+      )}
+      {typeof data.customName === "string" && data.customName.trim() !== "" && (
+        <div className="graph-node-custom-name">{data.customName}</div>
       )}
     </div>
   );

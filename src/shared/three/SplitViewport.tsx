@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
-import { TransformPatch, Viewport } from "./Viewport";
+import { GpToolMode, TransformGizmoMode, TransformPatch, Viewport } from "./Viewport";
 import { EvalResult } from "../graph/evaluate";
 import { Graph, KeyframeStore, NodeRegistry } from "../graph/types";
 import type { PreviewCameraPose } from "../ipc";
@@ -52,6 +52,10 @@ interface SplitViewportProps {
   mode2D?: boolean;
   snapElevation?: boolean;
   onToggleSnapElevation?: () => void;
+  gpTool?: GpToolMode;
+  onGpToolChange?: (mode: GpToolMode) => void;
+  transformMode?: TransformGizmoMode;
+  onTransformModeChange?: (mode: TransformGizmoMode) => void;
 }
 
 export function SplitViewport({
@@ -83,6 +87,10 @@ export function SplitViewport({
   mode2D = false,
   snapElevation = false,
   onToggleSnapElevation,
+  gpTool: gpToolProp,
+  onGpToolChange,
+  transformMode: transformModeProp,
+  onTransformModeChange,
 }: SplitViewportProps) {
   const is2D = Boolean(mode2D);
   const [splitPercent, setSplitPercent] = useState(is2D ? 72 : 50);
@@ -92,6 +100,26 @@ export function SplitViewport({
       setSplitPercent(72);
     }
   }, [is2D]);
+
+  const [internalGpTool, setInternalGpTool] = useState<GpToolMode>("pen");
+  const gpTool = gpToolProp !== undefined ? gpToolProp : internalGpTool;
+  const handleGpToolChange = useCallback(
+    (tool: GpToolMode) => {
+      setInternalGpTool(tool);
+      onGpToolChange?.(tool);
+    },
+    [onGpToolChange],
+  );
+
+  const [internalTransformMode, setInternalTransformMode] = useState<TransformGizmoMode>("translate");
+  const transformMode = transformModeProp !== undefined ? transformModeProp : internalTransformMode;
+  const handleTransformModeChange = useCallback(
+    (mode: TransformGizmoMode) => {
+      setInternalTransformMode(mode);
+      onTransformModeChange?.(mode);
+    },
+    [onTransformModeChange],
+  );
 
   const [sharedCameraPose, setSharedCameraPose] = useState<PreviewCameraPose | null>(null);
   const handlePrimaryCameraChange = useCallback(
@@ -211,6 +239,10 @@ export function SplitViewport({
           onParamChange={onParamChange}
           onUnpinParam={onUnpinParam}
           onRenameExposedParam={onRenameExposedParam}
+          gpTool={gpTool}
+          onGpToolChange={handleGpToolChange}
+          transformMode={transformMode}
+          onTransformModeChange={handleTransformModeChange}
         />
       </div>
 
@@ -263,6 +295,10 @@ export function SplitViewport({
             evaluatedResults={evaluatedResults}
             onParamChange={onParamChange}
             onUnpinParam={onUnpinParam}
+            gpTool={gpTool}
+            onGpToolChange={handleGpToolChange}
+            transformMode={transformMode}
+            onTransformModeChange={handleTransformModeChange}
           />
         )}
       </div>
